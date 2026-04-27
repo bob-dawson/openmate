@@ -1,0 +1,181 @@
+<h2>工作区列表 & 会话列表</h2>
+<p class="subtitle">点击实例后进入工作区，再进入会话</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">工作区列表</div>
+    <div class="mockup-body" style="padding: 0;">
+      <div style="background: #f8fafc; min-height: 620px;">
+        <!-- 顶栏 -->
+        <div style="background: white; padding: 12px 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px;">
+          <div style="color: #2563eb; font-size: 18px;">←</div>
+          <div style="flex: 1;">
+            <div style="font-size: 18px; font-weight: bold; color: #0f172a;">公司开发机</div>
+            <div style="display: flex; gap: 8px; margin-top: 2px;">
+              <span style="display: flex; align-items: center; gap: 3px; font-size: 10px; color: #16a34a;">
+                <span style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+                Bridge
+              </span>
+              <span style="display: flex; align-items: center; gap: 3px; font-size: 10px; color: #16a34a;">
+                <span style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+                opencode
+              </span>
+            </div>
+          </div>
+          <button style="background: #2563eb; color: white; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500;">+ 新建</button>
+        </div>
+
+        <div style="padding: 12px 16px;">
+          <!-- 工作区卡片1: 已连接 -->
+          <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="width: 36px; height: 36px; background: #eff6ff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">📂</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; color: #0f172a; font-size: 14px;">main</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">/home/user/project</div>
+              </div>
+              <span style="display: flex; align-items: center; gap: 3px; font-size: 10px; color: #16a34a; background: #f0fdf4; padding: 2px 6px; border-radius: 4px;">
+                <span style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+                已连接
+              </span>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">🔄 main</span>
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">8 会话</span>
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">2 活跃</span>
+            </div>
+          </div>
+
+          <!-- 工作区卡片2: 已连接 -->
+          <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="width: 36px; height: 36px; background: #eff6ff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">📂</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; color: #0f172a; font-size: 14px;">feature-auth</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">/home/user/project-feature-auth</div>
+              </div>
+              <span style="display: flex; align-items: center; gap: 3px; font-size: 10px; color: #16a34a; background: #f0fdf4; padding: 2px 6px; border-radius: 4px;">
+                <span style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+                已连接
+              </span>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">🔄 feature/authentication</span>
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">3 会话</span>
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">1 活跃</span>
+            </div>
+          </div>
+
+          <!-- 工作区卡片3: 断开连接 -->
+          <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border: 1px solid #e2e8f0; opacity: 0.65;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="width: 36px; height: 36px; background: #fef2f2; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">📂</div>
+              <div style="flex: 1;">
+                <div style="font-weight: 600; color: #0f172a; font-size: 14px;">hotfix-logging</div>
+                <div style="font-size: 11px; color: #64748b; margin-top: 2px;">/home/user/project-hotfix</div>
+              </div>
+              <span style="display: flex; align-items: center; gap: 3px; font-size: 10px; color: #ef4444; background: #fef2f2; padding: 2px 6px; border-radius: 4px;">
+                <span style="width: 5px; height: 5px; background: #ef4444; border-radius: 50%; display: inline-block;"></span>
+                已断开
+              </span>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">🔄 hotfix/log-error</span>
+              <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">1 会话</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">会话列表（某工作区内）</div>
+    <div class="mockup-body" style="padding: 0;">
+      <div style="background: #f8fafc; min-height: 620px;">
+        <!-- 顶栏 -->
+        <div style="background: white; padding: 12px 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px;">
+          <div style="color: #2563eb; font-size: 18px;">←</div>
+          <div style="flex: 1;">
+            <div style="font-size: 18px; font-weight: bold; color: #0f172a;">main</div>
+            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">公司开发机 · /home/user/project</div>
+          </div>
+          <button style="background: #2563eb; color: white; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500;">+ 新会话</button>
+        </div>
+
+        <div style="padding: 12px 16px;">
+          <!-- 会话1: 忙碌中 -->
+          <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #2563eb;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-weight: 600; color: #0f172a; font-size: 14px;">重构认证模块</span>
+                  <span style="font-size: 9px; background: #dbeafe; color: #2563eb; padding: 1px 6px; border-radius: 3px; font-weight: 500;">忙碌</span>
+                </div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">正在读取 src/auth/login.ts，分析依赖关系...</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+              <span>5 分钟前</span>
+              <span>8 条消息</span>
+              <span>+45 -12 行</span>
+            </div>
+          </div>
+
+          <!-- 会话2: 空闲 -->
+          <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #22c55e;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-weight: 600; color: #0f172a; font-size: 14px;">添加单元测试</span>
+                  <span style="font-size: 9px; background: #f0fdf4; color: #16a34a; padding: 1px 6px; border-radius: 3px; font-weight: 500;">空闲</span>
+                </div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">已完成测试文件创建，3 个测试全部通过</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+              <span>1 小时前</span>
+              <span>22 条消息</span>
+              <span>+128 -3 行</span>
+            </div>
+          </div>
+
+          <!-- 会话3: 空闲 -->
+          <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #22c55e;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-weight: 600; color: #0f172a; font-size: 14px;">修复导航栏样式</span>
+                  <span style="font-size: 9px; background: #f0fdf4; color: #16a34a; padding: 1px 6px; border-radius: 3px; font-weight: 500;">空闲</span>
+                </div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">修改了 Header.tsx 和 nav.css</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+              <span>昨天</span>
+              <span>15 条消息</span>
+              <span>+34 -8 行</span>
+            </div>
+          </div>
+
+          <!-- 会话4: 错误 -->
+          <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #ef4444;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div style="flex: 1;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span style="font-weight: 600; color: #0f172a; font-size: 14px;">部署脚本调试</span>
+                  <span style="font-size: 9px; background: #fef2f2; color: #dc2626; padding: 1px 6px; border-radius: 3px; font-weight: 500;">错误</span>
+                </div>
+                <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">API 调用超时：provider 返回 429</div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+              <span>2 天前</span>
+              <span>6 条消息</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

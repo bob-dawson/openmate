@@ -1,0 +1,206 @@
+<h2>交互对话框：Permission & Question</h2>
+<p class="subtitle">opencode 需要用户确认或回答时，Bridge 推送到手机</p>
+
+<div style="display: flex; gap: 24px; flex-wrap: wrap;">
+
+<!-- Permission 请求：Edit 权限 -->
+<div style="flex: 1; min-width: 320px;">
+<div class="mockup">
+  <div class="mockup-header">Permission 请求（edit 权限）</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #f8fafc; min-height: 440px;">
+      <div style="padding: 16px; opacity: 0.3;">
+        <div style="font-size: 13px; color: #64748b; margin-bottom: 12px;">正在分析代码结构...</div>
+        <div style="height: 8px; background: #e2e8f0; border-radius: 4px; margin-bottom: 8px; width: 70%;"></div>
+      </div>
+
+      <div style="position: relative; margin-top: -50px;">
+        <div style="background: white; margin: 0 20px; border-radius: 16px; padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
+          <div style="text-align: center; margin-bottom: 12px;">
+            <div style="width: 48px; height: 48px; background: #fef3c7; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 24px;">⚠️</div>
+          </div>
+
+          <div style="text-align: center; font-weight: 600; font-size: 16px; color: #0f172a; margin-bottom: 6px;">权限请求</div>
+          <div style="text-align: center; font-size: 12px; color: #64748b; margin-bottom: 16px;">opencode 请求执行以下操作</div>
+
+          <!-- 操作详情：只有 permission + patterns（文件路径） -->
+          <div style="background: #f8fafc; border-radius: 10px; padding: 12px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <span style="font-size: 16px;">✏️</span>
+              <span style="font-weight: 600; font-size: 13px; color: #0f172a;">Edit</span>
+            </div>
+            <div style="font-family: monospace; font-size: 11px; color: #475569; background: white; border-radius: 6px; padding: 8px; border: 1px solid #e2e8f0;">
+              <div style="color: #94a3b8; margin-bottom: 6px; font-size: 10px;">文件路径</div>
+              <div style="color: #0f172a;">src/auth/auth-service.ts</div>
+            </div>
+          </div>
+
+          <!-- 按钮 -->
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button style="padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; font-size: 12px; font-weight: 500; color: #ef4444;">拒绝</button>
+            <div style="flex: 1;"></div>
+            <button style="padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; font-size: 12px; font-weight: 500; color: #64748b;">稍后处理</button>
+            <button style="padding: 10px 14px; border: none; border-radius: 10px; background: #f1f5f9; font-size: 13px; font-weight: 500; color: #475569;">允许一次</button>
+            <button style="padding: 10px 14px; border: none; border-radius: 10px; background: #2563eb; font-size: 13px; font-weight: 500; color: white;">始终允许</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- Permission 请求：外部目录权限 -->
+<div style="flex: 1; min-width: 320px;">
+<div class="mockup">
+  <div class="mockup-header">Permission 请求（external_directory）</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #f8fafc; min-height: 440px;">
+      <div style="padding: 16px; opacity: 0.3;">
+        <div style="font-size: 13px; color: #64748b; margin-bottom: 12px;">正在查找配置文件...</div>
+        <div style="height: 8px; background: #e2e8f0; border-radius: 4px; margin-bottom: 8px; width: 50%;"></div>
+      </div>
+
+      <div style="position: relative; margin-top: -40px;">
+        <div style="background: white; margin: 0 20px; border-radius: 16px; padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
+          <div style="text-align: center; margin-bottom: 12px;">
+            <div style="width: 48px; height: 48px; background: #fef3c7; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 24px;">⚠️</div>
+          </div>
+
+          <div style="text-align: center; font-weight: 600; font-size: 16px; color: #0f172a; margin-bottom: 6px;">外部目录权限</div>
+          <div style="text-align: center; font-size: 12px; color: #64748b; margin-bottom: 16px;">opencode 请求访问工作区外的文件</div>
+
+          <div style="background: #f8fafc; border-radius: 10px; padding: 12px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+              <span style="font-size: 16px;">📂</span>
+              <span style="font-weight: 600; font-size: 13px; color: #0f172a;">External Directory</span>
+            </div>
+            <div style="font-family: monospace; font-size: 11px; color: #475569; background: white; border-radius: 6px; padding: 8px; border: 1px solid #e2e8f0;">
+              <div style="color: #94a3b8; margin-bottom: 6px; font-size: 10px;">请求访问的目录</div>
+              <div style="color: #0f172a;">/etc/nginx/*</div>
+            </div>
+            <div style="margin-top: 8px; font-size: 11px; color: #f59e0b; background: #fffbeb; border-radius: 6px; padding: 6px 8px;">
+              ⚠️ 此路径不在当前工作区内
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <button style="padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; font-size: 12px; font-weight: 500; color: #ef4444;">拒绝</button>
+            <div style="flex: 1;"></div>
+            <button style="padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; font-size: 12px; font-weight: 500; color: #64748b;">稍后处理</button>
+            <button style="padding: 10px 14px; border: none; border-radius: 10px; background: #f1f5f9; font-size: 13px; font-weight: 500; color: #475569;">允许一次</button>
+            <button style="padding: 10px 14px; border: none; border-radius: 10px; background: #2563eb; font-size: 13px; font-weight: 500; color: white;">始终允许</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</div>
+
+<!-- Question 对话框 -->
+<div style="margin-top: 24px;">
+<div class="mockup">
+  <div class="mockup-header">Question 对话框</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #f8fafc; min-height: 520px;">
+      <div style="padding: 16px; opacity: 0.3;">
+        <div style="font-size: 13px; color: #64748b; margin-bottom: 12px;">正在分析项目依赖...</div>
+        <div style="height: 8px; background: #e2e8f0; border-radius: 4px; margin-bottom: 8px; width: 60%;"></div>
+      </div>
+
+      <div style="position: relative; margin-top: -40px;">
+        <div style="background: white; margin: 0 20px; border-radius: 16px; padding: 20px; box-shadow: 0 8px 32px rgba(0,0,0,0.12);">
+          <div style="text-align: center; margin-bottom: 12px;">
+            <div style="width: 48px; height: 48px; background: #eff6ff; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 24px;">💬</div>
+          </div>
+
+          <div style="text-align: center; font-weight: 600; font-size: 16px; color: #0f172a; margin-bottom: 6px;">opencode 提问</div>
+          <div style="text-align: center; font-size: 12px; color: #64748b; margin-bottom: 16px;">需要你的输入才能继续</div>
+
+          <!-- 问题内容 -->
+          <div style="background: #f8fafc; border-radius: 10px; padding: 12px; margin-bottom: 16px;">
+            <div style="font-size: 13px; color: #334155; line-height: 1.6;">
+              数据库迁移策略：你想使用哪种方式？
+            </div>
+          </div>
+
+          <!-- 选项：单选提示 -->
+          <div style="font-size: 10px; color: #94a3b8; margin-bottom: 8px; text-align: center;">选择一个答案</div>
+
+          <!-- 选项 -->
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+            <div style="background: #eff6ff; border: 2px solid #2563eb; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #2563eb; font-weight: 500;">
+              <div>📦 逐表迁移</div>
+              <div style="font-size: 11px; color: #64748b; font-weight: 400; margin-top: 2px;">每张表独立迁移脚本，可回滚</div>
+            </div>
+            <div style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #475569;">
+              <div>🔄 全量迁移</div>
+              <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">一次性迁移所有表，速度快但不可回滚</div>
+            </div>
+            <div style="background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; font-size: 13px; color: #475569;">
+              <div>⏭️ 跳过迁移</div>
+              <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">手动处理数据库变更</div>
+            </div>
+          </div>
+
+          <!-- 自由输入 -->
+          <div style="background: #f1f5f9; border-radius: 10px; padding: 10px 14px; font-size: 12px; color: #94a3b8; margin-bottom: 14px;">
+            或者输入自定义回答...
+          </div>
+
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button style="padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; font-size: 12px; font-weight: 500; color: #ef4444;">拒绝</button>
+            <div style="flex: 1;"></div>
+            <button style="padding: 10px 14px; border: 1px solid #e2e8f0; border-radius: 10px; background: white; font-size: 12px; font-weight: 500; color: #64748b;">稍后回复</button>
+            <button style="padding: 10px 18px; border: none; border-radius: 10px; background: #2563eb; font-size: 13px; font-weight: 500; color: white;">发送回答</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>设计要点</h3>
+  <div style="background: #f8fafc; border-radius: 8px; padding: 16px; font-size: 14px; color: #475569; line-height: 1.8;">
+    <strong>Permission 请求</strong><br>
+    · 来源：opencode 的 <code>permission.ask()</code>，在操作执行前请求<br>
+    · 数据结构：<code>permission</code>（操作类型）+ <code>patterns</code>（文件路径/目录 glob）<br>
+    · 只显示要操作的文件路径，不显示 diff（操作还没执行！）<br>
+    · opencode 定义的 permission 类型：<br>
+    &nbsp;&nbsp;· <code>read</code> — 读取文件，patterns 为文件路径<br>
+    &nbsp;&nbsp;· <code>edit</code> — 编辑文件，patterns 为相对路径（如 src/auth/login.ts）<br>
+    &nbsp;&nbsp;· <code>bash</code> — 执行命令，patterns 为命令模式<br>
+    &nbsp;&nbsp;· <code>external_directory</code> — 读取工作区外的文件，patterns 为目录 glob<br>
+    · <strong>四种操作</strong>：<br>
+    &nbsp;&nbsp;· <strong>始终允许</strong> → 调用 <code>permission.reply("always")</code>，后续同类操作自动通过<br>
+    &nbsp;&nbsp;· <strong>允许一次</strong> → 调用 <code>permission.reply("once")</code>，仅本次允许<br>
+    &nbsp;&nbsp;· <strong>稍后处理</strong> → 关闭弹窗，不调用 opencode 任何接口，用户可先查看其他信息再回来决定。聊天中待处理的权限请求消息保持可点击<br>
+    &nbsp;&nbsp;· <strong>拒绝</strong> → 调用 <code>permission.reply("reject")</code>，opencode 收到 <code>RejectedError</code><br>
+    · external_directory 特殊提示：警告此路径不在工作区内<br><br>
+
+    <strong>Question 对话框</strong><br>
+    · 来源：opencode 的 <code>question.ask()</code> 事件<br>
+    · 触发方式：<br>
+    &nbsp;&nbsp;· 用户点击聊天中未回答的提问消息 → 弹出<br>
+    &nbsp;&nbsp;· 用户在聊天页面时收到新提问 → 自动弹出<br>
+    · 支持单选/多选（与 opencode 的 <code>multiple</code> 字段一致）<br>
+    · 支持自定义输入（与 opencode 的 <code>custom</code> 字段一致）<br>
+    · <strong>三种操作</strong>：<br>
+    &nbsp;&nbsp;· <strong>发送回答</strong> → 调用 <code>question.reply()</code>，传递选中的 labels 数组<br>
+    &nbsp;&nbsp;· <strong>稍后回复</strong> → 关闭弹窗，<strong>不调用</strong> opencode 任何接口，会话保持等待状态，用户可随时点击消息重新打开<br>
+    &nbsp;&nbsp;· <strong>拒绝</strong> → 调用 <code>question.reject()</code>，opencode 收到 <code>QuestionRejectedError</code>，明确表示不回答<br>
+    · "稍后回复" 的意义：用户可能想先处理其他会话，不应被阻塞；聊天中未回答的提问消息保持可点击状态<br><br>
+
+    <strong>共同特性</strong><br>
+    · 底部弹出（Bottom Sheet 风格），不阻断会话浏览<br>
+    · 所有对话框都支持"稍后处理/稍后回复"——关闭弹窗但不通知 opencode，用户可先去查看其他信息<br>
+    · 待处理的请求在聊天中保持可点击状态，用户随时可重新打开<br>
+    · 推送通知：即使 App 在后台也能收到提醒<br>
+    · 实时性：通过 SSE/WebSocket 推送，非轮询
+  </div>
+</div>

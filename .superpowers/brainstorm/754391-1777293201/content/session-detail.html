@@ -1,0 +1,271 @@
+<h2>会话详情 / 聊天视图</h2>
+<p class="subtitle">核心交互页面——与 opencode 对话、查看代码变更</p>
+
+<div class="mockup">
+  <div class="mockup-header" style="background: #151515; border-color: #2a2a2a; color: #eeeeee;">会话详情</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #0a0a0a; min-height: 760px; display: flex; flex-direction: column;">
+      <!-- 顶栏 -->
+      <div style="background: #0f0f0f; padding: 10px 16px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 10px;">
+        <div style="color: #fab283; font-size: 18px;">←</div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: #eeeeee; font-size: 15px;">重构认证模块</div>
+          <div style="font-size: 10px; color: #808080;">公司开发机 · main</div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 9px; background: #1a1a0a; color: #f5a742; padding: 2px 6px; border-radius: 3px; border: 1px solid #3a3520;">忙碌</span>
+          <div style="font-size: 18px; color: #808080;">⋮</div>
+        </div>
+      </div>
+
+      <!-- TODO 摘要条（顶栏下方，消息上方） -->
+      <div style="background: #0f0f0f; border-bottom: 1px solid #2a2a2a; padding: 8px 16px; cursor: pointer;">
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+          <span style="font-size: 11px; font-weight: 600; color: #eeeeee;">TODO</span>
+          <span style="font-size: 9px; background: #1a1508; color: #f5a742; padding: 1px 5px; border-radius: 3px;">1 进行中</span>
+          <span style="font-size: 9px; background: #1a1a1a; color: #808080; padding: 1px 5px; border-radius: 3px;">2 待办</span>
+          <span style="margin-left: auto; font-size: 11px; color: #808080;">查看全部 ›</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <!-- 进行中 -->
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="width: 14px; height: 14px; border: 2px solid #56b6c2; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <div style="width: 6px; height: 6px; background: #56b6c2; border-radius: 50%;"></div>
+            </div>
+            <span style="font-size: 12px; color: #eeeeee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">编写 AuthService 单元测试</span>
+            <span style="font-size: 9px; color: #e06c75; padding: 0px 4px; border-radius: 2px; border: 1px solid #3a1a1a;">高</span>
+          </div>
+          <!-- 待办 -->
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="width: 14px; height: 14px; border: 1.5px solid #808080; border-radius: 3px; flex-shrink: 0;"></div>
+            <span style="font-size: 12px; color: #808080; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">更新 login.ts 调用方式</span>
+            <span style="font-size: 9px; color: #f5a742; padding: 0px 4px; border-radius: 2px; border: 1px solid #3a3520;">中</span>
+          </div>
+          <!-- 待办 -->
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="width: 14px; height: 14px; border: 1.5px solid #808080; border-radius: 3px; flex-shrink: 0;"></div>
+            <span style="font-size: 12px; color: #808080; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">验证集成测试通过</span>
+            <span style="font-size: 9px; color: #808080; padding: 0px 4px; border-radius: 2px; border: 1px solid #2a2a2a;">低</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 消息区 -->
+      <div style="flex: 1; overflow-y: auto; padding: 12px 16px;">
+        <!-- 用户消息（左对齐，不同背景色区分） -->
+        <div style="margin-bottom: 4px;">
+          <div style="background: #1a1a1a; color: #eeeeee; border-radius: 4px; padding: 10px 14px; max-width: 85%; font-size: 13px; line-height: 1.5; border-left: 2px solid #fab283;">
+            把 login.ts 里的认证逻辑拆分成独立的 service，单元测试要覆盖
+          </div>
+        </div>
+        <div style="margin-bottom: 14px; font-size: 10px; color: #808080;">14:32</div>
+
+        <!-- 助手消息：文字 + 工具调用（无头像） -->
+        <div style="margin-bottom: 16px;">
+          <div style="font-size: 13px; color: #eeeeee; line-height: 1.6; margin-bottom: 8px;">
+            我来帮你重构认证模块。先看一下当前的代码结构：
+          </div>
+          <div style="font-size: 10px; color: #808080; margin-bottom: 8px;">14:32</div>
+
+          <!-- 工具调用：文件读取（折叠态） -->
+          <div style="background: #111111; border: 1px solid #2a2a2a; border-radius: 4px; margin-bottom: 6px; overflow: hidden;">
+            <div style="padding: 8px 12px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #808080;">
+              <span style="color: #56b6c2;">●</span>
+              <span style="font-weight: 500; color: #eeeeee;">Read</span>
+              <span style="color: #808080;">src/auth/login.ts</span>
+              <span style="margin-left: auto; color: #7fd88f; font-size: 10px;">✓ 142行</span>
+            </div>
+          </div>
+          <div style="font-size: 10px; color: #808080; margin-bottom: 8px;">14:33</div>
+
+          <!-- 工具调用：文件编辑（展开态） -->
+          <div style="background: #111111; border: 1px solid #2a2a2a; border-radius: 4px; margin-bottom: 6px; overflow: hidden;">
+            <div style="padding: 8px 12px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #808080; border-bottom: 1px solid #2a2a2a;">
+              <span style="color: #f5a742;">●</span>
+              <span style="font-weight: 500; color: #eeeeee;">Edit</span>
+              <span style="color: #808080;">src/auth/auth-service.ts</span>
+              <span style="margin-left: auto; font-size: 10px; color: #808080;">▼</span>
+            </div>
+            <div style="padding: 8px 12px; font-family: monospace; font-size: 11px; line-height: 1.6; overflow-x: auto;">
+              <div style="color: #7fd88f; background: #0d1a0f; padding: 1px 4px;">+export class AuthService {</div>
+              <div style="color: #7fd88f; background: #0d1a0f; padding: 1px 4px;">+  async validate(token: string) {</div>
+              <div style="color: #7fd88f; background: #0d1a0f; padding: 1px 4px;">+    return jwt.verify(token, SECRET);</div>
+              <div style="color: #7fd88f; background: #0d1a0f; padding: 1px 4px;">+  }</div>
+              <div style="color: #7fd88f; background: #0d1a0f; padding: 1px 4px;">+}</div>
+              <div style="color: #e06c75; background: #1a0d0d; padding: 1px 4px;">-function validate(token) {</div>
+              <div style="color: #e06c75; background: #1a0d0d; padding: 1px 4px;">-  return jwt.verify(token, SECRET);</div>
+            </div>
+          </div>
+          <div style="font-size: 10px; color: #808080; margin-bottom: 8px;">14:34</div>
+
+          <!-- 工具调用：Bash（折叠态） -->
+          <div style="background: #111111; border: 1px solid #2a2a2a; border-radius: 4px; margin-bottom: 6px; overflow: hidden;">
+            <div style="padding: 8px 12px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: #808080;">
+              <span style="color: #9d7cd8;">●</span>
+              <span style="font-weight: 500; color: #eeeeee;">Bash</span>
+              <span style="color: #808080;">npm test -- auth-service</span>
+              <span style="margin-left: auto; color: #7fd88f; font-size: 10px;">✓ 3/3 通过</span>
+            </div>
+          </div>
+          <div style="font-size: 10px; color: #808080; margin-bottom: 8px;">14:35</div>
+
+          <div style="font-size: 13px; color: #eeeeee; line-height: 1.6;">
+            已完成重构：<br>
+            1. 将验证逻辑提取到 <code style="background: #1a1a1a; padding: 1px 4px; border-radius: 3px; font-size: 12px; color: #7fd88f;">AuthService</code> 类<br>
+            2. login.ts 改为调用 AuthService<br>
+            3. 新增 3 个单元测试，全部通过
+          </div>
+          <div style="font-size: 10px; color: #808080; margin-top: 4px;">14:36</div>
+        </div>
+
+        <!-- 正在输入指示器 -->
+        <div style="margin-bottom: 12px;">
+          <div style="background: #1a1a1a; border-radius: 4px; padding: 10px 14px; display: inline-flex; gap: 4px; align-items: center;">
+            <div style="width: 6px; height: 6px; background: #808080; border-radius: 50%; animation: bounce 1s infinite;"></div>
+            <div style="width: 6px; height: 6px; background: #808080; border-radius: 50%; animation: bounce 1s infinite 0.2s;"></div>
+            <div style="width: 6px; height: 6px; background: #808080; border-radius: 50%; animation: bounce 1s infinite 0.4s;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 输入区 -->
+      <div style="background: #0f0f0f; border-top: 1px solid #2a2a2a; padding: 10px 16px;">
+        <div style="display: flex; gap: 8px; align-items: flex-end;">
+          <div style="flex: 1; background: #1a1a1a; border-radius: 4px; padding: 10px 14px; font-size: 13px; color: #808080; min-height: 40px; max-height: 120px; overflow-y: auto; border: 1px solid #2a2a2a;">
+            输入消息...
+          </div>
+          <button style="width: 40px; height: 40px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #fab283; font-size: 16px; flex-shrink: 0;">↑</button>
+        </div>
+        <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #808080; justify-content: center;">
+          <span>📎 附件</span>
+          <span>🖥 终端</span>
+          <span>@ 提及文件</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TODO 展开态 -->
+<div class="mockup" style="margin-top: 24px;">
+  <div class="mockup-header" style="background: #151515; border-color: #2a2a2a; color: #eeeeee;">TODO 展开态（点击摘要条后）</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #0a0a0a; min-height: 480px; display: flex; flex-direction: column;">
+      <!-- 顶栏 -->
+      <div style="background: #0f0f0f; padding: 10px 16px; border-bottom: 1px solid #2a2a2a; display: flex; align-items: center; gap: 10px;">
+        <div style="color: #fab283; font-size: 18px;">←</div>
+        <div style="flex: 1;">
+          <div style="font-weight: 600; color: #eeeeee; font-size: 15px;">重构认证模块</div>
+          <div style="font-size: 10px; color: #808080;">公司开发机 · main</div>
+        </div>
+        <span style="font-size: 9px; background: #1a1a0a; color: #f5a742; padding: 2px 6px; border-radius: 3px; border: 1px solid #3a3520;">忙碌</span>
+      </div>
+
+      <!-- TODO 完整列表（可滚动） -->
+      <div style="background: #0f0f0f; border-bottom: 1px solid #2a2a2a; max-height: 300px; overflow-y: auto;">
+        <div style="padding: 12px 16px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #1a1a1a;">
+          <span style="font-size: 12px; font-weight: 600; color: #eeeeee;">TODO</span>
+          <span style="font-size: 9px; background: #1a1508; color: #f5a742; padding: 1px 5px; border-radius: 3px;">1 进行中</span>
+          <span style="font-size: 9px; background: #1a1a1a; color: #808080; padding: 1px 5px; border-radius: 3px;">2 待办</span>
+          <span style="font-size: 9px; background: #0d1a0f; color: #7fd88f; padding: 1px 5px; border-radius: 3px;">2 已完成</span>
+          <span style="margin-left: auto; font-size: 11px; color: #fab283; font-weight: 500;">收起</span>
+        </div>
+        <div style="padding: 8px 16px;">
+          <!-- 进行中 -->
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1a1a1a;">
+            <div style="width: 16px; height: 16px; border: 2px solid #56b6c2; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <div style="width: 7px; height: 7px; background: #56b6c2; border-radius: 50%;"></div>
+            </div>
+            <span style="font-size: 13px; color: #eeeeee; flex: 1;">编写 AuthService 单元测试</span>
+            <span style="font-size: 9px; color: #e06c75; padding: 1px 5px; border-radius: 3px; border: 1px solid #3a1a1a;">高</span>
+          </div>
+          <!-- 待办 -->
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1a1a1a;">
+            <div style="width: 16px; height: 16px; border: 1.5px solid #808080; border-radius: 3px; flex-shrink: 0;"></div>
+            <span style="font-size: 13px; color: #eeeeee; flex: 1;">更新 login.ts 调用方式</span>
+            <span style="font-size: 9px; color: #f5a742; padding: 1px 5px; border-radius: 3px; border: 1px solid #3a3520;">中</span>
+          </div>
+          <!-- 待办 -->
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1a1a1a;">
+            <div style="width: 16px; height: 16px; border: 1.5px solid #808080; border-radius: 3px; flex-shrink: 0;"></div>
+            <span style="font-size: 13px; color: #eeeeee; flex: 1;">验证集成测试通过</span>
+            <span style="font-size: 9px; color: #808080; padding: 1px 5px; border-radius: 3px; border: 1px solid #2a2a2a;">低</span>
+          </div>
+          <!-- 已完成 -->
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1a1a1a;">
+            <div style="width: 16px; height: 16px; background: #7fd88f; border-radius: 3px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <span style="color: #0a0a0a; font-size: 10px;">✓</span>
+            </div>
+            <span style="font-size: 13px; color: #808080; flex: 1; text-decoration: line-through;">提取 AuthService 类</span>
+            <span style="font-size: 9px; color: #7fd88f; padding: 1px 5px; border-radius: 3px; border: 1px solid #1a3a1a;">高</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0;">
+            <div style="width: 16px; height: 16px; background: #7fd88f; border-radius: 3px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+              <span style="color: #0a0a0a; font-size: 10px;">✓</span>
+            </div>
+            <span style="font-size: 13px; color: #808080; flex: 1; text-decoration: line-through;">阅读现有代码结构</span>
+            <span style="font-size: 9px; color: #7fd88f; padding: 1px 5px; border-radius: 3px; border: 1px solid #1a3a1a;">中</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 消息区（被 TODO 推下去） -->
+      <div style="flex: 1; padding: 12px 16px; opacity: 0.4;">
+        <div style="font-size: 13px; color: #808080;">消息内容...</div>
+      </div>
+
+      <!-- 输入区 -->
+      <div style="background: #0f0f0f; border-top: 1px solid #2a2a2a; padding: 10px 16px;">
+        <div style="display: flex; gap: 8px; align-items: flex-end;">
+          <div style="flex: 1; background: #1a1a1a; border-radius: 4px; padding: 10px 14px; font-size: 13px; color: #808080; min-height: 40px; border: 1px solid #2a2a2a;">输入消息...</div>
+          <button style="width: 40px; height: 40px; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; color: #fab283; font-size: 16px;">↑</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3 style="color: #eeeeee;">配色体系（opencode dark theme）</h3>
+  <div style="background: #111111; border: 1px solid #2a2a2a; border-radius: 4px; padding: 16px; font-size: 14px; color: #eeeeee; line-height: 1.8;">
+    <strong>基础色</strong><br>
+    · 页面背景：<code style="color: #56b6c2;">#0a0a0a</code>（neutral base）<br>
+    · 顶栏/输入区/TODO 背景：<code style="color: #56b6c2;">#0f0f0f</code>（略微提亮）<br>
+    · 卡片/工具调用背景：<code style="color: #56b6c2;">#111111</code><br>
+    · 边框：<code style="color: #56b6c2;">#2a2a2a</code><br><br>
+
+    <strong>文字色</strong><br>
+    · 正文：<code style="color: #56b6c2;">#eeeeee</code>（markdown-text / ink）<br>
+    · 次要文字：<code style="color: #56b6c2;">#808080</code>（text-weak）<br><br>
+
+    <strong>强调色（源自 opencode dark palette）</strong><br>
+    · 品牌色/主交互：<code style="color: #fab283;">#fab283</code>（primary）<br>
+    · 信息/交互蓝：<code style="color: #56b6c2;">#56b6c2</code>（info）<br>
+    · 成功/新增：<code style="color: #7fd88f;">#7fd88f</code>（success）<br>
+    · 警告：<code style="color: #f5a742;">#f5a742</code>（warning）<br>
+    · 错误/删除：<code style="color: #e06c75;">#e06c75</code>（error）<br>
+    · 紫色/Bash工具：<code style="color: #9d7cd8;">#9d7cd8</code>（accent）<br><br>
+
+    <strong>用户消息</strong><br>
+    · 左对齐（与助手消息一致），不右对齐<br>
+    · 背景色 <code style="color: #56b6c2;">#1a1a1a</code> 区分 + 左侧 2px <code style="color: #fab283;">#fab283</code> 边框标识<br>
+    · 无渐变，无圆角气泡，纯色块 + 左边线<br><br>
+
+    <strong>TODO 项视觉</strong><br>
+    · 进行中：info 蓝 <code style="color: #56b6c2;">#56b6c2</code> 圆环 + 实心圆点<br>
+    · 待办：<code style="color: #808080;">#808080</code> 空心方框<br>
+    · 已完成：success 绿 <code style="color: #7fd88f;">#7fd88f</code> 实心方框 + 对勾 + 删除线<br>
+    · 已取消：灰色 + 删除线<br>
+    · 优先级标签：高(error红) / 中(warning橙) / 低(弱灰)，1px边框，无填充背景<br><br>
+
+    <strong>Diff 高亮</strong><br>
+    · 新增行：<code style="color: #7fd88f;">#7fd88f</code> 文字 + <code style="color: #56b6c2;">#0d1a0f</code> 背景<br>
+    · 删除行：<code style="color: #e06c75;">#e06c75</code> 文字 + <code style="color: #56b6c2;">#1a0d0d</code> 背景<br><br>
+
+    <strong>设计原则</strong><br>
+    · 无渐变，无气泡圆角，纯色块 + 细边框<br>
+    · 所有消息左对齐，用户消息用左边线标识<br>
+    · 减少色彩使用，优先使用 neutral 灰阶<br>
+    · 强调色仅用于语义标识（工具类型、状态、优先级）
+  </div>
+</div>

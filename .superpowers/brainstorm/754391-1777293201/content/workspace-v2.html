@@ -1,0 +1,90 @@
+<h2>工作区列表（修正）</h2>
+<p class="subtitle">工作区是本地目录，不存在连接状态</p>
+
+<div class="mockup">
+  <div class="mockup-header">工作区列表 — 修正版</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #f8fafc; min-height: 580px;">
+      <div style="background: white; padding: 12px 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px;">
+        <div style="color: #2563eb; font-size: 18px;">←</div>
+        <div style="flex: 1;">
+          <div style="font-size: 18px; font-weight: bold; color: #0f172a;">公司开发机</div>
+          <div style="display: flex; gap: 8px; margin-top: 2px;">
+            <span style="display: flex; align-items: center; gap: 3px; font-size: 10px; color: #16a34a;">
+              <span style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+              Bridge
+            </span>
+            <span style="display: flex; align-items: center; gap: 3px; font-size: 10px; color: #16a34a;">
+              <span style="width: 5px; height: 5px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+              opencode
+            </span>
+          </div>
+        </div>
+        <button style="background: #2563eb; color: white; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500;">+ 新建</button>
+      </div>
+
+      <div style="padding: 12px 16px;">
+        <!-- 工作区1 -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 36px; height: 36px; background: #eff6ff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">📂</div>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; color: #0f172a; font-size: 14px;">main</div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">/home/user/project</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">🔄 main</span>
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">8 会话</span>
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">2 活跃</span>
+          </div>
+        </div>
+
+        <!-- 工作区2 -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 36px; height: 36px; background: #eff6ff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">📂</div>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; color: #0f172a; font-size: 14px;">feature-auth</div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">/home/user/project-feature-auth</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">🔄 feature/authentication</span>
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">3 会话</span>
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">1 活跃</span>
+          </div>
+        </div>
+
+        <!-- 工作区3 -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 36px; height: 36px; background: #eff6ff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px;">📂</div>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; color: #0f172a; font-size: 14px;">hotfix-logging</div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">/home/user/project-hotfix</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px; align-items: center;">
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">🔄 hotfix/log-error</span>
+            <span style="font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 3px;">1 会话</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>修正说明</h3>
+  <div style="background: #f8fafc; border-radius: 8px; padding: 16px; font-size: 14px; color: #475569; line-height: 1.8;">
+    <strong>工作区 = 本地目录（git worktree）</strong><br>
+    · 无"连接/断开"状态——它就是磁盘上的一个目录<br>
+    · 只要 opencode 在运行，所有工作区都可访问<br>
+    · 每个工作区卡片显示：名称、路径、分支、会话数、活跃会话数<br><br>
+    <strong>连接状态是实例级的</strong><br>
+    · Bridge 在线/离线 → 实例卡片上显示<br>
+    · opencode 运行/停止 → 实例卡片上显示<br>
+    · 这些状态影响整个实例，不是单个工作区
+  </div>
+</div>

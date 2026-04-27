@@ -1,0 +1,136 @@
+<h2>会话列表</h2>
+<p class="subtitle">工作区内的会话列表</p>
+
+<div class="mockup">
+  <div class="mockup-header">会话列表（main 工作区内）</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #f8fafc; min-height: 620px;">
+      <!-- 顶栏 -->
+      <div style="background: white; padding: 12px 20px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px;">
+        <div style="color: #2563eb; font-size: 18px;">←</div>
+        <div style="flex: 1;">
+          <div style="font-size: 18px; font-weight: bold; color: #0f172a;">main</div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">公司开发机 · /home/user/project</div>
+        </div>
+        <button style="background: #2563eb; color: white; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500;">+ 新会话</button>
+      </div>
+
+      <!-- 筛选栏 -->
+      <div style="background: white; padding: 8px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 8px;">
+        <span style="font-size: 11px; background: #2563eb; color: white; padding: 4px 10px; border-radius: 12px; font-weight: 500;">全部</span>
+        <span style="font-size: 11px; background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 12px;">活跃</span>
+        <span style="font-size: 11px; background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 12px;">已归档</span>
+      </div>
+
+      <div style="padding: 12px 16px;">
+        <!-- 会话1: 忙碌中 -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #2563eb;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-weight: 600; color: #0f172a; font-size: 14px;">重构认证模块</span>
+                <span style="font-size: 9px; background: #dbeafe; color: #2563eb; padding: 1px 6px; border-radius: 3px; font-weight: 500;">忙碌</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">正在读取 src/auth/login.ts，分析依赖关系...</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+            <span>5 分钟前</span>
+            <span>8 条消息</span>
+            <span>+45 -12 行</span>
+          </div>
+        </div>
+
+        <!-- 会话2: 空闲 -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #22c55e;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-weight: 600; color: #0f172a; font-size: 14px;">添加单元测试</span>
+                <span style="font-size: 9px; background: #f0fdf4; color: #16a34a; padding: 1px 6px; border-radius: 3px; font-weight: 500;">空闲</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">已完成测试文件创建，3 个测试全部通过</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+            <span>1 小时前</span>
+            <span>22 条消息</span>
+            <span>+128 -3 行</span>
+          </div>
+        </div>
+
+        <!-- 会话3: 空闲 -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #22c55e;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-weight: 600; color: #0f172a; font-size: 14px;">修复导航栏样式</span>
+                <span style="font-size: 9px; background: #f0fdf4; color: #16a34a; padding: 1px 6px; border-radius: 3px; font-weight: 500;">空闲</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">修改了 Header.tsx 和 nav.css</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+            <span>昨天</span>
+            <span>15 条消息</span>
+            <span>+34 -8 行</span>
+          </div>
+        </div>
+
+        <!-- 会话4: 错误 -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #ef4444;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-weight: 600; color: #0f172a; font-size: 14px;">部署脚本调试</span>
+                <span style="font-size: 9px; background: #fef2f2; color: #dc2626; padding: 1px 6px; border-radius: 3px; font-weight: 500;">错误</span>
+              </div>
+              <div style="font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4;">API 调用超时：provider 返回 429</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #94a3b8;">
+            <span>2 天前</span>
+            <span>6 条消息</span>
+          </div>
+        </div>
+
+        <!-- 会话5: 已归档（opencode 有 time_archived 字段 + setArchived 方法） -->
+        <div style="background: white; border-radius: 12px; padding: 14px; margin-bottom: 8px; border-left: 3px solid #94a3b8; opacity: 0.6;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-weight: 600; color: #64748b; font-size: 14px;">初始化项目结构</span>
+                <span style="font-size: 9px; background: #f1f5f9; color: #94a3b8; padding: 1px 6px; border-radius: 3px; font-weight: 500;">已归档</span>
+              </div>
+              <div style="font-size: 12px; color: #94a3b8; margin-top: 4px; line-height: 1.4;">完成项目骨架搭建和依赖安装</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 10px; color: #cbd5e1;">
+            <span>1 周前</span>
+            <span>4 条消息</span>
+            <span>+230 -0 行</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>会话状态说明</h3>
+  <div style="background: #f8fafc; border-radius: 8px; padding: 16px; font-size: 14px; color: #475569; line-height: 1.8;">
+    <strong>左侧色条 + 状态标签</strong>：<br><br>
+    🔵 <strong>忙碌</strong> — opencode 正在处理（模型推理中、工具调用中）<br>
+    🟢 <strong>空闲</strong> — 等待用户输入<br>
+    🔴 <strong>错误</strong> — 上次操作出错（API 超时、权限不足等）<br>
+    ⚪ <strong>已归档</strong> — opencode 有 <code>time_archived</code> 字段和 <code>setArchived</code> 方法，默认列表不显示归档会话<br><br>
+    <strong>筛选栏</strong>：全部 / 活跃 / 已归档（默认显示活跃）<br><br>
+    <strong>每张卡片信息</strong>：<br>
+    · 标题（opencode 自动生成或用户自定义）<br>
+    · 最后活动摘要（最后一条消息的文本摘要）<br>
+    · 时间（最后更新时间）<br>
+    · 消息数量<br>
+    · 代码变更统计（+行 -行）<br><br>
+    <strong>长按菜单</strong>：删除会话、归档会话、分叉会话
+  </div>
+</div>

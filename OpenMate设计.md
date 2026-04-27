@@ -1,0 +1,600 @@
+# OpenMate 设计文档
+
+> OpenMate：opencode 的原生 Android 客户端，通过云端中继服务与运行在电脑上的 opencode 实例进行实时通讯，实现随时随地的移动端编码协作。
+
+## 1. 整体架构
+
+```
+┌─────────────┐     WebSocket      ┌──────────────────┐     WebSocket      ┌──────────────┐
+│  Android    │◄──────────────────►│  Cloud Relay      │◄──────────────────►│  Bridge       │
+│  Client     │                    │  Server           │                    │  Agent        │
+└─────────────┘                    └──────────────────┘                    └──────────────┘
+                                         │                                    │
+                                    MongoDB                           SSE / HTTP API
+                                    (事件持久化)                           │
+                                                                ┌──────────────┐
+                                                                │  opencode     │
+                                                                │  (localhost)  │
+                                                                └──────────────┘
+```
+
+### 四个组件
+
+| 组件 | 语言/框架 | 运行位置 | 职责 |
+|------|-----------|----------|------|
+| **Cloud Relay Server** | .NET 10 (ASP.NET Core) | 云端 VPS | WebSocket 中继、GitHub OAuth 认证、事件持久化(MongoDB)、多实例管理、客户端重连补发 |
+| **Bridge Agent** | TypeScript (Node/Bun) | opencode 同机 | 常驻服务，按需启停 opencode server，连接 SSE 流转发事件，代理客户端请求到 opencode HTTP API |
+| **Android Client** | Kotlin / Jetpack Compose | 手机 | 全功能客户端，WebSocket 连接云端，本地 SQLite 缓存 |
+| **opencode** | TypeScript | 电脑 | 不修改，Bridge Agent 通过其现有 HTTP API + SSE 交互 |
+
+### 数据流
+
+- **下行**：opencode SSE → Bridge Agent → Cloud Relay → Android Client
+- **上行**：Android Client → Cloud Relay → Bridge Agent → opencode HTTP API
+- **重连补发**：Client/Bridge 断线后，Cloud Relay 用 seq 补发缺失事件
+
+---
+
+## 2. opencode 现有基础设施
+
+opencode 已具备我们所需的绝大部分能力，无需修改其核心代码：
+
+### 2.1 SSE 实时推送
+
+- `GET /global/event` — 长连接，所有状态变更实时推送，无需轮询
+- 心跳每 10 秒，断线自动重连
+- 推送两类事件：
+  - **Bus 事件**：`{ type: "session.created", properties: {...} }` — 完整对象，向后兼容
+  - **Sync 事件**：`{ type: "sync", syncEvent: { type: "session.created.1", id, seq, aggregateID, data } }` — 事件溯源记录
+
+### 2.2 Sync API（增量同步）
+
+- `POST /sync/history` — 传入 `{ aggregateID: lastKnownSeq }`，只返回新增事件
+- `POST /sync/replay` — 回放事件到数据库
+- EventTable 持久化所有事件，按 aggregate（sessionID）分组，seq 递增
+
+### 2.3 事件流模型
+
+```
+opencode 状态变更
+  → SyncEvent.run() 
+    → 1. Projector 修改数据库
+    → 2. 持久化事件到 EventTable
+    → 3. 发布到 Bus + GlobalBus
+      → Bus 事件 (完整对象) → Bus.subscribeAll()
+      → Sync 事件 (溯源记录) → GlobalBus.emit()
+        → SSE /global/event 推出
+
+GlobalEvent 线路格式:
+{
+  directory: string,
+  project?: string,
+  workspace?: string,
+  payload: 
+    | { type: "session.created", properties: {...} }     // Bus 事件
+    | { type: "sync", syncEvent: { type, id, seq, aggregateID, data } }  // Sync 事件
+}
+```
+
+### 2.4 已有跨设备同步模式
+
+opencode 的 `control-plane/workspace.ts` 已实现跨设备同步：
+- 连接远程 SSE 流 → 实时接收事件
+- 断线后通过 `POST /sync/history` 补齐
+- 这正好是 Bridge Agent 所需的模式
+
+### 2.5 工作区层级
+
+```
+Project（项目，一个 git 仓库）
+  └── Workspace（工作区，通常是 git worktree）
+        └── Session（会话，一个对话）
+              ├── UserMessage
+              └── AssistantMessage
+                    └── Part（text / tool / reasoning / file / subtask / ...）
+```
+
+---
+
+## 3. Cloud Relay Server
+
+### 3.1 核心功能
+
+- **WebSocket 中继**：管理 Bridge Agent 和 Android Client 的长连接，双向转发消息
+- **GitHub OAuth 认证**：GitHub OAuth 登录，JWT token 签发
+- **事件持久化**：MongoDB 存储所有从 opencode 流入的事件，按 seq 排序
+- **多实例管理**：每个 Bridge Agent 注册为独立节点，客户端可切换
+- **重连补发**：客户端上线时告知最后收到的 seq，服务端补发缺失事件
+
+### 3.2 MongoDB 文档模型
+
+```json
+// 事件文档
+{
+  "_id": ObjectId,
+  "instanceId": "公司开发机",
+  "aggregateId": "session-xxx",
+  "seq": 42,
+  "type": "session.created.1",
+  "data": { ... },
+  "timestamp": ISODate,
+  "eventId": "opencode-event-id"
+}
+// 复合索引: { instanceId: 1, aggregateId: 1, seq: 1 }
+
+// 实例注册文档
+{
+  "_id": ObjectId,
+  "instanceId": "公司开发机",
+  "userId": "user-xxx",
+  "directory": "/home/user/project",
+  "projectName": "my-project",
+  "connectedAt": ISODate,
+  "lastHeartbeat": ISODate,
+  "status": "online"        // online / offline
+}
+
+// 用户文档
+{
+  "_id": ObjectId,
+  "userId": "user-xxx",
+  "oauthProvider": "github",
+  "oauthId": "12345",
+  "email": "user@example.com",
+  "name": "User",
+  "avatar": "url",
+  "createdAt": ISODate
+}
+```
+
+### 3.3 WebSocket 协议
+
+所有通信使用 JSON 帧，统一消息格式：
+
+```json
+{
+  "type": "event|request|response|error|heartbeat|sync|state",
+  "id": "msg-uuid",
+  "instanceId": "公司开发机",
+  "payload": { ... },
+  "seq": 42,
+  "timestamp": 1700000000000
+}
+```
+
+**消息类型：**
+
+| type | 方向 | 用途 |
+|------|------|------|
+| `event` | Bridge→Server→Client | opencode 状态变更事件 |
+| `request` | Client→Server→Bridge | 客户端操作请求 |
+| `response` | Bridge→Server→Client | 请求的响应 |
+| `error` | 双向 | 错误 |
+| `heartbeat` | 双向 | 每 30 秒心跳 |
+| `sync` | Server→Client | 重连补发事件 |
+| `state` | Bridge→Server | Bridge 状态更新（opencode 启停等） |
+
+### 3.4 HTTP API 端点
+
+| 方法 | 路径 | 用途 |
+|------|------|------|
+| `GET` | `/ws` | WebSocket 连接（客户端和 Bridge 共用，通过 JWT token 区分身份） |
+| `GET` | `/api/auth/github` | GitHub OAuth 登录 |
+| `GET` | `/api/auth/github/callback` | GitHub OAuth 回调 |
+| `POST` | `/api/auth/refresh` | 刷新 JWT token |
+| `GET` | `/api/instances` | 列出用户关联的 opencode 实例及状态 |
+| `POST` | `/api/sync/{instanceId}` | 获取某实例的事件历史（传入 lastSeq，返回增量） |
+
+---
+
+## 4. Bridge Agent
+
+### 4.1 定位
+
+轻量 TypeScript 常驻服务，运行在 opencode 同一机器上。独立于 opencode 运行，按需启停 opencode server。
+
+### 4.2 生命周期管理
+
+```
+Bridge Agent 启动:
+  1. 读取配置 (bridge.config.json)
+  2. 连接 Cloud Relay WebSocket
+  3. 注册实例，发送初始状态 (state: opencode=stopped)
+  4. 若 autoStart=true，自动启动 opencode
+
+Android 客户端触发启动:
+  4. 发送 request(action: "opencode.start", directory: "/path/to/project")
+  5. Bridge Agent 执行: opencode serve --hostname=... --port=...
+  6. 检测 opencode 就绪（监听 stdout "opencode server listening"）
+  7. 连接 SSE 流 (GET /global/event)
+  8. 发送 state: opencode=running，通知客户端实例就绪
+
+运行时:
+  - SSE 事件 → 转发 Cloud Relay → 客户端
+  - 客户端请求 → 代理到 opencode HTTP API
+
+opencode 重启/更新:
+  9. 客户端或 Bridge Agent 发起重启
+  10. 停止 opencode 进程 → 重新执行步骤 5-7
+  11. 断线期间 Cloud Relay 缓存事件 seq，重连后补发
+
+Bridge Agent 关闭:
+  - 优雅停止 opencode 进程
+  - 通知 Cloud Relay 实例下线
+```
+
+### 4.3 进程管理
+
+```typescript
+class OpencodeManager {
+  private proc: ChildProcess | null = null
+
+  async start(directory: string): Promise<string> {
+    // spawn: opencode serve --hostname=... --port=...
+    // 等待 stdout 输出 "opencode server listening on ..."
+    // 返回 URL
+  }
+
+  async stop(): Promise<void> {
+    // SIGTERM → 等待退出 → SIGKILL
+  }
+
+  async restart(): Promise<string> {
+    await this.stop()
+    return this.start()
+  }
+
+  get status(): "stopped" | "starting" | "running" | "stopping"
+}
+```
+
+### 4.4 配置文件
+
+```jsonc
+// ~/.opencode/bridge.config.json
+{
+  "serverUrl": "wss://relay.example.com/ws",
+  "instanceName": "公司开发机",
+  "opencode": {
+    "binary": "opencode",           // 可执行文件路径
+    "hostname": "127.0.0.1",
+    "port": 4096,
+    "directory": "/home/user/project"
+  },
+  "autoStart": true                 // Bridge 启动时自动启动 opencode
+}
+```
+
+### 4.5 作为系统服务
+
+```ini
+# /etc/systemd/system/opencode-bridge.service (Linux)
+[Unit]
+Description=OpenCode Bridge Agent
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/npx opencode-bridge
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+macOS 用 launchd，Windows 用 NSSM。
+
+### 4.6 请求代理映射
+
+客户端的操作请求，Bridge Agent 转换为 opencode HTTP API 调用：
+
+| 客户端请求 action | opencode API | 说明 |
+|---|---|---|
+| `opencode.start` | spawn `opencode serve` | 启动 opencode |
+| `opencode.stop` | SIGTERM 进程 | 停止 opencode |
+| `opencode.restart` | stop + start | 重启 opencode |
+| `project.list` | `GET /project` | 列出项目 |
+| `project.current` | `GET /project/current` | 当前项目 |
+| `workspace.list` | `GET /workspace/list` | 列出工作区 |
+| `workspace.create` | `POST /workspace/create` | 创建工作区 |
+| `workspace.remove` | `DELETE /workspace/remove` | 删除工作区 |
+| `workspace.status` | `GET /workspace/status` | 工作区连接状态 |
+| `workspace.adaptors` | `GET /workspace/adaptors` | 可用的工作区适配器 |
+| `workspace.session-restore` | `POST /workspace/session-restore` | 迁移会话到工作区 |
+| `session.list` | `GET /session` | 列出会话 |
+| `session.create` | `POST /session` | 创建会话 |
+| `session.get` | `GET /session/{id}` | 获取会话详情 |
+| `session.delete` | `DELETE /session/{id}` | 删除会话 |
+| `session.update` | `PATCH /session/{id}` | 更新会话 |
+| `session.prompt` | `POST /session/{id}/prompt` | 发送消息/提示 |
+| `session.abort` | `POST /session/{id}/abort` | 中止当前操作 |
+| `session.share` | `POST /session/{id}/share` | 分享会话 |
+| `session.unshare` | `POST /session/{id}/unshare` | 取消分享 |
+| `session.fork` | `POST /session/{id}/fork` | 分叉会话 |
+| `session.messages` | `GET /session/{id}/messages` | 获取会话消息列表 |
+| `session.message` | `GET /session/{id}/message/{mid}` | 获取单条消息 |
+| `permission.reply` | `POST /permission/{id}/reply` | 回复权限请求 |
+| `question.reply` | `POST /question/{id}/reply` | 回复问题 |
+| `file.list` | `GET /file/list` | 列出文件 |
+| `file.read` | `GET /file/read` | 读取文件 |
+| `file.status` | `GET /file/status` | 文件状态 |
+| `find.text` | `POST /find/text` | 搜索文本 |
+| `find.files` | `POST /find/files` | 搜索文件 |
+| `find.symbols` | `POST /find/symbols` | 搜索符号 |
+| `config.get` | `GET /config` | 获取配置 |
+| `config.update` | `PATCH /config` | 更新配置 |
+| `tool.list` | `GET /tool` | 工具列表 |
+| `tool.ids` | `GET /tool/ids` | 工具 ID 列表 |
+| `provider.list` | `GET /provider` | 模型提供者列表 |
+| `provider.auth` | `POST /provider/auth` | 提供者认证 |
+| `pty.create` | `POST /pty` | 创建终端 |
+| `pty.connect` | WS `/pty/{id}/connect` | 连接终端 |
+| `mcp.status` | `GET /mcp/status` | MCP 状态 |
+| `mcp.add` | `POST /mcp/add` | 添加 MCP |
+| `mcp.connect` | `POST /mcp/connect` | 连接 MCP |
+| `mcp.disconnect` | `POST /mcp/disconnect` | 断开 MCP |
+
+---
+
+## 5. Android 客户端
+
+### 5.1 导航层级
+
+用户登录后，按以下层级导航：
+
+```
+登录 (GitHub OAuth)
+  → 实例列表（选择一台电脑的 Bridge Agent）
+    → 工作区列表（选择/创建工作区）
+      → 会话列表（选择/创建/切换/删除会话）
+        → 会话详情（消息流、发送消息、确认权限等）
+```
+
+### 5.2 页面结构
+
+| 页面 | 功能 | 核心操作 |
+|------|------|----------|
+| **登录页** | GitHub OAuth | 登录、token 刷新 |
+| **实例列表页** | 展示用户关联的所有 opencode 实例 | 查看在线/离线状态、选择实例、远程启停 opencode |
+| **工作区列表页** | 展示当前实例的所有工作区 | 查看/创建/删除工作区、查看连接状态 |
+| **会话列表页** | 展示当前工作区的所有会话 | 新建/打开/切换/删除会话、查看会话摘要 |
+| **会话详情页** | 消息流与交互 | 发送消息、查看回复、确认权限/回答问题、查看工具调用、查看 diff |
+| **设置页** | 配置管理 | 查看/修改 opencode 配置、管理 MCP、管理 provider |
+
+### 5.3 工作区管理
+
+**打开工作区：**
+- 从工作区列表选择已存在的工作区，进入其会话列表
+- 工作区显示：名称、分支名、连接状态（connected/disconnected/error）
+
+**创建工作区：**
+- 选择适配器类型（默认 worktree）
+- 输入分支名称
+- Bridge Agent 调用 `POST /workspace/create`
+- 创建完成后自动切换到新工作区
+
+**关闭/删除工作区：**
+- 确认对话框（删除工作区会同时删除其下所有会话）
+- Bridge Agent 调用 `DELETE /workspace/remove`
+- 返回工作区列表
+
+### 5.4 会话管理
+
+**新建会话：**
+- 在当前工作区内创建新会话
+- 可选：指定 agent、model
+- Bridge Agent 调用 `POST /session`
+
+**打开会话：**
+- 从会话列表选择，进入消息流
+- 加载历史消息（`GET /session/{id}/messages`）
+- 实时接收新消息（SSE 事件推送）
+
+**切换会话：**
+- 在会话详情页通过导航切换到同工作区的其他会话
+- 保留当前会话状态，可随时切回
+
+**删除会话：**
+- 确认对话框
+- Bridge Agent 调用 `DELETE /session/{id}`
+
+### 5.4 会话内交互
+
+**发送消息：**
+- 客户端发送 `request(action: "session.prompt")`
+- Bridge Agent 调用 `POST /session/{id}/prompt`
+- 实时接收 SSE 事件流：message.part.delta（流式文本）、message.part.updated（工具调用、文件等）
+
+**确认权限：**
+- opencode 发出 `permission.asked` 事件
+- 客户端弹出权限请求通知
+- 用户确认/拒绝 → `request(action: "permission.reply")`
+
+**回答问题：**
+- opencode 发出 `question.asked` 事件
+- 客户端弹出问题对话框
+- 用户回答 → `request(action: "question.reply")`
+
+**查看 diff：**
+- `session.diff` 事件推送文件变更
+- 客户端展示 additions/deletions/文件列表
+- 可查看具体 diff 内容
+
+**中止操作：**
+- `request(action: "session.abort")` → `POST /session/{id}/abort`
+
+### 5.5 离线与重连
+
+- 客户端本地 SQLite 缓存已收到的消息和事件
+- 记录每个 aggregate 的最后 seq
+- 重连时发送 `sync` 请求，Cloud Relay 补发缺失事件
+- 保证客户端关闭再打开后，状态完全一致
+
+### 5.6 推送通知
+
+- 当客户端在后台时，Cloud Relay 通过 FCM 推送通知
+- 通知类型：新消息、权限请求、问题、操作完成
+- 点击通知直接跳转到对应会话
+
+---
+
+## 6. 事件订阅机制
+
+### 6.1 Bridge Agent 订阅
+
+Bridge Agent 连接 opencode 的 `GET /global/event` SSE 流，接收所有事件。
+
+**核心事件类型（Bus 事件，客户端使用这些）：**
+
+| 事件类型 | 数据 | 用途 |
+|----------|------|------|
+| `session.created` | Session 完整对象 | 新会话创建 |
+| `session.updated` | Session 完整对象 | 会话更新（标题、状态等） |
+| `session.deleted` | `{ sessionID }` | 会话删除 |
+| `session.status` | `{ sessionID, status }` | 会话状态（idle/busy） |
+| `session.diff` | `{ sessionID, diff }` | 文件变更 |
+| `session.error` | `{ sessionID, error }` | 会话错误 |
+| `message.updated` | Message 完整对象 | 消息创建/更新 |
+| `message.removed` | `{ sessionID, messageID }` | 消息删除 |
+| `message.part.updated` | Part 完整对象 | Part 创建/更新 |
+| `message.part.delta` | `{ sessionID, messageID, partID, field, delta }` | 流式文本增量 |
+| `message.part.removed` | `{ sessionID, messageID, partID }` | Part 删除 |
+| `permission.asked` | Permission 对象 | 权限请求 |
+| `permission.replied` | `{ id }` | 权限已回复 |
+| `question.asked` | Question 对象 | 问题请求 |
+| `question.replied` | `{ id }` | 问题已回复 |
+| `question.rejected` | `{ id }` | 问题已拒绝 |
+| `todo.updated` | Todo 列表 | TODO 更新 |
+| `workspace.status` | Workspace 状态 | 工作区连接状态 |
+| `vcs.branch.updated` | VCS 信息 | 分支变更 |
+| `file.edited` | 文件信息 | 文件编辑 |
+| `lsp.updated` | LSP 状态 | LSP 更新 |
+| `mcp.updated` | MCP 状态 | MCP 更新 |
+| `server.connected` | `{}` | SSE 连接成功 |
+| `server.heartbeat` | `{}` | 心跳 |
+
+**客户端忽略 Sync 事件**（`payload.type === "sync"`），只使用 Bus 事件。Sync 事件由 Cloud Relay 用于持久化和重连补发。
+
+### 6.2 事件转发流程
+
+```
+opencode SSE 事件到达 Bridge Agent
+  → 解析 GlobalEvent.payload
+  → 如果 payload.type === "sync":
+      提取 syncEvent { type, id, seq, aggregateID, data }
+      发送到 Cloud Relay (type: "event", seq: syncEvent.seq, payload: syncEvent)
+  → 如果 payload.type !== "sync":
+      发送到 Cloud Relay (type: "event", payload: { type, properties })
+  
+Cloud Relay 收到 event
+  → 持久化到 MongoDB（仅 sync 类型有 seq，用于补发）
+  → 转发给所有订阅该 instanceId 的客户端
+```
+
+### 6.3 客户端重连补发
+
+```
+1. 客户端上线，发送 sync 请求: { instanceId, aggregates: { "session-xxx": 42, "session-yyy": 15 } }
+2. Cloud Relay 查询 MongoDB: 找到 instanceId 下 seq > lastSeq 的所有事件
+3. 按 seq 排序后逐条发送 (type: "sync")
+4. 发送完成后切换到实时 event 推送模式
+```
+
+---
+
+## 7. 认证流程
+
+### 7.1 GitHub OAuth
+
+```
+Android 客户端:
+  1. 打开浏览器 → GET /api/auth/github → 重定向到 GitHub 授权页
+  2. 用户授权 → GitHub 回调 → GET /api/auth/github/callback?code=xxx
+  3. Cloud Relay 用 code 换取 GitHub access_token
+  4. 获取 GitHub 用户信息（id, email, name, avatar）
+  5. 签发 JWT token 返回给客户端
+  6. 客户端存储 JWT，后续 WebSocket 连接时携带
+
+Bridge Agent:
+  1. 首次启动时通过浏览器完成同样的 OAuth 流程
+  2. 获取 JWT token，存储在本地配置
+  3. WebSocket 连接时携带 JWT
+  4. Cloud Relay 通过 JWT 将实例绑定到用户
+```
+
+### 7.2 JWT 结构
+
+```json
+{
+  "sub": "user-xxx",
+  "role": "client|bridge",
+  "instanceId": "公司开发机",     // 仅 bridge 角色
+  "iat": 1700000000,
+  "exp": 1700086400
+}
+```
+
+---
+
+## 8. 错误处理
+
+### 8.1 连接断开
+
+| 场景 | Bridge Agent 行为 | 客户端行为 |
+|------|-------------------|-----------|
+| opencode 崩溃 | 检测进程退出，发送 state: opencode=stopped，尝试自动重启 | 显示"opencode 已停止"提示，可手动重启 |
+| Bridge 与 Cloud 断开 | 指数退避重连（最长 2 分钟） | 显示"实例离线"，等待重连 |
+| 客户端与 Cloud 断开 | 无感知 | 指数退避重连，重连后 sync 补发 |
+| Cloud Relay 宕机 | Bridge 指数退避重连 | 客户端指数退避重连 |
+
+### 8.2 请求超时
+
+- 客户端请求带 `id` 字段，Bridge Agent 响应时回传相同 `id`
+- 请求超时 30 秒，超时返回 error
+- 长操作（如 session.prompt）不等待完成，通过 SSE 事件异步获取结果
+
+### 8.3 PTY WebSocket 隧道
+
+终端交互需要双向二进制流，与主 WebSocket 协议不同：
+
+```
+客户端请求 pty.connect:
+  1. Client 发送 request(action: "pty.connect", ptyId: "xxx")
+  2. Bridge Agent 收到后，连接 opencode 的 WS /pty/{id}/connect
+  3. Bridge Agent 在主 WebSocket 上注册一个 pty 隧道通道
+  4. PTY 数据通过主 WebSocket 传输，使用特殊消息类型:
+
+     { type: "pty.data", instanceId, ptyId, payload: { data: "base64..." } }   // 双向
+     { type: "pty.resize", instanceId, ptyId, payload: { cols, rows } }         // Client→Bridge
+     { type: "pty.close", instanceId, ptyId }                                   // 双向
+```
+
+PTY 数据以 base64 编码在 JSON 帧中传输，性能足够（终端输出不是高频场景）。
+
+### 8.4 大数据传输
+
+与 opencode web 客户端保持一致，不做消息分片，采用全量传输 + 客户端管理策略：
+
+| 数据类型 | 传输方式 | 客户端管理 |
+|----------|----------|------------|
+| SSE 事件 | 单条 JSON 全量推送 | 16ms 合并窗口，避免过度渲染 |
+| 文件内容 | 单次 JSON 返回 | LRU 淘汰：40 条目，20MB 总量 |
+| 会话消息 | cursor 分页加载 | 初始 80 条，历史 200 条/页 |
+| Diff/快照 | 单次 JSON 全量返回 | 按需加载，不主动缓存 |
+| PTY 输出 | 实时文本帧 | terminalWriter 批量合并写入 |
+
+对 Android 客户端的额外考虑：
+- 移动端内存有限，文件内容 LRU 缩减为 20 条目、10MB
+- 大型 diff 渲染使用懒加载（只渲染可视区域）
+- 图片等二进制内容 base64 传输，客户端按需解码
+
+---
+
+## 9. 技术栈总结
+
+| 组件 | 语言 | 框架 | 数据库 | 关键依赖 |
+|------|------|------|--------|----------|
+| Cloud Relay Server | C# | .NET 10 / ASP.NET Core | MongoDB | WebSocket、JWT、GitHub OAuth |
+| Bridge Agent | TypeScript | Node.js / Bun | - | @opencode-ai/sdk、ws |
+| Android Client | Kotlin | Jetpack Compose、MVVM | SQLite | OkHttp、Room |

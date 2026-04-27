@@ -1,0 +1,100 @@
+<h2>OpenMate 导航结构</h2>
+<p class="subtitle">底部 Tab 导航 + 栈式深入</p>
+
+<div class="section">
+  <h3>底部 Tab 栏（3个主 Tab）</h3>
+  <div class="mockup">
+    <div class="mockup-header">Tab 导航概览</div>
+    <div class="mockup-body" style="padding: 16px;">
+      <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+        <div style="flex:1; background: #2563eb; color: white; padding: 12px; border-radius: 8px; text-align: center;">
+          <div style="font-size: 24px;">💻</div>
+          <div style="font-weight: bold; margin-top: 4px;">实例</div>
+        </div>
+        <div style="flex:1; background: #f1f5f9; color: #334155; padding: 12px; border-radius: 8px; text-align: center;">
+          <div style="font-size: 24px;">💬</div>
+          <div style="font-weight: bold; margin-top: 4px;">会话</div>
+        </div>
+        <div style="flex:1; background: #f1f5f9; color: #334155; padding: 12px; border-radius: 8px; text-align: center;">
+          <div style="font-size: 24px;">⚙️</div>
+          <div style="font-weight: bold; margin-top: 4px;">设置</div>
+        </div>
+      </div>
+
+      <h4>Tab 1: 实例</h4>
+      <ul style="margin-left: 20px; color: #475569;">
+        <li>实例列表（在线/离线状态）</li>
+        <li>→ 点击实例 → 工作区列表</li>
+        <li>→ → 点击工作区 → 该工作区的会话列表</li>
+        <li>→ → → 点击会话 → 会话详情（消息流）</li>
+        <li>→ 远程启停 opencode</li>
+      </ul>
+
+      <h4 style="margin-top: 12px;">Tab 2: 会话</h4>
+      <ul style="margin-left: 20px; color: #475569;">
+        <li>所有活跃会话的聚合视图（跨实例）</li>
+        <li>类似聊天应用的会话列表</li>
+        <li>→ 点击会话 → 直接进入会话详情</li>
+        <li>快速切换最近使用的会话</li>
+      </ul>
+
+      <h4 style="margin-top: 12px;">Tab 3: 设置</h4>
+      <ul style="margin-left: 20px; color: #475569;">
+        <li>账户管理（GitHub 登录/登出）</li>
+        <li>通知设置</li>
+        <li>外观（主题、字体大小）</li>
+        <li>关于</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>完整导航流程图</h3>
+  <div class="mockup">
+    <div class="mockup-header">页面导航栈</div>
+    <div class="mockup-body" style="padding: 16px; font-family: monospace; font-size: 14px; line-height: 2;">
+      <div style="color: #2563eb;">📱 启动</div>
+      <div style="margin-left: 16px;">│</div>
+      <div style="margin-left: 16px;">├─ 🔐 登录页（首次）</div>
+      <div style="margin-left: 16px;">│   └─ GitHub OAuth</div>
+      <div style="margin-left: 16px;">│</div>
+      <div style="margin-left: 16px;">└─ [Tab 栏]</div>
+      <div style="margin-left: 32px;">│</div>
+      <div style="margin-left: 32px;">├─ 💻 [实例 Tab]</div>
+      <div style="margin-left: 48px;">│  ├─ 实例列表</div>
+      <div style="margin-left: 48px;">│  │  ├─ 🟢 在线 / 🔴 离线 标识</div>
+      <div style="margin-left: 48px;">│  │  ├─ ▶️ 远程启动 opencode</div>
+      <div style="margin-left: 48px;">│  │  └─ ⏹️ 停止 opencode</div>
+      <div style="margin-left: 48px;">│  │</div>
+      <div style="margin-left: 48px;">│  └─ → 工作区列表</div>
+      <div style="margin-left: 64px;">│     ├─ 工作区卡片（名称、分支、状态）</div>
+      <div style="margin-left: 64px;">│     ├─ ➕ 创建工作区</div>
+      <div style="margin-left: 64px;">│     ├─ 🗑️ 删除工作区</div>
+      <div style="margin-left: 64px;">│     │</div>
+      <div style="margin-left: 64px;">│     └─ → 会话列表（该工作区内）</div>
+      <div style="margin-left: 80px;">│        ├─ 会话卡片（标题、摘要、时间）</div>
+      <div style="margin-left: 80px;">│        ├─ ➕ 新建会话</div>
+      <div style="margin-left: 80px;">│        ├─ 🗑️ 删除会话</div>
+      <div style="margin-left: 80px;">│        │</div>
+      <div style="margin-left: 80px;">│        └─ → 会话详情</div>
+      <div style="margin-left: 96px;">│           ├─ 💬 消息流</div>
+      <div style="margin-left: 96px;">│           ├─ ✏️ 输入框 / 发送</div>
+      <div style="margin-left: 96px;">│           ├─ 🔧 工具调用展示</div>
+      <div style="margin-left: 96px;">│           ├─ ✅ 权限确认对话框</div>
+      <div style="margin-left: 96px;">│           ├─ ❓ 问题回答对话框</div>
+      <div style="margin-left: 96px;">│           ├─ 📄 文件 Diff 查看</div>
+      <div style="margin-left: 96px;">│           └─ ⏹️ 中止操作</div>
+      <div style="margin-left: 32px;">│</div>
+      <div style="margin-left: 32px;">├─ 💬 [会话 Tab]</div>
+      <div style="margin-left: 48px;">│  └─ 所有活跃会话（跨实例聚合）</div>
+      <div style="margin-left: 48px;">│     └─ → 会话详情（同上）</div>
+      <div style="margin-left: 32px;">│</div>
+      <div style="margin-left: 32px;">└─ ⚙️ [设置 Tab]</div>
+      <div style="margin-left: 48px;">   ├─ 账户管理</div>
+      <div style="margin-left: 48px;">   ├─ 通知设置</div>
+      <div style="margin-left: 48px;">   ├─ 外观</div>
+      <div style="margin-left: 48px;">   └─ 关于</div>
+    </div>
+  </div>
+</div>

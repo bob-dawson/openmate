@@ -1,0 +1,88 @@
+<h2>实例列表（修正）</h2>
+<p class="subtitle">实例卡片只展示实例级信息，路径/分支在工作区层级展示</p>
+
+<div class="mockup">
+  <div class="mockup-header">实例列表 — 修正版</div>
+  <div class="mockup-body" style="padding: 0;">
+    <div style="background: #f8fafc; min-height: 580px;">
+      <div style="background: white; padding: 16px 20px; border-bottom: 1px solid #e2e8f0;">
+        <div style="font-size: 22px; font-weight: bold; color: #0f172a;">实例</div>
+        <div style="font-size: 13px; color: #94a3b8; margin-top: 2px;">2 个实例 · 1 个在线</div>
+      </div>
+      
+      <div style="padding: 12px 16px;">
+        <!-- 在线实例 -->
+        <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 10px; border: 1px solid #e2e8f0;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 10px; height: 10px; background: #22c55e; border-radius: 50%; flex-shrink: 0;"></div>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; color: #0f172a; font-size: 16px;">公司开发机</div>
+            </div>
+            <div style="background: #f0fdf4; color: #16a34a; font-size: 11px; padding: 4px 8px; border-radius: 6px; font-weight: 500;">在线</div>
+          </div>
+          <div style="display: flex; gap: 16px; margin-top: 10px; color: #64748b; font-size: 12px;">
+            <span>🖥️ macOS · Darwin</span>
+            <span>⏱️ 在线 2h 15m</span>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <div style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 3px 8px; border-radius: 4px;">3 工作区</div>
+            <div style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 3px 8px; border-radius: 4px;">12 会话</div>
+          </div>
+        </div>
+
+        <!-- 离线实例 -->
+        <div style="background: white; border-radius: 12px; padding: 16px; margin-bottom: 10px; border: 1px solid #e2e8f0; opacity: 0.75;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 10px; height: 10px; background: #ef4444; border-radius: 50%; flex-shrink: 0;"></div>
+            <div style="flex: 1;">
+              <div style="font-weight: 600; color: #0f172a; font-size: 16px;">家里服务器</div>
+            </div>
+            <div style="background: #fef2f2; color: #dc2626; font-size: 11px; padding: 4px 8px; border-radius: 6px; font-weight: 500;">离线</div>
+          </div>
+          <div style="display: flex; gap: 16px; margin-top: 10px; color: #64748b; font-size: 12px;">
+            <span>🖥️ Linux · Ubuntu</span>
+            <span>⏱️ 离线 3 天</span>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <div style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 3px 8px; border-radius: 4px;">1 工作区</div>
+            <div style="font-size: 11px; color: #64748b; background: #f1f5f9; padding: 3px 8px; border-radius: 4px;">5 会话</div>
+          </div>
+          <button style="background: #f1f5f9; color: #475569; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; margin-top: 10px; cursor: pointer;">
+            ▶ 远程启动
+          </button>
+        </div>
+      </div>
+
+      <div style="position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 0 12px; display: flex; justify-content: space-around;">
+        <div style="text-align: center; color: #2563eb; font-size: 11px;">
+          <div style="font-size: 20px;">💻</div>
+          <div style="font-weight: 600;">实例</div>
+        </div>
+        <div style="text-align: center; color: #94a3b8; font-size: 11px;">
+          <div style="font-size: 20px;">💬</div>
+          <div>会话</div>
+        </div>
+        <div style="text-align: center; color: #94a3b8; font-size: 11px;">
+          <div style="font-size: 20px;">⚙️</div>
+          <div>设置</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>信息层级说明</h3>
+  <div style="background: #f8fafc; border-radius: 8px; padding: 16px; font-size: 14px; color: #475569; line-height: 1.8;">
+    <strong>实例卡片</strong>：只展示实例级信息<br>
+    · 名称（用户自定义，如"公司开发机"）<br>
+    · 在线/离线状态 + 在线时长<br>
+    · Bridge Agent 上报的操作系统信息<br>
+    · 工作区/会话数量（统计）<br><br>
+    <strong>路径和分支</strong>：属于工作区层级，在工作区列表页展示<br>
+    · 工作区名称（如 "feature-auth"）<br>
+    · 分支名（如 "feature/authentication"）<br>
+    · 目录路径（如 "/home/user/project"）<br>
+    · 连接状态
+  </div>
+</div>
