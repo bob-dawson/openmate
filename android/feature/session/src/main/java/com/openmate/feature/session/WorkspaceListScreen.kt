@@ -1,7 +1,7 @@
 package com.openmate.feature.session
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,14 +16,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,30 +36,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.common.toRelativeTimeString
 import com.openmate.core.domain.model.ConnectionStatus
+import com.openmate.core.domain.model.Workspace
 import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.component.TopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionListScreen(
-    directory: String,
-    onNavigateToDetail: (String) -> Unit,
+fun WorkspaceListScreen(
+    onNavigateToWorkspace: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onBack: () -> Unit,
-    viewModel: SessionListViewModel = hiltViewModel(),
+    viewModel: WorkspaceListViewModel = hiltViewModel(),
 ) {
-    val sessions by viewModel.sessions.collectAsState()
+    val workspaces by viewModel.workspaces.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(directory) {
-        viewModel.setDirectory(directory)
-    }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -76,8 +69,7 @@ fun SessionListScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopBar(
-                title = directory.substringAfterLast("\\").substringAfterLast("/"),
-                subtitle = directory,
+                title = "Workspaces",
                 onBack = onBack,
                 actions = {
                     ConnectionDot(status = connectionStatus)
@@ -87,15 +79,10 @@ fun SessionListScreen(
                 },
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.createSession(onNavigateToDetail) }) {
-                Icon(Icons.Default.Add, contentDescription = "New Session")
-            }
-        },
     ) { padding ->
-        if (sessions.isEmpty()) {
+        if (workspaces.isEmpty()) {
             EmptyStateView(
-                message = "No sessions yet",
+                message = "No workspaces yet",
                 modifier = Modifier.padding(padding),
             )
         } else {
@@ -106,13 +93,10 @@ fun SessionListScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(sessions, key = { it.id }) { session ->
-                    SessionCard(
-                        title = session.title.ifBlank { "Untitled" },
-                        directory = session.directory,
-                        updatedAt = session.updatedAt.toRelativeTimeString(),
-                        onClick = { onNavigateToDetail(session.id) },
-                        onDelete = { viewModel.deleteSession(session.id) },
+                items(workspaces, key = { it.directory }) { workspace ->
+                    WorkspaceCard(
+                        workspace = workspace,
+                        onClick = { onNavigateToWorkspace(workspace.directory) },
                     )
                 }
             }
@@ -121,12 +105,9 @@ fun SessionListScreen(
 }
 
 @Composable
-private fun SessionCard(
-    title: String,
-    directory: String,
-    updatedAt: String,
+private fun WorkspaceCard(
+    workspace: Workspace,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -134,22 +115,61 @@ private fun SessionCard(
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = directory, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(text = updatedAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = workspace.directory.substringAfterLast("\\").substringAfterLast("/"),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = workspace.latestUpdatedAt.toRelativeTimeString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = workspace.directory,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = workspace.latestTitle.ifBlank { "Untitled" },
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WorkspaceBadge("${workspace.sessionCount} sessions")
             }
         }
     }
+}
+
+@Composable
+private fun WorkspaceBadge(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.extraSmall,
+            )
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
 }
 
 @Composable

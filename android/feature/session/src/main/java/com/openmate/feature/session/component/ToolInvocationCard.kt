@@ -29,6 +29,8 @@ fun ToolInvocationCard(
     state: ToolCallState,
     args: String?,
     result: String?,
+    files: List<String> = emptyList(),
+    hash: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val expanded = remember { mutableStateOf(false) }
@@ -78,6 +80,21 @@ fun ToolInvocationCard(
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
+                    }
+                }
+            }
+
+            if (files.isNotEmpty()) {
+                Column(modifier = Modifier.padding(top = 4.dp)) {
+                    files.forEach { file ->
+                        Text(
+                            text = file,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }

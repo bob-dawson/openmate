@@ -4,7 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ConnectionStatus
-import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,17 +13,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
-class SessionListViewModel @Inject constructor(
+class WorkspaceListViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val sseEventRepository: SseEventRepository,
 ) : ViewModel() {
 
-    private val _sessions = MutableStateFlow<List<Session>>(emptyList())
-    val sessions: StateFlow<List<Session>> = _sessions.asStateFlow()
+    private val _workspaces = MutableStateFlow<List<Workspace>>(emptyList())
+    val workspaces: StateFlow<List<Workspace>> = _workspaces.asStateFlow()
 
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
@@ -34,16 +33,13 @@ class SessionListViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    private var currentDirectory: String? = null
-
     companion object {
-        private const val TAG = "SessionListVM"
+        private const val TAG = "WorkspaceListVM"
     }
 
-    fun setDirectory(directory: String) {
-        currentDirectory = directory
+    init {
         refresh()
-        observeSessions()
+        observeWorkspaces()
         observeConnection()
     }
 
@@ -52,7 +48,7 @@ class SessionListViewModel @Inject constructor(
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                sessionRepository.getSessions(currentDirectory, null, null)
+                sessionRepository.getSessions(null, null, null)
             } catch (e: Exception) {
                 Log.e(TAG, "refresh failed", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
@@ -65,33 +61,10 @@ class SessionListViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
-    fun createSession(onCreated: (String) -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val session = sessionRepository.createSession(null)
-                withContext(Dispatchers.Main) { onCreated(session.id) }
-            } catch (e: Exception) {
-                Log.e(TAG, "createSession failed", e)
-                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
-            }
-        }
-    }
-
-    fun deleteSession(id: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                sessionRepository.deleteSession(id)
-            } catch (e: Exception) {
-                Log.e(TAG, "deleteSession failed", e)
-                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
-            }
-        }
-    }
-
-    private fun observeSessions() {
+    private fun observeWorkspaces() {
         viewModelScope.launch {
-            sessionRepository.observeSessions(currentDirectory).collect { list ->
-                _sessions.value = list
+            sessionRepository.observeWorkspaces().collect { list ->
+                _workspaces.value = list
             }
         }
     }

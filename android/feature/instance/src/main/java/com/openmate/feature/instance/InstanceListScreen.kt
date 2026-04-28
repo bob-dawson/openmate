@@ -76,8 +76,9 @@ fun InstanceListScreen(
                     ProfileCard(
                         profileWithStatus = item,
                         onClick = {
-                            viewModel.connect(item.profile)
-                            onNavigateToSessions()
+                            viewModel.connect(item.profile) {
+                                onNavigateToSessions()
+                            }
                         },
                         onDelete = { viewModel.deleteProfile(item.profile.id) },
                     )

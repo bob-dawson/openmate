@@ -25,10 +25,11 @@ class OpencodeApiClient(
 
     suspend fun listSessions(directory: String?, limit: Int?, start: Long?): List<SessionDto> {
         val params = mutableMapOf<String, String>()
+        params["roots"] = "true"
         directory?.let { params["directory"] = it }
         limit?.let { params["limit"] = it.toString() }
         start?.let { params["start"] = it.toString() }
-        return get("/session", params)
+        return getList("/experimental/session", params)
     }
 
     suspend fun getSession(id: String): SessionDto {
@@ -53,10 +54,10 @@ class OpencodeApiClient(
     }
 
     fun sendMessageStream(sessionID: String, content: String): Flow<SseData> {
-        val body = mapOf("content" to content)
+        val body = mapOf("text" to content)
         val requestBody = json.encodeToString(body).toRequestBody(jsonMediaType)
         val request = Request.Builder()
-            .url("$baseUrl/session/$sessionID/message")
+            .url("$baseUrl/session/$sessionID/prompt")
             .post(requestBody)
             .build()
 

@@ -33,6 +33,7 @@ fun SessionDetailScreen(
     val inputText by viewModel.inputText.collectAsState()
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
+    val sessionTitle by viewModel.sessionTitle.collectAsState()
     val listState = rememberLazyListState()
 
     LaunchedEffect(sessionID) {
@@ -77,14 +78,13 @@ fun SessionDetailScreen(
 
     Scaffold(
         topBar = {
-            TopBar(title = "Chat", onBack = onBack)
+            TopBar(title = sessionTitle.ifBlank { "Chat" }, onBack = onBack)
         },
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .imePadding(),
+                .padding(padding),
         ) {
             LazyColumn(
                 state = listState,

@@ -1,5 +1,6 @@
 package com.openmate.feature.session
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.Message
@@ -42,9 +43,33 @@ class SessionDetailViewModel @Inject constructor(
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _sessionTitle = MutableStateFlow("")
+    val sessionTitle: StateFlow<String> = _sessionTitle.asStateFlow()
+
+    companion object {
+        private const val TAG = "SessionDetailVM"
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
     fun loadSession(sessionID: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            messageRepository.getMessages(sessionID, 80, null)
+            try {
+                val session = sessionRepository.getSession(sessionID)
+                _sessionTitle.value = session?.title ?: ""
+            } catch (e: Exception) {
+                Log.e(TAG, "loadSession failed", e)
+            }
+            try {
+                messageRepository.getMessages(sessionID, 80, null)
+            } catch (e: Exception) {
+                Log.e(TAG, "getMessages failed", e)
+            }
         }
         observeMessages(sessionID)
         observePermissions()
@@ -104,16 +129,24 @@ class SessionDetailViewModel @Inject constructor(
 
     private fun observePermissions() {
         viewModelScope.launch {
-            permissionRepository.observePending().collect { list ->
-                _pendingPermissions.value = list
+            try {
+                permissionRepository.observePending().collect { list ->
+                    _pendingPermissions.value = list
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observePermissions failed", e)
             }
         }
     }
 
     private fun observeQuestions() {
         viewModelScope.launch {
-            questionRepository.observePending().collect { list ->
-                _pendingQuestions.value = list
+            try {
+                questionRepository.observePending().collect { list ->
+                    _pendingQuestions.value = list
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeQuestions failed", e)
             }
         }
     }

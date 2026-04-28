@@ -51,11 +51,17 @@ class InstanceListViewModel @Inject constructor(
         }
     }
 
-    fun connect(profile: ServerProfile) {
+    fun connect(profile: ServerProfile, onConnected: () -> Unit = {}) {
+        try {
+            dbProvider.setActive(profile.id)
+            apiClient.baseUrl = "http://${profile.address}:${profile.port}"
+        } catch (e: Exception) {
+            _error.value = e.message
+            return
+        }
+        onConnected()
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                dbProvider.setActive(profile.id)
-                apiClient.baseUrl = "http://${profile.address}:${profile.port}"
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
                 val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
                 profileRepository.save(updated)

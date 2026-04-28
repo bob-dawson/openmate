@@ -1,5 +1,6 @@
 package com.openmate.core.common
 
+import java.text.SimpleDateFormat
 import java.util.concurrent.TimeUnit
 
 fun Long.toRelativeTimeString(): String {
@@ -24,4 +25,14 @@ fun Long.toRelativeTimeString(): String {
             "${days / 7} week${if (days / 7 > 1) "s" else ""} ago"
         }
     }
+}
+
+fun Long.toTimeString(): String {
+    val sdf = SimpleDateFormat("HH:mm:ss")
+    return sdf.format(this)
+}
+
+fun Long.toDateTimeString(): String {
+    val sdf = SimpleDateFormat("MM/dd HH:mm")
+    return sdf.format(this)
 }

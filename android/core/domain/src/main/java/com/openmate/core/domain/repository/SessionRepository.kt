@@ -1,6 +1,7 @@
 package com.openmate.core.domain.repository
 
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.Workspace
 import kotlinx.coroutines.flow.Flow
 
 interface SessionRepository {
@@ -11,4 +12,5 @@ interface SessionRepository {
     suspend fun abortSession(id: String)
     fun observeSessions(directory: String?): Flow<List<Session>>
     fun observeSession(id: String): Flow<Session?>
+    fun observeWorkspaces(): Flow<List<Workspace>>
 }

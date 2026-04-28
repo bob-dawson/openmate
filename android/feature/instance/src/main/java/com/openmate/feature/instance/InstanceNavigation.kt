@@ -16,7 +16,7 @@ fun NavGraphBuilder.instanceScreens(
         InstanceListScreen(
             onNavigateToAdd = { navController.navigate(InstanceRoutes.ADD_INSTANCE) },
             onNavigateToSessions = {
-                navController.navigate("session_list") {
+                navController.navigate("workspace_list") {
                     popUpTo(InstanceRoutes.INSTANCE_LIST) { saveState = true }
                 }
             },

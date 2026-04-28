@@ -9,13 +9,13 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid ORDER BY createdAt DESC LIMIT :limit")
+    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid ORDER BY createdAt ASC LIMIT :limit")
     suspend fun getBySession(sid: String, limit: Int): List<MessageEntity>
 
-    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid AND createdAt < :before ORDER BY createdAt DESC LIMIT :limit")
-    suspend fun getBySessionBefore(sid: String, limit: Int, before: Long): List<MessageEntity>
+    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid AND createdAt > :after ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun getBySessionAfter(sid: String, limit: Int, after: Long): List<MessageEntity>
 
-    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid ORDER BY createdAt DESC")
+    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid ORDER BY createdAt ASC")
     fun observeBySession(sid: String): Flow<List<MessageEntity>>
 
     @Query("SELECT * FROM MessageEntity WHERE id = :id")

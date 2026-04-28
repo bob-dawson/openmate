@@ -4,6 +4,7 @@ import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.toDomain
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.toDomain
@@ -63,5 +64,22 @@ class SessionRepositoryImpl @Inject constructor(
 
     override fun observeSession(id: String): Flow<Session?> {
         return dbProvider.getActive().sessionDao().observeById(id).map { it?.toDomain() }
+    }
+
+    override fun observeWorkspaces(): Flow<List<Workspace>> {
+        return dbProvider.getActive().sessionDao().observeAll().map { sessions ->
+            sessions
+                .groupBy { it.directory }
+                .map { (dir, list) ->
+                    val sorted = list.sortedByDescending { it.updatedAt }
+                    Workspace(
+                        directory = dir,
+                        sessionCount = list.size,
+                        latestUpdatedAt = sorted.first().updatedAt,
+                        latestTitle = sorted.first().title,
+                    )
+                }
+                .sortedByDescending { it.latestUpdatedAt }
+        }
     }
 }
