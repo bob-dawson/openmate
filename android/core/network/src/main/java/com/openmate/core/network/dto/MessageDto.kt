@@ -1,0 +1,194 @@
+package com.openmate.core.network.dto
+
+import com.openmate.core.domain.model.Message
+import com.openmate.core.domain.model.MessageRole
+import com.openmate.core.domain.model.Part
+import com.openmate.core.domain.model.TokenUsage
+import com.openmate.core.domain.model.ToolCallState
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+@Serializable
+data class MessageWithPartsDto(
+    val info: MessageInfoDto,
+    val parts: List<PartDto> = emptyList(),
+)
+
+@Serializable
+data class MessageInfoDto(
+    val id: String,
+    @SerialName("sessionID") val sessionID: String = "",
+    val role: String,
+    val agent: String = "",
+    val time: MessageTimeDto = MessageTimeDto(),
+    val model: MessageModelDto? = null,
+    @SerialName("parentID") val parentID: String? = null,
+    @SerialName("modelID") val modelID: String? = null,
+    @SerialName("providerID") val providerID: String? = null,
+    val mode: String? = null,
+    val path: MessagePathDto? = null,
+    val cost: Double? = null,
+    val tokens: MessageTokensDto? = null,
+    val error: JsonElement? = null,
+    val finish: String? = null,
+    val variant: String? = null,
+)
+
+@Serializable
+data class MessageTimeDto(
+    val created: Long = 0L,
+    val completed: Long? = null,
+)
+
+@Serializable
+data class MessageModelDto(
+    @SerialName("providerID") val providerID: String = "",
+    @SerialName("modelID") val modelID: String = "",
+    val variant: String? = null,
+)
+
+@Serializable
+data class MessagePathDto(
+    val cwd: String = "",
+    val root: String = "",
+)
+
+@Serializable
+data class MessageTokensDto(
+    val total: Long? = null,
+    val input: Long = 0,
+    val output: Long = 0,
+    val reasoning: Long = 0,
+    val cache: MessageCacheTokensDto? = null,
+)
+
+@Serializable
+data class MessageCacheTokensDto(
+    val read: Long = 0,
+    val write: Long = 0,
+)
+
+@Serializable
+data class PartDto(
+    val type: String,
+    val id: String = "",
+    @SerialName("sessionID") val sessionID: String = "",
+    @SerialName("messageID") val messageID: String = "",
+    val text: String? = null,
+    val time: JsonElement? = null,
+    val metadata: JsonElement? = null,
+    val synthetic: Boolean? = null,
+    val ignored: Boolean? = null,
+    @SerialName("callID") val callID: String? = null,
+    val tool: String? = null,
+    val state: ToolStateDto? = null,
+    val snapshot: String? = null,
+    val hash: String? = null,
+    val files: List<String>? = null,
+    val mime: String? = null,
+    val url: String? = null,
+    val filename: String? = null,
+    val name: String? = null,
+    val reason: String? = null,
+    val cost: Double? = null,
+    val tokens: JsonElement? = null,
+    val prompt: String? = null,
+    val description: String? = null,
+    val agent: String? = null,
+    val auto: Boolean? = null,
+    val overflow: Boolean? = null,
+    val attempt: Int? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class ToolStateDto(
+    val status: String = "",
+    val input: JsonElement? = null,
+    val output: String? = null,
+    val title: String? = null,
+    val metadata: JsonElement? = null,
+    val time: JsonElement? = null,
+    val error: String? = null,
+    val raw: String? = null,
+)
+
+fun MessageWithPartsDto.toDomain(): Message {
+    return Message(
+        id = info.id,
+        sessionID = info.sessionID,
+        role = when (info.role) {
+            "user" -> MessageRole.USER
+            "assistant" -> MessageRole.ASSISTANT
+            else -> MessageRole.USER
+        },
+        agent = info.agent,
+        createdAt = info.time.created,
+        parts = parts.map { it.toDomain() },
+    )
+}
+
+fun PartDto.toDomain(): Part {
+    return when (type) {
+        "text" -> Part.TextPart(
+            text = text ?: "",
+            synthetic = synthetic ?: false,
+            ignored = ignored ?: false,
+        )
+        "tool" -> Part.ToolInvocationPart(
+            toolCallID = callID ?: "",
+            toolName = tool ?: "",
+            state = when (state?.status) {
+                "pending" -> ToolCallState.PENDING
+                "running" -> ToolCallState.RUNNING
+                "completed" -> ToolCallState.COMPLETED
+                "error" -> ToolCallState.ERROR
+                else -> ToolCallState.PENDING
+            },
+            args = state?.input?.toString(),
+            result = state?.output,
+        )
+        "reasoning" -> Part.ReasoningPart(text ?: "")
+        "step-start" -> Part.StepStartPart(snapshot = snapshot)
+        "step-finish" -> Part.StepFinishPart(
+            reason = reason ?: "",
+            snapshot = snapshot,
+            cost = cost ?: 0.0,
+            tokens = tokens?.toTokenUsage(),
+        )
+        "snapshot" -> Part.SnapshotPart(snapshot ?: "")
+        "patch" -> Part.PatchPart(hash ?: "", files ?: emptyList())
+        "agent" -> Part.AgentPart(name ?: "")
+        "compaction" -> Part.CompactionPart(
+            auto = auto ?: false,
+            overflow = overflow ?: false,
+        )
+        "subtask" -> Part.SubtaskPart(
+            prompt = prompt ?: "",
+            description = description ?: "",
+            agent = agent ?: "",
+        )
+        "retry" -> Part.RetryPart(
+            attempt = attempt ?: 0,
+            error = error,
+        )
+        else -> Part.TextPart(text ?: "")
+    }
+}
+
+private fun JsonElement.toTokenUsage(): TokenUsage {
+    val obj = this.jsonObject
+    return TokenUsage(
+        total = obj["total"]?.jsonPrimitive?.content?.toLongOrNull(),
+        input = obj["input"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+        output = obj["output"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+        reasoning = obj["reasoning"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+        cacheRead = obj["cache"]?.jsonObject?.get("read")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+        cacheWrite = obj["cache"]?.jsonObject?.get("write")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
+    )
+}

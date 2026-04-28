@@ -1,0 +1,67 @@
+package com.openmate.core.data.repository
+
+import com.openmate.core.database.ActiveDatabaseProvider
+import com.openmate.core.database.entity.toDomain
+import com.openmate.core.database.entity.toEntity
+import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.repository.SessionRepository
+import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.toDomain
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+
+class SessionRepositoryImpl @Inject constructor(
+    private val api: OpencodeApiClient,
+    private val dbProvider: ActiveDatabaseProvider,
+) : SessionRepository {
+
+    override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> {
+        val dtos = api.listSessions(directory, limit, start)
+        val dao = dbProvider.getActive().sessionDao()
+        dao.upsertAll(dtos.map { it.toDomain().toEntity() })
+        return dao.getAll().map { it.toDomain() }
+    }
+
+    override suspend fun getSession(id: String): Session? {
+        return try {
+            val dto = api.getSession(id)
+            val domain = dto.toDomain()
+            val dao = dbProvider.getActive().sessionDao()
+            dao.upsert(domain.toEntity())
+            domain
+        } catch (_: Exception) {
+            dbProvider.getActive().sessionDao().getById(id)?.toDomain()
+        }
+    }
+
+    override suspend fun createSession(title: String?): Session {
+        val dto = api.createSession(title)
+        val domain = dto.toDomain()
+        dbProvider.getActive().sessionDao().upsert(domain.toEntity())
+        return domain
+    }
+
+    override suspend fun deleteSession(id: String) {
+        api.deleteSession(id)
+        val dao = dbProvider.getActive().sessionDao()
+        dao.delete(id)
+    }
+
+    override suspend fun abortSession(id: String) {
+        api.abortSession(id)
+    }
+
+    override fun observeSessions(directory: String?): Flow<List<Session>> {
+        val dao = dbProvider.getActive().sessionDao()
+        return if (directory != null) {
+            dao.observeByDirectory(directory).map { list -> list.map { it.toDomain() } }
+        } else {
+            dao.observeAll().map { list -> list.map { it.toDomain() } }
+        }
+    }
+
+    override fun observeSession(id: String): Flow<Session?> {
+        return dbProvider.getActive().sessionDao().observeById(id).map { it?.toDomain() }
+    }
+}
