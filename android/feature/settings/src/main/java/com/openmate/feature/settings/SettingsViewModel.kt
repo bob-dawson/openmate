@@ -1,5 +1,6 @@
 package com.openmate.feature.settings
 
+import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
@@ -19,13 +20,38 @@ class SettingsViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
+    private val prefs: SharedPreferences,
 ) : ViewModel() {
 
     private val _activeProfile = MutableStateFlow<ServerProfile?>(null)
     val activeProfile: StateFlow<ServerProfile?> = _activeProfile.asStateFlow()
 
-    private val _syncTimeRange = MutableStateFlow(SyncTimeRange.TWO_WEEKS)
-    val syncTimeRange: StateFlow<SyncTimeRange> = _syncTimeRange.asStateFlow()
+    private val _notifyPermissions = MutableStateFlow(prefs.getBoolean("notify_permissions", true))
+    val notifyPermissions: StateFlow<Boolean> = _notifyPermissions.asStateFlow()
+
+    private val _notifyQuestions = MutableStateFlow(prefs.getBoolean("notify_questions", true))
+    val notifyQuestions: StateFlow<Boolean> = _notifyQuestions.asStateFlow()
+
+    private val _notifyComplete = MutableStateFlow(prefs.getBoolean("notify_complete", false))
+    val notifyComplete: StateFlow<Boolean> = _notifyComplete.asStateFlow()
+
+    private val _notifyErrors = MutableStateFlow(prefs.getBoolean("notify_errors", true))
+    val notifyErrors: StateFlow<Boolean> = _notifyErrors.asStateFlow()
+
+    private val _autoAllowRead = MutableStateFlow(prefs.getBoolean("auto_allow_read", true))
+    val autoAllowRead: StateFlow<Boolean> = _autoAllowRead.asStateFlow()
+
+    private val _autoAllowGrep = MutableStateFlow(prefs.getBoolean("auto_allow_grep", true))
+    val autoAllowGrep: StateFlow<Boolean> = _autoAllowGrep.asStateFlow()
+
+    private val _autoAllowBash = MutableStateFlow(prefs.getBoolean("auto_allow_bash", false))
+    val autoAllowBash: StateFlow<Boolean> = _autoAllowBash.asStateFlow()
+
+    private val _cacheSize = MutableStateFlow("计算中...")
+    val cacheSize: StateFlow<String> = _cacheSize.asStateFlow()
+
+    private val _cachePolicyLabel = MutableStateFlow("LRU 最近 500 条")
+    val cachePolicyLabel: StateFlow<String> = _cachePolicyLabel.asStateFlow()
 
     init {
         loadActiveProfile()
@@ -40,8 +66,39 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setSyncTimeRange(range: SyncTimeRange) {
-        _syncTimeRange.value = range
+    fun setNotifyPermissions(value: Boolean) {
+        _notifyPermissions.value = value
+        prefs.edit().putBoolean("notify_permissions", value).apply()
+    }
+
+    fun setNotifyQuestions(value: Boolean) {
+        _notifyQuestions.value = value
+        prefs.edit().putBoolean("notify_questions", value).apply()
+    }
+
+    fun setNotifyComplete(value: Boolean) {
+        _notifyComplete.value = value
+        prefs.edit().putBoolean("notify_complete", value).apply()
+    }
+
+    fun setNotifyErrors(value: Boolean) {
+        _notifyErrors.value = value
+        prefs.edit().putBoolean("notify_errors", value).apply()
+    }
+
+    fun setAutoAllowRead(value: Boolean) {
+        _autoAllowRead.value = value
+        prefs.edit().putBoolean("auto_allow_read", value).apply()
+    }
+
+    fun setAutoAllowGrep(value: Boolean) {
+        _autoAllowGrep.value = value
+        prefs.edit().putBoolean("auto_allow_grep", value).apply()
+    }
+
+    fun setAutoAllowBash(value: Boolean) {
+        _autoAllowBash.value = value
+        prefs.edit().putBoolean("auto_allow_bash", value).apply()
     }
 
     fun clearCache() {
@@ -50,6 +107,7 @@ class SettingsViewModel @Inject constructor(
             if (profileId != null) {
                 dbProvider.clearActive()
                 dbProvider.setActive(profileId)
+                _cacheSize.value = "0 MB"
             }
         }
     }
@@ -58,11 +116,4 @@ class SettingsViewModel @Inject constructor(
         sseEventRepository.disconnect()
         dbProvider.clearActive()
     }
-}
-
-enum class SyncTimeRange(val days: Int, val label: String) {
-    ONE_WEEK(7, "1 Week"),
-    TWO_WEEKS(14, "2 Weeks"),
-    ONE_MONTH(30, "1 Month"),
-    THREE_MONTHS(90, "3 Months"),
 }

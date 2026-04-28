@@ -9,7 +9,7 @@ class EventDispatcher @Inject constructor(
     private val permissionHandler: PermissionEventHandler,
     private val questionHandler: QuestionEventHandler,
 ) {
-    fun dispatch(event: SseData) {
+    suspend fun dispatch(event: SseData) {
         val type = event.type
         when {
             type.startsWith("session.") -> sessionHandler.handle(type, event)

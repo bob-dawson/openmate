@@ -16,24 +16,22 @@ fun MessageBubble(
     isUser: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val backgroundColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
+    if (isUser) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(start = 12.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+        )
     } else {
-        MaterialTheme.colorScheme.surfaceVariant
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+        )
     }
-    val contentColor = if (isUser) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyLarge,
-        color = contentColor,
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(backgroundColor)
-            .padding(12.dp),
-    )
 }

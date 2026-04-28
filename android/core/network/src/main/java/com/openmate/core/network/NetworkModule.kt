@@ -5,6 +5,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import okhttp3.OkHttpClient
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -13,7 +14,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideSseOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -22,13 +23,22 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideSseClient(client: OkHttpClient): SseClient {
+    fun provideApiOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideSseClient(@Named("sse") client: OkHttpClient): SseClient {
         return SseClient(client)
     }
 
     @Provides
     @Singleton
-    fun provideOpencodeApiClient(client: OkHttpClient): OpencodeApiClient {
+    fun provideOpencodeApiClient(@Named("api") client: OkHttpClient): OpencodeApiClient {
         return OpencodeApiClient(client)
     }
 }

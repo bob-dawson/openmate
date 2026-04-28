@@ -46,7 +46,28 @@ class InstanceListViewModel @Inject constructor(
     private fun observeProfiles() {
         viewModelScope.launch {
             profileRepository.observeAll().collect { list ->
-                _profiles.value = list.map { ProfileWithStatus(it) }
+                val currentStatus = _connectionStatus.value
+                val activeId = dbProvider.getActiveProfileId()
+                _profiles.value = list.map { profile ->
+                    val status = if (profile.id == activeId) currentStatus
+                                 else ConnectionStatus.DISCONNECTED
+                    ProfileWithStatus(profile, status)
+                }
+            }
+        }
+    }
+
+    private fun observeConnectionStatus() {
+        viewModelScope.launch {
+            sseEventRepository.observeConnectionStatus().collect { status ->
+                _connectionStatus.value = status
+                val activeId = dbProvider.getActiveProfileId()
+                if (activeId != null) {
+                    _profiles.value = _profiles.value.map { pws ->
+                        if (pws.profile.id == activeId) pws.copy(status = status)
+                        else pws
+                    }
+                }
             }
         }
     }
@@ -79,13 +100,5 @@ class InstanceListViewModel @Inject constructor(
 
     fun clearError() {
         _error.value = null
-    }
-
-    private fun observeConnectionStatus() {
-        viewModelScope.launch {
-            sseEventRepository.observeConnectionStatus().collect { status ->
-                _connectionStatus.value = status
-            }
-        }
     }
 }

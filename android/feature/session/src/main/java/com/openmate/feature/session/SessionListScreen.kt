@@ -1,8 +1,11 @@
 package com.openmate.feature.session
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,22 +13,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -35,31 +33,44 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.common.toRelativeTimeString
 import com.openmate.core.domain.model.ConnectionStatus
+import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.component.TopBar
+
+enum class SessionFilter(val label: String) {
+    ALL("全部"),
+    ACTIVE("活跃"),
+    ARCHIVED("已归档"),
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionListScreen(
     directory: String,
     onNavigateToDetail: (String) -> Unit,
-    onNavigateToSettings: () -> Unit,
     onBack: () -> Unit,
     viewModel: SessionListViewModel = hiltViewModel(),
 ) {
     val sessions by viewModel.sessions.collectAsState()
-    val connectionStatus by viewModel.connectionStatus.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    var filter by remember { mutableStateOf(SessionFilter.ALL) }
+    val dirName = directory.substringAfterLast("\\").substringAfterLast("/")
 
     LaunchedEffect(directory) {
         viewModel.setDirectory(directory)
@@ -72,19 +83,19 @@ fun SessionListScreen(
         }
     }
 
+    val filteredSessions = when (filter) {
+        SessionFilter.ALL -> sessions
+        SessionFilter.ACTIVE -> sessions.filter { !it.isArchived }
+        SessionFilter.ARCHIVED -> sessions.filter { it.isArchived }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopBar(
-                title = directory.substringAfterLast("\\").substringAfterLast("/"),
+                title = dirName,
                 subtitle = directory,
                 onBack = onBack,
-                actions = {
-                    ConnectionDot(status = connectionStatus)
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                },
             )
         },
         floatingActionButton = {
@@ -93,27 +104,54 @@ fun SessionListScreen(
             }
         },
     ) { padding ->
-        if (sessions.isEmpty()) {
-            EmptyStateView(
-                message = "No sessions yet",
-                modifier = Modifier.padding(padding),
-            )
-        } else {
-            LazyColumn(
+        Column(modifier = Modifier.padding(padding)) {
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(sessions, key = { it.id }) { session ->
-                    SessionCard(
-                        title = session.title.ifBlank { "Untitled" },
-                        directory = session.directory,
-                        updatedAt = session.updatedAt.toRelativeTimeString(),
-                        onClick = { onNavigateToDetail(session.id) },
-                        onDelete = { viewModel.deleteSession(session.id) },
+                SessionFilter.entries.forEach { f ->
+                    val isSelected = filter == f
+                    val bgColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outline
+                    val textColor = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+
+                    Text(
+                        text = f.label,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                        color = textColor,
+                        modifier = Modifier
+                            .background(bgColor, MaterialTheme.shapes.extraSmall)
+                            .border(BorderStroke(1.dp, borderColor), MaterialTheme.shapes.extraSmall)
+                            .clickable { filter = f }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
                     )
+                }
+            }
+
+            if (filteredSessions.isEmpty()) {
+                EmptyStateView(
+                    message = "No sessions",
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(filteredSessions, key = { it.id }) { session ->
+                        SessionCard(
+                            session = session,
+                            onClick = { onNavigateToDetail(session.id) },
+                        )
+                    }
                 }
             }
         }
@@ -122,31 +160,83 @@ fun SessionListScreen(
 
 @Composable
 private fun SessionCard(
-    title: String,
-    directory: String,
-    updatedAt: String,
+    session: Session,
     onClick: () -> Unit,
-    onDelete: () -> Unit,
 ) {
+    val statusColor: Color
+    val statusLabel: String
+    val leftBorderColor: Color
+    val cardAlpha: Float
+
+    when {
+        session.isArchived -> {
+            statusColor = Color(0xFF808080)
+            statusLabel = "已归档"
+            leftBorderColor = Color(0xFF808080)
+            cardAlpha = 0.5f
+        }
+        session.status == SessionStatus.ERROR -> {
+            statusColor = Color(0xFFe06c75)
+            statusLabel = "错误"
+            leftBorderColor = Color(0xFFe06c75)
+            cardAlpha = 1f
+        }
+        session.status == SessionStatus.RUNNING || session.status == SessionStatus.BUSY -> {
+            statusColor = Color(0xFF56b6c2)
+            statusLabel = "忙碌"
+            leftBorderColor = Color(0xFF56b6c2)
+            cardAlpha = 1f
+        }
+        else -> {
+            statusColor = Color(0xFF7fd88f)
+            statusLabel = "空闲"
+            leftBorderColor = Color(0xFF7fd88f)
+            cardAlpha = 1f
+        }
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.extraSmall,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier
+                .padding(14.dp)
+                .then(if (cardAlpha < 1f) Modifier else Modifier),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = directory, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(text = updatedAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = session.title.ifBlank { "Untitled" },
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = statusLabel,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Medium),
+                    color = statusColor,
+                    modifier = Modifier
+                        .border(BorderStroke(1.dp, statusColor), MaterialTheme.shapes.extraSmall)
+                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                )
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = session.updatedAt.toRelativeTimeString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF4a4a4a),
+                    fontSize = 10.sp,
+                )
             }
         }
     }
@@ -155,15 +245,16 @@ private fun SessionCard(
 @Composable
 private fun ConnectionDot(status: ConnectionStatus) {
     val color = when (status) {
-        ConnectionStatus.CONNECTED -> Color(0xFF4CAF50)
-        ConnectionStatus.CONNECTING -> Color(0xFFFFC107)
-        ConnectionStatus.ERROR -> Color(0xFFF44336)
-        ConnectionStatus.DISCONNECTED -> Color(0xFF9E9E9E)
+        ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
+        ConnectionStatus.CONNECTING -> Color(0xFFf5a742)
+        ConnectionStatus.ERROR -> Color(0xFFe06c75)
+        ConnectionStatus.DISCONNECTED -> Color(0xFF808080)
     }
     Spacer(
         modifier = Modifier
             .padding(end = 8.dp)
-            .size(12.dp)
+            .width(6.dp)
+            .height(6.dp)
             .clip(CircleShape)
             .background(color),
     )

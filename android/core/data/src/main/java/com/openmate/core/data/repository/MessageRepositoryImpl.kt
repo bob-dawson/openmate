@@ -4,7 +4,6 @@ import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.toDomain
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Message
-import com.openmate.core.domain.model.Part
 import com.openmate.core.domain.repository.MessageRepository
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.toDomain
@@ -39,10 +38,8 @@ class MessageRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun sendMessage(sessionID: String, content: String): Flow<Part> {
-        return api.sendMessageStream(sessionID, content).map { sseData ->
-            Part.TextPart(sseData.properties.toString())
-        }
+    override suspend fun sendMessage(sessionID: String, content: String) {
+        api.sendPrompt(sessionID, content)
     }
 
     override fun observeMessages(sessionID: String): Flow<List<Message>> {

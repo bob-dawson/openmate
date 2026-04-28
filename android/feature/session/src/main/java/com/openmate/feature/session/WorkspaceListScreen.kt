@@ -1,8 +1,10 @@
 package com.openmate.feature.session
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,10 +18,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,10 +40,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.openmate.core.common.toRelativeTimeString
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Workspace
 import com.openmate.core.ui.component.EmptyStateView
@@ -57,6 +62,7 @@ fun WorkspaceListScreen(
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val instanceName by viewModel.instanceName.collectAsState()
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -69,7 +75,8 @@ fun WorkspaceListScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopBar(
-                title = "Workspaces",
+                title = instanceName,
+                subtitle = if (connectionStatus == ConnectionStatus.CONNECTED) "Bridge · opencode" else null,
                 onBack = onBack,
                 actions = {
                     ConnectionDot(status = connectionStatus)
@@ -79,6 +86,11 @@ fun WorkspaceListScreen(
                 },
             )
         },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { viewModel.createSession(onNavigateToWorkspace) }) {
+                Icon(Icons.Default.Add, contentDescription = "New Session")
+            }
+        },
     ) { padding ->
         if (workspaces.isEmpty()) {
             EmptyStateView(
@@ -86,18 +98,19 @@ fun WorkspaceListScreen(
                 modifier = Modifier.padding(padding),
             )
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(workspaces, key = { it.directory }) { workspace ->
-                    WorkspaceCard(
-                        workspace = workspace,
-                        onClick = { onNavigateToWorkspace(workspace.directory) },
-                    )
+            Column(modifier = Modifier.padding(padding)) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(workspaces, key = { it.directory }) { workspace ->
+                        WorkspaceCard(
+                            workspace = workspace,
+                            onClick = { onNavigateToWorkspace(workspace.directory) },
+                        )
+                    }
                 }
             }
         }
@@ -109,56 +122,52 @@ private fun WorkspaceCard(
     workspace: Workspace,
     onClick: () -> Unit,
 ) {
+    val dirName = workspace.directory.substringAfterLast("\\").substringAfterLast("/")
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = MaterialTheme.shapes.extraSmall,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-        ) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = workspace.directory.substringAfterLast("\\").substringAfterLast("/"),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = workspace.latestUpdatedAt.toRelativeTimeString(),
-                    style = MaterialTheme.typography.labelSmall,
+                    text = "\uD83D\uDCC1",
+                    fontSize = 16.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = dirName,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = workspace.directory,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = workspace.directory,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = workspace.latestTitle.ifBlank { "Untitled" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                WorkspaceBadge("${workspace.sessionCount} sessions")
+                Badge(text = "${workspace.sessionCount} 会话")
             }
         }
     }
 }
 
 @Composable
-private fun WorkspaceBadge(text: String) {
+private fun Badge(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,
@@ -168,23 +177,41 @@ private fun WorkspaceBadge(text: String) {
                 color = MaterialTheme.colorScheme.surfaceVariant,
                 shape = MaterialTheme.shapes.extraSmall,
             )
-            .padding(horizontal = 8.dp, vertical = 2.dp),
+            .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.extraSmall)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }
 
 @Composable
 private fun ConnectionDot(status: ConnectionStatus) {
     val color = when (status) {
-        ConnectionStatus.CONNECTED -> Color(0xFF4CAF50)
-        ConnectionStatus.CONNECTING -> Color(0xFFFFC107)
-        ConnectionStatus.ERROR -> Color(0xFFF44336)
-        ConnectionStatus.DISCONNECTED -> Color(0xFF9E9E9E)
+        ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
+        ConnectionStatus.CONNECTING -> Color(0xFFf5a742)
+        ConnectionStatus.ERROR -> Color(0xFFe06c75)
+        ConnectionStatus.DISCONNECTED -> Color(0xFF808080)
     }
-    Spacer(
-        modifier = Modifier
-            .padding(end = 8.dp)
-            .size(12.dp)
-            .clip(CircleShape)
-            .background(color),
-    )
+    val label = when (status) {
+        ConnectionStatus.CONNECTED -> "在线"
+        ConnectionStatus.CONNECTING -> "连接中"
+        ConnectionStatus.ERROR -> "错误"
+        ConnectionStatus.DISCONNECTED -> "离线"
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(end = 8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(5.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontSize = 10.sp,
+        )
+    }
 }

@@ -5,15 +5,17 @@ import com.openmate.core.network.dto.MessageWithPartsDto
 import com.openmate.core.network.dto.PermissionDto
 import com.openmate.core.network.dto.QuestionDto
 import com.openmate.core.network.dto.SessionDto
-import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.serializer
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 
 class OpencodeApiClient(
@@ -53,33 +55,16 @@ class OpencodeApiClient(
         return getList("/session/$sessionID/message", params)
     }
 
-    fun sendMessageStream(sessionID: String, content: String): Flow<SseData> {
-        val body = mapOf("text" to content)
-        val requestBody = json.encodeToString(body).toRequestBody(jsonMediaType)
-        val request = Request.Builder()
-            .url("$baseUrl/session/$sessionID/prompt")
-            .post(requestBody)
-            .build()
-
-        return kotlinx.coroutines.flow.flow {
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                throw ServerUnavailableException("HTTP ${response.code}")
-            }
-            val reader = BufferedReader(InputStreamReader(response.body?.byteStream()))
-            reader.useLines { lines ->
-                for (line in lines) {
-                    val sseData = SseParser.parseLine(line)
-                    if (sseData != null) {
-                        emit(sseData)
-                    }
-                }
-            }
-        }
-    }
-
-    suspend fun sendPromptAsync(sessionID: String, content: String) {
-        val body = mapOf("content" to content)
+    suspend fun sendPrompt(sessionID: String, content: String) {
+        val body = JsonObject(mapOf(
+            "parts" to JsonArray(listOf(
+                JsonObject(mapOf(
+                    "type" to JsonPrimitive("text"),
+                    "text" to JsonPrimitive(content)
+                ))
+            ))
+        ))
+        android.util.Log.d("OpencodeApiClient", "sendPrompt url=$baseUrl/session/$sessionID/prompt_async body=$body")
         postUnit("/session/$sessionID/prompt_async", body)
     }
 
@@ -134,19 +119,50 @@ class OpencodeApiClient(
     }
 
     private inline fun <reified T> post(path: String, body: Any): T {
-        val requestBody = json.encodeToString(body).toRequestBody(jsonMediaType)
+        val jsonStr = when (body) {
+            is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
+            else -> json.encodeToString(JsonElement.serializer(), mapToJson(body as Map<*, *>))
+        }
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val request = Request.Builder().url("$baseUrl$path").post(requestBody).build()
         val response = client.newCall(request).execute()
         return handleResponse(response)
     }
 
     private fun postUnit(path: String, body: Any) {
-        val requestBody = json.encodeToString(body).toRequestBody(jsonMediaType)
+        val jsonStr = when (body) {
+            is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
+            is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body))
+            else -> json.encodeToString(JsonElement.serializer(), JsonPrimitive(body.toString()))
+        }
+        android.util.Log.d("OpencodeApiClient", "postUnit url=$baseUrl$path json=$jsonStr")
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val request = Request.Builder().url("$baseUrl$path").post(requestBody).build()
         val response = client.newCall(request).execute()
+        android.util.Log.d("OpencodeApiClient", "postUnit response: ${response.code}")
         if (!response.isSuccessful) {
-            throw ServerUnavailableException("HTTP ${response.code}")
+            val errorBody = response.body?.string() ?: ""
+            throw ServerUnavailableException("HTTP ${response.code}: $errorBody")
         }
+    }
+
+    private fun mapToJson(map: Map<*, *>): JsonObject {
+        return JsonObject(map.mapKeys { it.key.toString() }.mapValues { (_, v) ->
+            when (v) {
+                is String -> JsonPrimitive(v)
+                is Number -> JsonPrimitive(v)
+                is Boolean -> JsonPrimitive(v)
+                is Map<*, *> -> mapToJson(v)
+                is List<*> -> JsonArray(v.map { item ->
+                    when (item) {
+                        is Map<*, *> -> mapToJson(item)
+                        is String -> JsonPrimitive(item)
+                        else -> JsonPrimitive(item.toString())
+                    }
+                })
+                else -> JsonPrimitive(v.toString())
+            }
+        })
     }
 
     private fun delete(path: String) {

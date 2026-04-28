@@ -4,7 +4,6 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.Message
-import com.openmate.core.domain.model.Part
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
@@ -82,7 +81,10 @@ class SessionDetailViewModel @Inject constructor(
         _isStreaming.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                messageRepository.sendMessage(sessionID, text).collect {}
+                messageRepository.sendMessage(sessionID, text)
+            } catch (e: Exception) {
+                Log.e(TAG, "sendMessage failed", e)
+                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
             } finally {
                 _isStreaming.value = false
             }

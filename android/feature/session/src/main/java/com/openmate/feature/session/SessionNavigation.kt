@@ -37,7 +37,6 @@ fun NavGraphBuilder.sessionScreens(
             onNavigateToDetail = { id ->
                 navController.navigate("${SessionRoutes.SESSION_DETAIL}/$id")
             },
-            onNavigateToSettings = { navController.navigate("settings") },
             onBack = { navController.popBackStack() },
         )
     }
