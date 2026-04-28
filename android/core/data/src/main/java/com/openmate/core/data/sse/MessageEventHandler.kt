@@ -7,6 +7,8 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SseData
 import com.openmate.core.network.dto.toDomain
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 
@@ -23,14 +25,13 @@ open class MessageEventHandler @Inject constructor(
 
             when (type) {
                 "message.updated" -> {
-                    val role = props["role"]?.jsonPrimitive?.content
-                    val completed = props["completed"]?.jsonPrimitive?.content
-
-                    val status = if (role == "assistant" && (completed == null || completed == "null")) {
-                        SessionStatus.BUSY.name
-                    } else {
-                        SessionStatus.IDLE.name
-                    }
+                    val info = props["info"]?.jsonObject
+                    val role = info?.get("role")?.jsonPrimitive?.content
+                    val time = info?.get("time")?.jsonObject
+                    val completedEl = time?.get("completed")
+                    val isCompletedNull = completedEl == null || completedEl is JsonNull
+                    val isBusy = role == "assistant" && isCompletedNull
+                    val status = if (isBusy) SessionStatus.BUSY.name else SessionStatus.IDLE.name
                     val existing = db.sessionDao().getById(sessionID)
                     if (existing != null) {
                         db.sessionDao().upsert(existing.copy(status = status))
@@ -46,6 +47,24 @@ open class MessageEventHandler @Inject constructor(
                     if (existing != null && existing.status != SessionStatus.BUSY.name) {
                         db.sessionDao().upsert(existing.copy(status = SessionStatus.BUSY.name))
                     }
+
+                    val partID = props["partID"]?.jsonPrimitive?.content
+                    val delta = props["delta"]?.jsonPrimitive?.content
+                    if (partID != null && delta != null) {
+                        val part = db.partDao().getById(partID)
+                        if (part != null) {
+                            db.partDao().upsert(part.copy(text = (part.text ?: "") + delta))
+                        }
+                    }
+                }
+                "message.removed" -> {
+                    val messageID = props["messageID"]?.jsonPrimitive?.content ?: return
+                    db.messageDao().delete(messageID)
+                    db.partDao().deleteByMessage(messageID)
+                }
+                "message.part.removed" -> {
+                    val partID = props["partID"]?.jsonPrimitive?.content ?: return
+                    db.partDao().delete(partID)
                 }
             }
         } catch (e: Exception) {
@@ -57,14 +76,10 @@ open class MessageEventHandler @Inject constructor(
         try {
             val dtos = apiClient.getMessages(sessionID, 80, null)
             val db = dbProvider.getActive()
-            val msgEntities = dtos.map { dto ->
-                val msg = dto.toDomain()
-                msg.toEntity()
-            }
-            db.messageDao().upsertAll(msgEntities)
+            val domains = dtos.map { it.toDomain() }
+            db.messageDao().upsertAll(domains.map { it.toEntity() })
 
-            val allParts = dtos.flatMap { dto ->
-                val msg = dto.toDomain()
+            val allParts = domains.flatMap { msg ->
                 msg.parts.mapIndexed { idx, part ->
                     part.toEntity(msg.id, sessionID, idx)
                 }

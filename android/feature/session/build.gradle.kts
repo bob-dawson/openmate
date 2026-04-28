@@ -47,6 +47,10 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.compose.markdown)
+    implementation(libs.coil3)
+    implementation(libs.coil3.network.okhttp)
+    implementation(libs.coil3.gif)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)

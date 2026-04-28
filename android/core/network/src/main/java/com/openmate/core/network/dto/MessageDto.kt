@@ -136,11 +136,13 @@ fun MessageWithPartsDto.toDomain(): Message {
 fun PartDto.toDomain(): Part {
     return when (type) {
         "text" -> Part.TextPart(
+            id = id,
             text = text ?: "",
             synthetic = synthetic ?: false,
             ignored = ignored ?: false,
         )
         "tool" -> Part.ToolInvocationPart(
+            id = id,
             toolCallID = callID ?: "",
             toolName = tool ?: "",
             state = when (state?.status) {
@@ -153,31 +155,35 @@ fun PartDto.toDomain(): Part {
             args = state?.input?.toString(),
             result = state?.output,
         )
-        "reasoning" -> Part.ReasoningPart(text ?: "")
-        "step-start" -> Part.StepStartPart(snapshot = snapshot)
+        "reasoning" -> Part.ReasoningPart(id = id, text = text ?: "")
+        "step-start" -> Part.StepStartPart(id = id, snapshot = snapshot)
         "step-finish" -> Part.StepFinishPart(
+            id = id,
             reason = reason ?: "",
             snapshot = snapshot,
             cost = cost ?: 0.0,
             tokens = tokens?.toTokenUsage(),
         )
-        "snapshot" -> Part.SnapshotPart(snapshot ?: "")
-        "patch" -> Part.PatchPart(hash ?: "", files ?: emptyList())
-        "agent" -> Part.AgentPart(name ?: "")
+        "snapshot" -> Part.SnapshotPart(id = id, snapshot = snapshot ?: "")
+        "patch" -> Part.PatchPart(id = id, hash = hash ?: "", files = files ?: emptyList())
+        "agent" -> Part.AgentPart(id = id, name = name ?: "")
         "compaction" -> Part.CompactionPart(
+            id = id,
             auto = auto ?: false,
             overflow = overflow ?: false,
         )
         "subtask" -> Part.SubtaskPart(
+            id = id,
             prompt = prompt ?: "",
             description = description ?: "",
             agent = agent ?: "",
         )
         "retry" -> Part.RetryPart(
+            id = id,
             attempt = attempt ?: 0,
             error = error,
         )
-        else -> Part.TextPart(text ?: "")
+        else -> Part.TextPart(id = id, text = text ?: "")
     }
 }
 

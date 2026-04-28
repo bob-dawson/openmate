@@ -14,7 +14,7 @@ class DatabaseFactory(private val context: Context) {
             context,
             AppDatabase::class.java,
             dbName,
-        ).build()
+        ).fallbackToDestructiveMigration().build()
     }
 
     fun delete(context: Context, profileId: String) {

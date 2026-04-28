@@ -7,11 +7,13 @@ import com.openmate.core.database.dao.PartDao
 import com.openmate.core.database.dao.PermissionDao
 import com.openmate.core.database.dao.QuestionDao
 import com.openmate.core.database.dao.SessionDao
+import com.openmate.core.database.dao.TodoDao
 import com.openmate.core.database.entity.MessageEntity
 import com.openmate.core.database.entity.PartEntity
 import com.openmate.core.database.entity.PermissionEntity
 import com.openmate.core.database.entity.QuestionEntity
 import com.openmate.core.database.entity.SessionEntity
+import com.openmate.core.database.entity.TodoEntity
 
 @Database(
     entities = [
@@ -20,8 +22,9 @@ import com.openmate.core.database.entity.SessionEntity
         PartEntity::class,
         PermissionEntity::class,
         QuestionEntity::class,
+        TodoEntity::class,
     ],
-    version = 1,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,4 +33,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun partDao(): PartDao
     abstract fun permissionDao(): PermissionDao
     abstract fun questionDao(): QuestionDao
+    abstract fun todoDao(): TodoDao
 }

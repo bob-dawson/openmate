@@ -10,6 +10,7 @@ import com.openmate.core.domain.model.ToolCallState
     tableName = "PartEntity",
     indices = [
         Index("messageID"),
+        Index("sessionID"),
         Index("sequence"),
     ],
 )
@@ -45,47 +46,53 @@ data class PartEntity(
 
 fun PartEntity.toDomain(): Part {
     return when (type) {
-        "text" -> Part.TextPart(text ?: "")
+        "text" -> Part.TextPart(id = id, text = text ?: "")
         "tool" -> Part.ToolInvocationPart(
+            id = id,
             toolCallID = toolCallID ?: "",
             toolName = toolName ?: "",
             state = toolState?.let { runCatching { ToolCallState.valueOf(it) }.getOrNull() } ?: ToolCallState.PENDING,
             args = toolArgs,
             result = toolResult,
         )
-        "step-start" -> Part.StepStartPart(snapshot = snapshot)
+        "step-start" -> Part.StepStartPart(id = id, snapshot = snapshot)
         "step-finish" -> Part.StepFinishPart(
+            id = id,
             reason = reason ?: "",
             snapshot = snapshot,
             cost = cost ?: 0.0,
         )
-        "reasoning" -> Part.ReasoningPart(text ?: "")
+        "reasoning" -> Part.ReasoningPart(id = id, text = text ?: "")
         "file" -> Part.FilePart(
+            id = id,
             mime = mime ?: "",
             url = url ?: "",
             filename = filename,
         )
-        "snapshot" -> Part.SnapshotPart(snapshot ?: "")
-        "patch" -> Part.PatchPart(hash ?: "", files?.split(",") ?: emptyList())
-        "agent" -> Part.AgentPart(name ?: "")
+        "snapshot" -> Part.SnapshotPart(id = id, snapshot = snapshot ?: "")
+        "patch" -> Part.PatchPart(id = id, hash = hash ?: "", files = files?.split(",") ?: emptyList())
+        "agent" -> Part.AgentPart(id = id, name = name ?: "")
         "compaction" -> Part.CompactionPart(
+            id = id,
             auto = auto ?: false,
             overflow = overflow ?: false,
         )
         "subtask" -> Part.SubtaskPart(
+            id = id,
             prompt = prompt ?: "",
             description = description ?: "",
             agent = agent ?: "",
         )
         "retry" -> Part.RetryPart(
+            id = id,
             attempt = attempt ?: 0,
             error = error,
         )
-        else -> Part.TextPart(text ?: "")
+        else -> Part.TextPart(id = id, text = text ?: "")
     }
 }
 
-fun Part.toEntity(messageID: String, sessionID: String, sequence: Int, id: String = ""): PartEntity {
+fun Part.toEntity(messageID: String, sessionID: String, sequence: Int): PartEntity {
     val data = when (this) {
         is Part.TextPart -> PartTuple(type = "text", text = text)
         is Part.ToolInvocationPart -> PartTuple(

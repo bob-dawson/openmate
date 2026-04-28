@@ -7,8 +7,9 @@ import kotlinx.coroutines.flow.Flow
 interface SessionRepository {
     suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session>
     suspend fun getSession(id: String): Session?
-    suspend fun createSession(title: String?): Session
+    suspend fun createSession(title: String?, directory: String? = null): Session
     suspend fun deleteSession(id: String)
+    suspend fun updateSession(id: String, title: String?)
     suspend fun abortSession(id: String)
     fun observeSessions(directory: String?): Flow<List<Session>>
     fun observeSession(id: String): Flow<Session?>

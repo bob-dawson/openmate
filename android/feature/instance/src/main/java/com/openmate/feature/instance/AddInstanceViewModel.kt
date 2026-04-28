@@ -32,6 +32,18 @@ class AddInstanceViewModel @Inject constructor(
 
     private var editProfileId: String? = null
 
+    fun loadProfileForEdit(profileId: String) {
+        if (editProfileId != null) return
+        editProfileId = profileId
+        viewModelScope.launch(Dispatchers.IO) {
+            val profile = profileRepository.getById(profileId) ?: return@launch
+            name.value = profile.name
+            address.value = profile.address
+            port.value = profile.port.toString()
+            password.value = profile.password ?: ""
+        }
+    }
+
     fun setEditProfile(profile: ServerProfile) {
         editProfileId = profile.id
         name.value = profile.name

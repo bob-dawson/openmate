@@ -19,15 +19,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +53,7 @@ import com.openmate.core.ui.theme.TopBarBackground
 @Composable
 fun InstanceListScreen(
     onNavigateToAdd: () -> Unit,
+    onNavigateToEdit: (String) -> Unit,
     onNavigateToSessions: () -> Unit,
     viewModel: InstanceListViewModel = hiltViewModel(),
 ) {
@@ -89,6 +97,8 @@ fun InstanceListScreen(
                                     onNavigateToSessions()
                                 }
                             },
+                            onEdit = { onNavigateToEdit(item.profile.id) },
+                            onDelete = { viewModel.deleteProfile(item.profile.id) },
                         )
                     }
                 }
@@ -102,10 +112,11 @@ private fun InstanceCard(
     profile: ServerProfile,
     status: ConnectionStatus,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val firstChar = profile.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-    val isOnline = status == ConnectionStatus.CONNECTED || status == ConnectionStatus.CONNECTING
-    val alpha = if (status == ConnectionStatus.ERROR) 0.5f else 1f
+    var menuExpanded by remember { mutableStateOf(false) }
 
     androidx.compose.material3.Card(
         modifier = Modifier
@@ -146,9 +157,39 @@ private fun InstanceCard(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatusDot(
-                            label = if (isOnline) "在线" else "离线",
-                            color = if (isOnline) Color(0xFF7fd88f) else Color(0xFFe06c75),
+                        when (status) {
+                            ConnectionStatus.CONNECTED -> StatusDot("在线", Color(0xFF7fd88f))
+                            ConnectionStatus.CONNECTING -> StatusDot("连接中...", Color(0xFFf5a742))
+                            ConnectionStatus.ERROR -> StatusDot("错误", Color(0xFFe06c75))
+                            else -> StatusDot("离线", Color(0xFFe06c75))
+                        }
+                    }
+                }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "More",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("编辑") },
+                            onClick = {
+                                menuExpanded = false
+                                onEdit()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("删除") },
+                            onClick = {
+                                menuExpanded = false
+                                onDelete()
+                            },
                         )
                     }
                 }

@@ -14,6 +14,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @Named("sse")
     fun provideSseOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
@@ -23,6 +24,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @Named("api")
     fun provideApiOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)

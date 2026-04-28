@@ -8,6 +8,7 @@ import com.openmate.core.domain.repository.MessageRepository
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.toDomain
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -44,9 +45,10 @@ class MessageRepositoryImpl @Inject constructor(
 
     override fun observeMessages(sessionID: String): Flow<List<Message>> {
         val db = dbProvider.getActive()
-        return db.messageDao().observeBySession(sessionID).map { msgEntities ->
+        return db.messageDao().observeBySession(sessionID).combine(db.partDao().observeBySession(sessionID)) { msgEntities, allParts ->
+            val partsByMsg = allParts.groupBy { it.messageID }
             msgEntities.map { msgEntity ->
-                val parts = db.partDao().getByMessage(msgEntity.id).map { it.toDomain() }
+                val parts = (partsByMsg[msgEntity.id] ?: emptyList()).map { it.toDomain() }
                 msgEntity.toDomain(parts)
             }
         }

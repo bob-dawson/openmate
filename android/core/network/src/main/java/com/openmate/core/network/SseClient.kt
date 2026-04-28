@@ -53,7 +53,7 @@ class SseClient(
 
     private fun establishConnection(baseUrl: String): Flow<SseData> = flow {
         val request = Request.Builder()
-            .url("$baseUrl/global/event")
+            .url("$baseUrl/event")
             .get()
             .build()
 

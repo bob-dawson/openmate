@@ -13,7 +13,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class ProfileWithStatus(
@@ -32,43 +35,41 @@ class InstanceListViewModel @Inject constructor(
     private val _profiles = MutableStateFlow<List<ProfileWithStatus>>(emptyList())
     val profiles: StateFlow<List<ProfileWithStatus>> = _profiles.asStateFlow()
 
-    private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
-    val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
-
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
     init {
-        observeProfiles()
-        observeConnectionStatus()
+        observeCombined()
+        autoReconnect()
     }
 
-    private fun observeProfiles() {
-        viewModelScope.launch {
-            profileRepository.observeAll().collect { list ->
-                val currentStatus = _connectionStatus.value
-                val activeId = dbProvider.getActiveProfileId()
-                _profiles.value = list.map { profile ->
-                    val status = if (profile.id == activeId) currentStatus
-                                 else ConnectionStatus.DISCONNECTED
-                    ProfileWithStatus(profile, status)
-                }
+    private fun autoReconnect() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val profiles = profileRepository.getAll()
+            val lastProfile = profiles.filter { (it.lastConnectedAt ?: 0L) > 0L }
+                .maxByOrNull { it.lastConnectedAt!! }
+            if (lastProfile != null) {
+                try {
+                    dbProvider.setActive(lastProfile.id)
+                    apiClient.baseUrl = "http://${lastProfile.address}:${lastProfile.port}"
+                    sseEventRepository.connect(lastProfile.address, lastProfile.port, lastProfile.password)
+                } catch (_: Exception) {}
             }
         }
     }
 
-    private fun observeConnectionStatus() {
+    private fun observeCombined() {
         viewModelScope.launch {
-            sseEventRepository.observeConnectionStatus().collect { status ->
-                _connectionStatus.value = status
-                val activeId = dbProvider.getActiveProfileId()
-                if (activeId != null) {
-                    _profiles.value = _profiles.value.map { pws ->
-                        if (pws.profile.id == activeId) pws.copy(status = status)
-                        else pws
+            profileRepository.observeAll()
+                .combine(sseEventRepository.observeConnectionStatus()) { profiles, connectionStatus ->
+                    val activeId = dbProvider.getActiveProfileId()
+                    profiles.map { profile ->
+                        val status = if (profile.id == activeId) connectionStatus
+                                     else ConnectionStatus.DISCONNECTED
+                        ProfileWithStatus(profile, status)
                     }
                 }
-            }
+                .collect { _profiles.value = it }
         }
     }
 
@@ -80,12 +81,13 @@ class InstanceListViewModel @Inject constructor(
             _error.value = e.message
             return
         }
-        onConnected()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
+                sseEventRepository.observeConnectionStatus().first { it == ConnectionStatus.CONNECTED }
                 val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
                 profileRepository.save(updated)
+                withContext(Dispatchers.Main) { onConnected() }
             } catch (e: Exception) {
                 _error.value = e.message
             }
@@ -94,6 +96,10 @@ class InstanceListViewModel @Inject constructor(
 
     fun deleteProfile(id: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            if (id == dbProvider.getActiveProfileId()) {
+                sseEventRepository.disconnect()
+                dbProvider.clearActive()
+            }
             profileRepository.delete(id)
         }
     }

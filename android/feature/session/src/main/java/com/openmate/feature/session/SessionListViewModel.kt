@@ -65,10 +65,10 @@ class SessionListViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
-    fun createSession(onCreated: (String) -> Unit) {
+    fun createSession(title: String? = null, directory: String? = null, onCreated: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val session = sessionRepository.createSession(null)
+                val session = sessionRepository.createSession(title, directory)
                 withContext(Dispatchers.Main) { onCreated(session.id) }
             } catch (e: Exception) {
                 Log.e(TAG, "createSession failed", e)

@@ -8,6 +8,7 @@ class EventDispatcher @Inject constructor(
     private val messageHandler: MessageEventHandler,
     private val permissionHandler: PermissionEventHandler,
     private val questionHandler: QuestionEventHandler,
+    private val todoHandler: TodoEventHandler,
 ) {
     suspend fun dispatch(event: SseData) {
         val type = event.type
@@ -16,6 +17,7 @@ class EventDispatcher @Inject constructor(
             type.startsWith("message.") -> messageHandler.handle(type, event)
             type.startsWith("permission.") -> permissionHandler.handle(type, event)
             type.startsWith("question.") -> questionHandler.handle(type, event)
+            type.startsWith("todo.") -> todoHandler.handle(type, event)
             type == "server.connected" -> {}
             type == "server.heartbeat" -> {}
         }

@@ -9,11 +9,17 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PartDao {
+    @Query("SELECT * FROM PartEntity WHERE id = :id")
+    suspend fun getById(id: String): PartEntity?
+
     @Query("SELECT * FROM PartEntity WHERE messageID = :mid ORDER BY sequence")
     suspend fun getByMessage(mid: String): List<PartEntity>
 
     @Query("SELECT * FROM PartEntity WHERE messageID IN (:messageIDs) ORDER BY sequence")
     suspend fun getByMessages(messageIDs: List<String>): List<PartEntity>
+
+    @Query("SELECT * FROM PartEntity WHERE sessionID = :sid ORDER BY messageID, sequence")
+    fun observeBySession(sid: String): Flow<List<PartEntity>>
 
     @Query("SELECT * FROM PartEntity WHERE messageID = :mid ORDER BY sequence")
     fun observeByMessage(mid: String): Flow<List<PartEntity>>

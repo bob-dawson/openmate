@@ -13,12 +13,20 @@ object SseParser {
         val jsonStr = line.removePrefix("data:").trim()
         if (jsonStr.isEmpty()) return null
         val jsonObj = json.parseToJsonElement(jsonStr).jsonObject
-        val type = jsonObj["type"]?.jsonPrimitive?.content ?: return null
-        val properties = jsonObj["properties"]?.jsonObject ?: JsonObject(emptyMap())
-        return SseData(
-            type = type,
-            properties = properties,
-        )
+
+        val payload = jsonObj["payload"]?.jsonObject ?: jsonObj
+
+        val syncEvent = payload["syncEvent"]?.jsonObject
+        if (syncEvent != null) {
+            val versionedType = syncEvent["type"]?.jsonPrimitive?.content ?: return null
+            val type = versionedType.substringBeforeLast('.')
+            val data = syncEvent["data"]?.jsonObject ?: JsonObject(emptyMap())
+            return SseData(type = type, properties = data)
+        }
+
+        val type = payload["type"]?.jsonPrimitive?.content ?: return null
+        val properties = payload["properties"]?.jsonObject ?: JsonObject(emptyMap())
+        return SseData(type = type, properties = properties)
     }
 
     fun parseChunk(chunk: String): List<SseData> {

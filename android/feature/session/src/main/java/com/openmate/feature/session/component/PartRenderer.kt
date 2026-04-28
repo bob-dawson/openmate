@@ -5,12 +5,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.openmate.core.domain.model.Part
 import com.openmate.core.domain.model.ToolCallState
+import androidx.compose.ui.graphics.Color
+import dev.jeziellago.compose.markdowntext.MarkdownText
+
+private val CodeBlockBackground = Color(0xFF1e1e2e)
+private val CodeBlockText = Color(0xFFcdd6f4)
 
 sealed class DisplayItem {
     data class TextItem(val text: String, val isUser: Boolean) : DisplayItem()
@@ -96,11 +100,14 @@ fun PartColumn(
                     )
                 }
                 is DisplayItem.ReasoningItem -> {
-                    Text(
-                        text = item.text,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    MarkdownText(
+                        markdown = item.text,
                         modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        syntaxHighlightColor = CodeBlockBackground,
+                        syntaxHighlightTextColor = CodeBlockText,
                     )
                 }
             }

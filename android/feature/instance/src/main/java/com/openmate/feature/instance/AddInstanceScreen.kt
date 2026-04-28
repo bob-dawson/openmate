@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -28,6 +29,7 @@ import com.openmate.core.ui.component.TopBar
 @Composable
 fun AddInstanceScreen(
     onBack: () -> Unit,
+    editProfileId: String? = null,
     viewModel: AddInstanceViewModel = hiltViewModel(),
 ) {
     val name by viewModel.name.collectAsState()
@@ -36,9 +38,15 @@ fun AddInstanceScreen(
     val password by viewModel.password.collectAsState()
     val testResult by viewModel.testResult.collectAsState()
 
+    LaunchedEffect(editProfileId) {
+        if (editProfileId != null) {
+            viewModel.loadProfileForEdit(editProfileId)
+        }
+    }
+
     Scaffold(
         topBar = {
-            TopBar(title = "Add Instance", onBack = onBack)
+            TopBar(title = if (editProfileId != null) "编辑实例" else "Add Instance", onBack = onBack)
         },
     ) { padding ->
         Column(

@@ -4,6 +4,7 @@ import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.toDomain
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.network.OpencodeApiClient
@@ -20,7 +21,19 @@ class SessionRepositoryImpl @Inject constructor(
     override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> {
         val dtos = api.listSessions(directory, limit, start)
         val dao = dbProvider.getActive().sessionDao()
-        dao.upsertAll(dtos.map { it.toDomain().toEntity() })
+        val existingMap = dao.getAll().associateBy { it.id }
+        val entities = dtos.map { dto ->
+            val domain = dto.toDomain()
+            val existing = existingMap[domain.id]
+            val existingStatus = existing?.status
+            if (existingStatus != null) {
+                val dbStatus = runCatching { SessionStatus.valueOf(existingStatus) }.getOrNull()
+                domain.copy(status = dbStatus)
+            } else {
+                domain
+            }.toEntity()
+        }
+        dao.upsertAll(entities)
         return dao.getAll().map { it.toDomain() }
     }
 
@@ -29,14 +42,22 @@ class SessionRepositoryImpl @Inject constructor(
             val dto = api.getSession(id)
             val domain = dto.toDomain()
             val dao = dbProvider.getActive().sessionDao()
-            dao.upsert(domain.toEntity())
-            domain
+            val existing = dao.getById(id)
+            val existingStatus = existing?.status
+            val merged = if (existingStatus != null) {
+                val dbStatus = runCatching { SessionStatus.valueOf(existingStatus) }.getOrNull()
+                domain.copy(status = dbStatus)
+            } else {
+                domain
+            }
+            dao.upsert(merged.toEntity())
+            dao.getById(id)?.toDomain()
         } catch (_: Exception) {
             dbProvider.getActive().sessionDao().getById(id)?.toDomain()
         }
     }
 
-    override suspend fun createSession(title: String?): Session {
+    override suspend fun createSession(title: String?, directory: String?): Session {
         val dto = api.createSession(title)
         val domain = dto.toDomain()
         dbProvider.getActive().sessionDao().upsert(domain.toEntity())
@@ -47,6 +68,14 @@ class SessionRepositoryImpl @Inject constructor(
         api.deleteSession(id)
         val dao = dbProvider.getActive().sessionDao()
         dao.delete(id)
+    }
+
+    override suspend fun updateSession(id: String, title: String?) {
+        api.updateSession(id, title)
+        val dao = dbProvider.getActive().sessionDao()
+        val existing = dao.getById(id) ?: return
+        val updated = if (title != null) existing.copy(title = title) else existing
+        dao.upsert(updated)
     }
 
     override suspend fun abortSession(id: String) {

@@ -19,16 +19,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -70,6 +73,9 @@ fun SessionListScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var filter by remember { mutableStateOf(SessionFilter.ALL) }
+    var showNewSessionDialog by remember { mutableStateOf(false) }
+    var newSessionTitle by remember { mutableStateOf("") }
+    var newSessionDirectory by remember { mutableStateOf(directory) }
     val dirName = directory.substringAfterLast("\\").substringAfterLast("/")
 
     LaunchedEffect(directory) {
@@ -99,7 +105,11 @@ fun SessionListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { viewModel.createSession(onNavigateToDetail) }) {
+            FloatingActionButton(onClick = {
+                newSessionTitle = ""
+                newSessionDirectory = directory
+                showNewSessionDialog = true
+            }) {
                 Icon(Icons.Default.Add, contentDescription = "New Session")
             }
         },
@@ -155,6 +165,46 @@ fun SessionListScreen(
                 }
             }
         }
+    }
+
+    if (showNewSessionDialog) {
+        AlertDialog(
+            onDismissRequest = { showNewSessionDialog = false },
+            title = { Text("新建会话") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = newSessionTitle,
+                        onValueChange = { newSessionTitle = it },
+                        label = { Text("标题（可选）") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = newSessionDirectory,
+                        onValueChange = { newSessionDirectory = it },
+                        label = { Text("工作目录") },
+                        singleLine = true,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showNewSessionDialog = false
+                    viewModel.createSession(
+                        title = newSessionTitle.ifBlank { null },
+                        directory = newSessionDirectory.ifBlank { null },
+                        onCreated = onNavigateToDetail,
+                    )
+                }) {
+                    Text("创建")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewSessionDialog = false }) {
+                    Text("取消")
+                }
+            },
+        )
     }
 }
 

@@ -40,6 +40,11 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.runtime)
 
+    implementation(libs.compose.markdown)
+    implementation(libs.coil3)
+    implementation(libs.coil3.network.okhttp)
+    implementation(libs.coil3.gif)
+
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

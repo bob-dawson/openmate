@@ -48,6 +48,12 @@ class OpencodeApiClient(
         delete("/session/$id")
     }
 
+    suspend fun updateSession(id: String, title: String? = null) {
+        val body = mutableMapOf<String, String>()
+        title?.let { body["title"] = it }
+        patch("/session/$id", body)
+    }
+
     suspend fun getMessages(sessionID: String, limit: Int, before: String?): List<MessageWithPartsDto> {
         val params = mutableMapOf<String, String>()
         params["limit"] = limit.toString()
@@ -96,6 +102,17 @@ class OpencodeApiClient(
         postUnit("/question/$requestID/reject", emptyMap<String, String>())
     }
 
+    suspend fun getTodos(sessionID: String): List<com.openmate.core.domain.model.TodoInfo> {
+        val url = buildUrl("/session/$sessionID/todo", emptyMap())
+        val request = Request.Builder().url(url).get().build()
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: return emptyList()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $body")
+        }
+        return json.decodeFromString(body)
+    }
+
     suspend fun healthCheck(): HealthDto {
         return get("/global/health")
     }
@@ -135,14 +152,15 @@ class OpencodeApiClient(
             is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body))
             else -> json.encodeToString(JsonElement.serializer(), JsonPrimitive(body.toString()))
         }
-        android.util.Log.d("OpencodeApiClient", "postUnit url=$baseUrl$path json=$jsonStr")
+        val url = "$baseUrl$path"
+        android.util.Log.d("OpencodeApiClient", "postUnit START url=$url json=$jsonStr")
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
-        val request = Request.Builder().url("$baseUrl$path").post(requestBody).build()
+        val request = Request.Builder().url(url).post(requestBody).build()
+        android.util.Log.d("OpencodeApiClient", "postUnit EXECUTING...")
         val response = client.newCall(request).execute()
-        android.util.Log.d("OpencodeApiClient", "postUnit response: ${response.code}")
+        android.util.Log.d("OpencodeApiClient", "postUnit GOT response: ${response.code} body=${response.body?.string()?.take(200)}")
         if (!response.isSuccessful) {
-            val errorBody = response.body?.string() ?: ""
-            throw ServerUnavailableException("HTTP ${response.code}: $errorBody")
+            throw ServerUnavailableException("HTTP ${response.code}")
         }
     }
 
@@ -167,6 +185,20 @@ class OpencodeApiClient(
 
     private fun delete(path: String) {
         val request = Request.Builder().url("$baseUrl$path").delete().build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful && response.code != HttpURLConnection.HTTP_NO_CONTENT) {
+            throw ServerUnavailableException("HTTP ${response.code}")
+        }
+    }
+
+    private fun patch(path: String, body: Any) {
+        val jsonStr = when (body) {
+            is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
+            is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body as Map<*, *>))
+            else -> json.encodeToString(JsonElement.serializer(), JsonPrimitive(body.toString()))
+        }
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val request = Request.Builder().url("$baseUrl$path").patch(requestBody).build()
         val response = client.newCall(request).execute()
         if (!response.isSuccessful && response.code != HttpURLConnection.HTTP_NO_CONTENT) {
             throw ServerUnavailableException("HTTP ${response.code}")

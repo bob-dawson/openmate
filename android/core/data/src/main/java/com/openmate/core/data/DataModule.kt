@@ -36,4 +36,8 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindSseEventRepository(impl: SseEventRepositoryImpl): SseEventRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTodoRepository(impl: TodoRepositoryImpl): TodoRepository
 }
