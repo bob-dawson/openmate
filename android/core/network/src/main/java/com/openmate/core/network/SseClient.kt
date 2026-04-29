@@ -6,10 +6,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -23,14 +24,15 @@ class SseClient(
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
+    private val _events = MutableSharedFlow<SseData>(extraBufferCapacity = 64)
+    val events: Flow<SseData> = _events.asSharedFlow()
+
     private var connectJob: Job? = null
     private var heartbeatJob: Job? = null
     private var currentBaseUrl: String? = null
-    private var currentAddress: String? = null
-    private var currentPort: Int? = null
-    private var currentPassword: String? = null
     private var reconnectAttempts = 0
     private val lastEventTime = AtomicLong(0)
+    private val scope = CoroutineScope(Dispatchers.IO)
 
     companion object {
         private const val HEARTBEAT_TIMEOUT_MS = 30_000L
@@ -41,17 +43,22 @@ class SseClient(
     fun connect(address: String, port: Int, password: String?): Flow<SseData> {
         disconnect()
         _connectionStatus.value = ConnectionStatus.CONNECTING
-        currentAddress = address
-        currentPort = port
-        currentPassword = password
         val baseUrl = "http://$address:$port"
         currentBaseUrl = baseUrl
         reconnectAttempts = 0
 
-        return establishConnection(baseUrl)
+        startConnection(baseUrl)
+        return events
     }
 
-    private fun establishConnection(baseUrl: String): Flow<SseData> = flow {
+    private fun startConnection(baseUrl: String) {
+        connectJob?.cancel()
+        connectJob = scope.launch {
+            establishConnection(baseUrl)
+        }
+    }
+
+    private suspend fun establishConnection(baseUrl: String) {
         val request = Request.Builder()
             .url("$baseUrl/event")
             .get()
@@ -73,10 +80,11 @@ class SseClient(
                 reader.useLines { lines ->
                     for (line in lines) {
                         if (Thread.interrupted()) break
+                        if (!coroutineContext[Job]?.isActive!!) break
                         val sseData = SseParser.parseLine(line)
                         if (sseData != null) {
                             lastEventTime.set(System.currentTimeMillis())
-                            emit(sseData)
+                            _events.emit(sseData)
                         }
                     }
                 }
@@ -94,8 +102,8 @@ class SseClient(
 
     private fun startHeartbeatMonitor() {
         stopHeartbeatMonitor()
-        heartbeatJob = CoroutineScope(Dispatchers.IO).launch {
-            while (coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+        heartbeatJob = scope.launch {
+            while (coroutineContext[Job]?.isActive == true) {
                 delay(HEARTBEAT_TIMEOUT_MS)
                 val elapsed = System.currentTimeMillis() - lastEventTime.get()
                 if (elapsed > HEARTBEAT_TIMEOUT_MS) {
@@ -119,14 +127,11 @@ class SseClient(
             .coerceAtMost(MAX_RECONNECT_DELAY_MS)
         reconnectAttempts++
 
-        CoroutineScope(Dispatchers.IO).launch {
+        scope.launch {
             delay(delayMs)
-            if (currentBaseUrl != null && coroutineContext[kotlinx.coroutines.Job]?.isActive == true) {
+            if (currentBaseUrl != null) {
                 _connectionStatus.value = ConnectionStatus.CONNECTING
-                val baseUrl = currentBaseUrl ?: return@launch
-                connectJob = launch {
-                    establishConnection(baseUrl).collect {}
-                }
+                startConnection(currentBaseUrl!!)
             }
         }
     }
@@ -136,9 +141,6 @@ class SseClient(
         connectJob = null
         stopHeartbeatMonitor()
         currentBaseUrl = null
-        currentAddress = null
-        currentPort = null
-        currentPassword = null
         reconnectAttempts = 0
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }

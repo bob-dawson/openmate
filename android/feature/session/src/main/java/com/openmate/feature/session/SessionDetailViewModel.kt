@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.Message
+import com.openmate.core.domain.model.MessageRole
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
@@ -52,6 +53,9 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _pendingAssistantId = MutableStateFlow<String?>(null)
+    val pendingAssistantId: StateFlow<String?> = _pendingAssistantId.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -165,6 +169,9 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             messageRepository.observeMessages(sessionID).collect { list ->
                 _messages.value = list
+                _pendingAssistantId.value = list
+                    .filter { it.role == MessageRole.ASSISTANT && it.completedAt == null }
+                    .maxByOrNull { it.id }?.id
             }
         }
     }
@@ -202,10 +209,12 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     private fun observeTodos(sessionID: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 todoRepository.refreshTodos(sessionID)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshTodos failed", e)
+            }
         }
         viewModelScope.launch {
             todoRepository.observeTodos(sessionID).collect { list ->

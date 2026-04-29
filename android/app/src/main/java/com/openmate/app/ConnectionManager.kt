@@ -4,6 +4,7 @@ import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
+import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.network.OpencodeApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -20,6 +21,7 @@ import javax.inject.Singleton
 class ConnectionManager @Inject constructor(
     private val profileRepository: ServerProfileRepository,
     private val sseEventRepository: SseEventRepository,
+    private val sessionRepository: SessionRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
 ) {
@@ -39,6 +41,9 @@ class ConnectionManager @Inject constructor(
             sseEventRepository.observeConnectionStatus().collect { status ->
                 _connectionStatus.value = status
                 _isConnected.value = status == ConnectionStatus.CONNECTED
+                if (status == ConnectionStatus.CONNECTED) {
+                    sessionRepository.refreshSessionStatuses()
+                }
             }
         }
     }

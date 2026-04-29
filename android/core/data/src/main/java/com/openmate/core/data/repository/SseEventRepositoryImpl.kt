@@ -24,18 +24,21 @@ class SseEventRepositoryImpl @Inject constructor(
 ) : SseEventRepository {
 
     private var eventJob: Job? = null
+    private var isSubscribed = false
 
     override fun connect(address: String, port: Int, password: String?): Flow<SseEvent> {
-        eventJob?.cancel()
-        val eventFlow = sseClient.connect(address, port, password)
-
-        eventJob = CoroutineScope(Dispatchers.IO).launch {
-            eventFlow.collect { sseData ->
-                eventDispatcher.dispatch(sseData)
+        if (!isSubscribed) {
+            isSubscribed = true
+            eventJob = CoroutineScope(Dispatchers.IO).launch {
+                sseClient.events.collect { sseData ->
+                    eventDispatcher.dispatch(sseData)
+                }
             }
         }
 
-        return eventFlow.map { sseData ->
+        sseClient.connect(address, port, password)
+
+        return sseClient.events.map { sseData ->
             SseEvent(
                 type = sseData.type,
                 payload = sseData.properties.toString(),
@@ -46,6 +49,7 @@ class SseEventRepositoryImpl @Inject constructor(
     override fun disconnect() {
         eventJob?.cancel()
         eventJob = null
+        isSubscribed = false
         sseClient.disconnect()
     }
 

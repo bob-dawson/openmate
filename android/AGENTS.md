@@ -38,6 +38,7 @@ OpenMate is an Android native client for [opencode](https://opencode.ai) (the op
 - **No code comments** unless explicitly requested
 - **Error handling**: Log via `android.util.Log` + expose `errorMessage: StateFlow<String?>` to UI via Snackbar
 - **Never commit unless explicitly asked**
+- **TODO list rule**: TODO items must NOT be deleted or marked completed until the user explicitly verifies them. Every TODO list must always end with a pending "User verification" item for each completed task that awaits human testing.
 
 ## OpenCode Server API Reference
 

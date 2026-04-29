@@ -5,6 +5,7 @@ import com.openmate.core.network.dto.MessageWithPartsDto
 import com.openmate.core.network.dto.PermissionDto
 import com.openmate.core.network.dto.QuestionDto
 import com.openmate.core.network.dto.SessionDto
+import com.openmate.core.network.dto.SessionStatusDto
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -38,10 +39,12 @@ class OpencodeApiClient(
         return get("/session/$id")
     }
 
-    suspend fun createSession(title: String? = null): SessionDto {
+    suspend fun createSession(title: String? = null, directory: String? = null): SessionDto {
         val body = mutableMapOf<String, String>()
         title?.let { body["title"] = it }
-        return post("/session", body)
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        return post("/session", body, params)
     }
 
     suspend fun deleteSession(id: String) {
@@ -102,6 +105,10 @@ class OpencodeApiClient(
         postUnit("/question/$requestID/reject", emptyMap<String, String>())
     }
 
+    suspend fun getSessionStatuses(): Map<String, SessionStatusDto> {
+        return get("/session/status")
+    }
+
     suspend fun getTodos(sessionID: String): List<com.openmate.core.domain.model.TodoInfo> {
         val url = buildUrl("/session/$sessionID/todo", emptyMap())
         val request = Request.Builder().url(url).get().build()
@@ -135,13 +142,14 @@ class OpencodeApiClient(
         return json.decodeFromString(body)
     }
 
-    private inline fun <reified T> post(path: String, body: Any): T {
+    private inline fun <reified T> post(path: String, body: Any, params: Map<String, String> = emptyMap()): T {
         val jsonStr = when (body) {
             is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
             else -> json.encodeToString(JsonElement.serializer(), mapToJson(body as Map<*, *>))
         }
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
-        val request = Request.Builder().url("$baseUrl$path").post(requestBody).build()
+        val url = buildUrl(path, params)
+        val request = Request.Builder().url(url).post(requestBody).build()
         val response = client.newCall(request).execute()
         return handleResponse(response)
     }

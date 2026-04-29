@@ -29,6 +29,8 @@ class TodoRepositoryImpl @Inject constructor(
             } else {
                 db.todoDao().upsert(todos.toEntity(sessionID))
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            android.util.Log.e("TodoRepository", "refreshTodos failed for session=$sessionID", e)
+        }
     }
 }

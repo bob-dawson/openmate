@@ -11,6 +11,7 @@ interface SessionRepository {
     suspend fun deleteSession(id: String)
     suspend fun updateSession(id: String, title: String?)
     suspend fun abortSession(id: String)
+    suspend fun refreshSessionStatuses()
     fun observeSessions(directory: String?): Flow<List<Session>>
     fun observeSession(id: String): Flow<Session?>
     fun observeWorkspaces(): Flow<List<Workspace>>

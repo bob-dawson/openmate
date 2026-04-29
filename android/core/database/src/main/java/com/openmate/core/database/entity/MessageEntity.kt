@@ -19,7 +19,10 @@ data class MessageEntity(
     val sessionID: String,
     val role: String,
     val agent: String? = null,
+    val modelID: String? = null,
+    val providerID: String? = null,
     val createdAt: Long,
+    val completedAt: Long? = null,
 )
 
 fun MessageEntity.toDomain(parts: List<Part>): Message {
@@ -28,7 +31,10 @@ fun MessageEntity.toDomain(parts: List<Part>): Message {
         sessionID = sessionID,
         role = MessageRole.valueOf(role),
         agent = agent,
+        modelID = modelID,
+        providerID = providerID,
         createdAt = createdAt,
+        completedAt = completedAt,
         parts = parts,
     )
 }
@@ -39,6 +45,9 @@ fun Message.toEntity(): MessageEntity {
         sessionID = sessionID,
         role = role.name,
         agent = agent,
+        modelID = modelID,
+        providerID = providerID,
         createdAt = createdAt,
+        completedAt = completedAt,
     )
 }

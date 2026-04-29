@@ -1,11 +1,13 @@
 package com.openmate.feature.instance
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
+import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.network.OpencodeApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -28,6 +30,7 @@ data class ProfileWithStatus(
 class InstanceListViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
     private val sseEventRepository: SseEventRepository,
+    private val sessionRepository: SessionRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
 ) : ViewModel() {
@@ -41,6 +44,21 @@ class InstanceListViewModel @Inject constructor(
     init {
         observeCombined()
         autoReconnect()
+        observeConnectionForStatusRefresh()
+    }
+
+    private fun observeConnectionForStatusRefresh() {
+        viewModelScope.launch(Dispatchers.IO) {
+            sseEventRepository.observeConnectionStatus().collect { status ->
+                if (status == ConnectionStatus.CONNECTED) {
+                    try {
+                        sessionRepository.refreshSessionStatuses()
+                    } catch (e: Exception) {
+                        Log.e("InstanceListVM", "refreshSessionStatuses failed", e)
+                    }
+                }
+            }
+        }
     }
 
     private fun autoReconnect() {

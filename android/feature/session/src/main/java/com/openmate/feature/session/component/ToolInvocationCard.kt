@@ -49,7 +49,7 @@ fun ToolInvocationCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when (state) {
                     ToolCallState.PENDING -> {
-                        QueuedBadge()
+                        PendingBadge()
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Using $toolName...",
@@ -140,9 +140,9 @@ fun ToolInvocationCard(
 }
 
 @Composable
-private fun QueuedBadge(modifier: Modifier = Modifier) {
+private fun PendingBadge(modifier: Modifier = Modifier) {
     Text(
-        text = "QUEUED",
+        text = "PENDING",
         style = MaterialTheme.typography.labelSmall,
         color = Warning,
         modifier = modifier

@@ -75,7 +75,6 @@ fun SessionListScreen(
     var filter by remember { mutableStateOf(SessionFilter.ALL) }
     var showNewSessionDialog by remember { mutableStateOf(false) }
     var newSessionTitle by remember { mutableStateOf("") }
-    var newSessionDirectory by remember { mutableStateOf(directory) }
     val dirName = directory.substringAfterLast("\\").substringAfterLast("/")
 
     LaunchedEffect(directory) {
@@ -107,8 +106,7 @@ fun SessionListScreen(
         floatingActionButton = {
             FloatingActionButton(onClick = {
                 newSessionTitle = ""
-                newSessionDirectory = directory
-                showNewSessionDialog = true
+                    showNewSessionDialog = true
             }) {
                 Icon(Icons.Default.Add, contentDescription = "New Session")
             }
@@ -172,27 +170,19 @@ fun SessionListScreen(
             onDismissRequest = { showNewSessionDialog = false },
             title = { Text("新建会话") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedTextField(
-                        value = newSessionTitle,
-                        onValueChange = { newSessionTitle = it },
-                        label = { Text("标题（可选）") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
-                        value = newSessionDirectory,
-                        onValueChange = { newSessionDirectory = it },
-                        label = { Text("工作目录") },
-                        singleLine = true,
-                    )
-                }
+                OutlinedTextField(
+                    value = newSessionTitle,
+                    onValueChange = { newSessionTitle = it },
+                    label = { Text("标题（可选）") },
+                    singleLine = true,
+                )
             },
             confirmButton = {
                 TextButton(onClick = {
                     showNewSessionDialog = false
                     viewModel.createSession(
                         title = newSessionTitle.ifBlank { null },
-                        directory = newSessionDirectory.ifBlank { null },
+                        directory = directory,
                         onCreated = onNavigateToDetail,
                     )
                 }) {

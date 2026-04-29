@@ -5,8 +5,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,6 +23,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -59,6 +63,7 @@ fun SessionDetailScreen(
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val todos by viewModel.todos.collectAsState()
+    val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -77,15 +82,13 @@ fun SessionDetailScreen(
 
     LaunchedEffect(isLoading) {
         if (!isLoading && messages.isNotEmpty()) {
-            val todoOffset = if (todos.isNotEmpty()) 1 else 0
-            listState.scrollToItem(messages.size - 1 + todoOffset)
+            listState.scrollToItem(messages.size - 1)
         }
     }
 
     LaunchedEffect(messages.size) {
         if (atBottom && messages.isNotEmpty()) {
-            val todoOffset = if (todos.isNotEmpty()) 1 else 0
-            listState.animateScrollToItem(messages.size - 1 + todoOffset)
+            listState.animateScrollToItem(messages.size - 1)
         }
     }
 
@@ -173,6 +176,9 @@ fun SessionDetailScreen(
                 .padding(padding)
                 .imePadding(),
         ) {
+            if (isStreaming) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
             if (isLoading) {
                 Box(
                     modifier = Modifier
@@ -183,6 +189,9 @@ fun SessionDetailScreen(
                     CircularProgressIndicator()
                 }
             } else {
+                if (todos.isNotEmpty()) {
+                    TodoListCard(todos = todos)
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -190,13 +199,8 @@ fun SessionDetailScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    if (todos.isNotEmpty()) {
-                        item(key = "todos") {
-                            TodoListCard(todos = todos)
-                        }
-                    }
                     items(messages, key = { it.id }) { message ->
-                        MessageItem(message = message)
+                        MessageItem(message = message, pendingAssistantId = pendingAssistantId)
                     }
                     if (messages.isEmpty()) {
                         item {

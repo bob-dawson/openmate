@@ -70,6 +70,7 @@ fun WorkspaceListScreen(
     val instanceName by viewModel.instanceName.collectAsState()
     var showNewSessionDialog by remember { mutableStateOf(false) }
     var newSessionTitle by remember { mutableStateOf("") }
+    var newSessionDirectory by remember { mutableStateOf("") }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -120,6 +121,8 @@ fun WorkspaceListScreen(
                             workspace = workspace,
                             onClick = { onNavigateToWorkspace(workspace.directory) },
                         )
+                    }
+                }
             }
         }
     }
@@ -129,18 +132,27 @@ fun WorkspaceListScreen(
             onDismissRequest = { showNewSessionDialog = false },
             title = { Text("新建会话") },
             text = {
-                OutlinedTextField(
-                    value = newSessionTitle,
-                    onValueChange = { newSessionTitle = it },
-                    label = { Text("标题（可选）") },
-                    singleLine = true,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = newSessionTitle,
+                        onValueChange = { newSessionTitle = it },
+                        label = { Text("标题（可选）") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = newSessionDirectory,
+                        onValueChange = { newSessionDirectory = it },
+                        label = { Text("工作目录") },
+                        singleLine = true,
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     showNewSessionDialog = false
                     viewModel.createSession(
                         title = newSessionTitle.ifBlank { null },
+                        directory = newSessionDirectory.ifBlank { null },
                         onCreated = onNavigateToWorkspace,
                     )
                 }) {
@@ -153,8 +165,6 @@ fun WorkspaceListScreen(
                 }
             },
         )
-    }
-}
     }
 }
 
@@ -201,14 +211,14 @@ private fun WorkspaceCard(
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Badge(text = "${workspace.sessionCount} 会话")
+                WorkspaceBadge(text = "${workspace.sessionCount} 会话")
             }
         }
     }
 }
 
 @Composable
-private fun Badge(text: String) {
+private fun WorkspaceBadge(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,

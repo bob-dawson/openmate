@@ -128,7 +128,10 @@ fun MessageWithPartsDto.toDomain(): Message {
             else -> MessageRole.USER
         },
         agent = info.agent,
+        modelID = info.modelID ?: info.model?.modelID,
+        providerID = info.providerID ?: info.model?.providerID,
         createdAt = info.time.created,
+        completedAt = info.time.completed,
         parts = parts.map { it.toDomain() },
     )
 }

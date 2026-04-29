@@ -80,10 +80,10 @@ class WorkspaceListViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
-    fun createSession(title: String? = null, onCreated: (String) -> Unit) {
+    fun createSession(title: String? = null, directory: String? = null, onCreated: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val session = sessionRepository.createSession(title)
+                val session = sessionRepository.createSession(title = title, directory = directory)
                 withContext(Dispatchers.Main) {
                     onNavigateToWorkspace(session.directory, onCreated, session.id)
                 }

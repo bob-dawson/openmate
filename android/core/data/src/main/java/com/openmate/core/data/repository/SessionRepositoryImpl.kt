@@ -8,6 +8,7 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.SessionStatusDto
 import com.openmate.core.network.dto.toDomain
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -58,7 +59,7 @@ class SessionRepositoryImpl @Inject constructor(
     }
 
     override suspend fun createSession(title: String?, directory: String?): Session {
-        val dto = api.createSession(title)
+        val dto = api.createSession(title = title, directory = directory)
         val domain = dto.toDomain()
         dbProvider.getActive().sessionDao().upsert(domain.toEntity())
         return domain
@@ -80,6 +81,34 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun abortSession(id: String) {
         api.abortSession(id)
+    }
+
+    override suspend fun refreshSessionStatuses() {
+        try {
+            val statusMap = api.getSessionStatuses()
+            val dao = dbProvider.getActive().sessionDao()
+            for ((sessionID, statusDto) in statusMap) {
+                val existing = dao.getById(sessionID)
+                val statusName = statusDto.toDomain().name
+                if (existing != null) {
+                    dao.upsert(existing.copy(status = statusName))
+                } else {
+                    dao.upsert(
+                        com.openmate.core.database.entity.SessionEntity(
+                            id = sessionID,
+                            title = "",
+                            directory = "",
+                            projectID = "",
+                            createdAt = System.currentTimeMillis(),
+                            updatedAt = System.currentTimeMillis(),
+                            status = statusName,
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("SessionRepository", "refreshSessionStatuses failed", e)
+        }
     }
 
     override fun observeSessions(directory: String?): Flow<List<Session>> {
