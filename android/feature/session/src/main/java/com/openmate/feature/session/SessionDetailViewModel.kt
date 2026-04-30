@@ -89,11 +89,9 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "loadSession title failed", e)
             }
             try {
-                val msgs = messageRepository.getMessages(sessionID, 80, null)
-                val hasIncomplete = msgs.any { it.role == MessageRole.ASSISTANT && it.completedAt == null }
-                _isStreaming.value = hasIncomplete
+                messageRepository.syncMessages(sessionID, 80)
             } catch (e: Exception) {
-                Log.e(TAG, "getMessages failed", e)
+                Log.e(TAG, "syncMessages failed", e)
             }
             try {
                 todoRepository.refreshTodos(sessionID)
@@ -120,7 +118,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.getSession(sid)
-                messageRepository.getMessages(sid, 80, null)
+                messageRepository.syncMessages(sid, 80)
                 sessionRepository.refreshSessionStatusesFromMessages()
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
@@ -136,7 +134,7 @@ class SessionDetailViewModel @Inject constructor(
                 delay(POLL_INTERVAL_MS)
                 val sid = currentSessionID ?: continue
                 try {
-                    messageRepository.getMessages(sid, 80, null)
+                    messageRepository.syncMessages(sid, 80)
                     sessionRepository.refreshSessionStatusesFromMessages()
                     todoRepository.refreshTodos(sid)
                 } catch (e: Exception) {

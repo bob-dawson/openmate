@@ -125,8 +125,8 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun syncSessionStatusFromRemote(sessionID: String) {
         try {
-            val msgs = api.getMessages(sessionID, 1, null)
-            val hasIncomplete = msgs.any { it.info.role == "assistant" && it.info.time.completed == null }
+            val page = api.getMessages(sessionID, 1, null)
+            val hasIncomplete = page.items.any { it.info.role == "assistant" && it.info.time.completed == null }
             val newStatus = if (hasIncomplete) SessionStatus.BUSY.name else SessionStatus.IDLE.name
             val db = dbProvider.getActive()
             val existing = db.sessionDao().getById(sessionID)

@@ -25,6 +25,7 @@ data class SessionEntity(
     val isCompacting: Boolean = false,
     val isArchived: Boolean = false,
     val status: String? = null,
+    val syncAnchor: String? = null,
 )
 
 fun SessionEntity.toDomain(): Session {
@@ -56,5 +57,6 @@ fun Session.toEntity(): SessionEntity {
         isCompacting = isCompacting,
         isArchived = isArchived,
         status = status?.name,
+        syncAnchor = null,
     )
 }

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
+import com.openmate.core.network.OpencodeApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,7 @@ import javax.inject.Inject
 @HiltViewModel
 class AddInstanceViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
+    private val apiClient: OpencodeApiClient,
 ) : ViewModel() {
 
     val name = MutableStateFlow("")
@@ -56,6 +58,18 @@ class AddInstanceViewModel @Inject constructor(
         viewModelScope.launch {
             _testResult.value = TestResult.Testing
             try {
+                withContext(Dispatchers.IO) {
+                    val portNum = port.value.toIntOrNull() ?: throw IllegalArgumentException("Invalid port")
+                    val url = "http://${address.value}:$portNum"
+                    val saved = apiClient.baseUrl
+                    apiClient.baseUrl = url
+                    try {
+                        val health = apiClient.healthCheck()
+                        if (!health.healthy) throw IllegalStateException("Server unhealthy")
+                    } finally {
+                        apiClient.baseUrl = saved
+                    }
+                }
                 _testResult.value = TestResult.Success
             } catch (e: Exception) {
                 _testResult.value = TestResult.Error(e.message ?: "Connection failed")

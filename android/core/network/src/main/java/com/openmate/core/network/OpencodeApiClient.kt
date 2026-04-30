@@ -27,6 +27,11 @@ class OpencodeApiClient(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
+    data class MessagesPage(
+        val items: List<MessageWithPartsDto>,
+        val nextCursor: String?,
+    )
+
     suspend fun listSessions(directory: String?, limit: Int?, start: Long?): List<SessionDto> {
         val params = mutableMapOf<String, String>()
         params["roots"] = "true"
@@ -58,11 +63,20 @@ class OpencodeApiClient(
         patch("/session/$id", body)
     }
 
-    suspend fun getMessages(sessionID: String, limit: Int, before: String?): List<MessageWithPartsDto> {
+    suspend fun getMessages(sessionID: String, limit: Int, before: String?): MessagesPage {
         val params = mutableMapOf<String, String>()
         params["limit"] = limit.toString()
         before?.let { params["before"] = it }
-        return getList("/session/$sessionID/message", params)
+        val url = buildUrl("/session/$sessionID/message", params)
+        val request = Request.Builder().url(url).get().build()
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: return MessagesPage(emptyList(), null)
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $body")
+        }
+        val items: List<MessageWithPartsDto> = json.decodeFromString(body)
+        val nextCursor = response.header("X-Next-Cursor")
+        return MessagesPage(items, nextCursor)
     }
 
     suspend fun sendPrompt(sessionID: String, content: String) {
