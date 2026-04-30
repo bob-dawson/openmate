@@ -33,6 +33,7 @@ class SseClient(
     private var reconnectAttempts = 0
     private val lastEventTime = AtomicLong(0)
     private val scope = CoroutineScope(Dispatchers.IO)
+    @Volatile private var running = false
 
     companion object {
         private const val HEARTBEAT_TIMEOUT_MS = 30_000L
@@ -59,8 +60,9 @@ class SseClient(
     }
 
     private suspend fun establishConnection(baseUrl: String) {
+        running = true
         val request = Request.Builder()
-            .url("$baseUrl/event")
+            .url("$baseUrl/global/event")
             .get()
             .build()
 
@@ -79,11 +81,14 @@ class SseClient(
             try {
                 reader.useLines { lines ->
                     for (line in lines) {
-                        if (Thread.interrupted()) break
-                        if (!coroutineContext[Job]?.isActive!!) break
+                        if (!running || Thread.interrupted()) break
+                        if (line.startsWith("data:")) {
+                            android.util.Log.d("SseClient", "raw: ${line.take(200)}")
+                        }
                         val sseData = SseParser.parseLine(line)
                         if (sseData != null) {
                             lastEventTime.set(System.currentTimeMillis())
+                            android.util.Log.d("SseClient", "parsed: type=${sseData.type}")
                             _events.emit(sseData)
                         }
                     }
@@ -137,6 +142,7 @@ class SseClient(
     }
 
     fun disconnect() {
+        running = false
         connectJob?.cancel()
         connectJob = null
         stopHeartbeatMonitor()

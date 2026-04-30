@@ -1,9 +1,11 @@
 package com.openmate.core.data.repository
 
+import android.util.Log
 import com.openmate.core.data.sse.EventDispatcher
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.SseEvent
 import com.openmate.core.domain.repository.SseEventRepository
+import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SseClient
 import com.openmate.core.network.SseData
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +23,7 @@ import javax.inject.Singleton
 class SseEventRepositoryImpl @Inject constructor(
     private val sseClient: SseClient,
     private val eventDispatcher: EventDispatcher,
+    private val apiClient: OpencodeApiClient,
 ) : SseEventRepository {
 
     private var eventJob: Job? = null
@@ -38,6 +41,16 @@ class SseEventRepositoryImpl @Inject constructor(
 
         sseClient.connect(address, port, password)
 
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val pathInfo = apiClient.getPath()
+                eventDispatcher.activeDirectory = pathInfo.directory
+                Log.d("SseEventRepo", "activeDirectory set to ${pathInfo.directory}")
+            } catch (e: Exception) {
+                Log.e("SseEventRepo", "failed to fetch /path", e)
+            }
+        }
+
         return sseClient.events.map { sseData ->
             SseEvent(
                 type = sseData.type,
@@ -50,6 +63,7 @@ class SseEventRepositoryImpl @Inject constructor(
         eventJob?.cancel()
         eventJob = null
         isSubscribed = false
+        eventDispatcher.activeDirectory = null
         sseClient.disconnect()
     }
 

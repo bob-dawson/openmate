@@ -33,10 +33,12 @@ class MessageRepositoryImpl @Inject constructor(
             db.partDao().upsertAll(allParts)
         }
 
-        return db.messageDao().getBySession(sessionID, limit).map { msgEntity ->
-            val parts = db.partDao().getByMessage(msgEntity.id).map { it.toDomain() }
-            msgEntity.toDomain(parts)
-        }
+        return db.messageDao().getBySession(sessionID, limit)
+            .sortedBy { it.createdAt }
+            .map { msgEntity ->
+                val parts = db.partDao().getByMessage(msgEntity.id).map { it.toDomain() }
+                msgEntity.toDomain(parts)
+            }
     }
 
     override suspend fun sendMessage(sessionID: String, content: String) {

@@ -9,9 +9,12 @@ import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -35,9 +38,11 @@ class SessionListViewModel @Inject constructor(
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private var currentDirectory: String? = null
+    private var pollJob: Job? = null
 
     companion object {
         private const val TAG = "SessionListVM"
+        private const val POLL_INTERVAL_MS = 15_000L
     }
 
     fun setDirectory(directory: String) {
@@ -45,6 +50,7 @@ class SessionListViewModel @Inject constructor(
         refresh()
         observeSessions()
         observeConnection()
+        startPolling()
     }
 
     fun refresh() {
@@ -102,5 +108,30 @@ class SessionListViewModel @Inject constructor(
                 _connectionStatus.value = status
             }
         }
+    }
+
+    private fun startPolling() {
+        stopPolling()
+        pollJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(POLL_INTERVAL_MS)
+                try {
+                    sessionRepository.getSessions(currentDirectory, null, null)
+                    sessionRepository.refreshSessionStatusesFromMessages()
+                } catch (e: Exception) {
+                    Log.e(TAG, "poll refresh failed", e)
+                }
+            }
+        }
+    }
+
+    private fun stopPolling() {
+        pollJob?.cancel()
+        pollJob = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopPolling()
     }
 }

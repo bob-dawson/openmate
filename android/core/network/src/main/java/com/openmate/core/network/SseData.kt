@@ -5,4 +5,5 @@ import kotlinx.serialization.json.JsonObject
 data class SseData(
     val type: String,
     val properties: JsonObject,
+    val directory: String? = null,
 )

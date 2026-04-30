@@ -65,7 +65,12 @@ open class SessionEventHandler @Inject constructor(
             "session.status" -> {
                 try {
                     val statusObj = props["status"]?.jsonObject
-                    val statusType = statusObj?.get("type")?.jsonPrimitive?.content ?: return
+                    val statusType = statusObj?.get("type")?.jsonPrimitive?.content
+                    Log.d("SessionEventHandler", "session.status: sessionID=$sessionID type=$statusType rawStatus=$statusObj")
+                    if (statusType == null) {
+                        Log.w("SessionEventHandler", "session.status: no type in status object")
+                        return
+                    }
                     val db = dbProvider.getActive()
                     val status = when (statusType) {
                         "busy" -> SessionStatus.BUSY.name

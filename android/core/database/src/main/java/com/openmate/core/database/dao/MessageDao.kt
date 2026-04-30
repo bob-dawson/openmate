@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid ORDER BY createdAt ASC LIMIT :limit")
+    @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid ORDER BY createdAt DESC LIMIT :limit")
     suspend fun getBySession(sid: String, limit: Int): List<MessageEntity>
 
     @Query("SELECT * FROM MessageEntity WHERE sessionID = :sid AND createdAt > :after ORDER BY createdAt ASC LIMIT :limit")
@@ -32,4 +32,7 @@ interface MessageDao {
 
     @Query("DELETE FROM MessageEntity WHERE sessionID = :sid")
     suspend fun deleteBySession(sid: String)
+
+    @Query("SELECT DISTINCT sessionID FROM MessageEntity WHERE role = 'ASSISTANT' AND completedAt IS NULL")
+    suspend fun getBusySessionIDs(): List<String>
 }

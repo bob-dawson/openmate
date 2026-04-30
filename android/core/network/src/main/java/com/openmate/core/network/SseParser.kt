@@ -14,6 +14,8 @@ object SseParser {
         if (jsonStr.isEmpty()) return null
         val jsonObj = json.parseToJsonElement(jsonStr).jsonObject
 
+        val directory = try { jsonObj["directory"]?.jsonPrimitive?.content } catch (_: Exception) { null }
+
         val payload = jsonObj["payload"]?.jsonObject ?: jsonObj
 
         val syncEvent = payload["syncEvent"]?.jsonObject
@@ -21,12 +23,12 @@ object SseParser {
             val versionedType = syncEvent["type"]?.jsonPrimitive?.content ?: return null
             val type = versionedType.substringBeforeLast('.')
             val data = syncEvent["data"]?.jsonObject ?: JsonObject(emptyMap())
-            return SseData(type = type, properties = data)
+            return SseData(type = type, properties = data, directory = directory)
         }
 
         val type = payload["type"]?.jsonPrimitive?.content ?: return null
         val properties = payload["properties"]?.jsonObject ?: JsonObject(emptyMap())
-        return SseData(type = type, properties = properties)
+        return SseData(type = type, properties = properties, directory = directory)
     }
 
     fun parseChunk(chunk: String): List<SseData> {

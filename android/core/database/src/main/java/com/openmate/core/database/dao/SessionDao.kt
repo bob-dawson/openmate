@@ -32,4 +32,7 @@ interface SessionDao {
 
     @Query("DELETE FROM SessionEntity WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("UPDATE SessionEntity SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String?)
 }

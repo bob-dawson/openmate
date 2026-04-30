@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
@@ -87,7 +88,7 @@ fun SessionDetailScreen(
     }
 
     LaunchedEffect(messages.size) {
-        if (atBottom && messages.isNotEmpty()) {
+        if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
@@ -148,6 +149,13 @@ fun SessionDetailScreen(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("刷新") },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.refresh()
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("重命名") },
                                 onClick = {

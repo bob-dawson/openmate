@@ -5,6 +5,7 @@ import com.openmate.core.network.dto.MessageWithPartsDto
 import com.openmate.core.network.dto.PermissionDto
 import com.openmate.core.network.dto.QuestionDto
 import com.openmate.core.network.dto.SessionDto
+import com.openmate.core.network.dto.PathInfo
 import com.openmate.core.network.dto.SessionStatusDto
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -122,6 +123,10 @@ class OpencodeApiClient(
 
     suspend fun healthCheck(): HealthDto {
         return get("/global/health")
+    }
+
+    suspend fun getPath(): PathInfo {
+        return get("/path")
     }
 
     private inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T {

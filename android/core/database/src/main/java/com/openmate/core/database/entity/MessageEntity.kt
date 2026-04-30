@@ -11,7 +11,7 @@ import com.openmate.core.domain.model.Part
     tableName = "MessageEntity",
     indices = [
         Index("sessionID"),
-        Index("createdAt"),
+        Index(value = ["sessionID", "createdAt"]),
     ],
 )
 data class MessageEntity(

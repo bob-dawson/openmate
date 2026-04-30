@@ -39,6 +39,11 @@ OpenMate is an Android native client for [opencode](https://opencode.ai) (the op
 - **Error handling**: Log via `android.util.Log` + expose `errorMessage: StateFlow<String?>` to UI via Snackbar
 - **Never commit unless explicitly asked**
 - **TODO list rule**: TODO items must NOT be deleted or marked completed until the user explicitly verifies them. Every TODO list must always end with a pending "User verification" item for each completed task that awaits human testing.
+- **Mechanism change rule**: Any change involving synchronization, data flow, state management, or other foundational mechanisms MUST follow this process:
+  1. Write or update a design document (e.g., `会话同步设计.md`) explaining the mechanism clearly
+  2. Discuss and get user approval before writing any code
+  3. Only then implement the changes
+  This prevents bugs caused by implementing incorrect mechanisms before fully understanding the underlying logic.
 
 ## OpenCode Server API Reference
 

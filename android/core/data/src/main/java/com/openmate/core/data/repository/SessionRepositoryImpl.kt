@@ -111,6 +111,31 @@ class SessionRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun refreshSessionStatusesFromMessages() {
+        val db = dbProvider.getActive()
+        val busyIds = db.messageDao().getBusySessionIDs()
+        val allSessions = db.sessionDao().getAll()
+        for (session in allSessions) {
+            val newStatus = if (session.id in busyIds) SessionStatus.BUSY.name else SessionStatus.IDLE.name
+            if (session.status != newStatus) {
+                db.sessionDao().updateStatus(session.id, newStatus)
+            }
+        }
+    }
+
+    override suspend fun syncSessionStatusFromRemote(sessionID: String) {
+        try {
+            val msgs = api.getMessages(sessionID, 1, null)
+            val hasIncomplete = msgs.any { it.info.role == "assistant" && it.info.time.completed == null }
+            val newStatus = if (hasIncomplete) SessionStatus.BUSY.name else SessionStatus.IDLE.name
+            val db = dbProvider.getActive()
+            val existing = db.sessionDao().getById(sessionID)
+            if (existing != null && existing.status != newStatus) {
+                db.sessionDao().updateStatus(sessionID, newStatus)
+            }
+        } catch (_: Exception) {}
+    }
+
     override fun observeSessions(directory: String?): Flow<List<Session>> {
         val dao = dbProvider.getActive().sessionDao()
         return if (directory != null) {

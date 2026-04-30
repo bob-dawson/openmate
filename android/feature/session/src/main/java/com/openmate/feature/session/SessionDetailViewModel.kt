@@ -17,9 +17,12 @@ import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.TodoRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -65,9 +68,11 @@ class SessionDetailViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "SessionDetailVM"
+        private const val POLL_INTERVAL_MS = 15_000L
     }
 
     private var currentSessionID: String? = null
+    private var pollJob: Job? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -80,14 +85,25 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 val session = sessionRepository.getSession(sessionID)
                 _sessionTitle.value = session?.title ?: ""
-                _isStreaming.value = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
             } catch (e: Exception) {
                 Log.e(TAG, "loadSession title failed", e)
             }
             try {
-                messageRepository.getMessages(sessionID, 80, null)
+                val msgs = messageRepository.getMessages(sessionID, 80, null)
+                val hasIncomplete = msgs.any { it.role == MessageRole.ASSISTANT && it.completedAt == null }
+                _isStreaming.value = hasIncomplete
             } catch (e: Exception) {
                 Log.e(TAG, "getMessages failed", e)
+            }
+            try {
+                todoRepository.refreshTodos(sessionID)
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshTodos failed", e)
+            }
+            try {
+                sessionRepository.refreshSessionStatusesFromMessages()
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshStatusFromMessages failed", e)
             }
             _isLoading.value = false
         }
@@ -96,6 +112,48 @@ class SessionDetailViewModel @Inject constructor(
         observePermissions()
         observeQuestions()
         observeTodos(sessionID)
+        startPolling()
+    }
+
+    fun refresh() {
+        val sid = currentSessionID ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sessionRepository.getSession(sid)
+                messageRepository.getMessages(sid, 80, null)
+                sessionRepository.refreshSessionStatusesFromMessages()
+                todoRepository.refreshTodos(sid)
+            } catch (e: Exception) {
+                Log.e(TAG, "manual refresh failed", e)
+            }
+        }
+    }
+
+    private fun startPolling() {
+        stopPolling()
+        pollJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(POLL_INTERVAL_MS)
+                val sid = currentSessionID ?: continue
+                try {
+                    messageRepository.getMessages(sid, 80, null)
+                    sessionRepository.refreshSessionStatusesFromMessages()
+                    todoRepository.refreshTodos(sid)
+                } catch (e: Exception) {
+                    Log.e(TAG, "poll refresh failed", e)
+                }
+            }
+        }
+    }
+
+    private fun stopPolling() {
+        pollJob?.cancel()
+        pollJob = null
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopPolling()
     }
 
     fun sendMessage(sessionID: String) {
@@ -169,6 +227,8 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch {
             messageRepository.observeMessages(sessionID).collect { list ->
                 _messages.value = list
+                val hasIncompleteAssistant = list.any { it.role == MessageRole.ASSISTANT && it.completedAt == null }
+                _isStreaming.value = hasIncompleteAssistant
                 _pendingAssistantId.value = list
                     .filter { it.role == MessageRole.ASSISTANT && it.completedAt == null }
                     .maxByOrNull { it.id }?.id
@@ -177,11 +237,6 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     private fun observeSessionStatus(sessionID: String) {
-        viewModelScope.launch {
-            sessionRepository.observeSession(sessionID).collect { session ->
-                _isStreaming.value = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
-            }
-        }
     }
 
     private fun observePermissions() {
