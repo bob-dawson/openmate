@@ -22,6 +22,9 @@ fun NavGraphBuilder.sessionScreens(
                 val encoded = java.net.URLEncoder.encode(directory, "UTF-8")
                 navController.navigate("${SessionRoutes.SESSION_LIST}/$encoded")
             },
+            onNavigateToDetail = { id ->
+                navController.navigate("${SessionRoutes.SESSION_DETAIL}/$id")
+            },
             onNavigateToSettings = { navController.navigate("settings") },
             onBack = { navController.popBackStack() },
         )

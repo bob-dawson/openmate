@@ -17,11 +17,15 @@ import androidx.compose.ui.unit.dp
 import com.openmate.core.common.toTimeString
 import com.openmate.core.domain.model.Message
 import com.openmate.core.domain.model.MessageRole
+import com.openmate.core.domain.model.QuestionRequest
 
 @Composable
 fun MessageItem(
     message: Message,
     pendingAssistantId: String? = null,
+    pendingQuestions: List<QuestionRequest> = emptyList(),
+    onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
+    onRejectQuestion: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.role == MessageRole.USER
@@ -48,6 +52,9 @@ fun MessageItem(
         PartColumn(
             parts = message.parts,
             isUser = isUser,
+            pendingQuestions = pendingQuestions,
+            onReplyQuestion = onReplyQuestion,
+            onRejectQuestion = onRejectQuestion,
         )
         if (isQueued) {
             Box(

@@ -94,7 +94,7 @@ fun TodoListCard(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             sortedTodos.forEach { todo ->
-                TodoItemRow(todo)
+                TodoItemRow(todo, expanded.value)
             }
         }
 
@@ -131,7 +131,7 @@ private fun StatusBadge(count: Int, label: String, color: androidx.compose.ui.gr
 }
 
 @Composable
-private fun TodoItemRow(todo: TodoInfo) {
+private fun TodoItemRow(todo: TodoInfo, expanded: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         when (todo.status) {
             "in_progress" -> {
@@ -197,7 +197,7 @@ private fun TodoItemRow(todo: TodoInfo) {
                 "completed", "cancelled" -> Muted
                 else -> MaterialTheme.colorScheme.onSurface
             },
-            maxLines = 1,
+            maxLines = if (expanded) Int.MAX_VALUE else 2,
             overflow = TextOverflow.Ellipsis,
             textDecoration = if (todo.status == "completed" || todo.status == "cancelled") {
                 TextDecoration.LineThrough

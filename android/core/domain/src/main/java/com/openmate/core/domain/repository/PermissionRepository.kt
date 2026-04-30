@@ -5,7 +5,7 @@ import com.openmate.core.domain.model.PermissionRequest
 import kotlinx.coroutines.flow.Flow
 
 interface PermissionRepository {
-    suspend fun getPending(): List<PermissionRequest>
+    suspend fun refresh()
     suspend fun reply(requestID: String, reply: PermissionReply, message: String?)
     fun observePending(): Flow<List<PermissionRequest>>
 }

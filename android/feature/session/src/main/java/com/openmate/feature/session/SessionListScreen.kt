@@ -255,7 +255,7 @@ private fun SessionCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(

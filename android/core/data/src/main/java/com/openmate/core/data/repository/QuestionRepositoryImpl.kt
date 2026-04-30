@@ -16,11 +16,11 @@ class QuestionRepositoryImpl @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
 ) : QuestionRepository {
 
-    override suspend fun getPending(): List<QuestionRequest> {
+    override suspend fun refresh() {
         val dtos = api.listQuestions()
         val dao = dbProvider.getActive().questionDao()
+        dao.deleteAll()
         dtos.forEach { dao.upsert(it.toDomain().toEntity()) }
-        return dao.getAll().map { it.toDomain() }
     }
 
     override suspend fun reply(requestID: String, answers: List<List<String>>) {

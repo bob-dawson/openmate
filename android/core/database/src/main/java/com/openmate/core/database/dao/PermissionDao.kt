@@ -20,4 +20,7 @@ interface PermissionDao {
 
     @Query("DELETE FROM PermissionEntity WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("DELETE FROM PermissionEntity")
+    suspend fun deleteAll()
 }

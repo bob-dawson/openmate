@@ -24,7 +24,7 @@ import com.openmate.core.database.entity.TodoEntity
         QuestionEntity::class,
         TodoEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

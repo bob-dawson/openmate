@@ -91,7 +91,7 @@ class InstanceListViewModel @Inject constructor(
         }
     }
 
-    fun connect(profile: ServerProfile, onConnected: () -> Unit = {}) {
+    fun connect(profile: ServerProfile, onNavigate: () -> Unit = {}) {
         try {
             dbProvider.setActive(profile.id)
             apiClient.baseUrl = "http://${profile.address}:${profile.port}"
@@ -99,15 +99,14 @@ class InstanceListViewModel @Inject constructor(
             _error.value = e.message
             return
         }
+        onNavigate()
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
-                sseEventRepository.observeConnectionStatus().first { it == ConnectionStatus.CONNECTED }
                 val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
                 profileRepository.save(updated)
-                withContext(Dispatchers.Main) { onConnected() }
             } catch (e: Exception) {
-                _error.value = e.message
+                Log.w("InstanceListVM", "SSE connect failed (offline mode)", e)
             }
         }
     }

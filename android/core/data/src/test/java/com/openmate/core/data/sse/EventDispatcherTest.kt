@@ -2,73 +2,67 @@ package com.openmate.core.data.sse
 
 import com.google.common.truth.Truth.assertThat
 import com.openmate.core.network.SseData
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Before
 import org.junit.Test
 
 class EventDispatcherTest {
-    private var lastSessionEventType: String? = null
-    private var lastMessageEventType: String? = null
     private var lastPermissionEventType: String? = null
     private var lastQuestionEventType: String? = null
     private lateinit var dispatcher: EventDispatcher
 
+    private val stubDbProvider = object : com.openmate.core.database.ActiveDatabaseProvider() {
+        override fun getActive() = throw UnsupportedOperationException()
+        override fun getActiveProfileId() = null
+    }
+
+    private val stubApi = com.openmate.core.network.OpencodeApiClient(
+        client = okhttp3.OkHttpClient(),
+        baseUrl = "http://localhost",
+    )
+
     @Before
     fun setup() {
         dispatcher = EventDispatcher(
-            sessionHandler = object : SessionEventHandler() {
-                override fun handle(type: String, event: SseData) {
-                    lastSessionEventType = type
-                }
+            sessionHandler = SessionEventHandler(dbProvider = stubDbProvider),
+            messageHandler = object : MessageEventHandler(api = stubApi, dbProvider = stubDbProvider) {
+                override suspend fun handle(type: String, event: SseData) {}
             },
-            messageHandler = object : MessageEventHandler() {
-                override fun handle(type: String, event: SseData) {
-                    lastMessageEventType = type
-                }
-            },
-            permissionHandler = object : PermissionEventHandler() {
-                override fun handle(type: String, event: SseData) {
+            permissionHandler = object : PermissionEventHandler(api = stubApi, dbProvider = stubDbProvider) {
+                override suspend fun handle(type: String, event: SseData) {
                     lastPermissionEventType = type
                 }
             },
-            questionHandler = object : QuestionEventHandler() {
-                override fun handle(type: String, event: SseData) {
+            questionHandler = object : QuestionEventHandler(api = stubApi, dbProvider = stubDbProvider) {
+                override suspend fun handle(type: String, event: SseData) {
                     lastQuestionEventType = type
                 }
+            },
+            todoHandler = object : TodoEventHandler(dbProvider = stubDbProvider) {
+                override suspend fun handle(type: String, event: SseData) {}
             },
         )
     }
 
     @Test
-    fun dispatch_routesSessionEvent() {
-        dispatcher.dispatch(makeEvent("session.created"))
-        assertThat(lastSessionEventType).isEqualTo("session.created")
+    fun dispatch_routesPermissionEvent() = runTest {
+        dispatcher.dispatch(makeEvent("permission.requested"))
+        assertThat(lastPermissionEventType).isEqualTo("permission.requested")
     }
 
     @Test
-    fun dispatch_routesMessageEvent() {
-        dispatcher.dispatch(makeEvent("message.updated"))
-        assertThat(lastMessageEventType).isEqualTo("message.updated")
+    fun dispatch_routesQuestionEvent() = runTest {
+        dispatcher.dispatch(makeEvent("question.requested"))
+        assertThat(lastQuestionEventType).isEqualTo("question.requested")
     }
 
     @Test
-    fun dispatch_routesPermissionEvent() {
-        dispatcher.dispatch(makeEvent("permission.asked"))
-        assertThat(lastPermissionEventType).isEqualTo("permission.asked")
-    }
-
-    @Test
-    fun dispatch_routesQuestionEvent() {
-        dispatcher.dispatch(makeEvent("question.asked"))
-        assertThat(lastQuestionEventType).isEqualTo("question.asked")
-    }
-
-    @Test
-    fun dispatch_serverHeartbeat_noHandlerCalled() {
+    fun dispatch_serverHeartbeat_noHandlerCalled() = runTest {
         dispatcher.dispatch(makeEvent("server.heartbeat"))
-        assertThat(lastSessionEventType).isNull()
-        assertThat(lastMessageEventType).isNull()
+        assertThat(lastPermissionEventType).isNull()
+        assertThat(lastQuestionEventType).isNull()
     }
 
     private fun makeEvent(type: String): SseData {

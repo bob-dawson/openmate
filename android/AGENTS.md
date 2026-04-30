@@ -31,6 +31,7 @@ OpenMate is an Android native client for [opencode](https://opencode.ai) (the op
 - **IDE**: Android Studio (user compiles in IDE, NOT CLI — don't run `assembleDebug` unless asked)
 - **SDK**: `C:\Users\bob_d\AppData\Local\Android\Sdk` (in `local.properties`)
 - **Min SDK**: 26, **Target SDK**: 36
+- **Kotlin compilation error search**: Use `Select-String -Pattern "^e:"` (not `error:` or `e:` without `^` anchor) to filter Kotlin compiler errors from `gradlew compileDebugKotlin` output. The `^` anchor is critical — without it, `e:` matches inside normal log lines like `core:database:preBuild`.
 
 ## Key Conventions
 - **No mocking libraries** — use hand-crafted fakes/test doubles

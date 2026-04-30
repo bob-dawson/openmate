@@ -103,6 +103,16 @@ class SessionDetailViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "refreshStatusFromMessages failed", e)
             }
+            try {
+                permissionRepository.refresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshPermissions failed", e)
+            }
+            try {
+                questionRepository.refresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshQuestions failed", e)
+            }
             _isLoading.value = false
         }
         observeMessages(sessionID)
@@ -137,6 +147,8 @@ class SessionDetailViewModel @Inject constructor(
                     messageRepository.syncMessages(sid, 80)
                     sessionRepository.refreshSessionStatusesFromMessages()
                     todoRepository.refreshTodos(sid)
+                    permissionRepository.refresh()
+                    questionRepository.refresh()
                 } catch (e: Exception) {
                     Log.e(TAG, "poll refresh failed", e)
                 }

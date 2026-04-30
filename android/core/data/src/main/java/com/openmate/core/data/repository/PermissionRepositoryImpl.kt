@@ -17,11 +17,11 @@ class PermissionRepositoryImpl @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
 ) : PermissionRepository {
 
-    override suspend fun getPending(): List<PermissionRequest> {
+    override suspend fun refresh() {
         val dtos = api.listPermissions()
         val dao = dbProvider.getActive().permissionDao()
+        dao.deleteAll()
         dtos.forEach { dao.upsert(it.toDomain().toEntity()) }
-        return dao.getAll().map { it.toDomain() }
     }
 
     override suspend fun reply(requestID: String, reply: PermissionReply, message: String?) {

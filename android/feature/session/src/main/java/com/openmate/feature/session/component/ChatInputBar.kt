@@ -1,7 +1,6 @@
 package com.openmate.feature.session.component
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -28,8 +26,6 @@ fun ChatInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
-    onAbort: () -> Unit = {},
-    isStreaming: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -59,30 +55,22 @@ fun ChatInputBar(
             shape = RoundedCornerShape(4.dp),
         )
         IconButton(
-            onClick = if (isStreaming) onAbort else onSend,
-            enabled = isStreaming || text.isNotBlank(),
+            onClick = onSend,
+            enabled = text.isNotBlank(),
             modifier = Modifier.height(40.dp),
             colors = IconButtonDefaults.iconButtonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
             ),
         ) {
-            if (isStreaming) {
-                Icon(
-                    Icons.Default.Stop,
-                    contentDescription = "Abort",
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            } else {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Send",
-                    tint = if (text.isNotBlank()) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
+            Icon(
+                Icons.AutoMirrored.Filled.Send,
+                contentDescription = "Send",
+                tint = if (text.isNotBlank()) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
         }
     }
 }

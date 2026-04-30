@@ -121,15 +121,6 @@ fun SessionDetailScreen(
         )
     }
 
-    pendingQuestions.firstOrNull()?.let { question ->
-        QuestionDialog(
-            request = question,
-            onSubmit = { answers -> viewModel.replyQuestion(question.id, answers) },
-            onReject = { viewModel.rejectQuestion(question.id) },
-            onDismiss = {},
-        )
-    }
-
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -149,6 +140,15 @@ fun SessionDetailScreen(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
                         ) {
+                            if (isStreaming) {
+                                DropdownMenuItem(
+                                    text = { Text("中断") },
+                                    onClick = {
+                                        menuExpanded = false
+                                        viewModel.abort(sessionID)
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("刷新") },
                                 onClick = {
@@ -208,7 +208,13 @@ fun SessionDetailScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
                     items(messages, key = { it.id }) { message ->
-                        MessageItem(message = message, pendingAssistantId = pendingAssistantId)
+                        MessageItem(
+                            message = message,
+                            pendingAssistantId = pendingAssistantId,
+                            pendingQuestions = pendingQuestions,
+                            onReplyQuestion = { id, answers -> viewModel.replyQuestion(id, answers) },
+                            onRejectQuestion = { id -> viewModel.rejectQuestion(id) },
+                        )
                     }
                     if (messages.isEmpty()) {
                         item {
@@ -233,8 +239,6 @@ fun SessionDetailScreen(
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
                 onSend = { viewModel.sendMessage(sessionID) },
-                onAbort = { viewModel.abort(sessionID) },
-                isStreaming = isStreaming,
             )
         }
     }

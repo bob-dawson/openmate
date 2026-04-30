@@ -80,22 +80,19 @@ class WorkspaceListViewModel @Inject constructor(
         _errorMessage.value = null
     }
 
-    fun createSession(title: String? = null, directory: String? = null, onCreated: (String) -> Unit) {
+    fun createSession(title: String? = null, directory: String? = null, onNavigateToDirectory: (String) -> Unit, onNavigateToDetail: (String) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val session = sessionRepository.createSession(title = title, directory = directory)
                 withContext(Dispatchers.Main) {
-                    onNavigateToWorkspace(session.directory, onCreated, session.id)
+                    onNavigateToDirectory(session.directory)
+                    onNavigateToDetail(session.id)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "createSession failed", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
             }
         }
-    }
-
-    private fun onNavigateToWorkspace(directory: String, onCreated: (String) -> Unit, sessionId: String) {
-        onCreated(sessionId)
     }
 
     private fun observeWorkspaces() {

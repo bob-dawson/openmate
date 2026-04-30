@@ -59,6 +59,7 @@ import com.openmate.core.ui.component.TopBar
 @Composable
 fun WorkspaceListScreen(
     onNavigateToWorkspace: (String) -> Unit,
+    onNavigateToDetail: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onBack: () -> Unit,
     viewModel: WorkspaceListViewModel = hiltViewModel(),
@@ -153,7 +154,8 @@ fun WorkspaceListScreen(
                     viewModel.createSession(
                         title = newSessionTitle.ifBlank { null },
                         directory = newSessionDirectory.ifBlank { null },
-                        onCreated = onNavigateToWorkspace,
+                        onNavigateToDirectory = onNavigateToWorkspace,
+                        onNavigateToDetail = onNavigateToDetail,
                     )
                 }) {
                     Text("创建")
