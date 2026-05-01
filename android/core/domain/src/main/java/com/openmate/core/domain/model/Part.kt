@@ -1,5 +1,7 @@
 package com.openmate.core.domain.model
 
+import kotlinx.serialization.json.JsonObject
+
 sealed interface Part {
     val id: String
 
@@ -17,6 +19,7 @@ sealed interface Part {
         val state: ToolCallState,
         val args: String? = null,
         val result: String? = null,
+        val metadata: JsonObject? = null,
     ) : Part
 
     data class StepStartPart(

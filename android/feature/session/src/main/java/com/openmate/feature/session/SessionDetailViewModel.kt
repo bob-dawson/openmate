@@ -172,6 +172,9 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 messageRepository.sendMessage(sessionID, text)
+                messageRepository.syncMessages(sessionID, 80)
+                permissionRepository.refresh()
+                questionRepository.refresh()
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
@@ -233,7 +236,7 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    private fun observeMessages(sessionID: String) {
+private fun observeMessages(sessionID: String) {
         viewModelScope.launch {
             messageRepository.observeMessages(sessionID).collect { list ->
                 _messages.value = list

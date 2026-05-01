@@ -5,6 +5,8 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.openmate.core.domain.model.Part
 import com.openmate.core.domain.model.ToolCallState
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 @Entity(
     tableName = "PartEntity",
@@ -26,6 +28,7 @@ data class PartEntity(
     val toolState: String? = null,
     val toolArgs: String? = null,
     val toolResult: String? = null,
+    val toolMetadata: String? = null,
     val snapshot: String? = null,
     val hash: String? = null,
     val files: String? = null,
@@ -44,6 +47,8 @@ data class PartEntity(
     val error: String? = null,
 )
 
+private val partJson = Json { ignoreUnknownKeys = true }
+
 fun PartEntity.toDomain(): Part {
     return when (type) {
         "text" -> Part.TextPart(id = id, text = text ?: "")
@@ -54,6 +59,7 @@ fun PartEntity.toDomain(): Part {
             state = toolState?.let { runCatching { ToolCallState.valueOf(it) }.getOrNull() } ?: ToolCallState.PENDING,
             args = toolArgs,
             result = toolResult,
+            metadata = if (toolMetadata.isNullOrBlank()) null else runCatching { partJson.decodeFromString(JsonObject.serializer(), toolMetadata!!) }.getOrNull(),
         )
         "step-start" -> Part.StepStartPart(id = id, snapshot = snapshot)
         "step-finish" -> Part.StepFinishPart(
@@ -102,6 +108,7 @@ fun Part.toEntity(messageID: String, sessionID: String, sequence: Int): PartEnti
             toolState = state.name,
             toolArgs = args,
             toolResult = result,
+            toolMetadata = metadata?.let { partJson.encodeToString(JsonObject.serializer(), it) },
         )
         is Part.StepStartPart -> PartTuple(type = "step-start", snapshot = snapshot)
         is Part.StepFinishPart -> PartTuple(
@@ -131,6 +138,7 @@ fun Part.toEntity(messageID: String, sessionID: String, sequence: Int): PartEnti
         toolState = data.toolState,
         toolArgs = data.toolArgs,
         toolResult = data.toolResult,
+        toolMetadata = data.toolMetadata,
         snapshot = data.snapshot,
         hash = data.hash,
         files = data.files,
@@ -158,6 +166,7 @@ private data class PartTuple(
     val toolState: String? = null,
     val toolArgs: String? = null,
     val toolResult: String? = null,
+    val toolMetadata: String? = null,
     val snapshot: String? = null,
     val hash: String? = null,
     val files: String? = null,

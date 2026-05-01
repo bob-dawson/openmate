@@ -61,7 +61,7 @@ fun SubtaskDetailScreen(
     }
 
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
+        if (messages.isNotEmpty() && !isLoading) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }

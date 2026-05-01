@@ -157,6 +157,7 @@ fun PartDto.toDomain(): Part {
             },
             args = state?.input?.toString(),
             result = state?.output,
+            metadata = (state?.metadata as? JsonObject),
         )
         "reasoning" -> Part.ReasoningPart(id = id, text = text ?: "")
         "step-start" -> Part.StepStartPart(id = id, snapshot = snapshot)

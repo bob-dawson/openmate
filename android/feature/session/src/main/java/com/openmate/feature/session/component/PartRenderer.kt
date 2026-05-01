@@ -45,6 +45,7 @@ import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionInfo
 import com.openmate.core.domain.model.QuestionOption
 import com.openmate.core.domain.model.QuestionRequest
+import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.model.ToolCallState
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.serialization.json.Json
@@ -69,6 +70,7 @@ sealed class DisplayItem {
         val files: List<String>,
         val hash: String?,
         val callID: String? = null,
+        val metadata: JsonObject? = null,
     ) : DisplayItem()
     data class ReasoningItem(val text: String) : DisplayItem()
 }
@@ -94,69 +96,69 @@ private fun toolSummary(toolName: String, args: String?, result: String?): ToolS
         "bash" -> {
             val command = jsonArgs.str("command") ?: args?.take(80) ?: ""
             val hasOutput = result != null && result.isNotBlank()
-            return ToolSummary("$", command, hasOutput)
+            return ToolSummary("bash", command.ifBlank { "bash" }, hasOutput)
         }
         "glob" -> {
             val pattern = jsonArgs.str("pattern") ?: ""
             val path = jsonArgs.str("path")
             val suffix = if (path != null) " in $path" else ""
-            return ToolSummary("✱", "glob $pattern$suffix", false)
+            return ToolSummary("glob", "$pattern$suffix".ifBlank { "glob" }, false)
         }
         "read" -> {
             val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            return ToolSummary("→", filePath, false)
+            return ToolSummary("read", filePath.ifBlank { "read" }, false)
         }
         "grep" -> {
             val pattern = jsonArgs.str("pattern") ?: ""
             val path = jsonArgs.str("path")
             val suffix = if (path != null) " in $path" else ""
-            return ToolSummary("✱", "grep $pattern$suffix", false)
+            return ToolSummary("grep", "$pattern$suffix".ifBlank { "grep" }, false)
         }
         "webfetch" -> {
             val url = jsonArgs.str("url") ?: ""
-            return ToolSummary("%", url, false)
+            return ToolSummary("webfetch", url.ifBlank { "webfetch" }, false)
         }
         "websearch" -> {
             val query = jsonArgs.str("query") ?: ""
-            return ToolSummary("◈", query, false)
+            return ToolSummary("websearch", query.ifBlank { "websearch" }, false)
         }
         "codesearch" -> {
             val query = jsonArgs.str("query") ?: ""
-            return ToolSummary("◇", query, false)
+            return ToolSummary("codesearch", query.ifBlank { "codesearch" }, false)
         }
         "write" -> {
             val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            val hasDiags = result != null
-            return ToolSummary("←", filePath, hasDiags)
+            val hasContent = jsonArgs?.containsKey("content") == true
+            return ToolSummary("write", filePath.ifBlank { "write" }, hasContent)
         }
         "edit" -> {
             val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            val hasDiff = result != null
-            return ToolSummary("←", filePath, hasDiff)
+            val hasDiff = jsonArgs?.containsKey("oldString") == true || jsonArgs?.containsKey("newString") == true
+            return ToolSummary("edit", filePath.ifBlank { "edit" }, hasDiff)
         }
         "task" -> {
             val desc = jsonArgs.str("description") ?: ""
             val agent = jsonArgs.str("agent") ?: toolName
-            return ToolSummary("│", "$agent: $desc", false)
+            return ToolSummary("task", "$agent: $desc", false)
         }
         "apply_patch" -> {
             val hasFiles = result != null
-            return ToolSummary("%", "apply_patch", hasFiles)
+            return ToolSummary("apply_patch", "", hasFiles)
         }
         "todowrite" -> {
-            return ToolSummary("⚙", "todowrite", true)
+            return ToolSummary("todowrite", "", true)
         }
         "question" -> {
-            return ToolSummary("→", "question", true)
+            return ToolSummary("question", "", true)
         }
         "skill" -> {
             val name = jsonArgs.str("name") ?: ""
-            return ToolSummary("→", name, false)
+            return ToolSummary("skill", name, false)
         }
         else -> {
             val hasOutput = result != null && result.isNotBlank()
             val paramSnippet = args?.take(60) ?: ""
-            return ToolSummary("⚙", "$toolName $paramSnippet", hasOutput)
+            return ToolSummary(toolName, paramSnippet, hasOutput)
         }
     }
 }
@@ -180,6 +182,24 @@ private fun parseQuestionArgs(args: String?): List<QuestionInfo>? {
                 question = obj.str("question") ?: "",
                 options = opts,
                 multiple = obj.bool("multiple"),
+            )
+        }
+    } catch (_: Exception) {
+        return null
+    }
+}
+
+private fun parseTodoArgs(args: String?): List<TodoInfo>? {
+    if (args == null) return null
+    try {
+        val root = questionJson.parseToJsonElement(args).jsonObject
+        val todosArr = root["todos"]?.jsonArray ?: return null
+        return todosArr.map { elem ->
+            val obj = elem.jsonObject
+            TodoInfo(
+                content = obj.str("content") ?: "",
+                status = obj.str("status") ?: "pending",
+                priority = obj.str("priority") ?: "medium",
             )
         }
     } catch (_: Exception) {
@@ -217,6 +237,7 @@ fun List<Part>.toDisplayItems(isUser: Boolean): List<DisplayItem> {
                     files = nextPatch?.files ?: emptyList(),
                     hash = nextPatch?.hash,
                     callID = part.toolCallID,
+                    metadata = part.metadata,
                 ))
             }
             is Part.PatchPart -> {
@@ -289,7 +310,12 @@ fun PartColumn(
                             PendingToolLine(item)
                         }
                     } else if (item.state == ToolCallState.RUNNING) {
-                        RunningToolLine(item)
+                        val summary = toolSummary(item.toolName, item.args, item.result)
+                        if (item.toolName == "task" && onNavigateToSubtask != null) {
+                            TaskToolLine(item, summary, onNavigateToSubtask)
+                        } else {
+                            RunningToolLine(item)
+                        }
                     } else if (item.state == ToolCallState.ERROR) {
                         ErrorToolLine(item)
                     } else {
@@ -352,19 +378,20 @@ private fun InlineToolLine(item: DisplayItem.ToolItem) {
     ) {
         Text(
             text = summary.icon,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontFamily = FontFamily.Monospace,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
         )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = summary.text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            fontFamily = FontFamily.Monospace,
-        )
+        if (summary.text.isNotBlank()) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = summary.text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
     }
 }
 
@@ -380,13 +407,32 @@ private fun RunningToolLine(item: DisplayItem.ToolItem) {
             strokeWidth = 2.dp,
         )
         Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = "${summary.icon} ${summary.text}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+Text(
+                text = summary.icon,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            if (summary.text.isNotBlank()) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = summary.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        if (summary.text.isNotBlank()) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = summary.text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -399,13 +445,12 @@ private fun PendingToolLine(item: DisplayItem.ToolItem) {
     ) {
         Text(
             text = summary.icon,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             color = WarningColor,
-            fontFamily = FontFamily.Monospace,
         )
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Text(
-            text = "Using ${summary.text}...",
+            text = if (summary.text.isNotBlank()) summary.text else "waiting...",
             style = MaterialTheme.typography.bodySmall,
             color = WarningColor,
             maxLines = 1,
@@ -427,13 +472,21 @@ private fun ErrorToolLine(item: DisplayItem.ToolItem) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "${summary.icon} ${summary.text}",
-                style = MaterialTheme.typography.bodySmall,
+                text = summary.icon,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.error,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None,
             )
+            if (summary.text.isNotBlank()) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = summary.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None,
+                )
+            }
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = if (expanded.value) "▲" else "▼",
@@ -469,9 +522,11 @@ private fun TaskToolLine(
     summary: ToolSummary,
     onNavigate: (subtaskSessionID: String, title: String) -> Unit,
 ) {
-    val subtaskSessionID = remember(item.result) {
-        item.result?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+    val subtaskSessionID = remember(item.metadata, item.result) {
+        item.metadata.str("sessionId")
+            ?: item.result?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
     }
+    val isRunning = item.state == ToolCallState.RUNNING
     val canNavigate = subtaskSessionID != null
 
     Row(
@@ -481,20 +536,28 @@ private fun TaskToolLine(
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (isRunning) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
         Text(
-            text = "│",
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+            text = "task",
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             color = AgentColor,
-            fontFamily = FontFamily.Monospace,
         )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = summary.text,
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-            color = AgentColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (summary.text.isNotBlank()) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = summary.text,
+                style = MaterialTheme.typography.bodySmall,
+                color = AgentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (canNavigate) {
             Spacer(modifier = Modifier.width(4.dp))
             Text(
@@ -520,19 +583,20 @@ private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
         ) {
             Text(
                 text = summary.icon,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.primary,
             )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = summary.text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontFamily = FontFamily.Monospace,
-            )
+            if (summary.text.isNotBlank()) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = summary.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = if (expanded.value) "▲" else "▼",
@@ -580,13 +644,120 @@ private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                    } else if (item.toolName == "todowrite") {
-                        item.result?.let { output ->
+                    } else if (item.toolName == "edit") {
+                        val jsonArgs = try {
+                            if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
+                        } catch (_: Exception) { null }
+                        val filePath = jsonArgs?.str("filePath") ?: jsonArgs?.str("file_path") ?: ""
+                        if (filePath.isNotBlank()) {
                             Text(
-                                text = output.take(500),
-                                style = MaterialTheme.typography.bodySmall,
+                                text = filePath,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                        val oldStr = jsonArgs?.str("oldString") ?: jsonArgs?.str("old_string")
+                        val newStr = jsonArgs?.str("newString") ?: jsonArgs?.str("new_string")
+                        if (oldStr != null) {
+                            Text(
+                                text = "- $oldStr",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 8,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (newStr != null) {
+                            Text(
+                                text = "+ $newStr",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = Color(0xFF7FD88F),
+                                maxLines = 8,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        if (oldStr == null && newStr == null) {
+                            item.result?.let { output ->
+                                Text(
+                                    text = output.take(500),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 10,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    } else if (item.toolName == "write") {
+                        val jsonArgs = try {
+                            if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
+                        } catch (_: Exception) { null }
+                        val filePath = jsonArgs?.str("filePath") ?: jsonArgs?.str("file_path") ?: ""
+                        if (filePath.isNotBlank()) {
+                            Text(
+                                text = filePath,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
+                        val content = jsonArgs?.str("content")
+                        if (content != null) {
+                            Text(
+                                text = content.take(800),
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 15,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        } else {
+                            item.result?.let { output ->
+                                Text(
+                                    text = output.take(500),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 10,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    } else if (item.toolName == "todowrite") {
+                        val todos = parseTodoArgs(item.args)
+                        if (todos != null) {
+                            todos.forEach { todo ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = when (todo.status) {
+                                            "completed" -> "✓"
+                                            "in_progress" -> "●"
+                                            "cancelled" -> "✗"
+                                            else -> "○"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = when (todo.status) {
+                                            "completed" -> Color(0xFF7FD88F)
+                                            "in_progress" -> Color(0xFF56B6C2)
+                                            else -> Color(0xFF808080)
+                                        },
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = todo.content,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (todo.status == "completed" || todo.status == "cancelled") Color(0xFF808080) else MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        } else {
+                            item.result?.let { output ->
+                                Text(
+                                    text = output.take(500),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                         }
                     } else {
                         item.result?.let { output ->

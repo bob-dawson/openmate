@@ -35,7 +35,7 @@ fun MessageItem(
 ) {
     val isUser = message.role == MessageRole.USER
     val isQueued = isUser && pendingAssistantId != null && message.id > pendingAssistantId
-    val modelLabel = if (message.modelID != null) {
+    val modelLabel = if (isUser && message.modelID != null) {
         val provider = message.providerID ?: ""
         val model = message.modelID
         if (provider.isNotBlank()) "$provider/$model" else model
