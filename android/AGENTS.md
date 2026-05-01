@@ -1,223 +1,100 @@
 # AGENTS.md — OpenMate Android
 
 ## Project Overview
-OpenMate is an Android native client for [opencode](https://opencode.ai) (the open-source AI coding agent). It connects to a running `opencode serve` instance over LAN/Tailscale.
+OpenMate: opencode 的原生 Android 客户端，连接 `opencode serve` 实例 (LAN/Tailscale)。
 
-- **Repository**: `D:\openmate`
-- **Android project root**: `D:\openmate\android`
-- **OpenCode source (local)**: `D:\github\opencode`
-- **Design doc**: `D:\openmate\OpenMate设计.md`
+- **Android root**: `D:\openmate\android`
+- **opencode 源码**: `D:\github\opencode`
+- **设计文档**: `D:\openmate\OpenMate设计.md`
+- **同步设计**: `D:\openmate\会话同步设计.md`
 
 ## Architecture
-- **Language**: Kotlin 2.2.0
-- **UI**: Jetpack Compose + Material 3 (dark theme, opencode color palette)
-- **Architecture**: MVVM + Hilt DI + Room + OkHttp
-- **Build**: AGP 8.11.0, KSP 2.2.0-2.0.2, Compose BOM 2025.07.00
-- **Multi-module structure**:
-  ```
-  app/                          # Hilt Application, ConnectionManager, NavHost, MainActivity
-  core/common/                  # Utilities (time formatting, etc.)
-  core/domain/                  # Pure Kotlin models + repository interfaces
-  core/data/                    # Repository implementations, SSE event handlers/dispatcher
-  core/database/                # Room entities, DAOs, ActiveDatabaseProvider (per-instance DB)
-  core/network/                 # OpencodeApiClient, SseClient, SseParser, DTOs
-  core/ui/                      # Shared UI components (TopBar, EmptyStateView)
-  feature/instance/             # Server profile list, add/edit instance
-  feature/session/              # Session list, session detail (chat), message parts
-  feature/settings/             # App settings
-  ```
+Kotlin 2.2.0 / Jetpack Compose + Material 3 (dark theme) / MVVM + Hilt + Room + OkHttp
+AGP 8.11.0 / KSP 2.2.0-2.0.2 / Compose BOM 2025.07.00 / minSdk 26 / targetSdk 36
+
+```
+app/                    → OpenMateApp, MainActivity, NavHost, ConnectionManager
+core/common/            → Result<T>, Flow.asResult(), time extensions, AppDispatchers
+core/domain/            → 12 domain models (Part 有 12 子类型), 7 repository 接口
+core/data/              → 7 repository 实现 + EventDispatcher + 5 SSE event handlers
+core/database/          → Room DB v9, 6 entities, 6 DAOs, ActiveDatabaseProvider (per-instance DB)
+core/network/           → OpencodeApiClient, SseClient, SseParser, AuthInterceptor, DTOs
+core/ui/                → 暗色主题 (opencode palette), MessageBubble, StreamingText, TopBar 等
+feature/instance/       → 实例列表/添加 (2 ViewModel)
+feature/session/        → 工作区/会话列表/聊天详情 (3 ViewModel, PartRenderer 925行)
+feature/settings/       → 设置页 (1 ViewModel)
+```
 
 ## Build & Run
-- **IDE**: Android Studio (user compiles in IDE, NOT CLI — don't run `assembleDebug` unless asked)
-- **SDK**: `C:\Users\bob_d\AppData\Local\Android\Sdk` (in `local.properties`)
-- **Min SDK**: 26, **Target SDK**: 36
-- **Kotlin compilation error search**: Use `Select-String -Pattern "^e:"` (not `error:` or `e:` without `^` anchor) to filter Kotlin compiler errors from `gradlew compileDebugKotlin` output. The `^` anchor is critical — without it, `e:` matches inside normal log lines like `core:database:preBuild`.
+- **IDE**: Android Studio 编译，不要跑 `assembleDebug`（除非被要求）
+- **Kotlin 编译错误过滤**: `Select-String -Pattern "^e:"`（`^` 锚点很重要，否则会匹配 `core:database:preBuild` 等正常日志）
 
 ## Key Conventions
-- **No mocking libraries** — use hand-crafted fakes/test doubles
-- **Google Truth** for test assertions
-- **No code comments** unless explicitly requested
-- **Error handling**: Log via `android.util.Log` + expose `errorMessage: StateFlow<String?>` to UI via Snackbar
-- **Never commit unless explicitly asked**
-- **TODO list rule**: TODO items must NOT be deleted or marked completed until the user explicitly verifies them. Every TODO list must always end with a pending "User verification" item for each completed task that awaits human testing.
-- **Mechanism change rule**: Any change involving synchronization, data flow, state management, or other foundational mechanisms MUST follow this process:
-  1. Write or update a design document (e.g., `会话同步设计.md`) explaining the mechanism clearly
-  2. Discuss and get user approval before writing any code
-  3. Only then implement the changes
-  This prevents bugs caused by implementing incorrect mechanisms before fully understanding the underlying logic.
-
-## OpenCode Server API Reference
-
-The OpenCode server (`opencode serve --port <port>`) is a Hono (Node.js) HTTP server. Routes are in `packages/opencode/src/server/routes/`.
-
-### Base URL & Endpoints
-All instance-scoped routes are under the base URL (e.g., `http://192.168.x.x:4096`):
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/global/health` | Health check: `{"healthy": true, "version": "..."}` |
-| GET | `/event` | SSE event stream (see SSE format below) |
-| GET | `/session` | List sessions → `Session.Info[]` |
-| GET | `/session/:sessionID` | Get session → `Session.Info` |
-| POST | `/session` | Create session (body: optional `{title, parentID, workspaceID, permission}`) |
-| DELETE | `/session/:sessionID` | Delete session |
-| PATCH | `/session/:sessionID` | Update session (body: `{title?, permission?, time?}`) |
-| POST | `/session/:sessionID/abort` | Abort running session |
-| GET | `/session/:sessionID/message` | List messages with parts → `MessageV2.WithParts[]` |
-| POST | `/session/:sessionID/message` | Send prompt (streaming SSE response) |
-| POST | `/session/:sessionID/prompt_async` | Async prompt (returns 204 immediately) |
-| POST | `/session/:sessionID/fork` | Fork session at a message |
-| GET | `/permission` | List pending permissions |
-| POST | `/permission/:requestID/reply` | Reply to permission request |
-| GET | `/question` | List pending questions |
-| POST | `/question/:requestID/reply` | Reply to question |
-| POST | `/question/:requestID/reject` | Reject question |
-
-### Session.Info JSON Format
-```json
-{
-  "id": "ses_xxx",
-  "slug": "session-slug",
-  "projectID": "prj_xxx",
-  "workspaceID": null,
-  "directory": "/path/to/project",
-  "parentID": null,
-  "title": "Session Title",
-  "version": "v2",
-  "time": {
-    "created": 1745800000000,
-    "updated": 1745800000000,
-    "compacting": null,
-    "archived": null
-  },
-  "summary": null,
-  "share": null,
-  "revert": null,
-  "permission": null
-}
-```
-- `time.created`/`time.updated` are **epoch milliseconds** (NOT ISO strings)
-- `time.compacting`/`time.archived` are `Long?` — non-null means active
-
-### MessageV2 (User | Assistant) — Discriminated Union on `role`
-
-**User message** (`role: "user"`):
-```json
-{
-  "id": "msg_xxx",
-  "sessionID": "ses_xxx",
-  "role": "user",
-  "time": { "created": 1745800000000 },
-  "agent": "code",
-  "model": { "providerID": "anthropic", "modelID": "claude-sonnet-4-20250514" },
-  "format": { "type": "text" }
-}
-```
-
-**Assistant message** (`role: "assistant"`):
-```json
-{
-  "id": "msg_xxx",
-  "sessionID": "ses_xxx",
-  "role": "assistant",
-  "time": { "created": 1745800000000, "completed": null },
-  "parentID": "msg_parent",
-  "modelID": "claude-sonnet-4-20250514",
-  "providerID": "anthropic",
-  "mode": "code",
-  "agent": "code",
-  "path": { "cwd": "/project", "root": "/project" },
-  "cost": 0.003,
-  "tokens": { "total": 1500, "input": 1000, "output": 500, "reasoning": 200, "cache": { "read": 100, "write": 50 } },
-  "error": null
-}
-```
-
-### Part Types (discriminated union on `type`)
-Parts have base fields: `{id, sessionID, messageID, type}`
-
-| type | Key fields |
-|------|-----------|
-| `text` | `text: String`, optional `time: {start, end}` |
-| `reasoning` | `text: String`, `time: {start, end}` |
-| `tool` | `callID, tool, state: {status: pending|running|completed|error, ...}` |
-| `file` | `mime, url, filename?` |
-| `agent` | `name` |
-| `step-start` | `snapshot?` |
-| `step-finish` | `reason, cost, tokens` |
-| `snapshot` | `snapshot` |
-| `patch` | `hash, files[]` |
-| `subtask` | `prompt, description, agent` |
-| `retry` | `attempt, error, time: {created}` |
-| `compaction` | `auto, overflow?` |
-
-### SSE Event Format
-SSE events are sent as `data: <JSON>` lines. Format:
-```
-data: {"type":"<event-type>","properties":{...}}
-```
-
-**Event types from server**:
-- `server.connected` — initial connection established
-- `server.heartbeat` — sent every 10 seconds
-- `server.instance.disposed` — server shutting down
-- `session.created`, `session.updated`, `session.deleted` — session lifecycle (SyncEvent)
-- `message.updated`, `message.removed` — message lifecycle (SyncEvent)
-- `message.part.updated`, `message.part.removed`, `message.part.delta` — part-level updates
-- `session.error` — error in session processing
-- `session.diff` — diff produced
-- `session.status` — status change (idle/running/etc)
-- `permission.replied` — permission response
-- `question.*` — question events
-
-The `message.part.delta` BusEvent has format:
-```json
-{
-  "type": "message.part.delta",
-  "properties": {
-    "sessionID": "...",
-    "messageID": "...",
-    "partID": "...",
-    "delta": "streamed text chunk"
-  }
-}
-```
-
-### Health Check
-`GET /global/health` → `{"healthy": true, "version": "1.x.x"}`
-
-## Network Configuration
-- Global cleartext HTTP enabled for Phase 1 LAN (`network_security_config.xml`)
-- OkHttpClient: `connectTimeout(30s)`, `readTimeout(0)` (infinite for SSE)
-- SSE heartbeat: client monitors for 30s no-data timeout, auto-reconnects with exponential backoff (1s → 30s max)
+- **不写注释**，除非明确要求
+- **不 commit**，除非明确要求
+- **不用 mock 框架**，手写 fake/test double
+- **测试断言**: Google Truth
+- **错误处理**: `Log.e(TAG, ...)` + `errorMessage: StateFlow<String?>` → Snackbar
+- **TODO 列表规则**: 不删除/标记完成直到用户验证；每个已完成任务后必须有 "User verification" pending 项
+- **机制变更规则**: 涉及同步/数据流/状态管理等底层机制时，必须先写/更新设计文档 → 讨论 → 获批准后再写代码
 
 ## Data Flow
 ```
-API (OpencodeApiClient) → DTOs → toDomain() → Domain Models → toEntity() → Room DB → Flow → ViewModel → Compose UI
-SSE (SseClient) → SseParser → SseData → EventDispatcher → {Session,Message,Permission,Question}EventHandler → Room DB updates → Flow
+REST: OpencodeApiClient → DTOs → toDomain() → Domain → toEntity() → Room → Flow → ViewModel → UI
+SSE:  SseClient → SseParser → SseData → EventDispatcher → *EventHandler → Room → Flow
 ```
 
 ## Key Implementation Details
-- `ActiveDatabaseProvider`: each `ServerProfile` gets its own Room SQLite database (file named by profile ID)
-- `ConnectionManager` (app module, `@Singleton`): manages SSE connect/disconnect lifecycle, updates `apiClient.baseUrl` on connect
-- `OpencodeApiClient.baseUrl` is a mutable `var` — set dynamically when connecting to an instance
-- `SseClient`: OkHttp-based SSE with heartbeat monitoring and exponential backoff reconnect
-- Session list uses Room `observeAll()` Flow + initial `refresh()` from API
-- All ViewModel error handling: `Log.e(TAG, ...) + _errorMessage StateFlow + Snackbar in UI`
+- **ActiveDatabaseProvider**: 每个 ServerProfile 一个独立 SQLite (`instance_{profileId}.db`)，切换实例时切换 DB
+- **ConnectionManager** (`@Singleton`): 管理 SSE 连接生命周期，connect 时设 `apiClient.baseUrl` + 切换 active DB
+- **SseClient**: OkHttp 长连接，30s 心跳超时，指数退避重连 (1s→30s)
+- **消息同步**: anchor-based 增量同步，详见 `会话同步设计.md`
+- **Session busy 状态**: 由 DB 查询 (`role=ASSISTANT && completedAt=null`) 判断，不依赖单独 API
+- **PartRenderer**: 将 12 种 Part 类型映射为 DisplayItem (TextItem/ToolItem/ReasoningItem)，tool 渲染分 Inline/Block 两种模式
 
-## SSE Parser Note
-The SSE data format is **NOT** wrapped in `{"directory":"...","payload":{...}}`. The actual format is:
-```
-data: {"type":"event.type","properties":{...}}
-```
-The `SseData` class has fields `type: String` and `properties: JsonObject`.
+## OpenCode API Quick Reference
+Base URL: `http://{address}:{port}`
 
-## Message API Note
-`GET /session/:sessionID/message` returns a flat array of `MessageV2.WithParts` (each item has `info` + `parts[]`), NOT a wrapped `{messages: [...]}` object. The current `MessageDto` needs to be updated to match this format when implementing session detail.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/global/health` | Health check |
+| GET | `/global/event` | SSE event stream |
+| GET | `/session` | List sessions (支持 `?directory=&limit=&start=`) |
+| GET | `/session/:id` | Get session |
+| POST | `/session` | Create session |
+| DELETE | `/session/:id` | Delete session |
+| PATCH | `/session/:id` | Update session (title) |
+| POST | `/session/:id/abort` | Abort session |
+| GET | `/session/:id/message` | List messages + parts (支持 `?limit=&before=cursor`) |
+| POST | `/session/:id/prompt_async` | Async prompt (204) |
+| POST | `/session/:id/fork` | Fork session |
+| GET | `/session/status` | Session statuses |
+| GET | `/session/:id/todo` | Session TODO list |
+| GET/POST | `/permission`, `/permission/:id/reply` | Permission flow |
+| GET/POST | `/question`, `/question/:id/reply`, `/question/:id/reject` | Question flow |
+| GET | `/path` | Server paths (home, state, config, worktree, directory) |
 
-## TODO / Known Issues
-- `MessageDto` / `PartDto` don't match actual API response format (needs rewrite for MessageV2 structure)
-- SSE event handlers (`SessionEventHandler`, etc.) are stub open classes — real SSE→DB sync logic not yet implemented
-- `sendMessageStream` in `OpencodeApiClient` uses SSE parsing but the prompt endpoint streams differently (needs verification)
-- User's Tailscale IPs: 100.74.x.x and 100.71.x.x
-- `opencode serve --hostname 0.0.0.0 --port 4096` is the server command (必须加 `--hostname 0.0.0.0`，否则只监听 127.0.0.1，局域网无法连接)
+**注意事项**:
+- `time.created`/`time.updated` 是 **epoch 毫秒**，不是 ISO 字符串
+- `GET /session/:id/message` 返回扁平数组 `MessageV2.WithParts[]` (每项有 `info` + `parts[]`)，不是 `{messages:[...]}`
+- SSE 格式: `data: {"type":"event.type","properties":{...}}`，**没有** `directory`/`payload` 包裹层
+- SSE `/global/event` 路径（非 `/event`），但解析器已处理
+
+## SSE Event Types
+- `server.connected` / `server.heartbeat` / `server.instance.disposed`
+- `session.created` / `session.updated` / `session.deleted` / `session.status` / `session.error` / `session.diff`
+- `message.updated` / `message.removed`
+- `message.part.updated` / `message.part.removed` / `message.part.delta` (流式文本增量)
+- `permission.asked` / `permission.replied`
+- `question.asked` / `question.replied` / `question.rejected`
+- `todo.updated`
+
+## Part Types (discriminated on `type`)
+Base fields: `{id, sessionID, messageID, type}`
+
+`text` | `reasoning` | `tool` (callID, tool, state) | `file` | `agent` | `step-start` | `step-finish` | `snapshot` | `patch` | `subtask` | `retry` | `compaction`
+
+## Current Status
+- **Phase 1** (直连 LAN opencode) 开发中，Phase 2 (Cloud Relay + Bridge Agent) 设计中
+- feature 模块无测试，domain 部分测试与源码不同步
+- opencode server: `opencode serve --hostname 0.0.0.0 --port 4096`（必须 `--hostname 0.0.0.0`）
