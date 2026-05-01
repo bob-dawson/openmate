@@ -15,6 +15,10 @@ import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.TodoRepository
+import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.ModelInfoDto
+import com.openmate.core.network.dto.ProviderInfoDto
+import com.openmate.core.network.dto.ProviderListDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,6 +38,7 @@ class SessionDetailViewModel @Inject constructor(
     private val permissionRepository: PermissionRepository,
     private val questionRepository: QuestionRepository,
     private val todoRepository: TodoRepository,
+    private val apiClient: OpencodeApiClient,
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -65,6 +70,14 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _sessionTitle = MutableStateFlow("")
     val sessionTitle: StateFlow<String> = _sessionTitle.asStateFlow()
+
+    data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
+
+    private val _providers = MutableStateFlow<ProviderListDto?>(null)
+    val providers: StateFlow<ProviderListDto?> = _providers.asStateFlow()
+
+    private val _selectedModel = MutableStateFlow<ModelRef?>(null)
+    val selectedModel: StateFlow<ModelRef?> = _selectedModel.asStateFlow()
 
     companion object {
         private const val TAG = "SessionDetailVM"
@@ -169,9 +182,10 @@ class SessionDetailViewModel @Inject constructor(
     fun sendMessage(sessionID: String) {
         val text = _inputText.value.ifBlank { return }
         _inputText.value = ""
+        val model = _selectedModel.value
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                messageRepository.sendMessage(sessionID, text)
+                messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID)
                 messageRepository.syncMessages(sessionID, 80)
                 permissionRepository.refresh()
                 questionRepository.refresh()
@@ -196,19 +210,34 @@ class SessionDetailViewModel @Inject constructor(
 
     fun replyPermission(requestID: String, reply: PermissionReply, message: String?) {
         viewModelScope.launch(Dispatchers.IO) {
-            permissionRepository.reply(requestID, reply, message)
+            try {
+                permissionRepository.reply(requestID, reply, message)
+            } catch (e: Exception) {
+                Log.e(TAG, "replyPermission failed", e)
+                _errorMessage.emit(e.message ?: "Permission reply failed")
+            }
         }
     }
 
     fun replyQuestion(requestID: String, answers: List<List<String>>) {
         viewModelScope.launch(Dispatchers.IO) {
-            questionRepository.reply(requestID, answers)
+            try {
+                questionRepository.reply(requestID, answers)
+            } catch (e: Exception) {
+                Log.e(TAG, "replyQuestion failed", e)
+                _errorMessage.emit(e.message ?: "Question reply failed")
+            }
         }
     }
 
     fun rejectQuestion(requestID: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            questionRepository.reject(requestID)
+            try {
+                questionRepository.reject(requestID)
+            } catch (e: Exception) {
+                Log.e(TAG, "rejectQuestion failed", e)
+                _errorMessage.emit(e.message ?: "Question reject failed")
+            }
         }
     }
 
@@ -234,6 +263,25 @@ class SessionDetailViewModel @Inject constructor(
                 _errorMessage.value = "Delete failed: ${e.message}"
             }
         }
+    }
+
+    fun loadProviders() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = apiClient.getProviders()
+                _providers.value = result
+            } catch (e: Exception) {
+                Log.e(TAG, "loadProviders failed", e)
+            }
+        }
+    }
+
+    fun selectModel(providerID: String, modelID: String, modelName: String) {
+        _selectedModel.value = ModelRef(providerID, modelID, modelName)
+    }
+
+    fun clearSelectedModel() {
+        _selectedModel.value = null
     }
 
 private fun observeMessages(sessionID: String) {

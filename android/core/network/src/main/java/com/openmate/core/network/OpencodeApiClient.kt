@@ -3,6 +3,7 @@ package com.openmate.core.network
 import com.openmate.core.network.dto.HealthDto
 import com.openmate.core.network.dto.MessageWithPartsDto
 import com.openmate.core.network.dto.PermissionDto
+import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.network.dto.QuestionDto
 import com.openmate.core.network.dto.SessionDto
 import com.openmate.core.network.dto.PathInfo
@@ -79,15 +80,24 @@ class OpencodeApiClient(
         return MessagesPage(items, nextCursor)
     }
 
-    suspend fun sendPrompt(sessionID: String, content: String) {
-        val body = JsonObject(mapOf(
-            "parts" to JsonArray(listOf(
-                JsonObject(mapOf(
-                    "type" to JsonPrimitive("text"),
-                    "text" to JsonPrimitive(content)
-                ))
+    suspend fun sendPrompt(sessionID: String, content: String, providerID: String? = null, modelID: String? = null) {
+        val parts = mapOf(
+            "parts" to listOf(
+                mapOf(
+                    "type" to "text",
+                    "text" to content
+                )
+            )
+        )
+        val extraFields = mutableMapOf<String, JsonElement>()
+        if (providerID != null && modelID != null) {
+            extraFields["model"] = JsonObject(mapOf(
+                "providerID" to JsonPrimitive(providerID),
+                "modelID" to JsonPrimitive(modelID),
             ))
-        ))
+        }
+        val bodyMap = parts + extraFields
+        val body = mapToJson(bodyMap)
         android.util.Log.d("OpencodeApiClient", "sendPrompt url=$baseUrl/session/$sessionID/prompt_async body=$body")
         postUnit("/session/$sessionID/prompt_async", body)
     }
@@ -141,6 +151,18 @@ class OpencodeApiClient(
 
     suspend fun getPath(): PathInfo {
         return get("/path")
+    }
+
+    suspend fun getProviders(): ProviderListDto {
+        return get("/provider")
+    }
+
+    suspend fun summarizeSession(sessionID: String, providerID: String, modelID: String) {
+        val body = mapOf(
+            "providerID" to providerID,
+            "modelID" to modelID,
+        )
+        postUnit("/session/$sessionID/summarize", body)
     }
 
     private inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T {
@@ -201,11 +223,23 @@ class OpencodeApiClient(
                 is List<*> -> JsonArray(v.map { item ->
                     when (item) {
                         is Map<*, *> -> mapToJson(item)
+                        is List<*> -> listToJson(item)
                         is String -> JsonPrimitive(item)
                         else -> JsonPrimitive(item.toString())
                     }
                 })
                 else -> JsonPrimitive(v.toString())
+            }
+        })
+    }
+
+    private fun listToJson(list: List<*>): JsonArray {
+        return JsonArray(list.map { item ->
+            when (item) {
+                is Map<*, *> -> mapToJson(item)
+                is List<*> -> listToJson(item)
+                is String -> JsonPrimitive(item)
+                else -> JsonPrimitive(item.toString())
             }
         })
     }
