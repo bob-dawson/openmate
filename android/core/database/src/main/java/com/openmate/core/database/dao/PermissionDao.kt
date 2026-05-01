@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.openmate.core.database.entity.PermissionEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -18,9 +19,18 @@ interface PermissionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(permission: PermissionEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(permissions: List<PermissionEntity>)
+
     @Query("DELETE FROM PermissionEntity WHERE id = :id")
     suspend fun delete(id: String)
 
     @Query("DELETE FROM PermissionEntity")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceAll(permissions: List<PermissionEntity>) {
+        deleteAll()
+        upsertAll(permissions)
+    }
 }

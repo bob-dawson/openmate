@@ -52,7 +52,9 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Workspace
+import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.ui.component.EmptyStateView
+import com.openmate.feature.session.component.DirectoryPickerSheet
 import com.openmate.core.ui.component.TopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +74,7 @@ fun WorkspaceListScreen(
     var showNewSessionDialog by remember { mutableStateOf(false) }
     var newSessionTitle by remember { mutableStateOf("") }
     var newSessionDirectory by remember { mutableStateOf("") }
+    var showDirPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -140,12 +143,22 @@ fun WorkspaceListScreen(
                         label = { Text("标题（可选）") },
                         singleLine = true,
                     )
-                    OutlinedTextField(
-                        value = newSessionDirectory,
-                        onValueChange = { newSessionDirectory = it },
-                        label = { Text("工作目录") },
-                        singleLine = true,
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showDirPicker = true }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = if (newSessionDirectory.isBlank()) "选择工作目录" else newSessionDirectory,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (newSessionDirectory.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -166,6 +179,17 @@ fun WorkspaceListScreen(
                     Text("取消")
                 }
             },
+        )
+    }
+
+    if (showDirPicker) {
+        DirectoryPickerSheet(
+            apiClient = viewModel.apiClient,
+            onSelect = { path ->
+                newSessionDirectory = path
+                showDirPicker = false
+            },
+            onDismiss = { showDirPicker = false },
         )
     }
 }

@@ -19,8 +19,7 @@ class QuestionRepositoryImpl @Inject constructor(
     override suspend fun refresh() {
         val dtos = api.listQuestions()
         val dao = dbProvider.getActive().questionDao()
-        dao.deleteAll()
-        dtos.forEach { dao.upsert(it.toDomain().toEntity()) }
+        dao.replaceAll(dtos.map { it.toDomain().toEntity() })
     }
 
     override suspend fun reply(requestID: String, answers: List<List<String>>) {

@@ -9,6 +9,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.database.ActiveDatabaseProvider
+import com.openmate.core.network.OpencodeApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,7 @@ class WorkspaceListViewModel @Inject constructor(
     private val sseEventRepository: SseEventRepository,
     private val profileRepository: ServerProfileRepository,
     private val dbProvider: ActiveDatabaseProvider,
+    val apiClient: OpencodeApiClient,
 ) : ViewModel() {
 
     private val _workspaces = MutableStateFlow<List<Workspace>>(emptyList())

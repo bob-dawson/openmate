@@ -34,6 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import android.graphics.Typeface
+import android.text.TextUtils
+import android.text.TextPaint
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -86,6 +93,48 @@ private fun JsonObject?.str(key: String): String? =
 
 private fun JsonObject.bool(key: String): Boolean =
     (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.boolean ?: false
+
+private fun isFilePath(text: String): Boolean {
+    return text.contains("/") || text.contains("\\") || text.contains(".")
+}
+
+@Composable
+private fun StartEllipsisText(
+    text: String,
+    style: TextStyle,
+    color: Color,
+    modifier: Modifier = Modifier,
+    fontFamily: FontFamily? = null,
+) {
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val textStyle = style.copy(color = color, fontFamily = fontFamily)
+    val measured = textMeasurer.measure(text, textStyle)
+    BoxWithConstraints(modifier = modifier) {
+        val maxWidthPx = with(density) { maxWidth.toPx() }.toInt()
+        val displayText = if (measured.size.width <= maxWidthPx) {
+            text
+        } else {
+            val paint = TextPaint().apply {
+                textSize = with(density) { style.fontSize.toPx() }
+                val baseTypeface = style.fontFamily?.toTypeface() ?: Typeface.DEFAULT
+                val isBold = style.fontWeight?.weight?.let { it >= 600 } == true
+                typeface = if (isBold) Typeface.create(baseTypeface, Typeface.BOLD) else baseTypeface
+            }
+            TextUtils.ellipsize(text, paint, maxWidthPx.toFloat(), TextUtils.TruncateAt.START)?.toString() ?: text
+        }
+        Text(text = displayText, style = textStyle, maxLines = 1, overflow = TextOverflow.Clip)
+    }
+}
+
+private fun FontFamily.toTypeface(): Typeface {
+    return when (this) {
+        FontFamily.Monospace -> Typeface.MONOSPACE
+        FontFamily.SansSerif -> Typeface.SANS_SERIF
+        FontFamily.Serif -> Typeface.SERIF
+        else -> Typeface.DEFAULT
+    }
+}
 
 private fun toolSummary(toolName: String, args: String?, result: String?): ToolSummary {
     val jsonArgs = try {
@@ -265,7 +314,7 @@ fun PartColumn(
     onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val showReasoning = remember { mutableStateOf(false) }
+    val showReasoning = remember { mutableStateOf(true) }
     val displayItems = parts.toDisplayItems(isUser)
 
     Column(modifier = modifier) {
@@ -335,29 +384,40 @@ fun PartColumn(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 2.dp)
+                                .padding(start = 8.dp, top = 4.dp)
                                 .clickable { showReasoning.value = !showReasoning.value },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .height(16.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = if (showReasoning.value) "▼ Thinking" else "▶ Thinking",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             )
                         }
                         AnimatedVisibility(visible = showReasoning.value) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 12.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                                    .padding(8.dp),
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                             ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(2.dp)
+                                        .fillMaxWidth()
+                                        .padding(start = 8.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "_Thinking:_ $filtered",
+                                    text = "Thinking: $filtered",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
                                 )
                             }
                         }
@@ -383,14 +443,22 @@ private fun InlineToolLine(item: DisplayItem.ToolItem) {
         )
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = summary.text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontFamily = FontFamily.Monospace,
-            )
+            if (isFilePath(summary.text)) {
+                StartEllipsisText(
+                    text = summary.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace,
+                )
+            } else {
+                Text(
+                    text = summary.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -407,31 +475,29 @@ private fun RunningToolLine(item: DisplayItem.ToolItem) {
             strokeWidth = 2.dp,
         )
         Spacer(modifier = Modifier.width(6.dp))
-Text(
-                text = summary.icon,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                color = MaterialTheme.colorScheme.primary,
-            )
-            if (summary.text.isNotBlank()) {
-                Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = summary.icon,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+        )
+        if (summary.text.isNotBlank()) {
+            Spacer(modifier = Modifier.width(4.dp))
+            if (isFilePath(summary.text)) {
+                StartEllipsisText(
+                    text = summary.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = FontFamily.Monospace,
+                )
+            } else {
                 Text(
                     text = summary.text,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    fontFamily = FontFamily.Monospace,
                 )
             }
-        if (summary.text.isNotBlank()) {
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = summary.text,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -449,13 +515,13 @@ private fun PendingToolLine(item: DisplayItem.ToolItem) {
             color = WarningColor,
         )
         Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = if (summary.text.isNotBlank()) summary.text else "waiting...",
-            style = MaterialTheme.typography.bodySmall,
-            color = WarningColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (summary.text.isBlank()) {
+            Text(text = "waiting...", style = MaterialTheme.typography.bodySmall, color = WarningColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        } else if (isFilePath(summary.text)) {
+            StartEllipsisText(text = summary.text, style = MaterialTheme.typography.bodySmall, color = WarningColor)
+        } else {
+            Text(text = summary.text, style = MaterialTheme.typography.bodySmall, color = WarningColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -463,6 +529,7 @@ private fun PendingToolLine(item: DisplayItem.ToolItem) {
 private fun ErrorToolLine(item: DisplayItem.ToolItem) {
     val summary = toolSummary(item.toolName, item.args, item.result)
     val expanded = remember { mutableStateOf(false) }
+    val textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None
     Column {
         Row(
             modifier = Modifier
@@ -478,14 +545,11 @@ private fun ErrorToolLine(item: DisplayItem.ToolItem) {
             )
             if (summary.text.isNotBlank()) {
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = summary.text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None,
-                )
+                if (isFilePath(summary.text)) {
+                    StartEllipsisText(text = summary.text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                } else {
+                    Text(text = summary.text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 1, overflow = TextOverflow.Ellipsis, textDecoration = textDecoration)
+                }
             }
             Spacer(modifier = Modifier.width(4.dp))
             Text(
@@ -550,13 +614,11 @@ private fun TaskToolLine(
         )
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = summary.text,
-                style = MaterialTheme.typography.bodySmall,
-                color = AgentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (isFilePath(summary.text)) {
+                StartEllipsisText(text = summary.text, style = MaterialTheme.typography.bodySmall, color = AgentColor)
+            } else {
+                Text(text = summary.text, style = MaterialTheme.typography.bodySmall, color = AgentColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         if (canNavigate) {
             Spacer(modifier = Modifier.width(4.dp))
@@ -588,14 +650,22 @@ private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
             )
             if (summary.text.isNotBlank()) {
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = summary.text,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    fontFamily = FontFamily.Monospace,
-                )
+                if (isFilePath(summary.text)) {
+                    StartEllipsisText(
+                        text = summary.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                } else {
+                    Text(
+                        text = summary.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(modifier = Modifier.width(4.dp))
             Text(
@@ -654,6 +724,7 @@ private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
                                 text = filePath,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
                                 color = MaterialTheme.colorScheme.onSurface,
+                                softWrap = true,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -698,6 +769,7 @@ private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
                                 text = filePath,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
                                 color = MaterialTheme.colorScheme.onSurface,
+                                softWrap = true,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }

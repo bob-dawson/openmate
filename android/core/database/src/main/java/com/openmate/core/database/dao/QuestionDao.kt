@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import com.openmate.core.database.entity.QuestionEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -18,9 +19,18 @@ interface QuestionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(question: QuestionEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(questions: List<QuestionEntity>)
+
     @Query("DELETE FROM QuestionEntity WHERE id = :id")
     suspend fun delete(id: String)
 
     @Query("DELETE FROM QuestionEntity")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceAll(questions: List<QuestionEntity>) {
+        deleteAll()
+        upsertAll(questions)
+    }
 }

@@ -36,10 +36,13 @@ fun TodoListCard(
 ) {
     if (todos.isEmpty()) return
 
+    val activeTodos = todos.filter { it.status == "pending" || it.status == "in_progress" }
+    if (activeTodos.isEmpty()) return
+
     val expanded = remember { mutableStateOf(false) }
 
-    val inProgress = todos.count { it.status == "in_progress" }
-    val pending = todos.count { it.status == "pending" }
+    val inProgress = activeTodos.count { it.status == "in_progress" }
+    val pending = activeTodos.count { it.status == "pending" }
     val completed = todos.count { it.status == "completed" }
 
     Column(
@@ -66,25 +69,24 @@ fun TodoListCard(
             if (pending > 0) {
                 StatusBadge(count = pending, label = "待办", color = Muted)
             }
-            if (completed > 0 && expanded.value) {
+            if (completed > 0) {
                 StatusBadge(count = completed, label = "已完成", color = Success)
             }
             Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = if (expanded.value) "收起" else "查看全部 ›",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (expanded.value) Primary else Muted,
-                fontWeight = if (expanded.value) FontWeight.Medium else FontWeight.Normal,
-            )
+            if (todos.size > activeTodos.size) {
+                Text(
+                    text = if (expanded.value) "收起" else "查看全部 ›",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (expanded.value) Primary else Muted,
+                    fontWeight = if (expanded.value) FontWeight.Medium else FontWeight.Normal,
+                )
+            }
         }
 
-        val sortedTodos = if (expanded.value) {
+        val displayTodos = if (expanded.value) {
             todos
         } else {
-            val inProgressItems = todos.filter { it.status == "in_progress" }
-            val pendingItems = todos.filter { it.status == "pending" }
-            val rest = todos.filter { it.status != "in_progress" && it.status != "pending" }
-            (inProgressItems + pendingItems + rest).take(3)
+            activeTodos.take(3)
         }
 
         Column(
@@ -93,7 +95,7 @@ fun TodoListCard(
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            sortedTodos.forEach { todo ->
+            displayTodos.forEach { todo ->
                 TodoItemRow(todo, expanded.value)
             }
         }

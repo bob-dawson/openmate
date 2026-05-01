@@ -7,6 +7,7 @@ import com.openmate.core.database.entity.toDomainWithMetadata
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Message
 import com.openmate.core.domain.model.MessageRole
+import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.domain.repository.MessageRepository
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.MessageWithPartsDto
@@ -92,8 +93,9 @@ class MessageRepositoryImpl @Inject constructor(
         return msgs.firstOrNull { it.role == MessageRole.ASSISTANT.name && it.completedAt != null }?.id
     }
 
-    override suspend fun sendMessage(sessionID: String, content: String) {
-        api.sendPrompt(sessionID, content)
+    override suspend fun sendMessage(sessionID: String, content: String, providerID: String?, modelID: String?, agent: String?, files: List<FileAttachment>) {
+        val apiFiles = files.map { OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
+        api.sendPrompt(sessionID, content, providerID, modelID, agent, apiFiles)
     }
 
     override fun observeMessages(sessionID: String): Flow<List<Message>> {

@@ -20,8 +20,7 @@ class PermissionRepositoryImpl @Inject constructor(
     override suspend fun refresh() {
         val dtos = api.listPermissions()
         val dao = dbProvider.getActive().permissionDao()
-        dao.deleteAll()
-        dtos.forEach { dao.upsert(it.toDomain().toEntity()) }
+        dao.replaceAll(dtos.map { it.toDomain().toEntity() })
     }
 
     override suspend fun reply(requestID: String, reply: PermissionReply, message: String?) {

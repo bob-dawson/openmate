@@ -1,5 +1,6 @@
 package com.openmate.core.network
 
+import com.openmate.core.network.dto.FileNodeDto
 import com.openmate.core.network.dto.HealthDto
 import com.openmate.core.network.dto.MessageWithPartsDto
 import com.openmate.core.network.dto.PermissionDto
@@ -8,6 +9,7 @@ import com.openmate.core.network.dto.QuestionDto
 import com.openmate.core.network.dto.SessionDto
 import com.openmate.core.network.dto.PathInfo
 import com.openmate.core.network.dto.SessionStatusDto
+import com.openmate.core.network.dto.SkillInfoDto
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -80,21 +82,42 @@ class OpencodeApiClient(
         return MessagesPage(items, nextCursor)
     }
 
-    suspend fun sendPrompt(sessionID: String, content: String, providerID: String? = null, modelID: String? = null) {
-        val parts = mapOf(
-            "parts" to listOf(
-                mapOf(
-                    "type" to "text",
-                    "text" to content
-                )
-            )
+    data class FileAttachment(val path: String, val filename: String, val mime: String)
+
+    suspend fun sendPrompt(
+        sessionID: String,
+        content: String,
+        providerID: String? = null,
+        modelID: String? = null,
+        agent: String? = null,
+        files: List<FileAttachment> = emptyList(),
+    ) {
+        val textParts = listOf(
+            mapOf("type" to "text", "text" to content)
         )
-        val extraFields = mutableMapOf<String, JsonElement>()
+        val fileParts = files.map { f ->
+            mapOf(
+                "type" to "file",
+                "mime" to f.mime,
+                "url" to "file://${f.path}",
+                "filename" to f.filename,
+                "source" to mapOf(
+                    "type" to "file",
+                    "path" to f.path,
+                    "text" to mapOf("value" to "", "start" to 0, "end" to 0),
+                ),
+            )
+        }
+        val parts = mapOf("parts" to textParts + fileParts)
+        val extraFields = mutableMapOf<String, Any>()
         if (providerID != null && modelID != null) {
             extraFields["model"] = JsonObject(mapOf(
                 "providerID" to JsonPrimitive(providerID),
                 "modelID" to JsonPrimitive(modelID),
             ))
+        }
+        if (agent != null) {
+            extraFields["agent"] = agent
         }
         val bodyMap = parts + extraFields
         val body = mapToJson(bodyMap)
@@ -153,8 +176,21 @@ class OpencodeApiClient(
         return get("/path")
     }
 
+    suspend fun listFiles(path: String): List<FileNodeDto> {
+        return getList("/file", mapOf("path" to path))
+    }
+
+    suspend fun searchFiles(query: String, limit: Int = 20): List<String> {
+        return getList("/find/file", mapOf("query" to query, "limit" to limit.toString()))
+    }
+
     suspend fun getProviders(): ProviderListDto {
+        android.util.Log.d("OpencodeApiClient", "getProviders baseUrl=$baseUrl")
         return get("/provider")
+    }
+
+    suspend fun getSkills(): List<SkillInfoDto> {
+        return getList("/skill")
     }
 
     suspend fun summarizeSession(sessionID: String, providerID: String, modelID: String) {
@@ -216,12 +252,14 @@ class OpencodeApiClient(
     private fun mapToJson(map: Map<*, *>): JsonObject {
         return JsonObject(map.mapKeys { it.key.toString() }.mapValues { (_, v) ->
             when (v) {
+                is JsonElement -> v
                 is String -> JsonPrimitive(v)
                 is Number -> JsonPrimitive(v)
                 is Boolean -> JsonPrimitive(v)
                 is Map<*, *> -> mapToJson(v)
                 is List<*> -> JsonArray(v.map { item ->
                     when (item) {
+                        is JsonElement -> item
                         is Map<*, *> -> mapToJson(item)
                         is List<*> -> listToJson(item)
                         is String -> JsonPrimitive(item)
@@ -236,6 +274,7 @@ class OpencodeApiClient(
     private fun listToJson(list: List<*>): JsonArray {
         return JsonArray(list.map { item ->
             when (item) {
+                is JsonElement -> item
                 is Map<*, *> -> mapToJson(item)
                 is List<*> -> listToJson(item)
                 is String -> JsonPrimitive(item)

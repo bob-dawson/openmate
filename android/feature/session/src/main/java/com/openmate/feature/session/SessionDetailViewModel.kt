@@ -1,5 +1,7 @@
 package com.openmate.feature.session
 
+import android.content.Context
+import android.content.SharedPreferences
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +13,7 @@ import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.repository.MessageRepository
+import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.domain.repository.SessionRepository
@@ -19,7 +22,9 @@ import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
+import com.openmate.core.network.dto.SkillInfoDto
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -33,13 +38,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SessionDetailViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val sessionRepository: SessionRepository,
     private val messageRepository: MessageRepository,
     private val permissionRepository: PermissionRepository,
     private val questionRepository: QuestionRepository,
     private val todoRepository: TodoRepository,
-    private val apiClient: OpencodeApiClient,
+    internal val apiClient: OpencodeApiClient,
 ) : ViewModel() {
+    private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
@@ -58,6 +65,9 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
+
+    private val _attachedFiles = MutableStateFlow<List<FileAttachment>>(emptyList())
+    val attachedFiles: StateFlow<List<FileAttachment>> = _attachedFiles.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -79,13 +89,25 @@ class SessionDetailViewModel @Inject constructor(
     private val _selectedModel = MutableStateFlow<ModelRef?>(null)
     val selectedModel: StateFlow<ModelRef?> = _selectedModel.asStateFlow()
 
+    private val _selectedAgent = MutableStateFlow("build")
+    val selectedAgent: StateFlow<String> = _selectedAgent.asStateFlow()
+
+    private val _recentModels = MutableStateFlow<List<ModelRef>>(loadRecentModels())
+    val recentModels: StateFlow<List<ModelRef>> = _recentModels.asStateFlow()
+
     companion object {
         private const val TAG = "SessionDetailVM"
         private const val POLL_INTERVAL_MS = 15_000L
+        private const val KEY_RECENT_MODELS = "recent_models"
     }
 
     private var currentSessionID: String? = null
+    private var currentDirectory: String = ""
     private var pollJob: Job? = null
+    private var observePermJob: Job? = null
+    private var observeQJob: Job? = null
+    private var observeMsgJob: Job? = null
+    private var observeTodoJob: Job? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -93,11 +115,16 @@ class SessionDetailViewModel @Inject constructor(
 
     fun loadSession(sessionID: String) {
         currentSessionID = sessionID
+        observePermJob?.cancel()
+        observeQJob?.cancel()
+        observeMsgJob?.cancel()
+        observeTodoJob?.cancel()
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
             try {
                 val session = sessionRepository.getSession(sessionID)
                 _sessionTitle.value = session?.title ?: ""
+                currentDirectory = session?.directory ?: ""
             } catch (e: Exception) {
                 Log.e(TAG, "loadSession title failed", e)
             }
@@ -156,14 +183,20 @@ class SessionDetailViewModel @Inject constructor(
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
                 val sid = currentSessionID ?: continue
+                Log.d(TAG, "poll start sid=$sid")
                 try {
                     messageRepository.syncMessages(sid, 80)
                     sessionRepository.refreshSessionStatusesFromMessages()
                     todoRepository.refreshTodos(sid)
+                } catch (e: Exception) {
+                    Log.e(TAG, "poll sync failed", e)
+                }
+                try {
                     permissionRepository.refresh()
                     questionRepository.refresh()
+                    Log.d(TAG, "poll permission/question refreshed")
                 } catch (e: Exception) {
-                    Log.e(TAG, "poll refresh failed", e)
+                    Log.e(TAG, "poll permission/question failed", e)
                 }
             }
         }
@@ -177,21 +210,34 @@ class SessionDetailViewModel @Inject constructor(
     override fun onCleared() {
         super.onCleared()
         stopPolling()
+        observePermJob?.cancel()
+        observeQJob?.cancel()
+        observeMsgJob?.cancel()
+        observeTodoJob?.cancel()
     }
 
     fun sendMessage(sessionID: String) {
         val text = _inputText.value.ifBlank { return }
         _inputText.value = ""
         val model = _selectedModel.value
+        val agent = _selectedAgent.value
+        val files = _attachedFiles.value
+        _attachedFiles.value = emptyList()
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID)
+                messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID, agent, files)
                 messageRepository.syncMessages(sessionID, 80)
                 permissionRepository.refresh()
                 questionRepository.refresh()
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
+            }
+            try {
+                permissionRepository.refresh()
+                questionRepository.refresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "sendMessage permission refresh failed", e)
             }
         }
     }
@@ -269,30 +315,134 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val result = apiClient.getProviders()
+                Log.d(TAG, "loadProviders OK: ${result.all.size} providers, connected=${result.connected}")
+                result.all.forEach { p ->
+                    Log.d(TAG, "  provider: ${p.id} name=${p.name} models=${p.models.size}")
+                }
                 _providers.value = result
             } catch (e: Exception) {
-                Log.e(TAG, "loadProviders failed", e)
+                Log.e(TAG, "loadProviders FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
             }
         }
     }
 
     fun selectModel(providerID: String, modelID: String, modelName: String) {
-        _selectedModel.value = ModelRef(providerID, modelID, modelName)
+        val ref = ModelRef(providerID, modelID, modelName)
+        _selectedModel.value = ref
+        val updated = (listOf(ref) + _recentModels.value.filter {
+            !(it.providerID == providerID && it.modelID == modelID)
+        }).take(5)
+        _recentModels.value = updated
+        saveRecentModels(updated)
     }
 
     fun clearSelectedModel() {
         _selectedModel.value = null
     }
 
+    fun getWorkingDirectory(): String = currentDirectory
+
+    fun setAgent(agent: String) {
+        _selectedAgent.value = agent
+    }
+
+    private val _isCompacting = MutableStateFlow(false)
+    val isCompacting: StateFlow<Boolean> = _isCompacting.asStateFlow()
+
+    private val _skills = MutableStateFlow<List<SkillInfoDto>>(emptyList())
+    val skills: StateFlow<List<SkillInfoDto>> = _skills.asStateFlow()
+
+    fun compact(sessionID: String) {
+        val model = _selectedModel.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            _isCompacting.value = true
+            try {
+                apiClient.summarizeSession(sessionID, model.providerID, model.modelID)
+                delay(2000)
+                messageRepository.syncMessages(sessionID, 80)
+                sessionRepository.refreshSessionStatusesFromMessages()
+            } catch (e: Exception) {
+                Log.e(TAG, "compact failed", e)
+                _errorMessage.value = "Compact failed: ${e.message}"
+            } finally {
+                _isCompacting.value = false
+            }
+        }
+    }
+
+    fun loadSkills() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _skills.value = apiClient.getSkills()
+            } catch (e: Exception) {
+                Log.e(TAG, "loadSkills failed", e)
+            }
+        }
+    }
+
+    fun useSkill(skillName: String) {
+        val current = _inputText.value
+        _inputText.value = (if (current.isNotBlank()) "$current\n" else "") + "/skill $skillName"
+    }
+
+    fun attachFile(path: String, filename: String) {
+        val mime = guessMime(filename)
+        _attachedFiles.value = _attachedFiles.value + FileAttachment(path, filename, mime)
+    }
+
+    fun removeAttachedFile(index: Int) {
+        _attachedFiles.value = _attachedFiles.value.toMutableList().apply { removeAt(index) }
+    }
+
+    private fun guessMime(filename: String): String {
+        return when {
+            filename.endsWith(".kt") -> "text/kotlin"
+            filename.endsWith(".java") -> "text/java"
+            filename.endsWith(".py") -> "text/python"
+            filename.endsWith(".ts") -> "text/typescript"
+            filename.endsWith(".tsx") -> "text/typescript"
+            filename.endsWith(".js") -> "text/javascript"
+            filename.endsWith(".json") -> "application/json"
+            filename.endsWith(".xml") -> "text/xml"
+            filename.endsWith(".md") -> "text/markdown"
+            filename.endsWith(".yaml") || filename.endsWith(".yml") -> "text/yaml"
+            filename.endsWith(".toml") -> "text/toml"
+            filename.endsWith(".css") -> "text/css"
+            filename.endsWith(".html") -> "text/html"
+            filename.endsWith(".png") -> "image/png"
+            filename.endsWith(".jpg") || filename.endsWith(".jpeg") -> "image/jpeg"
+            filename.endsWith(".gif") -> "image/gif"
+            filename.endsWith(".svg") -> "image/svg+xml"
+            else -> "text/plain"
+        }
+    }
+
+    private fun loadRecentModels(): List<ModelRef> {
+        val raw = prefs.getString(KEY_RECENT_MODELS, null) ?: return emptyList()
+        return raw.split("||").mapNotNull { entry ->
+            val parts = entry.split("::")
+            if (parts.size == 3) ModelRef(parts[0], parts[1], parts[2]) else null
+        }
+    }
+
+    private fun saveRecentModels(models: List<ModelRef>) {
+        val raw = models.joinToString("||") { "${it.providerID}::${it.modelID}::${it.modelName}" }
+        prefs.edit().putString(KEY_RECENT_MODELS, raw).apply()
+    }
+
 private fun observeMessages(sessionID: String) {
-        viewModelScope.launch {
-            messageRepository.observeMessages(sessionID).collect { list ->
-                _messages.value = list
-                val hasIncompleteAssistant = list.any { it.role == MessageRole.ASSISTANT && it.completedAt == null }
-                _isStreaming.value = hasIncompleteAssistant
-                _pendingAssistantId.value = list
-                    .filter { it.role == MessageRole.ASSISTANT && it.completedAt == null }
-                    .maxByOrNull { it.id }?.id
+        observeMsgJob = viewModelScope.launch {
+            try {
+                messageRepository.observeMessages(sessionID).collect { list ->
+                    _messages.value = list
+                    val hasIncompleteAssistant = list.any { it.role == MessageRole.ASSISTANT && it.completedAt == null }
+                    _isStreaming.value = hasIncompleteAssistant
+                    _pendingAssistantId.value = list
+                        .filter { it.role == MessageRole.ASSISTANT && it.completedAt == null }
+                        .maxByOrNull { it.id }?.id
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeMessages failed", e)
             }
         }
     }
@@ -301,7 +451,7 @@ private fun observeMessages(sessionID: String) {
     }
 
     private fun observePermissions() {
-        viewModelScope.launch {
+        observePermJob = viewModelScope.launch {
             try {
                 permissionRepository.observePending().collect { list ->
                     _pendingPermissions.value = list
@@ -313,7 +463,7 @@ private fun observeMessages(sessionID: String) {
     }
 
     private fun observeQuestions() {
-        viewModelScope.launch {
+        observeQJob = viewModelScope.launch {
             try {
                 questionRepository.observePending().collect { list ->
                     _pendingQuestions.value = list
@@ -325,16 +475,18 @@ private fun observeMessages(sessionID: String) {
     }
 
     private fun observeTodos(sessionID: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        observeTodoJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 todoRepository.refreshTodos(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "refreshTodos failed", e)
             }
-        }
-        viewModelScope.launch {
-            todoRepository.observeTodos(sessionID).collect { list ->
-                _todos.value = list
+            try {
+                todoRepository.observeTodos(sessionID).collect { list ->
+                    _todos.value = list
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeTodos failed", e)
             }
         }
     }
