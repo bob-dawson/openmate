@@ -54,6 +54,7 @@ import com.openmate.feature.session.component.TodoListCard
 fun SessionDetailScreen(
     sessionID: String,
     onBack: () -> Unit,
+    onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
     viewModel: SessionDetailViewModel = hiltViewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -196,6 +197,7 @@ fun SessionDetailScreen(
                             onReplyQuestion = { id, answers -> viewModel.replyQuestion(id, answers) },
                             onRejectQuestion = { id -> viewModel.rejectQuestion(id) },
                             onReplyPermission = { id, reply, msg -> viewModel.replyPermission(id, reply, msg) },
+                            onNavigateToSubtask = onNavigateToSubtask,
                         )
                     }
                     if (messages.isEmpty()) {

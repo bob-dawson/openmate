@@ -241,7 +241,7 @@ fun PartColumn(
     onReplyQuestion: (String, List<List<String>>) -> Unit,
     onRejectQuestion: (String) -> Unit,
     onReplyPermission: (String, PermissionReply, String?) -> Unit,
-    onNavigateToSubtask: ((agent: String, description: String, prompt: String) -> Unit)? = null,
+    onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val showReasoning = remember { mutableStateOf(false) }
@@ -461,24 +461,23 @@ private fun ErrorToolLine(item: DisplayItem.ToolItem) {
     }
 }
 
+private val TaskIdRegex = Regex("task_id:\\s*(ses_\\S+)")
+
 @Composable
 private fun TaskToolLine(
     item: DisplayItem.ToolItem,
     summary: ToolSummary,
-    onNavigate: (agent: String, description: String, prompt: String) -> Unit,
+    onNavigate: (subtaskSessionID: String, title: String) -> Unit,
 ) {
-    val jsonArgs = try {
-        if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
-    } catch (_: Exception) { null }
-
-    val agent = jsonArgs?.str("agent") ?: ""
-    val description = jsonArgs?.str("description") ?: ""
-    val prompt = jsonArgs?.str("prompt") ?: ""
+    val subtaskSessionID = remember(item.result) {
+        item.result?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+    }
+    val canNavigate = subtaskSessionID != null
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onNavigate(agent, description, prompt) }
+            .then(if (canNavigate) Modifier.clickable { onNavigate(subtaskSessionID!!, summary.text) } else Modifier)
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -496,12 +495,14 @@ private fun TaskToolLine(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = "→",
-            style = MaterialTheme.typography.labelSmall,
-            color = AgentColor,
-        )
+        if (canNavigate) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = "→",
+                style = MaterialTheme.typography.labelSmall,
+                color = AgentColor,
+            )
+}
     }
 }
 

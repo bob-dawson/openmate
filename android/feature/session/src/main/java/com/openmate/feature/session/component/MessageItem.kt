@@ -30,7 +30,7 @@ fun MessageItem(
     onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
     onRejectQuestion: (String) -> Unit = {},
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
-    onNavigateToSubtask: ((agent: String, description: String, prompt: String) -> Unit)? = null,
+    onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.role == MessageRole.USER
