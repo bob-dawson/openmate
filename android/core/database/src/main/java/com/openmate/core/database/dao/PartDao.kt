@@ -4,7 +4,9 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import com.openmate.core.database.entity.MetadataTuple
 import com.openmate.core.database.entity.PartEntity
+import com.openmate.core.database.entity.PartLiteEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -20,6 +22,12 @@ interface PartDao {
 
     @Query("SELECT * FROM PartEntity WHERE sessionID = :sid ORDER BY messageID, sequence")
     fun observeBySession(sid: String): Flow<List<PartEntity>>
+
+    @Query("SELECT id, messageID, sessionID, type, sequence, text, toolCallID, toolName, toolState, toolArgs, toolResult, snapshot, hash, files, mime, url, filename, name, reason, cost, agent, auto, overflow, prompt, description, attempt, error FROM PartEntity WHERE sessionID = :sid ORDER BY messageID, sequence")
+    fun observeBySessionLite(sid: String): Flow<List<PartLiteEntity>>
+
+    @Query("SELECT id, toolMetadata FROM PartEntity WHERE id IN (:ids)")
+    suspend fun getMetadataByIds(ids: List<String>): List<MetadataTuple>
 
     @Query("SELECT * FROM PartEntity WHERE messageID = :mid ORDER BY sequence")
     fun observeByMessage(mid: String): Flow<List<PartEntity>>

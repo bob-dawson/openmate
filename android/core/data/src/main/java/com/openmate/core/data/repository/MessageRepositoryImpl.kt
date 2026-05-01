@@ -3,6 +3,7 @@ package com.openmate.core.data.repository
 import android.util.Log
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.toDomain
+import com.openmate.core.database.entity.toDomainWithMetadata
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Message
 import com.openmate.core.domain.model.MessageRole
@@ -12,6 +13,8 @@ import com.openmate.core.network.dto.MessageWithPartsDto
 import com.openmate.core.network.dto.toDomain
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import javax.inject.Inject
 
 class MessageRepositoryImpl @Inject constructor(
@@ -23,6 +26,7 @@ class MessageRepositoryImpl @Inject constructor(
         private const val TAG = "MessageRepo"
         private const val SYNC_LIMIT_INITIAL = 5
         private const val SYNC_LIMIT_MAX = 80
+        private val metadataJson = Json { ignoreUnknownKeys = true }
     }
 
     override suspend fun syncMessages(sessionID: String, initialLimit: Int) {
@@ -94,10 +98,27 @@ class MessageRepositoryImpl @Inject constructor(
 
     override fun observeMessages(sessionID: String): Flow<List<Message>> {
         val db = dbProvider.getActive()
-        return db.messageDao().observeBySession(sessionID).combine(db.partDao().observeBySession(sessionID)) { msgEntities, allParts ->
-            val partsByMsg = allParts.groupBy { it.messageID }
+        return db.messageDao().observeBySession(sessionID).combine(
+            db.partDao().observeBySessionLite(sessionID)
+        ) { msgEntities, liteParts ->
+            val taskIdsNeedingMetadata = liteParts
+                .filter { it.type == "tool" && it.toolName == "task" && it.toolResult == null }
+                .map { it.id }
+
+            val metadataMap = if (taskIdsNeedingMetadata.isNotEmpty()) {
+                db.partDao().getMetadataByIds(taskIdsNeedingMetadata)
+                    .mapNotNull { tuple ->
+                        tuple.toolMetadata?.let { raw ->
+                            runCatching { metadataJson.decodeFromString(JsonObject.serializer(), raw) }.getOrNull()
+                        }?.let { tuple.id to it }
+                    }.toMap()
+            } else emptyMap()
+
+            val partsByMsg = liteParts.groupBy { it.messageID }
             msgEntities.map { msgEntity ->
-                val parts = (partsByMsg[msgEntity.id] ?: emptyList()).map { it.toDomain() }
+                val parts = (partsByMsg[msgEntity.id] ?: emptyList()).map { lite ->
+                    lite.toDomainWithMetadata(metadataMap[lite.id])
+                }
                 msgEntity.toDomain(parts)
             }
         }
