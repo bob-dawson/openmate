@@ -17,6 +17,8 @@ import androidx.compose.ui.unit.dp
 import com.openmate.core.common.toTimeString
 import com.openmate.core.domain.model.Message
 import com.openmate.core.domain.model.MessageRole
+import com.openmate.core.domain.model.PermissionReply
+import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
 
 @Composable
@@ -24,8 +26,11 @@ fun MessageItem(
     message: Message,
     pendingAssistantId: String? = null,
     pendingQuestions: List<QuestionRequest> = emptyList(),
+    pendingPermissions: List<PermissionRequest> = emptyList(),
     onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
     onRejectQuestion: (String) -> Unit = {},
+    onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
+    onNavigateToSubtask: ((agent: String, description: String, prompt: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isUser = message.role == MessageRole.USER
@@ -53,8 +58,11 @@ fun MessageItem(
             parts = message.parts,
             isUser = isUser,
             pendingQuestions = pendingQuestions,
+            pendingPermissions = pendingPermissions,
             onReplyQuestion = onReplyQuestion,
             onRejectQuestion = onRejectQuestion,
+            onReplyPermission = onReplyPermission,
+            onNavigateToSubtask = onNavigateToSubtask,
         )
         if (isQueued) {
             Box(

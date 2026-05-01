@@ -4,6 +4,9 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.ToolRef
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 @Entity(tableName = "PermissionEntity")
 data class PermissionEntity(
@@ -17,13 +20,15 @@ data class PermissionEntity(
     val toolCallID: String? = null,
 )
 
+private val permJson = Json { ignoreUnknownKeys = true }
+
 fun PermissionEntity.toDomain(): PermissionRequest {
     return PermissionRequest(
         id = id,
         sessionID = sessionID,
         permission = permission,
         patterns = if (patterns.isBlank()) emptyList() else patterns.split("||"),
-        metadata = emptyMap(),
+        metadata = if (metadata.isBlank()) JsonObject(emptyMap()) else permJson.decodeFromString(metadata),
         always = if (always.isBlank()) emptyList() else always.split("||"),
         tool = if (toolMessageID != null) ToolRef(toolMessageID, toolCallID ?: "") else null,
     )
@@ -35,7 +40,7 @@ fun PermissionRequest.toEntity(): PermissionEntity {
         sessionID = sessionID,
         permission = permission,
         patterns = patterns.joinToString("||"),
-        metadata = metadata.entries.joinToString("||") { "${it.key}=${it.value}" },
+        metadata = permJson.encodeToString(JsonObject.serializer(), metadata),
         always = always.joinToString("||"),
         toolMessageID = tool?.messageID,
         toolCallID = tool?.callID,

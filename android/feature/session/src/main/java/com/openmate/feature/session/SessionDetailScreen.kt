@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.ui.component.TopBar
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.MessageItem
@@ -98,27 +99,6 @@ fun SessionDetailScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
         }
-    }
-
-    pendingPermissions.firstOrNull()?.let { perm ->
-        PermissionDialog(
-            request = perm,
-            onAllow = {
-                viewModel.replyPermission(
-                    perm.id,
-                    com.openmate.core.domain.model.PermissionReply.ONCE,
-                    null,
-                )
-            },
-            onDeny = {
-                viewModel.replyPermission(
-                    perm.id,
-                    com.openmate.core.domain.model.PermissionReply.REJECT,
-                    null,
-                )
-            },
-            onDismiss = {},
-        )
     }
 
     Scaffold(
@@ -212,8 +192,10 @@ fun SessionDetailScreen(
                             message = message,
                             pendingAssistantId = pendingAssistantId,
                             pendingQuestions = pendingQuestions,
+                            pendingPermissions = pendingPermissions,
                             onReplyQuestion = { id, answers -> viewModel.replyQuestion(id, answers) },
                             onRejectQuestion = { id -> viewModel.rejectQuestion(id) },
+                            onReplyPermission = { id, reply, msg -> viewModel.replyPermission(id, reply, msg) },
                         )
                     }
                     if (messages.isEmpty()) {

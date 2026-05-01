@@ -1,7 +1,10 @@
 package com.openmate.feature.session.component
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,8 +13,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -26,28 +32,31 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openmate.core.domain.model.Part
+import com.openmate.core.domain.model.PermissionReply
+import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionInfo
 import com.openmate.core.domain.model.QuestionOption
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.ToolCallState
-import androidx.compose.ui.graphics.Color
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 private val CodeBlockBackground = Color(0xFF1e1e2e)
 private val CodeBlockText = Color(0xFFcdd6f4)
+private val WarningColor = Color(0xFFFFA500)
+private val AgentColor = Color(0xFF9D7CD8)
 private val questionJson = Json { ignoreUnknownKeys = true }
 
 sealed class DisplayItem {
@@ -62,8 +71,94 @@ sealed class DisplayItem {
         val callID: String? = null,
     ) : DisplayItem()
     data class ReasoningItem(val text: String) : DisplayItem()
-    data class AgentItem(val name: String) : DisplayItem()
-    data class SubtaskItem(val agent: String, val description: String, val prompt: String) : DisplayItem()
+}
+
+private data class ToolSummary(
+    val icon: String,
+    val text: String,
+    val isBlock: Boolean,
+)
+
+private fun JsonObject?.str(key: String): String? =
+    this?.get(key)?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.content else null }
+
+private fun JsonObject.bool(key: String): Boolean =
+    (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.boolean ?: false
+
+private fun toolSummary(toolName: String, args: String?, result: String?): ToolSummary {
+    val jsonArgs = try {
+        if (args != null) questionJson.parseToJsonElement(args).jsonObject else null
+    } catch (_: Exception) { null }
+
+    when (toolName) {
+        "bash" -> {
+            val command = jsonArgs.str("command") ?: args?.take(80) ?: ""
+            val hasOutput = result != null && result.isNotBlank()
+            return ToolSummary("$", command, hasOutput)
+        }
+        "glob" -> {
+            val pattern = jsonArgs.str("pattern") ?: ""
+            val path = jsonArgs.str("path")
+            val suffix = if (path != null) " in $path" else ""
+            return ToolSummary("✱", "glob $pattern$suffix", false)
+        }
+        "read" -> {
+            val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
+            return ToolSummary("→", filePath, false)
+        }
+        "grep" -> {
+            val pattern = jsonArgs.str("pattern") ?: ""
+            val path = jsonArgs.str("path")
+            val suffix = if (path != null) " in $path" else ""
+            return ToolSummary("✱", "grep $pattern$suffix", false)
+        }
+        "webfetch" -> {
+            val url = jsonArgs.str("url") ?: ""
+            return ToolSummary("%", url, false)
+        }
+        "websearch" -> {
+            val query = jsonArgs.str("query") ?: ""
+            return ToolSummary("◈", query, false)
+        }
+        "codesearch" -> {
+            val query = jsonArgs.str("query") ?: ""
+            return ToolSummary("◇", query, false)
+        }
+        "write" -> {
+            val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
+            val hasDiags = result != null
+            return ToolSummary("←", filePath, hasDiags)
+        }
+        "edit" -> {
+            val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
+            val hasDiff = result != null
+            return ToolSummary("←", filePath, hasDiff)
+        }
+        "task" -> {
+            val desc = jsonArgs.str("description") ?: ""
+            val agent = jsonArgs.str("agent") ?: toolName
+            return ToolSummary("│", "$agent: $desc", false)
+        }
+        "apply_patch" -> {
+            val hasFiles = result != null
+            return ToolSummary("%", "apply_patch", hasFiles)
+        }
+        "todowrite" -> {
+            return ToolSummary("⚙", "todowrite", true)
+        }
+        "question" -> {
+            return ToolSummary("→", "question", true)
+        }
+        "skill" -> {
+            val name = jsonArgs.str("name") ?: ""
+            return ToolSummary("→", name, false)
+        }
+        else -> {
+            val hasOutput = result != null && result.isNotBlank()
+            val paramSnippet = args?.take(60) ?: ""
+            return ToolSummary("⚙", "$toolName $paramSnippet", hasOutput)
+        }
+    }
 }
 
 private fun parseQuestionArgs(args: String?): List<QuestionInfo>? {
@@ -76,15 +171,15 @@ private fun parseQuestionArgs(args: String?): List<QuestionInfo>? {
             val opts = obj["options"]?.jsonArray?.map { opt ->
                 val optObj = opt.jsonObject
                 QuestionOption(
-                    label = optObj["label"]?.jsonPrimitive?.content ?: "",
-                    description = optObj["description"]?.jsonPrimitive?.content ?: "",
+                    label = optObj.str("label") ?: "",
+                    description = optObj.str("description") ?: "",
                 )
             } ?: emptyList()
             QuestionInfo(
-                header = obj["header"]?.jsonPrimitive?.content ?: "",
-                question = obj["question"]?.jsonPrimitive?.content ?: "",
+                header = obj.str("header") ?: "",
+                question = obj.str("question") ?: "",
                 options = opts,
-                multiple = obj["multiple"]?.jsonPrimitive?.boolean ?: false,
+                multiple = obj.bool("multiple"),
             )
         }
     } catch (_: Exception) {
@@ -129,13 +224,8 @@ fun List<Part>.toDisplayItems(isUser: Boolean): List<DisplayItem> {
             }
             is Part.StepStartPart, is Part.StepFinishPart,
             is Part.CompactionPart, is Part.RetryPart,
-            is Part.SnapshotPart, is Part.FilePart -> {}
-            is Part.AgentPart -> {
-                items.add(DisplayItem.AgentItem(part.name))
-            }
-            is Part.SubtaskPart -> {
-                items.add(DisplayItem.SubtaskItem(part.agent, part.description, part.prompt))
-            }
+            is Part.SnapshotPart, is Part.FilePart,
+            is Part.AgentPart, is Part.SubtaskPart -> {}
         }
         i++
     }
@@ -147,11 +237,16 @@ fun PartColumn(
     parts: List<Part>,
     isUser: Boolean,
     pendingQuestions: List<QuestionRequest>,
+    pendingPermissions: List<PermissionRequest>,
     onReplyQuestion: (String, List<List<String>>) -> Unit,
     onRejectQuestion: (String) -> Unit,
+    onReplyPermission: (String, PermissionReply, String?) -> Unit,
+    onNavigateToSubtask: ((agent: String, description: String, prompt: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val showReasoning = remember { mutableStateOf(false) }
     val displayItems = parts.toDisplayItems(isUser)
+
     Column(modifier = modifier) {
         displayItems.forEach { item ->
             when (item) {
@@ -179,42 +274,68 @@ fun PartColumn(
                                 },
                             )
                         } else {
-                            ToolInvocationCard(
-                                toolName = item.toolName,
-                                state = item.state,
-                                args = item.args,
-                                result = item.result,
-                                files = item.files,
-                                hash = item.hash,
-                            )
+                            InlineToolLine(item)
                         }
+                    } else if (item.state == ToolCallState.PENDING) {
+                        val matchedPerm = item.callID?.let { callID ->
+                            pendingPermissions.find { it.tool?.callID == callID }
+                        }
+                        if (matchedPerm != null) {
+                            PermissionCard(
+                                request = matchedPerm,
+                                onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
+                            )
+                        } else {
+                            PendingToolLine(item)
+                        }
+                    } else if (item.state == ToolCallState.RUNNING) {
+                        RunningToolLine(item)
+                    } else if (item.state == ToolCallState.ERROR) {
+                        ErrorToolLine(item)
                     } else {
-                        ToolInvocationCard(
-                            toolName = item.toolName,
-                            state = item.state,
-                            args = item.args,
-                            result = item.result,
-                            files = item.files,
-                            hash = item.hash,
-                        )
+                        val summary = toolSummary(item.toolName, item.args, item.result)
+                        if (item.toolName == "task" && onNavigateToSubtask != null) {
+                            TaskToolLine(item, summary, onNavigateToSubtask)
+                        } else if (summary.isBlock) {
+                            BlockToolLine(item, summary)
+                        } else {
+                            InlineToolLine(item)
+                        }
                     }
                 }
                 is DisplayItem.ReasoningItem -> {
-                    MarkdownText(
-                        markdown = item.text,
-                        modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        syntaxHighlightColor = CodeBlockBackground,
-                        syntaxHighlightTextColor = CodeBlockText,
-                    )
-                }
-                is DisplayItem.AgentItem -> {
-                    AgentCard(name = item.name)
-                }
-                is DisplayItem.SubtaskItem -> {
-                    SubtaskCard(agent = item.agent, description = item.description, prompt = item.prompt)
+                    val filtered = item.text.replace(Regex("\\[REDACTED\\][\\s\\S]*?\\[REDACTED\\]"), "[REDACTED]")
+                    if (filtered.isNotBlank()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp)
+                                .clickable { showReasoning.value = !showReasoning.value },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = if (showReasoning.value) "▼ Thinking" else "▶ Thinking",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        AnimatedVisibility(visible = showReasoning.value) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 12.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                    .padding(8.dp),
+                            ) {
+                                Text(
+                                    text = "_Thinking:_ $filtered",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(4.dp))
@@ -222,7 +343,278 @@ fun PartColumn(
     }
 }
 
-private val AgentColor = Color(0xFF9D7CD8)
+@Composable
+private fun InlineToolLine(item: DisplayItem.ToolItem) {
+    val summary = toolSummary(item.toolName, item.args, item.result)
+    Row(
+        modifier = Modifier.padding(vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = summary.icon,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = summary.text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontFamily = FontFamily.Monospace,
+        )
+    }
+}
+
+@Composable
+private fun RunningToolLine(item: DisplayItem.ToolItem) {
+    val summary = toolSummary(item.toolName, item.args, item.result)
+    Row(
+        modifier = Modifier.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(14.dp),
+            strokeWidth = 2.dp,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "${summary.icon} ${summary.text}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun PendingToolLine(item: DisplayItem.ToolItem) {
+    val summary = toolSummary(item.toolName, item.args, item.result)
+    Row(
+        modifier = Modifier.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = summary.icon,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+            color = WarningColor,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "Using ${summary.text}...",
+            style = MaterialTheme.typography.bodySmall,
+            color = WarningColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ErrorToolLine(item: DisplayItem.ToolItem) {
+    val summary = toolSummary(item.toolName, item.args, item.result)
+    val expanded = remember { mutableStateOf(false) }
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded.value = !expanded.value }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "${summary.icon} ${summary.text}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (expanded.value) "▲" else "▼",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        AnimatedVisibility(visible = expanded.value) {
+            item.result?.let { err ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f))
+                        .padding(8.dp),
+                ) {
+                    Text(
+                        text = err.take(500),
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaskToolLine(
+    item: DisplayItem.ToolItem,
+    summary: ToolSummary,
+    onNavigate: (agent: String, description: String, prompt: String) -> Unit,
+) {
+    val jsonArgs = try {
+        if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
+    } catch (_: Exception) { null }
+
+    val agent = jsonArgs?.str("agent") ?: ""
+    val description = jsonArgs?.str("description") ?: ""
+    val prompt = jsonArgs?.str("prompt") ?: ""
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onNavigate(agent, description, prompt) }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "│",
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+            color = AgentColor,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = summary.text,
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+            color = AgentColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = "→",
+            style = MaterialTheme.typography.labelSmall,
+            color = AgentColor,
+        )
+    }
+}
+
+@Composable
+private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
+    val expanded = remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.padding(vertical = 2.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded.value = !expanded.value }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = summary.icon,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = summary.text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontFamily = FontFamily.Monospace,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = if (expanded.value) "▲" else "▼",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        AnimatedVisibility(visible = expanded.value) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(8.dp),
+            ) {
+                Column {
+                    if (item.toolName == "bash") {
+                        val jsonArgs = try {
+                            if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
+                        } catch (_: Exception) { null }
+                        val command = jsonArgs?.str("command") ?: ""
+                        val workdir = jsonArgs?.str("workdir")
+                        if (command.isNotBlank()) {
+                            Text(
+                                text = "$ $command",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        if (workdir != null) {
+                            Text(
+                                text = "cwd: $workdir",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        item.result?.let { output ->
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = output.take(500),
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 10,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    } else if (item.toolName == "todowrite") {
+                        item.result?.let { output ->
+                            Text(
+                                text = output.take(500),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    } else {
+                        item.result?.let { output ->
+                            Text(
+                                text = output.take(500),
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    if (item.files.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        item.files.forEach { file ->
+                            Text(
+                                text = file,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun QuestionCard(
@@ -232,7 +624,7 @@ fun QuestionCard(
     onReject: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val selectedAnswers = remember { mutableStateOf<Map<Int, List<String>>>(emptyMap()) }
+    val selectedAnswers = remember { mutableStateOf(emptyMap<Int, List<String>>()) }
     val canInteract = matchedRequest != null && onReply != null
 
     Card(
@@ -320,199 +712,70 @@ fun QuestionCard(
 }
 
 @Composable
-fun ToolInvocationCard(
-    toolName: String,
-    state: ToolCallState,
-    args: String?,
-    result: String?,
-    files: List<String> = emptyList(),
-    hash: String? = null,
+fun PermissionCard(
+    request: PermissionRequest,
+    onReply: (PermissionReply, String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val expanded = remember { mutableStateOf(false) }
-    val Warning = Color(0xFFFFA500)
+    val description = (request.metadata["description"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        ?: (request.metadata["command"] as? kotlinx.serialization.json.JsonPrimitive)?.content
 
-    Card(
-        modifier = modifier.padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                when (state) {
-                    ToolCallState.PENDING -> {
-                        Text(
-                            text = "PENDING",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Warning,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Warning.copy(alpha = 0.15f))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Using $toolName...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Warning,
-                        )
-                    }
-                    ToolCallState.RUNNING -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Running $toolName...",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    ToolCallState.COMPLETED -> {
-                        TextButton(onClick = { expanded.value = !expanded.value }) {
-                            Text(
-                                text = "$toolName ${if (expanded.value) "▲" else "▼"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                    ToolCallState.ERROR -> {
-                        TextButton(onClick = { expanded.value = !expanded.value }) {
-                            Text(
-                                text = "$toolName (error) ${if (expanded.value) "▲" else "▼"}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (files.isNotEmpty()) {
-                Column(modifier = Modifier.padding(top = 4.dp)) {
-                    files.forEach { file ->
-                        Text(
-                            text = file,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-
-            AnimatedVisibility(visible = expanded.value && (state == ToolCallState.COMPLETED || state == ToolCallState.ERROR)) {
-                Column {
-                    args?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Input:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = it.take(1000),
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    result?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Result:",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            text = it.take(1000),
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AgentCard(name: String, modifier: Modifier = Modifier) {
-    val expanded = remember { mutableStateOf(false) }
     Card(
         modifier = modifier.padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded.value = !expanded.value }
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "●",
-                style = MaterialTheme.typography.bodySmall,
-                color = AgentColor,
+                text = "Permission Request",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Agent: $name",
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                text = request.permission,
+                style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-        }
-    }
-}
-
-@Composable
-private fun SubtaskCard(agent: String, description: String, prompt: String, modifier: Modifier = Modifier) {
-    val expanded = remember { mutableStateOf(false) }
-    Card(
-        modifier = modifier.padding(vertical = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded.value = !expanded.value }
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            if (description != null) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "●",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AgentColor,
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (description.isNotBlank()) "$agent: $description" else "Subtask: $agent",
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = if (expanded.value) "▲" else "▼",
+                    text = description,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(androidx.compose.ui.unit.Dp.Unspecified)
+                        .verticalScroll(rememberScrollState()),
                 )
             }
-            AnimatedVisibility(visible = expanded.value) {
+            if (request.patterns.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = prompt,
-                    style = MaterialTheme.typography.bodySmall,
+                    text = request.patterns.joinToString("\n"),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            Row {
+                Button(onClick = { onReply(PermissionReply.ONCE, null) }) {
+                    Text("Allow")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                if (request.always.isNotEmpty()) {
+                    OutlinedButton(onClick = { onReply(PermissionReply.ALWAYS, null) }) {
+                        Text("Always")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                OutlinedButton(onClick = { onReply(PermissionReply.REJECT, null) }) {
+                    Text("Deny")
+                }
             }
         }
     }

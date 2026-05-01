@@ -5,6 +5,7 @@ import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.ToolRef
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class PermissionDto(
@@ -12,7 +13,7 @@ data class PermissionDto(
     @SerialName("sessionID") val sessionID: String = "",
     val permission: String = "",
     val patterns: List<String> = emptyList(),
-    val metadata: Map<String, String> = emptyMap(),
+    val metadata: JsonObject = JsonObject(emptyMap()),
     val always: List<String> = emptyList(),
     val tool: PermissionToolDto? = null,
 )

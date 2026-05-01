@@ -1,11 +1,13 @@
 package com.openmate.core.domain.model
 
+import kotlinx.serialization.json.JsonObject
+
 data class PermissionRequest(
     val id: String,
     val sessionID: String,
     val permission: String,
     val patterns: List<String>,
-    val metadata: Map<String, String>,
+    val metadata: JsonObject,
     val always: List<String>,
     val tool: ToolRef? = null,
 )
