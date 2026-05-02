@@ -7,6 +7,7 @@ import com.openmate.core.database.entity.toDomainWithMetadata
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Message
 import com.openmate.core.domain.model.MessageRole
+import com.openmate.core.domain.model.Part
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.domain.repository.MessageRepository
 import com.openmate.core.network.OpencodeApiClient
@@ -77,7 +78,7 @@ class MessageRepositoryImpl @Inject constructor(
 
         val allParts = items.flatMap { msgDto ->
             val msgDomain = msgDto.toDomain()
-            msgDomain.parts.mapIndexed { idx, part ->
+            msgDomain.parts.filter { it !is Part.TextPart || !it.synthetic }.mapIndexed { idx, part ->
                 part.toEntity(msgDomain.id, sessionID, idx)
             }
         }

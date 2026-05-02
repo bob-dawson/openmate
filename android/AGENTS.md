@@ -60,6 +60,7 @@ Base URL: `http://{address}:{port}`
 | GET | `/global/health` | Health check |
 | GET | `/global/event` | SSE event stream |
 | GET | `/session` | List sessions (支持 `?directory=&limit=&start=`) |
+| GET | `/experimental/session` | List ALL sessions (不限 server CWD，安卓工作区列表用此 API) |
 | GET | `/session/:id` | Get session |
 | POST | `/session` | Create session |
 | DELETE | `/session/:id` | Delete session |

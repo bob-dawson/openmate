@@ -120,3 +120,47 @@ const PART_MAPPING = {
 7. **Edit/Write 工具**：显示 diff 视图
 8. **TodoWrite 工具**：显示 todo 列表（已有 TodoListCard）
 9. **File parts**：badge + 文件名
+
+---
+
+## QUEUED 状态
+
+### TUI 判定逻辑（已验证源码）
+
+```typescript
+// index.tsx:148-150
+const pending = createMemo(() => {
+    return messages().findLast((x) => x.role === "assistant" && !x.time.completed)?.id
+})
+// index.tsx:1267 — 仅用于 UserMessage 组件
+const queued = createMemo(() => props.pending && props.message.id > props.pending)
+```
+
+- `pending` = 最后一个 `completedAt == null` 的 assistant 消息 ID
+- 用户消息 ID > pending ID → QUEUED
+- 消息 ID 是 `msg_` + hex(timestamp) + random，字典序 == 时间序
+
+### OpenMate 当前实现
+
+与 TUI 一致：
+```kotlin
+// SessionDetailViewModel
+_pendingAssistantId.value = list
+    .filter { it.role == MessageRole.ASSISTANT && it.completedAt == null }
+    .maxByOrNull { it.id }?.id
+
+// MessageItem
+val isQueued = isUser && pendingAssistantId != null && message.id > pendingAssistantId
+```
+
+### 已知边界行为（不修复）
+
+场景：Agent 工作中，TUI 发消息 A 进入 QUEUED，然后手机发消息 B，此时两条都变成非 QUEUED。手机再发消息 C，C 是 QUEUED。
+
+原因：`prompt_async` 的 `ensureRunning` 在 runner busy 时只等待当前 run 完成，但 runLoop 下一轮只处理最新 user message（`lastUser`），给其创建 assistant（`parentID = lastUser.id`）。这导致中间的排队消息没有自己的 assistant child，但因为出现了新的 assistant 消息，`pending` 指向它，所有 ID 更小的用户消息都失去 QUEUED 标记。
+
+结论：
+- 这是 opencode 服务端 `runLoop` 只处理最新 user message 的设计导致的
+- TUI 本身也有同样行为
+- OpenMate 保持与 TUI 一致即可
+- 如果将来要修，方案是改为"按 parentID 判断用户消息是否被 assistant 接单"，但这会偏离 TUI 语义

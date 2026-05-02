@@ -51,7 +51,16 @@ fun FilePickerSheet(
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<String>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    var serverDir by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                serverDir = apiClient.getPath().directory
+            } catch (_: Exception) {}
+        }
+    }
 
     LaunchedEffect(Unit) {
         scope.launch(Dispatchers.IO) {
@@ -155,13 +164,14 @@ fun FilePickerSheet(
             } else if (searchQuery.length >= 2) {
                 if (searchResults.isNotEmpty()) {
                     LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-                        items(searchResults) { path ->
-                            val name = path.substringAfterLast("/")
+                        items(searchResults) { relPath ->
+                            val name = relPath.substringAfterLast("/").trimEnd('/')
+                            val absPath = if (serverDir.isNotBlank()) java.io.File(serverDir, relPath.trimEnd('/')).path else relPath
                             FileRow(
                                 name = name,
-                                path = path,
+                                path = absPath,
                                 isDir = false,
-                                onClick = { onSelect(path, name) },
+                                onClick = { onSelect(absPath, name) },
                             )
                         }
                     }
@@ -184,7 +194,7 @@ fun FilePickerSheet(
                                 if (node.type == "directory") {
                                     currentPath = node.path
                                 } else {
-                                    onSelect(node.path, node.name)
+                                    onSelect(node.absolute.ifBlank { node.path }, node.name)
                                 }
                             },
                         )

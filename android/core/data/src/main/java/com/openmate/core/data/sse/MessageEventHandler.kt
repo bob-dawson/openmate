@@ -3,6 +3,7 @@ package com.openmate.core.data.sse
 import android.util.Log
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.toEntity
+import com.openmate.core.domain.model.Part
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SseData
 import com.openmate.core.network.dto.toDomain
@@ -67,7 +68,7 @@ open class MessageEventHandler @Inject constructor(
             db.messageDao().upsertAll(domains.map { it.toEntity() })
 
             val allParts = domains.flatMap { msg ->
-                msg.parts.mapIndexed { idx, part ->
+                msg.parts.filter { it !is Part.TextPart || !it.synthetic }.mapIndexed { idx, part ->
                     part.toEntity(msg.id, sessionID, idx)
                 }
             }

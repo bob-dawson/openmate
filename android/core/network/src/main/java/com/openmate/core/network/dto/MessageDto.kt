@@ -171,6 +171,7 @@ fun PartDto.toDomain(): Part {
         "snapshot" -> Part.SnapshotPart(id = id, snapshot = snapshot ?: "")
         "patch" -> Part.PatchPart(id = id, hash = hash ?: "", files = files ?: emptyList())
         "agent" -> Part.AgentPart(id = id, name = name ?: "")
+        "file" -> Part.FilePart(id = id, mime = mime ?: "", url = url ?: "", filename = filename)
         "compaction" -> Part.CompactionPart(
             id = id,
             auto = auto ?: false,

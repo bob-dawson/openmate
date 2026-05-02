@@ -80,6 +80,7 @@ sealed class DisplayItem {
         val metadata: JsonObject? = null,
     ) : DisplayItem()
     data class ReasoningItem(val text: String) : DisplayItem()
+    data class FileItem(val filename: String?, val mime: String, val url: String) : DisplayItem()
 }
 
 private data class ToolSummary(
@@ -294,8 +295,11 @@ fun List<Part>.toDisplayItems(isUser: Boolean): List<DisplayItem> {
             }
             is Part.StepStartPart, is Part.StepFinishPart,
             is Part.CompactionPart, is Part.RetryPart,
-            is Part.SnapshotPart, is Part.FilePart,
+            is Part.SnapshotPart,
             is Part.AgentPart, is Part.SubtaskPart -> {}
+            is Part.FilePart -> {
+                items.add(DisplayItem.FileItem(part.filename, part.mime, part.url))
+            }
         }
         i++
     }
@@ -418,6 +422,48 @@ fun PartColumn(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                is DisplayItem.FileItem -> {
+                    val displayMime = item.mime.ifBlank { "file" }
+                    val displayFilename = item.filename ?: item.url.substringAfterLast("/").substringBefore("?").ifBlank { null }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 8.dp, top = 2.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp),
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = displayMime,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        if (displayFilename != null) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(4.dp),
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    text = displayFilename,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
