@@ -1032,10 +1032,9 @@ fun PermissionCard(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(androidx.compose.ui.unit.Dp.Unspecified)
-                        .verticalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 10,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (request.patterns.isNotEmpty()) {
@@ -1044,9 +1043,7 @@ fun PermissionCard(
                     text = request.patterns.joinToString("\n"),
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth(),
                     maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
                 )
