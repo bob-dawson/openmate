@@ -184,7 +184,6 @@ class SessionDetailViewModel @Inject constructor(
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
                 val sid = currentSessionID ?: continue
-                Log.d(TAG, "poll start sid=$sid")
                 try {
                     messageRepository.syncMessages(sid, 80)
                     sessionRepository.refreshSessionStatusesFromMessages()
@@ -195,7 +194,6 @@ class SessionDetailViewModel @Inject constructor(
                 try {
                     permissionRepository.refresh()
                     questionRepository.refresh()
-                    Log.d(TAG, "poll permission/question refreshed")
                 } catch (e: Exception) {
                     Log.e(TAG, "poll permission/question failed", e)
                 }
@@ -466,7 +464,7 @@ class SessionDetailViewModel @Inject constructor(
         prefs.edit().putString(KEY_RECENT_MODELS, raw).apply()
     }
 
-private fun observeMessages(sessionID: String) {
+    private fun observeMessages(sessionID: String) {
         observeMsgJob = viewModelScope.launch {
             try {
                 messageRepository.observeMessages(sessionID).collect { list ->
@@ -475,6 +473,14 @@ private fun observeMessages(sessionID: String) {
                     val hasIncompleteAssistant = lastAssistant != null && lastAssistant.completedAt == null
                     _isStreaming.value = hasIncompleteAssistant
                     _pendingAssistantId.value = if (hasIncompleteAssistant) lastAssistant?.id else null
+                    if (hasIncompleteAssistant) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                permissionRepository.refresh()
+                                questionRepository.refresh()
+                            } catch (_: Exception) {}
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeMessages failed", e)

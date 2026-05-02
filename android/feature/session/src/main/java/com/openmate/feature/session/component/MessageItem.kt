@@ -1,12 +1,6 @@
 package com.openmate.feature.session.component
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.widget.Toast
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openmate.core.common.toTimeString
@@ -34,13 +27,6 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
 
-private fun Message.copyableText(): String {
-    val textParts = parts.filterIsInstance<Part.TextPart>().map { it.text }
-    val reasoningParts = parts.filterIsInstance<Part.ReasoningPart>().map { it.text }
-    return (textParts + reasoningParts).filter { it.isNotBlank() }.joinToString("\n\n")
-}
-
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItem(
     message: Message,
@@ -53,7 +39,6 @@ fun MessageItem(
     onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val isUser = message.role == MessageRole.USER
     val isQueued = isUser && pendingAssistantId != null && message.id > pendingAssistantId
     val modelLabel = if (isUser && message.modelID != null) {
@@ -68,18 +53,7 @@ fun MessageItem(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp, horizontal = 12.dp)
-            .combinedClickable(
-                onClick = {},
-                onLongClick = {
-                    val text = message.copyableText()
-                    if (text.isNotBlank()) {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("message", text))
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                    }
-                },
-            ),
+            .padding(vertical = 2.dp, horizontal = 12.dp),
     ) {
         if (modelLabel != null) {
             Text(

@@ -24,8 +24,8 @@ class PermissionRepositoryImpl @Inject constructor(
     }
 
     override suspend fun reply(requestID: String, reply: PermissionReply, message: String?) {
-        api.replyPermission(requestID, reply.value, message)
         dbProvider.getActive().permissionDao().delete(requestID)
+        api.replyPermission(requestID, reply.value, message)
     }
 
     override fun observePending(): Flow<List<PermissionRequest>> {
