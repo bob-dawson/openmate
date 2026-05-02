@@ -1,6 +1,7 @@
 package com.openmate.core.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,7 @@ fun MessageBubble(
         MarkdownText(
             markdown = text,
             modifier = modifier
+                .fillMaxWidth()
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(start = 12.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
@@ -32,16 +34,20 @@ fun MessageBubble(
             ),
             syntaxHighlightColor = CodeBlockBackground,
             syntaxHighlightTextColor = CodeBlockText,
+            isTextSelectable = true,
         )
     } else {
         MarkdownText(
             markdown = text,
-            modifier = modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
             style = MaterialTheme.typography.bodyLarge.copy(
                 color = MaterialTheme.colorScheme.onBackground,
             ),
             syntaxHighlightColor = CodeBlockBackground,
             syntaxHighlightTextColor = CodeBlockText,
+            isTextSelectable = true,
         )
     }
 }

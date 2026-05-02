@@ -42,23 +42,38 @@ import kotlinx.coroutines.launch
 @Composable
 fun FilePickerSheet(
     apiClient: OpencodeApiClient,
-    initialPath: String = "",
     onSelect: (path: String, filename: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var currentPath by remember { mutableStateOf(initialPath) }
+    var currentPath by remember { mutableStateOf("") }
     var files by remember { mutableStateOf<List<FileNodeDto>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<String>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(currentPath) {
+    LaunchedEffect(Unit) {
         scope.launch(Dispatchers.IO) {
             isLoading = true
             try {
-                val nodes = apiClient.listFiles(if (currentPath.isBlank()) "." else currentPath)
+                val nodes = apiClient.listFiles(".")
+                files = nodes.filter { !it.ignored }.sortedWith(
+                    compareBy<FileNodeDto> { it.type != "directory" }.thenBy { it.name.lowercase() }
+                )
+            } catch (_: Exception) {
+                files = emptyList()
+            }
+            isLoading = false
+        }
+    }
+
+    LaunchedEffect(currentPath) {
+        if (currentPath.isBlank()) return@LaunchedEffect
+        scope.launch(Dispatchers.IO) {
+            isLoading = true
+            try {
+                val nodes = apiClient.listFiles(currentPath)
                 files = nodes.filter { !it.ignored }.sortedWith(
                     compareBy<FileNodeDto> { it.type != "directory" }.thenBy { it.name.lowercase() }
                 )
@@ -163,13 +178,13 @@ fun FilePickerSheet(
                     items(files, key = { it.path }) { node ->
                         FileRow(
                             name = node.name,
-                            path = node.absolute.ifBlank { node.path },
+                            path = node.path,
                             isDir = node.type == "directory",
                             onClick = {
                                 if (node.type == "directory") {
-                                    currentPath = node.absolute.ifBlank { node.path }
+                                    currentPath = node.path
                                 } else {
-                                    onSelect(node.absolute.ifBlank { node.path }, node.name)
+                                    onSelect(node.path, node.name)
                                 }
                             },
                         )

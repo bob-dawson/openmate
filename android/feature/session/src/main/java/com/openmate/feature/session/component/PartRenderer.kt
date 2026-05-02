@@ -346,7 +346,7 @@ fun PartColumn(
                         } else {
                             InlineToolLine(item)
                         }
-                    } else if (item.state == ToolCallState.PENDING) {
+                    } else if (item.state == ToolCallState.PENDING || item.state == ToolCallState.RUNNING) {
                         val matchedPerm = item.callID?.let { callID ->
                             pendingPermissions.find { it.tool?.callID == callID }
                         }
@@ -355,15 +355,15 @@ fun PartColumn(
                                 request = matchedPerm,
                                 onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
                             )
-                        } else {
+                        } else if (item.state == ToolCallState.PENDING) {
                             PendingToolLine(item)
-                        }
-                    } else if (item.state == ToolCallState.RUNNING) {
-                        val summary = toolSummary(item.toolName, item.args, item.result)
-                        if (item.toolName == "task" && onNavigateToSubtask != null) {
-                            TaskToolLine(item, summary, onNavigateToSubtask)
                         } else {
-                            RunningToolLine(item)
+                            val summary = toolSummary(item.toolName, item.args, item.result)
+                            if (item.toolName == "task" && onNavigateToSubtask != null) {
+                                TaskToolLine(item, summary, onNavigateToSubtask)
+                            } else {
+                                RunningToolLine(item)
+                            }
                         }
                     } else if (item.state == ToolCallState.ERROR) {
                         ErrorToolLine(item)

@@ -153,6 +153,7 @@ class SessionDetailViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "refreshQuestions failed", e)
             }
+            resolveDefaultModel()
             _isLoading.value = false
         }
         observeMessages(sessionID)
@@ -311,6 +312,41 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    private suspend fun resolveDefaultModel() {
+        if (_selectedModel.value != null) return
+        val lastUserMsg = _messages.value.lastOrNull {
+            it.role == MessageRole.USER && it.providerID != null && it.modelID != null
+        }
+        if (lastUserMsg != null) {
+            _selectedModel.value = ModelRef(
+                lastUserMsg.providerID!!,
+                lastUserMsg.modelID!!,
+                lastUserMsg.modelID!!,
+            )
+            return
+        }
+        val recent = _recentModels.value.firstOrNull()
+        if (recent != null) {
+            _selectedModel.value = recent
+            return
+        }
+        try {
+            val result = apiClient.getProviders()
+            _providers.value = result
+            val connected = result.connected
+            val defaults = result.default
+            for (providerID in connected) {
+                val modelID = defaults[providerID] ?: continue
+                val provider = result.all.find { it.id == providerID } ?: continue
+                val model = provider.models[modelID] ?: provider.models.values.firstOrNull() ?: continue
+                _selectedModel.value = ModelRef(providerID, modelID, model.name.ifBlank { modelID })
+                return
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "resolveDefaultModel failed", e)
+        }
+    }
+
     fun loadProviders() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -435,11 +471,10 @@ private fun observeMessages(sessionID: String) {
             try {
                 messageRepository.observeMessages(sessionID).collect { list ->
                     _messages.value = list
-                    val hasIncompleteAssistant = list.any { it.role == MessageRole.ASSISTANT && it.completedAt == null }
+                    val lastAssistant = list.lastOrNull { it.role == MessageRole.ASSISTANT }
+                    val hasIncompleteAssistant = lastAssistant != null && lastAssistant.completedAt == null
                     _isStreaming.value = hasIncompleteAssistant
-                    _pendingAssistantId.value = list
-                        .filter { it.role == MessageRole.ASSISTANT && it.completedAt == null }
-                        .maxByOrNull { it.id }?.id
+                    _pendingAssistantId.value = if (hasIncompleteAssistant) lastAssistant?.id else null
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeMessages failed", e)

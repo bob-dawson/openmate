@@ -435,7 +435,6 @@ fun SessionDetailScreen(
     if (showFilePicker) {
         FilePickerSheet(
             apiClient = viewModel.apiClient,
-            initialPath = viewModel.getWorkingDirectory(),
             onSelect = { path, filename ->
                 viewModel.attachFile(path, filename)
                 showFilePicker = false

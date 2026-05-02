@@ -181,7 +181,7 @@ class OpencodeApiClient(
     }
 
     suspend fun searchFiles(query: String, limit: Int = 20): List<String> {
-        return getList("/find/file", mapOf("query" to query, "limit" to limit.toString()))
+        return getList("/find/file", mapOf("query" to query, "limit" to limit.toString(), "type" to "file"))
     }
 
     suspend fun getProviders(): ProviderListDto {

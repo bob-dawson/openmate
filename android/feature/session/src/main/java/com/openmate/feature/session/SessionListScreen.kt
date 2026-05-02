@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -27,6 +28,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -55,12 +57,6 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.component.TopBar
 
-enum class SessionFilter(val label: String) {
-    ALL("全部"),
-    ACTIVE("活跃"),
-    ARCHIVED("已归档"),
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionListScreen(
@@ -72,7 +68,7 @@ fun SessionListScreen(
     val sessions by viewModel.sessions.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-    var filter by remember { mutableStateOf(SessionFilter.ALL) }
+    var searchQuery by remember { mutableStateOf("") }
     var showNewSessionDialog by remember { mutableStateOf(false) }
     var newSessionTitle by remember { mutableStateOf("") }
     val dirName = directory.substringAfterLast("\\").substringAfterLast("/")
@@ -88,11 +84,8 @@ fun SessionListScreen(
         }
     }
 
-    val filteredSessions = when (filter) {
-        SessionFilter.ALL -> sessions
-        SessionFilter.ACTIVE -> sessions.filter { !it.isArchived }
-        SessionFilter.ARCHIVED -> sessions.filter { it.isArchived }
-    }
+    val filteredSessions = if (searchQuery.isBlank()) sessions
+        else sessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -113,34 +106,31 @@ fun SessionListScreen(
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
-            Row(
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SessionFilter.entries.forEach { f ->
-                    val isSelected = filter == f
-                    val bgColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant
-                        else MaterialTheme.colorScheme.surfaceVariant
-                    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outline
-                    val textColor = if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant
-
-                    Text(
-                        text = f.label,
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
-                        color = textColor,
-                        modifier = Modifier
-                            .background(bgColor, MaterialTheme.shapes.extraSmall)
-                            .border(BorderStroke(1.dp, borderColor), MaterialTheme.shapes.extraSmall)
-                            .clickable { filter = f }
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                placeholder = {
+                    Text("搜索会话", style = MaterialTheme.typography.bodySmall)
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        modifier = Modifier.padding(start = 8.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-            }
+                },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MaterialTheme.colorScheme.outline,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                ),
+                shape = MaterialTheme.shapes.small,
+            )
 
             if (filteredSessions.isEmpty()) {
                 EmptyStateView(

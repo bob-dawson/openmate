@@ -33,6 +33,6 @@ interface MessageDao {
     @Query("DELETE FROM MessageEntity WHERE sessionID = :sid")
     suspend fun deleteBySession(sid: String)
 
-    @Query("SELECT DISTINCT sessionID FROM MessageEntity WHERE role = 'ASSISTANT' AND completedAt IS NULL")
+    @Query("SELECT DISTINCT m1.sessionID FROM MessageEntity m1 WHERE m1.role = 'ASSISTANT' AND m1.completedAt IS NULL AND m1.createdAt = (SELECT MAX(m2.createdAt) FROM MessageEntity m2 WHERE m2.sessionID = m1.sessionID AND m2.role = 'ASSISTANT')")
     suspend fun getBusySessionIDs(): List<String>
 }
