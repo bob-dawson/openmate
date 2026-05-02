@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ConnectionStatus
+import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
@@ -31,11 +32,19 @@ class WorkspaceListViewModel @Inject constructor(
     private val _workspaces = MutableStateFlow<List<Workspace>>(emptyList())
     val workspaces: StateFlow<List<Workspace>> = _workspaces.asStateFlow()
 
+    private val _allSessions = MutableStateFlow<List<Session>>(emptyList())
+    val allSessions: StateFlow<List<Session>> = _allSessions.asStateFlow()
+
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _selectedTab = MutableStateFlow(0)
+    val selectedTab: StateFlow<Int> = _selectedTab.asStateFlow()
+
+    fun selectTab(index: Int) { _selectedTab.value = index }
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -51,6 +60,7 @@ class WorkspaceListViewModel @Inject constructor(
         loadInstanceName()
         refresh()
         observeWorkspaces()
+        observeAllSessions()
         observeConnection()
     }
 
@@ -101,6 +111,14 @@ class WorkspaceListViewModel @Inject constructor(
         viewModelScope.launch {
             sessionRepository.observeWorkspaces().collect { list ->
                 _workspaces.value = list
+            }
+        }
+    }
+
+    private fun observeAllSessions() {
+        viewModelScope.launch {
+            sessionRepository.observeSessions(null).collect { list ->
+                _allSessions.value = list
             }
         }
     }
