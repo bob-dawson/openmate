@@ -1,5 +1,10 @@
 # AGENTS.md — OpenMate Workspace
 
+## Project Structure
+
+- **Android 客户端**: `D:\openmate\android` — 详见 [`android/AGENTS.md`](android/AGENTS.md)（架构、构建、约定、API 等）
+- **调试脚本**: `D:\openmate\scripts\`
+
 ## Debug & Analysis Tools
 
 ### 1. Session API Analysis (opencode REST API)

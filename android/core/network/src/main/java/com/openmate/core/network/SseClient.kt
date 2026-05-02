@@ -150,4 +150,8 @@ class SseClient(
         reconnectAttempts = 0
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }
+
+    fun isConnectedTo(address: String, port: Int): Boolean {
+        return currentBaseUrl == "http://$address:$port" && _connectionStatus.value == ConnectionStatus.CONNECTED
+    }
 }

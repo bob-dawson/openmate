@@ -64,15 +64,14 @@ class InstanceListViewModel @Inject constructor(
     private fun autoReconnect() {
         viewModelScope.launch(Dispatchers.IO) {
             val profiles = profileRepository.getAll()
-            val lastProfile = profiles.filter { (it.lastConnectedAt ?: 0L) > 0L }
-                .maxByOrNull { it.lastConnectedAt!! }
-            if (lastProfile != null) {
-                try {
-                    dbProvider.setActive(lastProfile.id)
-                    apiClient.baseUrl = "http://${lastProfile.address}:${lastProfile.port}"
-                    sseEventRepository.connect(lastProfile.address, lastProfile.port, lastProfile.password)
-                } catch (_: Exception) {}
-            }
+            if (profiles.size != 1) return@launch
+            val profile = profiles.first()
+            if (sseEventRepository.isConnectedTo(profile.address, profile.port)) return@launch
+            try {
+                dbProvider.setActive(profile.id)
+                apiClient.baseUrl = "http://${profile.address}:${profile.port}"
+                sseEventRepository.connect(profile.address, profile.port, profile.password)
+            } catch (_: Exception) {}
         }
     }
 
@@ -100,6 +99,7 @@ class InstanceListViewModel @Inject constructor(
             return
         }
         onNavigate()
+        if (sseEventRepository.isConnectedTo(profile.address, profile.port)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sseEventRepository.connect(profile.address, profile.port, profile.password)

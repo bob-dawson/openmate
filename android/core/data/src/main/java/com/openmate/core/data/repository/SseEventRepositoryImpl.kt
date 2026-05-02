@@ -70,4 +70,8 @@ class SseEventRepositoryImpl @Inject constructor(
     override fun observeConnectionStatus(): Flow<ConnectionStatus> {
         return sseClient.connectionStatus
     }
+
+    override fun isConnectedTo(address: String, port: Int): Boolean {
+        return sseClient.isConnectedTo(address, port)
+    }
 }

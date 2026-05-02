@@ -8,4 +8,5 @@ interface SseEventRepository {
     fun connect(address: String, port: Int, password: String?): Flow<SseEvent>
     fun disconnect()
     fun observeConnectionStatus(): Flow<ConnectionStatus>
+    fun isConnectedTo(address: String, port: Int): Boolean
 }
