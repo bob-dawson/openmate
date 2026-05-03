@@ -30,10 +30,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.openmate.feature.session.R
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeSearchResultDto
@@ -158,7 +160,7 @@ fun DirectoryPickerSheet(
                 .height(560.dp),
         ) {
             Text(
-                text = "Select Directory",
+                text = stringResource(R.string.select_directory_title),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(bottom = 8.dp),
             )
@@ -179,7 +181,7 @@ fun DirectoryPickerSheet(
                     createError = ""
                     doPrefixSearch(newPath)
                 },
-                label = { Text("Path (prefix search or create)") },
+                label = { Text(stringResource(R.string.path_prefix_search)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 4.dp),
@@ -206,13 +208,13 @@ fun DirectoryPickerSheet(
                             }
                         }
                     }) {
-                        Text("Create & Use")
+                        Text(stringResource(R.string.create_and_use))
                     }
                 }
                 TextButton(
                     onClick = { onSelect(if (isAtRoot) "/" else currentPath) },
                 ) {
-                    Text("Use this dir")
+                    Text(stringResource(R.string.use_this_dir))
                 }
             }
 
@@ -256,7 +258,7 @@ fun DirectoryPickerSheet(
                     if (!isAtRoot) {
                         item {
                             DirectoryRow(
-                                name = ". (current)",
+                                name = stringResource(R.string.current_dir),
                                 fullPath = currentPath,
                                 onClick = { onSelect(currentPath) },
                             )

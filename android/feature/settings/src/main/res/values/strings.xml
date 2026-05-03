@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings">Settings</string>
+    <string name="not_connected">Not connected</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="notifications">Notifications</string>
+    <string name="notify_permissions">Permission requests</string>
+    <string name="notify_permissions_desc">Push when opencode needs confirmation</string>
+    <string name="notify_questions">Questions</string>
+    <string name="notify_questions_desc">Push when opencode asks a question</string>
+    <string name="notify_complete">Session complete</string>
+    <string name="notify_complete_desc">Push when assistant response finishes</string>
+    <string name="notify_errors">Error alerts</string>
+    <string name="notify_errors_desc">Push on API errors or connection loss</string>
+    <string name="auto_allow_rules">Auto-allow rules</string>
+    <string name="auto_allow_read">Auto-allow Read</string>
+    <string name="auto_allow_grep">Auto-allow Glob/Grep</string>
+    <string name="auto_allow_bash">Auto-allow Bash</string>
+    <string name="security_risk">⚠️ Security risk</string>
+    <string name="cache_storage">Cache &amp; Storage</string>
+    <string name="file_cache">File cache</string>
+    <string name="clear">Clear</string>
+    <string name="cache_policy">Message cache policy</string>
+    <string name="cache_policy_lru">LRU last 500</string>
+    <string name="about">About</string>
+    <string name="version">Version</string>
+    <string name="open_source_licenses">Open source licenses</string>
+    <string name="calculating">Calculating…</string>
+</resources>

@@ -18,7 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.openmate.feature.session.R
 import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
 import com.openmate.core.domain.model.Message
@@ -91,7 +93,7 @@ fun MessageItem(
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             ) {
                 Text(
-                    text = "QUEUED",
+                    text = stringResource(R.string.queued),
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onPrimary,
                 )
@@ -126,7 +128,7 @@ private fun ThinkingIndicator() {
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = "Thinking...",
+            text = stringResource(R.string.thinking),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -136,7 +138,7 @@ private fun ThinkingIndicator() {
 @Composable
 private fun AbortedIndicator() {
     Text(
-        text = "Aborted",
+        text = stringResource(R.string.aborted),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 4.dp),

@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import com.openmate.feature.settings.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,7 +57,7 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopBar(title = "设置")
+            TopBar(title = stringResource(R.string.settings))
         },
     ) { padding ->
         LazyColumn(
@@ -68,7 +70,7 @@ fun SettingsScreen(
             item {
                 Spacer(modifier = Modifier.height(12.dp))
                 ProfileSection(
-                    name = activeProfile?.name ?: "未连接",
+                    name = activeProfile?.name ?: stringResource(R.string.not_connected),
                     address = activeProfile?.let { "${it.address}:${it.port}" } ?: "",
                     onDisconnect = {
                         viewModel.disconnect()
@@ -78,29 +80,29 @@ fun SettingsScreen(
             }
 
             item {
-                SectionHeader(title = "通知")
+                SectionHeader(title = stringResource(R.string.notifications))
                 SettingsCard {
                     SettingsToggle(
-                        title = "权限请求",
-                        subtitle = "opencode 需要确认操作时推送",
+                        title = stringResource(R.string.notify_permissions),
+                        subtitle = stringResource(R.string.notify_permissions_desc),
                         checked = notifyPermissions,
                         onCheckedChange = { viewModel.setNotifyPermissions(it) },
                     )
                     SettingsToggle(
-                        title = "问题通知",
-                        subtitle = "opencode 提问时推送",
+                        title = stringResource(R.string.notify_questions),
+                        subtitle = stringResource(R.string.notify_questions_desc),
                         checked = notifyQuestions,
                         onCheckedChange = { viewModel.setNotifyQuestions(it) },
                     )
                     SettingsToggle(
-                        title = "会话完成",
-                        subtitle = "助手回复完成时推送",
+                        title = stringResource(R.string.notify_complete),
+                        subtitle = stringResource(R.string.notify_complete_desc),
                         checked = notifyComplete,
                         onCheckedChange = { viewModel.setNotifyComplete(it) },
                     )
                     SettingsToggle(
-                        title = "错误提醒",
-                        subtitle = "API 错误或连接中断时推送",
+                        title = stringResource(R.string.notify_errors),
+                        subtitle = stringResource(R.string.notify_errors_desc),
                         checked = notifyErrors,
                         onCheckedChange = { viewModel.setNotifyErrors(it) },
                         showDivider = false,
@@ -109,23 +111,23 @@ fun SettingsScreen(
             }
 
             item {
-                SectionHeader(title = "自动允许规则")
+                SectionHeader(title = stringResource(R.string.auto_allow_rules))
                 SettingsCard {
                     SettingsToggle(
-                        title = "自动允许 Read 操作",
+                        title = stringResource(R.string.auto_allow_read),
                         subtitle = null,
                         checked = autoAllowRead,
                         onCheckedChange = { viewModel.setAutoAllowRead(it) },
                     )
                     SettingsToggle(
-                        title = "自动允许 Glob/Grep",
+                        title = stringResource(R.string.auto_allow_grep),
                         subtitle = null,
                         checked = autoAllowGrep,
                         onCheckedChange = { viewModel.setAutoAllowGrep(it) },
                     )
                     SettingsToggle(
-                        title = "自动允许 Bash",
-                        subtitle = "⚠️ 有安全风险",
+                        title = stringResource(R.string.auto_allow_bash),
+                        subtitle = stringResource(R.string.security_risk),
                         subtitleColor = Color(0xFFf5a742),
                         checked = autoAllowBash,
                         onCheckedChange = { viewModel.setAutoAllowBash(it) },
@@ -135,14 +137,14 @@ fun SettingsScreen(
             }
 
             item {
-                SectionHeader(title = "缓存与存储")
+                SectionHeader(title = stringResource(R.string.cache_storage))
                 SettingsCard {
                     SettingsRow(
-                        title = "文件缓存",
+                        title = stringResource(R.string.file_cache),
                         subtitle = viewModel.cacheSize.collectAsState().value,
                         trailing = {
                             Text(
-                                text = "清除",
+                                text = stringResource(R.string.clear),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.clickable { viewModel.clearCache() },
@@ -150,7 +152,7 @@ fun SettingsScreen(
                         },
                     )
                     SettingsRow(
-                        title = "消息缓存策略",
+                        title = stringResource(R.string.cache_policy),
                         subtitle = viewModel.cachePolicyLabel.collectAsState().value,
                         showDivider = false,
                         trailing = {
@@ -165,10 +167,10 @@ fun SettingsScreen(
             }
 
             item {
-                SectionHeader(title = "关于")
+                SectionHeader(title = stringResource(R.string.about))
                 SettingsCard {
                     SettingsRow(
-                        title = "版本",
+                        title = stringResource(R.string.version),
                         subtitle = null,
                         trailing = {
                             Text(
@@ -179,7 +181,7 @@ fun SettingsScreen(
                         },
                     )
                     SettingsRow(
-                        title = "开源许可",
+                        title = stringResource(R.string.open_source_licenses),
                         subtitle = null,
                         showDivider = false,
                         trailing = {
@@ -241,7 +243,7 @@ private fun ProfileSection(
                 }
             }
             Text(
-                text = "断开",
+                text = stringResource(R.string.disconnect),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.clickable(onClick = onDisconnect),

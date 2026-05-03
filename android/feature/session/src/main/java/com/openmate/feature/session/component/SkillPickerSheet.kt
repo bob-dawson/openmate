@@ -22,7 +22,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.openmate.feature.session.R
 import androidx.compose.ui.unit.dp
 import com.openmate.core.network.dto.SkillInfoDto
 
@@ -47,7 +49,7 @@ fun SkillPickerSheet(
                 .height(480.dp),
         ) {
             Text(
-                text = "Skills",
+                text = stringResource(R.string.skills),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(bottom = 12.dp),
             )
@@ -55,7 +57,7 @@ fun SkillPickerSheet(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                label = { Text("Search skills") },
+                label = { Text(stringResource(R.string.search_skills)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),

@@ -27,10 +27,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.openmate.feature.session.R
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeSearchResultDto
@@ -102,7 +104,7 @@ fun FilePickerSheet(
                 .height(520.dp),
         ) {
             Text(
-                text = "Attach File",
+                text = stringResource(R.string.attach_file),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(bottom = 8.dp),
             )
@@ -119,7 +121,7 @@ fun FilePickerSheet(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                label = { Text("Search files") },
+                label = { Text(stringResource(R.string.search_files)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 4.dp),
@@ -167,7 +169,7 @@ fun FilePickerSheet(
                     }
                 } else {
                     Text(
-                        text = "No files found",
+                        text = stringResource(R.string.no_files_found),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(16.dp),

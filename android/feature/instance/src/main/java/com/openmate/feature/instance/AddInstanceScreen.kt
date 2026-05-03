@@ -19,10 +19,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openmate.feature.instance.R
 import com.openmate.core.ui.component.TopBar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,7 +48,7 @@ fun AddInstanceScreen(
 
     Scaffold(
         topBar = {
-            TopBar(title = if (editProfileId != null) "编辑实例" else "Add Instance", onBack = onBack)
+            TopBar(title = stringResource(if (editProfileId != null) R.string.edit_instance else R.string.add_instance), onBack = onBack)
         },
     ) { padding ->
         Column(
@@ -58,7 +60,7 @@ fun AddInstanceScreen(
             OutlinedTextField(
                 value = name,
                 onValueChange = { viewModel.name.value = it; viewModel.clearTestResult() },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.instance_name)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -66,7 +68,7 @@ fun AddInstanceScreen(
             OutlinedTextField(
                 value = address,
                 onValueChange = { viewModel.address.value = it; viewModel.clearTestResult() },
-                label = { Text("Address") },
+                label = { Text(stringResource(R.string.instance_address)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -74,7 +76,7 @@ fun AddInstanceScreen(
             OutlinedTextField(
                 value = port,
                 onValueChange = { viewModel.port.value = it; viewModel.clearTestResult() },
-                label = { Text("Port") },
+                label = { Text(stringResource(R.string.instance_port)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -83,7 +85,7 @@ fun AddInstanceScreen(
             OutlinedTextField(
                 value = password,
                 onValueChange = { viewModel.password.value = it },
-                label = { Text("Password (optional)") },
+                label = { Text(stringResource(R.string.instance_password)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
@@ -93,20 +95,20 @@ fun AddInstanceScreen(
                 onClick = { viewModel.testConnection() },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Test Connection")
+                Text(stringResource(R.string.test_connection))
             }
             Spacer(modifier = Modifier.height(8.dp))
             when (testResult) {
-                is TestResult.Testing -> Text("Testing...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                is TestResult.Testing -> Text(stringResource(R.string.testing), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 is TestResult.Success -> {
                     val status = (testResult as TestResult.Success).status
                     Column {
                         Text(
-                            "Bridge v${status.bridge.version} connected!",
+                            stringResource(R.string.bridge_connected, status.bridge.version),
                             color = MaterialTheme.colorScheme.primary,
                         )
                         Text(
-                            "OpenCode: ${status.opencode.status}",
+                            stringResource(R.string.opencode_status, status.opencode.status),
                             color = when (status.opencode.status) {
                                 "running" -> MaterialTheme.colorScheme.primary
                                 "crashed" -> MaterialTheme.colorScheme.error
@@ -116,7 +118,7 @@ fun AddInstanceScreen(
                         )
                         if (status.opencode.directory.isNotBlank()) {
                             Text(
-                                "Dir: ${status.opencode.directory}",
+                                stringResource(R.string.opencode_dir, status.opencode.directory),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -135,7 +137,7 @@ fun AddInstanceScreen(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = name.isNotBlank() && address.isNotBlank(),
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         }
     }

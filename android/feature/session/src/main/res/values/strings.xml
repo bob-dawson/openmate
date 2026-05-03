@@ -1,36 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OpenMate</string>
-
-    <!-- Instance -->
-    <string name="add_instance">Add Instance</string>
-    <string name="instances">Instances</string>
-    <string name="edit_instance">Edit Instance</string>
-    <string name="instance_name">Name</string>
-    <string name="instance_address">Address</string>
-    <string name="instance_port">Port</string>
-    <string name="instance_password">Password (optional)</string>
-    <string name="test_connection">Test Connection</string>
-    <string name="testing">Testing…</string>
-    <string name="bridge_connected">Bridge v%1$s connected!</string>
-    <string name="opencode_status">OpenCode: %1$s</string>
-    <string name="opencode_dir">Dir: %1$s</string>
-    <string name="save">Save</string>
-    <string name="instance_count">%1$d instances</string>
-    <string name="add_first_instance">Add your first opencode instance</string>
-    <string name="edit">Edit</string>
-    <string name="delete">Delete</string>
-
-    <!-- Connection Status -->
-    <string name="status_connected">Online</string>
-    <string name="status_connecting">Connecting…</string>
-    <string name="status_error">Connection failed</string>
-    <string name="status_not_bridge">Not Bridge</string>
-    <string name="status_disconnected">Disconnected</string>
-    <string name="not_connected">Not connected</string>
-    <string name="disconnect">Disconnect</string>
-
-    <!-- Workspace / Session -->
     <string name="workspace">Workspaces</string>
     <string name="sessions">Sessions</string>
     <string name="settings">Settings</string>
@@ -45,13 +14,11 @@
     <string name="no_sessions">No sessions</string>
     <string name="untitled">Untitled</string>
 
-    <!-- Session Status -->
     <string name="session_archived">Archived</string>
     <string name="session_error">Error</string>
     <string name="session_busy">Busy</string>
     <string name="session_idle">Idle</string>
 
-    <!-- Chat Detail -->
     <string name="chat">Chat</string>
     <string name="abort">Abort</string>
     <string name="model">Model</string>
@@ -70,8 +37,16 @@
     <string name="delete_session">Delete Session</string>
     <string name="delete_session_confirm">Are you sure you want to delete this session? This action cannot be undone.</string>
     <string name="input_message">Type a message…</string>
+    <string name="delete">Delete</string>
 
-    <!-- Permission / Question -->
+    <string name="status_connected">Online</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_error">Connection failed</string>
+    <string name="status_not_bridge">Not Bridge</string>
+    <string name="status_disconnected">Disconnected</string>
+    <string name="not_connected">Not connected</string>
+    <string name="disconnect">Disconnect</string>
+
     <string name="permission_request">Permission Request</string>
     <string name="allow">Allow</string>
     <string name="always">Always</string>
@@ -81,12 +56,10 @@
     <string name="submit">Submit</string>
     <string name="waiting_response">Waiting for response…</string>
 
-    <!-- Session Status Badge -->
     <string name="queued">QUEUED</string>
     <string name="thinking">Thinking…</string>
     <string name="aborted">Aborted</string>
 
-    <!-- TODO -->
     <string name="todo">TODO</string>
     <string name="todo_in_progress">In Progress</string>
     <string name="todo_pending">Pending</string>
@@ -97,13 +70,11 @@
     <string name="priority_medium">Medium</string>
     <string name="priority_low">Low</string>
 
-    <!-- Part Renderer -->
     <string name="thinking_prefix">Thinking: %1$s</string>
     <string name="tool_waiting">waiting…</string>
     <string name="subtask_label">task</string>
     <string name="tool_cwd">cwd: %1$s</string>
 
-    <!-- Settings -->
     <string name="notifications">Notifications</string>
     <string name="notify_permissions">Permission requests</string>
     <string name="notify_permissions_desc">Push when opencode needs confirmation</string>
@@ -122,13 +93,10 @@
     <string name="file_cache">File cache</string>
     <string name="clear">Clear</string>
     <string name="cache_policy">Message cache policy</string>
-    <string name="cache_policy_lru">LRU last 500</string>
-    <string name="calculating">Calculating…</string>
     <string name="about">About</string>
     <string name="version">Version</string>
     <string name="open_source_licenses">Open source licenses</string>
 
-    <!-- File Browser -->
     <string name="files">Files</string>
     <string name="search_files">Search files</string>
     <string name="no_files_found">No files found</string>
@@ -139,31 +107,24 @@
     <string name="download">Download</string>
     <string name="empty_file">(empty file)</string>
     <string name="file_to_large">(File too large: %1$d chars, showing first 500K)</string>
-    <string name="binary_file_view_desktop">Binary file — view on desktop</string>
 
-    <!-- Directory Picker -->
     <string name="select_directory_title">Select Directory</string>
     <string name="path_prefix_search">Path (prefix search or create)</string>
     <string name="create_and_use">Create &amp; Use</string>
     <string name="use_this_dir">Use this dir</string>
     <string name="current_dir">. (current)</string>
 
-    <!-- Model Picker -->
     <string name="select_model">Select Model</string>
     <string name="search_models">Search models or providers</string>
     <string name="current_model">Current: </string>
     <string name="no_models_found">No models found</string>
     <string name="recent">Recent</string>
 
-    <!-- Skill Picker -->
     <string name="skills">Skills</string>
     <string name="search_skills">Search skills</string>
 
-    <!-- General -->
-    <string name="retry">Retry</string>
     <string name="content_desc_back">Back</string>
     <string name="content_desc_more">More</string>
-    <string name="content_desc_add_instance">Add Instance</string>
     <string name="content_desc_new_session">New Session</string>
     <string name="content_desc_send">Send</string>
 </resources>

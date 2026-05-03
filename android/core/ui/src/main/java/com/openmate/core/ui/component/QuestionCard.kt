@@ -18,6 +18,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.openmate.core.ui.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
@@ -39,7 +41,7 @@ fun QuestionCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Question",
+                text = stringResource(R.string.question),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -87,7 +89,7 @@ fun QuestionCard(
                 enabled = selectedOptions.value.isNotEmpty(),
                 modifier = Modifier.align(Alignment.End),
             ) {
-                Text("Submit")
+                Text(stringResource(R.string.submit))
             }
         }
     }

@@ -56,6 +56,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import com.openmate.feature.session.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -76,15 +78,15 @@ import com.openmate.feature.session.component.DirectoryPickerSheet
 import com.openmate.feature.settings.SettingsViewModel
 
 private data class TabItem(
-    val label: String,
+    val labelResId: Int,
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector,
 )
 
 private val TABS = listOf(
-    TabItem("工作区", Icons.Filled.Folder, Icons.Outlined.FolderOpen),
-    TabItem("会话", Icons.Filled.Chat, Icons.Outlined.ChatBubbleOutline),
-    TabItem("设置", Icons.Filled.Settings, Icons.Outlined.Settings),
+    TabItem(R.string.workspace, Icons.Filled.Folder, Icons.Outlined.FolderOpen),
+    TabItem(R.string.sessions, Icons.Filled.Chat, Icons.Outlined.ChatBubbleOutline),
+    TabItem(R.string.settings, Icons.Filled.Settings, Icons.Outlined.Settings),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -157,10 +159,10 @@ fun WorkspaceListScreen(
                         icon = {
                             Icon(
                                 imageVector = if (selectedTab == index) tab.selectedIcon else tab.unselectedIcon,
-                                contentDescription = tab.label,
+                                contentDescription = stringResource(tab.labelResId),
                             )
                         },
-                        label = { Text(tab.label, style = MaterialTheme.typography.labelSmall) },
+                        label = { Text(stringResource(tab.labelResId), style = MaterialTheme.typography.labelSmall) },
                     )
                 }
             }
@@ -172,7 +174,7 @@ fun WorkspaceListScreen(
                     newSessionDirectory = ""
                     showNewSessionDialog = true
                 }) {
-                    Icon(Icons.Default.Add, contentDescription = "New Session")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.content_desc_new_session))
                 }
             }
         },
@@ -181,7 +183,7 @@ fun WorkspaceListScreen(
             0 -> {
                 if (workspaces.isEmpty()) {
                     EmptyStateView(
-                        message = "No workspaces yet",
+                        message = stringResource(R.string.no_workspaces),
                         modifier = Modifier.padding(padding),
                     )
                 } else {
@@ -214,7 +216,7 @@ fun WorkspaceListScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         placeholder = {
-                            Text("搜索会话", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.search_sessions), style = MaterialTheme.typography.bodySmall)
                         },
                         leadingIcon = {
                             Icon(
@@ -235,7 +237,7 @@ fun WorkspaceListScreen(
 
                     if (filteredSessions.isEmpty()) {
                         EmptyStateView(
-                            message = "No sessions",
+                            message = stringResource(R.string.no_sessions),
                             modifier = Modifier.weight(1f),
                         )
                     } else {
@@ -268,13 +270,13 @@ fun WorkspaceListScreen(
     if (showNewSessionDialog) {
         AlertDialog(
             onDismissRequest = { showNewSessionDialog = false },
-            title = { Text("新建会话") },
+            title = { Text(stringResource(R.string.new_session)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = newSessionTitle,
                         onValueChange = { newSessionTitle = it },
-                        label = { Text("标题（可选）") },
+                        label = { Text(stringResource(R.string.session_title_optional)) },
                         singleLine = true,
                     )
                     Row(
@@ -285,7 +287,7 @@ fun WorkspaceListScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = if (newSessionDirectory.isBlank()) "选择工作目录" else newSessionDirectory,
+                            text = if (newSessionDirectory.isBlank()) stringResource(R.string.select_directory) else newSessionDirectory,
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (newSessionDirectory.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -305,12 +307,12 @@ fun WorkspaceListScreen(
                         onNavigateToDetail = onNavigateToDetail,
                     )
                 }) {
-                    Text("创建")
+                    Text(stringResource(R.string.create))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showNewSessionDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -371,7 +373,7 @@ private fun WorkspaceCard(
                 )
             }
             Spacer(modifier = Modifier.width(8.dp))
-            WorkspaceBadge(text = "${workspace.sessionCount} 会话")
+            WorkspaceBadge(text = stringResource(R.string.session_count, workspace.sessionCount))
         }
     }
 }
@@ -388,22 +390,22 @@ private fun AllSessionCard(
     when {
         session.isArchived -> {
             statusColor = Color(0xFF808080)
-            statusLabel = "已归档"
+            statusLabel = stringResource(R.string.session_archived)
             cardAlpha = 0.5f
         }
         session.status == SessionStatus.ERROR -> {
             statusColor = Color(0xFFe06c75)
-            statusLabel = "错误"
+            statusLabel = stringResource(R.string.session_error)
             cardAlpha = 1f
         }
         session.status == SessionStatus.RUNNING || session.status == SessionStatus.BUSY -> {
             statusColor = Color(0xFF56b6c2)
-            statusLabel = "忙碌"
+            statusLabel = stringResource(R.string.session_busy)
             cardAlpha = 1f
         }
         else -> {
             statusColor = Color(0xFF7fd88f)
-            statusLabel = "空闲"
+            statusLabel = stringResource(R.string.session_idle)
             cardAlpha = 1f
         }
     }
@@ -423,7 +425,7 @@ private fun AllSessionCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = session.title.ifBlank { "Untitled" },
+                    text = session.title.ifBlank { stringResource(R.string.untitled) },
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
@@ -498,11 +500,11 @@ private fun ConnectionDot(status: ConnectionStatus) {
         ConnectionStatus.DISCONNECTED -> Color(0xFF808080)
     }
     val label = when (status) {
-        ConnectionStatus.CONNECTED -> "在线"
-        ConnectionStatus.CONNECTING -> "连接中"
-        ConnectionStatus.ERROR -> "连接失败"
-        ConnectionStatus.NOT_BRIDGE -> "非Bridge"
-        ConnectionStatus.DISCONNECTED -> "未连接"
+        ConnectionStatus.CONNECTED -> stringResource(R.string.status_connected)
+        ConnectionStatus.CONNECTING -> stringResource(R.string.status_connecting)
+        ConnectionStatus.ERROR -> stringResource(R.string.status_error)
+        ConnectionStatus.NOT_BRIDGE -> stringResource(R.string.status_not_bridge)
+        ConnectionStatus.DISCONNECTED -> stringResource(R.string.status_disconnected)
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -545,7 +547,7 @@ private fun SettingsContent(
         item {
             Spacer(modifier = Modifier.height(12.dp))
             ProfileSection(
-                name = activeProfile?.name ?: "未连接",
+                name = activeProfile?.name ?: stringResource(R.string.not_connected),
                 address = activeProfile?.let { "${it.address}:${it.port}" } ?: "",
                 onDisconnect = {
                     viewModel.disconnect()
@@ -555,29 +557,29 @@ private fun SettingsContent(
         }
 
         item {
-            SectionHeader(title = "通知")
+            SectionHeader(title = stringResource(R.string.notifications))
             SettingsCard {
                 SettingsToggle(
-                    title = "权限请求",
-                    subtitle = "opencode 需要确认操作时推送",
+                    title = stringResource(R.string.notify_permissions),
+                    subtitle = stringResource(R.string.notify_permissions_desc),
                     checked = notifyPermissions,
                     onCheckedChange = { viewModel.setNotifyPermissions(it) },
                 )
                 SettingsToggle(
-                    title = "问题通知",
-                    subtitle = "opencode 提问时推送",
+                    title = stringResource(R.string.notify_questions),
+                    subtitle = stringResource(R.string.notify_questions_desc),
                     checked = notifyQuestions,
                     onCheckedChange = { viewModel.setNotifyQuestions(it) },
                 )
                 SettingsToggle(
-                    title = "会话完成",
-                    subtitle = "助手回复完成时推送",
+                    title = stringResource(R.string.notify_complete),
+                    subtitle = stringResource(R.string.notify_complete_desc),
                     checked = notifyComplete,
                     onCheckedChange = { viewModel.setNotifyComplete(it) },
                 )
                 SettingsToggle(
-                    title = "错误提醒",
-                    subtitle = "API 错误或连接中断时推送",
+                    title = stringResource(R.string.notify_errors),
+                    subtitle = stringResource(R.string.notify_errors_desc),
                     checked = notifyErrors,
                     onCheckedChange = { viewModel.setNotifyErrors(it) },
                     showDivider = false,
@@ -586,23 +588,23 @@ private fun SettingsContent(
         }
 
         item {
-            SectionHeader(title = "自动允许规则")
+            SectionHeader(title = stringResource(R.string.auto_allow_rules))
             SettingsCard {
                 SettingsToggle(
-                    title = "自动允许 Read 操作",
+                    title = stringResource(R.string.auto_allow_read),
                     subtitle = null,
                     checked = autoAllowRead,
                     onCheckedChange = { viewModel.setAutoAllowRead(it) },
                 )
                 SettingsToggle(
-                    title = "自动允许 Glob/Grep",
+                    title = stringResource(R.string.auto_allow_grep),
                     subtitle = null,
                     checked = autoAllowGrep,
                     onCheckedChange = { viewModel.setAutoAllowGrep(it) },
                 )
                 SettingsToggle(
-                    title = "自动允许 Bash",
-                    subtitle = "\u26A0\uFE0F 有安全风险",
+                    title = stringResource(R.string.auto_allow_bash),
+                    subtitle = stringResource(R.string.security_risk),
                     subtitleColor = Color(0xFFf5a742),
                     checked = autoAllowBash,
                     onCheckedChange = { viewModel.setAutoAllowBash(it) },
@@ -612,14 +614,14 @@ private fun SettingsContent(
         }
 
         item {
-            SectionHeader(title = "缓存与存储")
+            SectionHeader(title = stringResource(R.string.cache_storage))
             SettingsCard {
                 SettingsRow(
-                    title = "本地缓存",
+                    title = stringResource(R.string.file_cache),
                     subtitle = viewModel.cacheSize.collectAsState().value,
                     trailing = {
                         Text(
-                            text = "清除",
+                            text = stringResource(R.string.clear),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.clickable { viewModel.clearCache() },
@@ -627,7 +629,7 @@ private fun SettingsContent(
                     },
                 )
                 SettingsRow(
-                    title = "消息缓存策略",
+                    title = stringResource(R.string.cache_policy),
                     subtitle = viewModel.cachePolicyLabel.collectAsState().value,
                     showDivider = false,
                     trailing = {
@@ -642,10 +644,10 @@ private fun SettingsContent(
         }
 
         item {
-            SectionHeader(title = "关于")
+            SectionHeader(title = stringResource(R.string.about))
             SettingsCard {
                 SettingsRow(
-                    title = "版本",
+                    title = stringResource(R.string.version),
                     subtitle = null,
                     trailing = {
                         Text(
@@ -656,7 +658,7 @@ private fun SettingsContent(
                     },
                 )
                 SettingsRow(
-                    title = "开源许可",
+                    title = stringResource(R.string.open_source_licenses),
                     subtitle = null,
                     showDivider = false,
                     trailing = {
@@ -717,7 +719,7 @@ private fun ProfileSection(
                 }
             }
             Text(
-                text = "断开",
+                text = stringResource(R.string.disconnect),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.clickable(onClick = onDisconnect),

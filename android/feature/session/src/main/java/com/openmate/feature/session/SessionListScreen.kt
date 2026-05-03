@@ -44,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import com.openmate.feature.session.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,7 +103,7 @@ fun SessionListScreen(
                 newSessionTitle = ""
                     showNewSessionDialog = true
             }) {
-                Icon(Icons.Default.Add, contentDescription = "New Session")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.content_desc_new_session))
             }
         },
     ) { padding ->
@@ -113,7 +115,7 @@ fun SessionListScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 placeholder = {
-                    Text("搜索会话", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.search_sessions), style = MaterialTheme.typography.bodySmall)
                 },
                 leadingIcon = {
                     Icon(
@@ -134,7 +136,7 @@ fun SessionListScreen(
 
             if (filteredSessions.isEmpty()) {
                 EmptyStateView(
-                    message = "No sessions",
+                    message = stringResource(R.string.no_sessions),
                     modifier = Modifier.weight(1f),
                 )
             } else {
@@ -158,12 +160,12 @@ fun SessionListScreen(
     if (showNewSessionDialog) {
         AlertDialog(
             onDismissRequest = { showNewSessionDialog = false },
-            title = { Text("新建会话") },
+            title = { Text(stringResource(R.string.new_session)) },
             text = {
                 OutlinedTextField(
                     value = newSessionTitle,
                     onValueChange = { newSessionTitle = it },
-                    label = { Text("标题（可选）") },
+                    label = { Text(stringResource(R.string.session_title_optional)) },
                     singleLine = true,
                 )
             },
@@ -176,12 +178,12 @@ fun SessionListScreen(
                         onCreated = onNavigateToDetail,
                     )
                 }) {
-                    Text("创建")
+                    Text(stringResource(R.string.create))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showNewSessionDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -201,25 +203,25 @@ private fun SessionCard(
     when {
         session.isArchived -> {
             statusColor = Color(0xFF808080)
-            statusLabel = "已归档"
+            statusLabel = stringResource(R.string.session_archived)
             leftBorderColor = Color(0xFF808080)
             cardAlpha = 0.5f
         }
         session.status == SessionStatus.ERROR -> {
             statusColor = Color(0xFFe06c75)
-            statusLabel = "错误"
+            statusLabel = stringResource(R.string.session_error)
             leftBorderColor = Color(0xFFe06c75)
             cardAlpha = 1f
         }
         session.status == SessionStatus.RUNNING || session.status == SessionStatus.BUSY -> {
             statusColor = Color(0xFF56b6c2)
-            statusLabel = "忙碌"
+            statusLabel = stringResource(R.string.session_busy)
             leftBorderColor = Color(0xFF56b6c2)
             cardAlpha = 1f
         }
         else -> {
             statusColor = Color(0xFF7fd88f)
-            statusLabel = "空闲"
+            statusLabel = stringResource(R.string.session_idle)
             leftBorderColor = Color(0xFF7fd88f)
             cardAlpha = 1f
         }
@@ -240,7 +242,7 @@ private fun SessionCard(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = session.title.ifBlank { "Untitled" },
+                    text = session.title.ifBlank { stringResource(R.string.untitled) },
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,

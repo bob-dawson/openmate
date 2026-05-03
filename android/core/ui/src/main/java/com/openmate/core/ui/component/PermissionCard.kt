@@ -16,6 +16,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.openmate.core.ui.R
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -34,7 +36,7 @@ fun PermissionCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Permission Request",
+                text = stringResource(R.string.permission_request),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -58,11 +60,11 @@ fun PermissionCard(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
                 ) {
-                    Text("Allow")
+                    Text(stringResource(R.string.allow))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 OutlinedButton(onClick = onDeny) {
-                    Text("Deny")
+                    Text(stringResource(R.string.deny))
                 }
             }
         }

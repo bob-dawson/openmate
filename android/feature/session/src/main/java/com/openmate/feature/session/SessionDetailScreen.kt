@@ -46,7 +46,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -129,14 +131,14 @@ fun SessionDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopBar(
-                title = sessionTitle.ifBlank { "Chat" },
+                title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
                 actions = {
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(
                                 Icons.Default.MoreVert,
-                                contentDescription = "More",
+                                contentDescription = stringResource(R.string.content_desc_more),
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
@@ -146,7 +148,7 @@ fun SessionDetailScreen(
                         ) {
                             if (isStreaming) {
                                 DropdownMenuItem(
-                                    text = { Text("中断") },
+                                    text = { Text(stringResource(R.string.abort)) },
                                     onClick = {
                                         menuExpanded = false
                                         viewModel.abort(sessionID)
@@ -154,7 +156,7 @@ fun SessionDetailScreen(
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("Model") },
+                                text = { Text(stringResource(R.string.model)) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.loadProviders()
@@ -163,7 +165,7 @@ fun SessionDetailScreen(
                             )
                             DropdownMenuItem(
                                 text = {
-                                    Text(if (selectedAgent == "plan") "Mode: Plan → Build" else "Mode: Build → Plan")
+                                    Text(if (selectedAgent == "plan") stringResource(R.string.mode_plan) else stringResource(R.string.mode_build))
                                 },
                                 onClick = {
                                     viewModel.setAgent(if (selectedAgent == "plan") "build" else "plan")
@@ -173,7 +175,7 @@ fun SessionDetailScreen(
                             if (selectedModel != null) {
                                 DropdownMenuItem(
                                     text = {
-                                        if (isCompacting) Text("Compacting...") else Text("Compact")
+                                        if (isCompacting) Text(stringResource(R.string.compacting)) else Text(stringResource(R.string.compact))
                                     },
                                     onClick = {
                                         menuExpanded = false
@@ -183,7 +185,7 @@ fun SessionDetailScreen(
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("Skill") },
+                                text = { Text(stringResource(R.string.skill)) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.loadSkills()
@@ -191,28 +193,28 @@ fun SessionDetailScreen(
                                 },
                              )
                             DropdownMenuItem(
-                                text = { Text("Attach File") },
+                                text = { Text(stringResource(R.string.attach_file)) },
                                 onClick = {
                                     menuExpanded = false
                                     showFilePicker = true
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("Browse Files") },
+                                text = { Text(stringResource(R.string.browse_files)) },
                                 onClick = {
                                     menuExpanded = false
                                     onNavigateToBrowser(viewModel.getWorkingDirectory())
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("刷新") },
+                                text = { Text(stringResource(R.string.refresh)) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.refresh()
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("重命名") },
+                                text = { Text(stringResource(R.string.rename)) },
                                 onClick = {
                                     menuExpanded = false
                                     renameText = sessionTitle
@@ -220,7 +222,7 @@ fun SessionDetailScreen(
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("删除") },
+                                text = { Text(stringResource(R.string.delete)) },
                                 onClick = {
                                     menuExpanded = false
                                     showDeleteDialog = true
@@ -283,7 +285,7 @@ fun SessionDetailScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "No messages yet",
+                                    text = stringResource(R.string.no_messages),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -371,7 +373,7 @@ fun SessionDetailScreen(
     if (showRenameDialog) {
         AlertDialog(
             onDismissRequest = { showRenameDialog = false },
-            title = { Text("重命名") },
+            title = { Text(stringResource(R.string.rename_session)) },
             text = {
                 OutlinedTextField(
                     value = renameText,
@@ -384,12 +386,12 @@ fun SessionDetailScreen(
                     viewModel.renameSession(renameText)
                     showRenameDialog = false
                 }) {
-                    Text("确定")
+                    Text(stringResource(R.string.confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -398,19 +400,19 @@ fun SessionDetailScreen(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("删除会话") },
-            text = { Text("确定要删除这个会话吗？此操作不可撤销。") },
+            title = { Text(stringResource(R.string.delete_session)) },
+            text = { Text(stringResource(R.string.delete_session_confirm)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteSession { onBack() }
                     showDeleteDialog = false
                 }) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )

@@ -39,10 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openmate.feature.instance.R
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.ui.component.EmptyStateView
@@ -61,23 +63,23 @@ fun InstanceListScreen(
 
     Scaffold(
         topBar = {
-            TopBar(title = "实例")
+            TopBar(title = stringResource(R.string.instances))
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onNavigateToAdd) {
-                Icon(Icons.Default.Add, contentDescription = "Add Instance")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.content_desc_add_instance))
             }
         },
     ) { padding ->
         if (profiles.isEmpty()) {
             EmptyStateView(
-                message = "Add your first opencode instance",
+                message = stringResource(R.string.add_first_instance),
                 modifier = Modifier.padding(padding),
             )
         } else {
             Column(modifier = Modifier.padding(padding)) {
                 Text(
-                    text = "${profiles.size} 个实例",
+                    text = stringResource(R.string.instance_count, profiles.size),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 20.dp, top = 12.dp, bottom = 4.dp),
@@ -158,11 +160,11 @@ private fun InstanceCard(
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         when (status) {
-                            ConnectionStatus.CONNECTED -> StatusDot("在线", Color(0xFF7fd88f))
-                            ConnectionStatus.CONNECTING -> StatusDot("连接中...", Color(0xFFf5a742))
-                            ConnectionStatus.ERROR -> StatusDot("连接失败", Color(0xFFe06c75))
-                            ConnectionStatus.NOT_BRIDGE -> StatusDot("非Bridge", Color(0xFFe06c75))
-                            else -> StatusDot("未连接", Color(0xFF808080))
+                            ConnectionStatus.CONNECTED -> StatusDot(stringResource(R.string.status_connected), Color(0xFF7fd88f))
+                            ConnectionStatus.CONNECTING -> StatusDot(stringResource(R.string.status_connecting), Color(0xFFf5a742))
+                            ConnectionStatus.ERROR -> StatusDot(stringResource(R.string.status_error), Color(0xFFe06c75))
+                            ConnectionStatus.NOT_BRIDGE -> StatusDot(stringResource(R.string.status_not_bridge), Color(0xFFe06c75))
+                            else -> StatusDot(stringResource(R.string.status_disconnected), Color(0xFF808080))
                         }
                     }
                 }
@@ -170,7 +172,7 @@ private fun InstanceCard(
                     IconButton(onClick = { menuExpanded = true }) {
                         Icon(
                             Icons.Default.MoreVert,
-                            contentDescription = "More",
+                            contentDescription = stringResource(R.string.content_desc_more),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -179,14 +181,14 @@ private fun InstanceCard(
                         onDismissRequest = { menuExpanded = false },
                     ) {
                         DropdownMenuItem(
-                            text = { Text("编辑") },
+                            text = { Text(stringResource(R.string.edit)) },
                             onClick = {
                                 menuExpanded = false
                                 onEdit()
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("删除") },
+                            text = { Text(stringResource(R.string.delete)) },
                             onClick = {
                                 menuExpanded = false
                                 onDelete()

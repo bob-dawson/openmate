@@ -1,5 +1,6 @@
 package com.openmate.feature.settings
 
+import android.content.Context
 import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,8 @@ import com.openmate.core.domain.repository.FileCacheRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.database.ActiveDatabaseProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.openmate.feature.settings.R
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +21,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val profileRepository: ServerProfileRepository,
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
@@ -49,10 +53,10 @@ class SettingsViewModel @Inject constructor(
     private val _autoAllowBash = MutableStateFlow(prefs.getBoolean("auto_allow_bash", false))
     val autoAllowBash: StateFlow<Boolean> = _autoAllowBash.asStateFlow()
 
-    private val _cacheSize = MutableStateFlow("计算中...")
+    private val _cacheSize = MutableStateFlow(appContext.getString(R.string.calculating))
     val cacheSize: StateFlow<String> = _cacheSize.asStateFlow()
 
-    private val _cachePolicyLabel = MutableStateFlow("LRU 最近 500 条")
+    private val _cachePolicyLabel = MutableStateFlow(appContext.getString(R.string.cache_policy_lru))
     val cachePolicyLabel: StateFlow<String> = _cachePolicyLabel.asStateFlow()
 
     init {

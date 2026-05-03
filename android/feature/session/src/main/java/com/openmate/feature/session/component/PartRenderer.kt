@@ -39,7 +39,9 @@ import android.text.TextUtils
 import android.text.TextPaint
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import com.openmate.feature.session.R
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -425,7 +427,7 @@ fun PartColumn(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Thinking: $filtered",
+                                    text = stringResource(R.string.thinking_prefix, filtered),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     modifier = Modifier.weight(1f).padding(end = 8.dp),
@@ -569,7 +571,7 @@ private fun PendingToolLine(item: DisplayItem.ToolItem) {
         )
         Spacer(modifier = Modifier.width(4.dp))
         if (summary.text.isBlank()) {
-            Text(text = "waiting...", style = MaterialTheme.typography.bodySmall, color = WarningColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text = stringResource(R.string.tool_waiting), style = MaterialTheme.typography.bodySmall, color = WarningColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
         } else if (isFilePath(summary.text)) {
             StartEllipsisText(text = summary.text, style = MaterialTheme.typography.bodySmall, color = WarningColor)
         } else {
@@ -661,7 +663,7 @@ private fun TaskToolLine(
             Spacer(modifier = Modifier.width(6.dp))
         }
         Text(
-            text = "task",
+            text = stringResource(R.string.subtask_label),
             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             color = AgentColor,
         )
@@ -752,7 +754,7 @@ private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
                         }
                         if (workdir != null) {
                             Text(
-                                text = "cwd: $workdir",
+                                text = stringResource(R.string.tool_cwd, workdir),
                                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -931,7 +933,7 @@ fun QuestionCard(
         Column(modifier = Modifier.padding(16.dp)) {
             if (!canInteract) {
                 Text(
-                    text = "Waiting for response...",
+                    text = stringResource(R.string.waiting_response),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -992,7 +994,7 @@ fun QuestionCard(
                 Row(modifier = Modifier.align(Alignment.End)) {
                     onReject?.let { reject ->
                         OutlinedButton(onClick = reject) {
-                            Text("Reject")
+                            Text(stringResource(R.string.reject))
                         }
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -1000,7 +1002,7 @@ fun QuestionCard(
                         onClick = { onReply?.invoke(selectedAnswers.value.values.toList()) },
                         enabled = selectedAnswers.value.isNotEmpty(),
                     ) {
-                        Text("Submit")
+                        Text(stringResource(R.string.submit))
                     }
                 }
             }
@@ -1023,7 +1025,7 @@ fun PermissionCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Permission Request",
+                text = stringResource(R.string.permission_request),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -1058,17 +1060,17 @@ fun PermissionCard(
             Spacer(modifier = Modifier.height(12.dp))
             Row {
                 Button(onClick = { onReply(PermissionReply.ONCE, null) }) {
-                    Text("Allow")
+                    Text(stringResource(R.string.allow))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 if (request.always.isNotEmpty()) {
                     OutlinedButton(onClick = { onReply(PermissionReply.ALWAYS, null) }) {
-                        Text("Always")
+                        Text(stringResource(R.string.always))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 OutlinedButton(onClick = { onReply(PermissionReply.REJECT, null) }) {
-                    Text("Deny")
+                    Text(stringResource(R.string.deny))
                 }
             }
         }

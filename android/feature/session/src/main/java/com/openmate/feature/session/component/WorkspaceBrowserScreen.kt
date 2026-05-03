@@ -38,7 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import com.openmate.feature.session.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -185,18 +187,18 @@ fun WorkspaceBrowserScreen(
     largeFileConfirm?.let { confirm ->
         AlertDialog(
             onDismissRequest = { largeFileConfirm = null },
-            title = { Text("Large File") },
-            text = { Text("This file is ${formatSize(confirm.size)}. Download anyway?") },
+            title = { Text(stringResource(R.string.large_file)) },
+            text = { Text(stringResource(R.string.large_file_confirm, formatSize(confirm.size))) },
             confirmButton = {
                 TextButton(onClick = {
                     largeFileConfirm = null
                     viewModel.downloadAndOpen(confirm.path, confirm.filename, confirm.size, confirm.modified) { file ->
                         viewModel.openWithSystemViewer(file, confirm.filename)
                     }
-                }) { Text("Download") }
+                }) { Text(stringResource(R.string.download)) }
             },
             dismissButton = {
-                TextButton(onClick = { largeFileConfirm = null }) { Text("Cancel") }
+                TextButton(onClick = { largeFileConfirm = null }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -224,7 +226,7 @@ fun WorkspaceBrowserScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Files",
+                            text = stringResource(R.string.files),
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -248,7 +250,7 @@ fun WorkspaceBrowserScreen(
                     }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.content_desc_back),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -268,7 +270,7 @@ fun WorkspaceBrowserScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                label = { Text("Search files") },
+                label = { Text(stringResource(R.string.search_files)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -331,7 +333,7 @@ fun WorkspaceBrowserScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "No files found",
+                            text = stringResource(R.string.no_files_found),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -344,7 +346,7 @@ fun WorkspaceBrowserScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = "Empty directory",
+                            text = stringResource(R.string.empty_directory),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -389,7 +391,7 @@ private fun DownloadOverlay(state: DownloadState) {
         ) {
             CircularProgressIndicator()
             Text(
-                text = "Downloading... ${formatSize(state.downloadedBytes)}${if (state.totalBytes > 0) "/ ${formatSize(state.totalBytes)}" else ""}",
+                text = stringResource(R.string.downloading) + " " + formatSize(state.downloadedBytes) + if (state.totalBytes > 0) "/ ${formatSize(state.totalBytes)}" else "",
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (state.totalBytes > 0) {
@@ -441,7 +443,7 @@ private fun FileViewer(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = stringResource(R.string.content_desc_back),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -481,7 +483,7 @@ private fun FileViewer(
                     LazyColumn {
                         item {
                             MarkdownText(
-                                markdown = content.ifEmpty { "(empty file)" },
+                                markdown = content.ifEmpty { stringResource(R.string.empty_file) },
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.onBackground,
                                 ),
@@ -495,7 +497,7 @@ private fun FileViewer(
                     LazyColumn {
                         item {
                             Text(
-                                text = "(File too large: ${content.length} chars, showing first 500K)",
+                                text = stringResource(R.string.file_to_large, content.length),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = 8.dp),
@@ -514,7 +516,7 @@ private fun FileViewer(
                     LazyColumn {
                         item {
                             Text(
-                                text = content.ifEmpty { "(empty file)" },
+                                text = content.ifEmpty { stringResource(R.string.empty_file) },
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                                 color = MaterialTheme.colorScheme.onSurface,
                             )

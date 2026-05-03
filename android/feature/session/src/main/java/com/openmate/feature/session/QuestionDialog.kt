@@ -19,7 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import com.openmate.feature.session.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.openmate.core.domain.model.QuestionInfo
@@ -40,7 +42,7 @@ fun QuestionDialog(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    text = "Question",
+                    text = stringResource(R.string.question),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -98,7 +100,7 @@ fun QuestionDialog(
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(modifier = Modifier.align(Alignment.End)) {
                     OutlinedButton(onClick = onReject) {
-                        Text("Reject")
+                        Text(stringResource(R.string.reject))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
@@ -107,7 +109,7 @@ fun QuestionDialog(
                         },
                         enabled = selectedAnswers.value.isNotEmpty(),
                     ) {
-                        Text("Submit")
+                        Text(stringResource(R.string.submit))
                     }
                 }
             }

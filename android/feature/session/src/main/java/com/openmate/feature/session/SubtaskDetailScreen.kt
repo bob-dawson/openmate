@@ -25,7 +25,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.openmate.feature.session.R
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.TopBar
 import com.openmate.feature.session.component.ChatInputBar
@@ -129,7 +131,7 @@ fun SubtaskDetailScreen(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = "No messages yet",
+                                    text = stringResource(R.string.no_messages),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

@@ -18,7 +18,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.openmate.feature.session.R
 import com.openmate.core.ui.theme.TopBarBackground
 
 @Composable
@@ -41,7 +43,7 @@ fun ChatInputBar(
             modifier = Modifier.weight(1f),
             placeholder = {
                 Text(
-                    "输入消息...",
+                    stringResource(R.string.input_message),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
@@ -64,7 +66,7 @@ fun ChatInputBar(
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.Send,
-                contentDescription = "Send",
+                contentDescription = stringResource(R.string.content_desc_send),
                 tint = if (text.isNotBlank()) {
                     MaterialTheme.colorScheme.primary
                 } else {

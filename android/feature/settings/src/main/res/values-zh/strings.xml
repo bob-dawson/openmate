@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings">设置</string>
+    <string name="not_connected">未连接</string>
+    <string name="disconnect">断开</string>
+    <string name="notifications">通知</string>
+    <string name="notify_permissions">权限请求</string>
+    <string name="notify_permissions_desc">opencode 需要确认操作时推送</string>
+    <string name="notify_questions">问题通知</string>
+    <string name="notify_questions_desc">opencode 提问时推送</string>
+    <string name="notify_complete">会话完成</string>
+    <string name="notify_complete_desc">助手回复完成时推送</string>
+    <string name="notify_errors">错误提醒</string>
+    <string name="notify_errors_desc">API 错误或连接中断时推送</string>
+    <string name="auto_allow_rules">自动允许规则</string>
+    <string name="auto_allow_read">自动允许 Read 操作</string>
+    <string name="auto_allow_grep">自动允许 Glob/Grep</string>
+    <string name="auto_allow_bash">自动允许 Bash</string>
+    <string name="security_risk">⚠️ 有安全风险</string>
+    <string name="cache_storage">缓存与存储</string>
+    <string name="file_cache">文件缓存</string>
+    <string name="clear">清除</string>
+    <string name="cache_policy">消息缓存策略</string>
+    <string name="cache_policy_lru">LRU 最近 500 条</string>
+    <string name="about">关于</string>
+    <string name="version">版本</string>
+    <string name="open_source_licenses">开源许可</string>
+    <string name="calculating">计算中…</string>
+</resources>

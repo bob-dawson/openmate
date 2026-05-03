@@ -17,7 +17,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.openmate.feature.session.R
 import androidx.compose.ui.window.Dialog
 import com.openmate.core.domain.model.PermissionRequest
 
@@ -35,7 +37,7 @@ fun PermissionDialog(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    text = "Permission Request",
+                    text = stringResource(R.string.permission_request),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -63,11 +65,11 @@ fun PermissionDialog(
                             containerColor = MaterialTheme.colorScheme.primary,
                         ),
                     ) {
-                        Text("Allow")
+                        Text(stringResource(R.string.allow))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     OutlinedButton(onClick = onDeny) {
-                        Text("Deny")
+                        Text(stringResource(R.string.deny))
                     }
                 }
             }

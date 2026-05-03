@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="add_instance">Add Instance</string>
+    <string name="instances">Instances</string>
+    <string name="edit_instance">Edit Instance</string>
+    <string name="instance_name">Name</string>
+    <string name="instance_address">Address</string>
+    <string name="instance_port">Port</string>
+    <string name="instance_password">Password (optional)</string>
+    <string name="test_connection">Test Connection</string>
+    <string name="testing">Testing…</string>
+    <string name="bridge_connected">Bridge v%1$s connected!</string>
+    <string name="opencode_status">OpenCode: %1$s</string>
+    <string name="opencode_dir">Dir: %1$s</string>
+    <string name="save">Save</string>
+    <string name="instance_count">%1$d instances</string>
+    <string name="add_first_instance">Add your first opencode instance</string>
+    <string name="edit">Edit</string>
+    <string name="delete">Delete</string>
+
+    <string name="status_connected">Online</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_error">Connection failed</string>
+    <string name="status_not_bridge">Not Bridge</string>
+    <string name="status_disconnected">Disconnected</string>
+
+    <string name="content_desc_add_instance">Add Instance</string>
+    <string name="content_desc_more">More</string>
+</resources>

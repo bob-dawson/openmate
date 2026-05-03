@@ -23,10 +23,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.openmate.feature.session.R
 import com.openmate.core.domain.model.TodoInfo
 
 @Composable
@@ -58,24 +60,24 @@ fun TodoListCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "TODO",
+                text = stringResource(R.string.todo),
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.width(6.dp))
             if (inProgress > 0) {
-                StatusBadge(count = inProgress, label = "进行中", color = Info)
+                StatusBadge(count = inProgress, label = stringResource(R.string.todo_in_progress), color = Info)
             }
             if (pending > 0) {
-                StatusBadge(count = pending, label = "待办", color = Muted)
+                StatusBadge(count = pending, label = stringResource(R.string.todo_pending), color = Muted)
             }
             if (completed > 0) {
-                StatusBadge(count = completed, label = "已完成", color = Success)
+                StatusBadge(count = completed, label = stringResource(R.string.todo_completed), color = Success)
             }
             Spacer(modifier = Modifier.weight(1f))
             if (todos.size > activeTodos.size) {
                 Text(
-                    text = if (expanded.value) "收起" else "查看全部 ›",
+                    text = if (expanded.value) stringResource(R.string.todo_collapse) else stringResource(R.string.todo_expand),
                     style = MaterialTheme.typography.labelSmall,
                     color = if (expanded.value) Primary else Muted,
                     fontWeight = if (expanded.value) FontWeight.Medium else FontWeight.Normal,
@@ -227,9 +229,9 @@ private fun PriorityBadge(priority: String) {
     ) {
         Text(
             text = when (priority) {
-                "high" -> "高"
-                "medium" -> "中"
-                else -> "低"
+                "high" -> stringResource(R.string.priority_high)
+                "medium" -> stringResource(R.string.priority_medium)
+                else -> stringResource(R.string.priority_low)
             },
             style = MaterialTheme.typography.labelSmall,
             color = color,

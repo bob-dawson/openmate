@@ -31,7 +31,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.openmate.feature.session.R
 import androidx.compose.ui.unit.dp
 import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
@@ -66,7 +68,7 @@ fun ModelPickerSheet(
                 .height(560.dp),
         ) {
             Text(
-                text = "Select Model",
+                text = stringResource(R.string.select_model),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.padding(bottom = 12.dp),
             )
@@ -74,7 +76,7 @@ fun ModelPickerSheet(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                label = { Text("Search models or providers") },
+                label = { Text(stringResource(R.string.search_models)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp),
@@ -89,7 +91,7 @@ fun ModelPickerSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Current: ",
+                        text = stringResource(R.string.current_model),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -117,7 +119,7 @@ fun ModelPickerSheet(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = "No models found",
+                        text = stringResource(R.string.no_models_found),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -130,7 +132,7 @@ fun ModelPickerSheet(
             ) {
                 if (searchQuery.isBlank() && recentModels.isNotEmpty()) {
                     item {
-                        SectionHeader("Recent")
+                        SectionHeader(stringResource(R.string.recent))
                     }
                     items(recentModels) { model ->
                         ModelRow(

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="question">Question</string>
+    <string name="submit">Submit</string>
+    <string name="permission_request">Permission Request</string>
+    <string name="allow">Allow</string>
+    <string name="deny">Deny</string>
+    <string name="retry">Retry</string>
+    <string name="content_desc_back">Back</string>
+</resources>

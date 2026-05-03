@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="question">问题</string>
+    <string name="submit">提交</string>
+    <string name="permission_request">权限请求</string>
+    <string name="allow">允许</string>
+    <string name="deny">拒绝</string>
+    <string name="retry">重试</string>
+    <string name="content_desc_back">返回</string>
+</resources>
