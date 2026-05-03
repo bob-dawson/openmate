@@ -13,19 +13,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,15 +42,23 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.BridgeSearchResultDto
 import com.openmate.core.ui.theme.TopBarBackground
+import com.openmate.feature.session.DownloadState
 import com.openmate.feature.session.WorkspaceBrowserViewModel
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.io.File
+
+private val CodeBlockBackground = Color(0xFF2a2a3a)
+private val CodeBlockText = Color(0xFFe0e0f0)
+
+private const val LARGE_FILE_THRESHOLD = 10 * 1024 * 1024L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,6 +69,7 @@ fun WorkspaceBrowserScreen(
 ) {
     val apiClient = viewModel.apiClient
     val context = LocalContext.current
+    val downloadState by viewModel.downloadState.collectAsState()
     var currentPath by remember { mutableStateOf(initialDirectory) }
     var entries by remember { mutableStateOf<List<BridgeDirEntryDto>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
@@ -67,6 +80,7 @@ fun WorkspaceBrowserScreen(
     var fileContent by remember { mutableStateOf<BridgeFileContent?>(null) }
     var fileLoading by remember { mutableStateOf(false) }
     var fileError by remember { mutableStateOf("") }
+    var largeFileConfirm by remember { mutableStateOf<LargeFileConfirm?>(null) }
     val scope = rememberCoroutineScope()
 
     fun loadDir(path: String) {
@@ -84,12 +98,7 @@ fun WorkspaceBrowserScreen(
         }
     }
 
-    fun openFile(path: String) {
-        val ext = path.substringAfterLast(".").lowercase()
-        if (ext in BINARY_EXTENSIONS) {
-            Toast.makeText(context, "Binary file — view on desktop", Toast.LENGTH_SHORT).show()
-            return
-        }
+    fun openTextFile(path: String) {
         scope.launch(Dispatchers.IO) {
             fileLoading = true
             fileError = ""
@@ -103,6 +112,45 @@ fun WorkspaceBrowserScreen(
                 viewingFile = FileViewState(path, path.substringAfterLast("/"))
             }
             fileLoading = false
+        }
+    }
+
+    fun openBinaryFile(path: String, filename: String, size: Long, modified: Long) {
+        scope.launch(Dispatchers.IO) {
+            val cached = viewModel.checkCache(path)
+            val cacheValid = cached != null
+                    && File(cached.localPath).exists()
+                    && cached.fileSize == size
+                    && cached.modifiedTime == modified
+            if (cacheValid) {
+                val localFile = File(cached!!.localPath)
+                viewModel.openWithSystemViewer(localFile, filename)
+                return@launch
+            }
+            if (size > LARGE_FILE_THRESHOLD) {
+                largeFileConfirm = LargeFileConfirm(path, filename, size, modified)
+                return@launch
+            }
+            viewModel.downloadAndOpen(path, filename, size, modified) { file ->
+                viewModel.openWithSystemViewer(file, filename)
+            }
+        }
+    }
+
+    fun onFileClick(path: String) {
+        val ext = path.substringAfterLast(".").lowercase()
+        if (ext in BINARY_EXTENSIONS) {
+            val filename = path.substringAfterLast("/")
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val stat = apiClient.bridgeStat(path)
+                    openBinaryFile(path, filename, stat.size, stat.modified)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Cannot stat file: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        } else {
+            openTextFile(path)
         }
     }
 
@@ -134,6 +182,25 @@ fun WorkspaceBrowserScreen(
 
     val canGoUp = currentPath.isNotBlank() && currentPath != "/" && currentPath.count { it == '/' } > 0
 
+    largeFileConfirm?.let { confirm ->
+        AlertDialog(
+            onDismissRequest = { largeFileConfirm = null },
+            title = { Text("Large File") },
+            text = { Text("This file is ${formatSize(confirm.size)}. Download anyway?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    largeFileConfirm = null
+                    viewModel.downloadAndOpen(confirm.path, confirm.filename, confirm.size, confirm.modified) { file ->
+                        viewModel.openWithSystemViewer(file, confirm.filename)
+                    }
+                }) { Text("Download") }
+            },
+            dismissButton = {
+                TextButton(onClick = { largeFileConfirm = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     val vf = viewingFile
     if (vf != null) {
         FileViewer(
@@ -143,6 +210,11 @@ fun WorkspaceBrowserScreen(
             error = fileError,
             onBack = { viewingFile = null },
         )
+        return
+    }
+
+    if (downloadState.downloading) {
+        DownloadOverlay(state = downloadState)
         return
     }
 
@@ -249,7 +321,7 @@ fun WorkspaceBrowserScreen(
                                 name = name,
                                 path = result.path,
                                 isDir = false,
-                                onClick = { openFile(result.path) },
+                                onClick = { onFileClick(result.path) },
                             )
                         }
                     }
@@ -290,7 +362,7 @@ fun WorkspaceBrowserScreen(
                                         currentPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
                                     } else {
                                         val fullPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
-                                        openFile(fullPath)
+                                        onFileClick(fullPath)
                                     }
                                 },
                             )
@@ -303,6 +375,34 @@ fun WorkspaceBrowserScreen(
 }
 
 private data class FileViewState(val path: String, val name: String)
+private data class LargeFileConfirm(val path: String, val filename: String, val size: Long, val modified: Long)
+
+@Composable
+private fun DownloadOverlay(state: DownloadState) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator()
+            Text(
+                text = "Downloading... ${formatSize(state.downloadedBytes)}${if (state.totalBytes > 0) "/ ${formatSize(state.totalBytes)}" else ""}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (state.totalBytes > 0) {
+                LinearProgressIndicator(
+                    progress = { state.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 48.dp),
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -375,12 +475,6 @@ private fun FileViewer(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                         )
-                        Text(
-                            text = "Binary or unreadable file",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
                     }
                 }
                 isMarkdown && content.length <= 500_000 -> {
@@ -388,7 +482,11 @@ private fun FileViewer(
                         item {
                             MarkdownText(
                                 markdown = content.ifEmpty { "(empty file)" },
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                ),
+                                syntaxHighlightColor = CodeBlockBackground,
+                                syntaxHighlightTextColor = CodeBlockText,
                             )
                         }
                     }

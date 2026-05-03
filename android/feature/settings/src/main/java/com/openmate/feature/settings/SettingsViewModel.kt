@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
+import com.openmate.core.domain.repository.FileCacheRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.database.ActiveDatabaseProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,6 +21,7 @@ class SettingsViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
+    private val fileCacheRepo: FileCacheRepository,
     private val prefs: SharedPreferences,
 ) : ViewModel() {
 
@@ -55,6 +57,22 @@ class SettingsViewModel @Inject constructor(
 
     init {
         loadActiveProfile()
+        refreshCacheSize()
+    }
+
+    private fun refreshCacheSize() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bytes = fileCacheRepo.totalCacheSize()
+            _cacheSize.value = formatCacheSize(bytes)
+        }
+    }
+
+    private fun formatCacheSize(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+            else -> "${"%.1f".format(bytes / (1024.0 * 1024.0))} MB"
+        }
     }
 
     private fun loadActiveProfile() {
@@ -103,12 +121,8 @@ class SettingsViewModel @Inject constructor(
 
     fun clearCache() {
         viewModelScope.launch(Dispatchers.IO) {
-            val profileId = dbProvider.getActiveProfileId()
-            if (profileId != null) {
-                dbProvider.clearActive()
-                dbProvider.setActive(profileId)
-                _cacheSize.value = "0 MB"
-            }
+            fileCacheRepo.clearAllCache()
+            _cacheSize.value = "0 B"
         }
     }
 

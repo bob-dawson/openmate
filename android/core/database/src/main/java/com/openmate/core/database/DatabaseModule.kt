@@ -1,6 +1,7 @@
 package com.openmate.core.database
 
 import android.content.Context
+import androidx.room.Room
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,5 +23,15 @@ object DatabaseModule {
     @Singleton
     fun provideActiveDatabaseProvider(factory: DatabaseFactory): ActiveDatabaseProvider {
         return ActiveDatabaseProvider(factory)
+    }
+
+    @Provides
+    @Singleton
+    fun provideCacheDatabase(@ApplicationContext context: Context): CacheDatabase {
+        return Room.databaseBuilder(
+            context,
+            CacheDatabase::class.java,
+            "file_cache",
+        ).fallbackToDestructiveMigration().build()
     }
 }

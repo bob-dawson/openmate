@@ -138,7 +138,7 @@ fun SettingsScreen(
                 SectionHeader(title = "缓存与存储")
                 SettingsCard {
                     SettingsRow(
-                        title = "本地缓存",
+                        title = "文件缓存",
                         subtitle = viewModel.cacheSize.collectAsState().value,
                         trailing = {
                             Text(

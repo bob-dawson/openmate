@@ -117,7 +117,7 @@ pub async fn download(
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to open file: {}", e)))?;
 
-    let stream = tokio_util::io::ReaderStream::new(file);
+    let stream = tokio_util::io::ReaderStream::with_capacity(file, 64 * 1024);
     let body = Body::from_stream(stream);
 
     Ok(axum::response::Response::builder()

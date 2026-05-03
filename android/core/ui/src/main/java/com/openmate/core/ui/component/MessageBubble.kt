@@ -12,8 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.jeziellago.compose.markdowntext.MarkdownText
 
-private val CodeBlockBackground = Color(0xFF1e1e2e)
-private val CodeBlockText = Color(0xFFcdd6f4)
+private val CodeBlockBackground = Color(0xFF2a2a3a)
+private val CodeBlockText = Color(0xFFe0e0f0)
 
 @Composable
 fun MessageBubble(

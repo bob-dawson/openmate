@@ -26,7 +26,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.parseToJsonElement
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.serializer
 import okhttp3.MediaType.Companion.toMediaType
@@ -254,7 +253,7 @@ class OpencodeApiClient(
         val body = response.body?.string() ?: ""
         if (body.startsWith("{")) {
             try {
-                val element = json.parseToJsonElement(body)
+                val element = Json.parseToJsonElement(body)
                 val obj = element.jsonObject
                 val encoding = obj["encoding"]?.jsonPrimitive?.content
                 val fileMime = obj["mime"]?.jsonPrimitive?.content ?: "application/octet-stream"
@@ -308,6 +307,41 @@ class OpencodeApiClient(
 
     suspend fun bridgeStatus(): BridgeStatusResponse {
         return get("/api/bridge/status")
+    }
+
+    suspend fun bridgeDownloadFile(
+        path: String,
+        destFile: java.io.File,
+        onProgress: ((downloaded: Long, total: Long) -> Unit)? = null,
+    ) {
+        val url = buildUrl("/api/bridge/fs/download", mapOf("path" to path))
+        val request = Request.Builder().url(url).get().build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}")
+        }
+        val body = response.body ?: throw ServerUnavailableException("Empty response body")
+        val contentLength = body.contentLength()
+        destFile.parentFile?.mkdirs()
+        body.byteStream().buffered().use { input ->
+            destFile.outputStream().buffered().use { output ->
+                val buffer = ByteArray(64 * 1024)
+                var downloaded = 0L
+                var lastProgress = 0L
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read == -1) break
+                    output.write(buffer, 0, read)
+                    downloaded += read
+                    if (downloaded - lastProgress >= 64 * 1024) {
+                        onProgress?.invoke(downloaded, if (contentLength > 0) contentLength else downloaded)
+                        lastProgress = downloaded
+                    }
+                }
+                output.flush()
+                onProgress?.invoke(downloaded, if (contentLength > 0) contentLength else downloaded)
+            }
+        }
     }
 
     private inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T {

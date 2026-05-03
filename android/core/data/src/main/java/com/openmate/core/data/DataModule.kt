@@ -40,4 +40,8 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindTodoRepository(impl: TodoRepositoryImpl): TodoRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFileCacheRepository(impl: FileCacheRepositoryImpl): FileCacheRepository
 }
