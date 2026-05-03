@@ -32,6 +32,18 @@ fun Long.toTimeString(): String {
     return sdf.format(this)
 }
 
+fun formatDurationMillis(millis: Long): String {
+    val totalSeconds = millis / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return when {
+        hours > 0 -> "${hours}小时${minutes}分${seconds}秒"
+        minutes > 0 -> "${minutes}分${seconds}秒"
+        else -> "${seconds}秒"
+    }
+}
+
 fun Long.toDateTimeString(): String {
     val sdf = SimpleDateFormat("MM/dd HH:mm")
     return sdf.format(this)

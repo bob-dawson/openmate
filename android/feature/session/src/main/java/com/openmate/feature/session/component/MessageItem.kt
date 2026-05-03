@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
 import com.openmate.core.domain.model.Message
 import com.openmate.core.domain.model.MessageRole
@@ -96,8 +97,14 @@ fun MessageItem(
                 )
             }
         } else if (message.createdAt > 0) {
+            val timeText = message.createdAt.toTimeString()
+            val completedAt = message.completedAt
+            val durationText = if (!isUser && completedAt != null && completedAt > message.createdAt) {
+                val duration = completedAt - message.createdAt
+                " · ${formatDurationMillis(duration)}"
+            } else ""
             Text(
-                text = message.createdAt.toTimeString(),
+                text = timeText + durationText,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
