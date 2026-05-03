@@ -57,10 +57,10 @@
     <string name="mode_plan">模式: Plan → Build</string>
     <string name="mode_build">模式: Build → Plan</string>
     <string name="compact">Compact</string>
-    <string name="compacting">Compacting…</string>
-    <string name="skill">Skill</string>
-    <string name="attach_file">Attach File</string>
-    <string name="browse_files">Browse Files</string>
+    <string name="compacting">压缩中…</string>
+    <string name="skill">技能</string>
+    <string name="attach_file">附加文件</string>
+    <string name="browse_files">浏览文件</string>
     <string name="refresh">刷新</string>
     <string name="rename">重命名</string>
     <string name="no_messages">暂无消息</string>
