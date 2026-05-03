@@ -3,6 +3,7 @@
 ## Project Structure
 
 - **Android 客户端**: `D:\openmate\android` — 详见 [`android/AGENTS.md`](android/AGENTS.md)（架构、构建、约定、API 等）
+- **Bridge Agent**: `D:\openmate\opencode-bridge` — 详见 [`opencode-bridge/AGENTS.md`](opencode-bridge/AGENTS.md)（Rust 代理/进程管理/文件服务，端口 4097）
 - **调试脚本**: `D:\openmate\scripts\`
 
 ## Debug & Analysis Tools

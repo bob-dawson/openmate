@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Response};
 use reqwest::StatusCode;
 
 use crate::error::AppError;
-use crate::state::AppState;
+use crate::state::{AppState, OpencodeStatus};
 
 pub async fn proxy_opencode_request(
     State(state): State<AppState>,
@@ -16,7 +16,7 @@ pub async fn proxy_opencode_request(
     let stripped = path.strip_prefix("/api/opencode").unwrap_or(path);
     let target_url = format!("{}{}", opencode_url, stripped);
 
-    do_proxy(&opencode_url, &target_url, req).await
+    do_proxy(&state, &target_url, req).await
 }
 
 pub async fn proxy_fallback(
@@ -28,10 +28,14 @@ pub async fn proxy_fallback(
     let path = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
     let target_url = format!("{}{}", opencode_url, path);
 
-    do_proxy(&opencode_url, &target_url, req).await
+    do_proxy(&state, &target_url, req).await
 }
 
-async fn do_proxy(_opencode_url: &str, target_url: &str, req: Request) -> Result<Response, AppError> {
+async fn do_proxy(
+    state: &AppState,
+    target_url: &str,
+    req: Request,
+) -> Result<Response, AppError> {
     let method = req.method().clone();
     let headers = req.headers().clone();
 
@@ -56,39 +60,64 @@ async fn do_proxy(_opencode_url: &str, target_url: &str, req: Request) -> Result
         req_builder = req_builder.body(body_bytes.to_vec());
     }
 
-    let resp = req_builder
-        .send()
-        .await
-        .map_err(|e| AppError::OpencodeRequestFailed(e.to_string()))?;
+    let resp = req_builder.send().await;
 
-    let status = resp.status();
-    let resp_headers = resp.headers().clone();
+    match resp {
+        Ok(resp) => {
+            let status = resp.status();
+            let resp_headers = resp.headers().clone();
 
-    let body_bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| AppError::OpencodeRequestFailed(e.to_string()))?;
+            let body_bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| AppError::OpencodeRequestFailed(e.to_string()))?;
 
-    let mut response = Response::builder().status(status);
-    for (name, value) in resp_headers.iter() {
-        let name_str = name.as_str();
-        if matches!(name_str, "connection" | "transfer-encoding" | "content-length") {
-            continue;
+            let mut response = Response::builder().status(status);
+            for (name, value) in resp_headers.iter() {
+                let name_str = name.as_str();
+                if matches!(name_str, "connection" | "transfer-encoding" | "content-length") {
+                    continue;
+                }
+                if let Ok(v) = value.to_str() {
+                    response = response.header(name_str, v);
+                }
+            }
+
+            let response = response
+                .body(Body::from(body_bytes.to_vec()))
+                .unwrap_or_else(|_| {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                        .into_response()
+                        .into_body()
+                        .into_response()
+                        .into()
+                });
+
+            Ok(response.into())
         }
-        if let Ok(v) = value.to_str() {
-            response = response.header(name_str, v);
+        Err(e) => {
+            let mut s = state.opencode_status.write().await;
+            if *s == OpencodeStatus::Running {
+                *s = OpencodeStatus::Crashed;
+                tracing::warn!("opencode appears down (proxy failed): {}", e);
+                drop(s);
+                try_auto_restart(state).await;
+            }
+            Err(AppError::OpencodeRequestFailed(e.to_string()))
         }
     }
+}
 
-    let response = response
-        .body(Body::from(body_bytes.to_vec()))
-        .unwrap_or_else(|_| {
-            StatusCode::INTERNAL_SERVER_ERROR
-                .into_response()
-                .into_body()
-                .into_response()
-                .into()
-        });
-
-    Ok(response.into())
+async fn try_auto_restart(state: &AppState) {
+    if !state.config.opencode.auto_restart {
+        return;
+    }
+    let current = *state.opencode_status.read().await;
+    if current != OpencodeStatus::Crashed {
+        return;
+    }
+    tracing::info!("Auto-restarting opencode...");
+    if let Err(e) = state.opencode_manager.start().await {
+        tracing::error!("Auto-restart failed: {}", e);
+    }
 }

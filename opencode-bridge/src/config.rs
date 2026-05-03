@@ -125,10 +125,15 @@ impl Config {
             return Self::load_from(&path);
         }
 
-        let candidates = [
-            PathBuf::from("bridge.toml"),
-            dirs_config_path(),
-        ];
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+        let mut candidates = vec![PathBuf::from("bridge.toml")];
+        if let Some(dir) = exe_dir {
+            candidates.push(dir.join("bridge.toml"));
+        }
+        candidates.push(dirs_config_path());
 
         for path in &candidates {
             if path.exists() {

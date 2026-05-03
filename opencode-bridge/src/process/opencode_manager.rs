@@ -79,19 +79,13 @@ impl OpencodeManager {
         let port = *self.port;
         let directory = self.directory.clone();
 
-        let child = tokio::process::Command::new(binary.as_ref())
-            .args(["serve", "--hostname", hostname.as_str(), "--port", &port.to_string()])
-            .current_dir(directory.as_ref())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("Failed to spawn opencode: {}", e))?;
+        let mut child = spawn_opencode(&binary, &hostname, port, &directory)?;
 
         tracing::info!("opencode process spawned (pid: {:?})", child.id());
 
         let url = self.opencode_url.clone();
         let status_arc = self.status.clone();
-        let _auto_restart = *self.auto_restart;
+        let auto_restart = *self.auto_restart;
 
         tokio::spawn(async move {
             let mut retry_count = 0u32;
@@ -106,16 +100,57 @@ impl OpencodeManager {
                         let mut s = status_arc.write().await;
                         *s = OpencodeStatus::Running;
                         tracing::info!("opencode is ready");
-                        return;
+                        break;
                     }
                 }
                 retry_count += 1;
                 tracing::debug!("Waiting for opencode to be ready... ({}/{})", retry_count, max_retries);
             }
 
+            let current = *status_arc.read().await;
+            if current != OpencodeStatus::Running {
+                let mut s = status_arc.write().await;
+                *s = OpencodeStatus::Crashed;
+                tracing::error!("opencode failed to start within timeout");
+                return;
+            }
+
+            match child.wait().await {
+                Ok(exit_status) => {
+                    tracing::warn!("opencode process exited: {}", exit_status);
+                }
+                Err(e) => {
+                    tracing::error!("opencode process wait error: {}", e);
+                }
+            }
+
             let mut s = status_arc.write().await;
             *s = OpencodeStatus::Crashed;
-            tracing::error!("opencode failed to start within timeout");
+            drop(s);
+
+            if auto_restart {
+                tracing::info!("Auto-restarting opencode after crash...");
+                let binary_r = binary.clone();
+                let hostname_r = hostname.clone();
+                let port_r = port;
+                let directory_r = directory.clone();
+                let status_arc_r = status_arc.clone();
+                let url_r = url.clone();
+                let auto_restart_r = auto_restart;
+                tokio::spawn(async move {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    restart_loop(
+                        &binary_r,
+                        &hostname_r,
+                        port_r,
+                        &directory_r,
+                        &status_arc_r,
+                        &url_r,
+                        auto_restart_r,
+                    )
+                    .await;
+                });
+            }
         });
 
         Ok(())
@@ -170,5 +205,131 @@ impl OpencodeManager {
     pub async fn set_status(&self, new_status: OpencodeStatus) {
         let mut status = self.status.write().await;
         *status = new_status;
+    }
+}
+
+fn spawn_opencode(
+    binary: &str,
+    hostname: &str,
+    port: u16,
+    directory: &str,
+) -> Result<tokio::process::Child, String> {
+    let port_str = port.to_string();
+    let work_dir = if directory.is_empty() {
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()))
+    } else {
+        std::path::PathBuf::from(directory)
+    };
+
+    #[cfg(windows)]
+    let child = {
+        let cmd = format!(
+            "{} serve --hostname {} --port {}",
+            binary, hostname, port_str
+        );
+        tokio::process::Command::new("cmd")
+            .args(["/C", &cmd])
+            .current_dir(&work_dir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn opencode: {}", e))?
+    };
+
+    #[cfg(not(windows))]
+    let child = {
+        tokio::process::Command::new(binary)
+            .args(["serve", "--hostname", hostname, "--port", &port_str])
+            .current_dir(&work_dir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Failed to spawn opencode: {}", e))?
+    };
+
+    Ok(child)
+}
+
+async fn restart_loop(
+    binary: &str,
+    hostname: &str,
+    port: u16,
+    directory: &str,
+    status_arc: &Arc<RwLock<OpencodeStatus>>,
+    opencode_url: &str,
+    auto_restart: bool,
+) {
+    let mut attempt = 0u32;
+    loop {
+        attempt += 1;
+        tracing::info!("Auto-restart attempt #{}...", attempt);
+
+        {
+            let mut s = status_arc.write().await;
+            *s = OpencodeStatus::Starting;
+        }
+
+        match spawn_opencode(binary, hostname, port, directory) {
+            Ok(mut child) => {
+                tracing::info!("opencode re-spawned (pid: {:?})", child.id());
+
+                let mut retry_count = 0u32;
+                let max_retries = 30u32;
+                let mut became_ready = false;
+
+                while retry_count < max_retries {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    let client = reqwest::Client::new();
+                    if let Ok(resp) = client.get(format!("{}/global/health", opencode_url)).send().await {
+                        if resp.status().is_success() {
+                            let mut s = status_arc.write().await;
+                            *s = OpencodeStatus::Running;
+                            tracing::info!("opencode is ready after auto-restart");
+                            became_ready = true;
+                            break;
+                        }
+                    }
+                    retry_count += 1;
+                }
+
+                if !became_ready {
+                    let mut s = status_arc.write().await;
+                    *s = OpencodeStatus::Crashed;
+                    tracing::error!("opencode auto-restart failed to become ready");
+                    if !auto_restart {
+                        return;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+
+                match child.wait().await {
+                    Ok(es) => tracing::warn!("opencode process exited again: {}", es),
+                    Err(e) => tracing::error!("opencode process wait error: {}", e),
+                }
+
+                {
+                    let mut s = status_arc.write().await;
+                    *s = OpencodeStatus::Crashed;
+                }
+
+                if !auto_restart {
+                    return;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            }
+            Err(e) => {
+                let mut s = status_arc.write().await;
+                *s = OpencodeStatus::Crashed;
+                tracing::error!("Failed to spawn opencode in restart loop: {}", e);
+                if !auto_restart {
+                    return;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            }
+        }
     }
 }
