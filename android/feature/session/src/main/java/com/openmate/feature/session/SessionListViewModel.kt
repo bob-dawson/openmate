@@ -72,6 +72,7 @@ class SessionListViewModel @Inject constructor(
     }
 
     fun createSession(title: String? = null, directory: String? = null, onCreated: (String) -> Unit) {
+        android.util.Log.d(TAG, "createSession title=$title directory=$directory")
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val session = sessionRepository.createSession(title, directory)

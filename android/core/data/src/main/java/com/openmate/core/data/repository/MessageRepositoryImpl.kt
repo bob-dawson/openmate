@@ -33,13 +33,14 @@ class MessageRepositoryImpl @Inject constructor(
 
     override suspend fun syncMessages(sessionID: String, initialLimit: Int) {
         val db = dbProvider.getActive()
+        val directory = db.sessionDao().getById(sessionID)?.directory?.ifBlank { null }
         val anchor = db.sessionDao().getSyncAnchor(sessionID)
         var limit = if (anchor != null) SYNC_LIMIT_INITIAL else initialLimit
         var cursor: String? = null
         var syncedAnchor = false
 
         while (!syncedAnchor) {
-            val page = api.getMessages(sessionID, limit, cursor)
+            val page = api.getMessages(sessionID, limit, cursor, directory)
             if (page.items.isEmpty()) break
 
             upsertPage(sessionID, page.items)
@@ -66,7 +67,8 @@ class MessageRepositoryImpl @Inject constructor(
     }
 
     override suspend fun loadOlderMessages(sessionID: String, cursor: String, limit: Int) {
-        val page = api.getMessages(sessionID, limit, cursor)
+        val directory = dbProvider.getActive().sessionDao().getById(sessionID)?.directory?.ifBlank { null }
+        val page = api.getMessages(sessionID, limit, cursor, directory)
         if (page.items.isEmpty()) return
         upsertPage(sessionID, page.items)
     }
@@ -94,9 +96,9 @@ class MessageRepositoryImpl @Inject constructor(
         return msgs.firstOrNull { it.role == MessageRole.ASSISTANT.name && it.completedAt != null }?.id
     }
 
-    override suspend fun sendMessage(sessionID: String, content: String, providerID: String?, modelID: String?, agent: String?, files: List<FileAttachment>) {
+    override suspend fun sendMessage(sessionID: String, content: String, providerID: String?, modelID: String?, agent: String?, files: List<FileAttachment>, directory: String?) {
         val apiFiles = files.map { OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
-        api.sendPrompt(sessionID, content, providerID, modelID, agent, apiFiles)
+        api.sendPrompt(sessionID, content, providerID, modelID, agent, apiFiles, directory)
     }
 
     override fun observeMessages(sessionID: String): Flow<List<Message>> {

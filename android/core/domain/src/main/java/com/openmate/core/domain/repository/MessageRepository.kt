@@ -15,6 +15,7 @@ interface MessageRepository {
         modelID: String? = null,
         agent: String? = null,
         files: List<FileAttachment> = emptyList(),
+        directory: String? = null,
     )
     fun observeMessages(sessionID: String): Flow<List<Message>>
 }

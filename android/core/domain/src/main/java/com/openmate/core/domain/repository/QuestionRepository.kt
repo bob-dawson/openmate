@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface QuestionRepository {
     suspend fun refresh()
-    suspend fun reply(requestID: String, answers: List<List<String>>)
-    suspend fun reject(requestID: String)
+    suspend fun reply(requestID: String, answers: List<List<String>>, directory: String? = null)
+    suspend fun reject(requestID: String, directory: String? = null)
     fun observePending(): Flow<List<QuestionRequest>>
 }

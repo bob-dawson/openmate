@@ -22,7 +22,8 @@ class TodoRepositoryImpl @Inject constructor(
 
     override suspend fun refreshTodos(sessionID: String) {
         try {
-            val todos = apiClient.getTodos(sessionID)
+            val directory = dbProvider.getActive().sessionDao().getById(sessionID)?.directory?.ifBlank { null }
+            val todos = apiClient.getTodos(sessionID, directory)
             val db = dbProvider.getActive()
             if (todos.isEmpty()) {
                 db.todoDao().deleteBySession(sessionID)

@@ -10,7 +10,7 @@ interface SessionRepository {
     suspend fun createSession(title: String?, directory: String? = null): Session
     suspend fun deleteSession(id: String)
     suspend fun updateSession(id: String, title: String?)
-    suspend fun abortSession(id: String)
+    suspend fun abortSession(id: String, directory: String? = null)
     suspend fun refreshSessionStatuses()
     suspend fun refreshSessionStatusesFromMessages()
     suspend fun syncSessionStatusFromRemote(sessionID: String)

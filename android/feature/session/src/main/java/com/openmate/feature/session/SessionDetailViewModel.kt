@@ -224,7 +224,7 @@ class SessionDetailViewModel @Inject constructor(
         _attachedFiles.value = emptyList()
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID, agent, files)
+                messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID, agent, files, currentDirectory.ifBlank { null })
                 messageRepository.syncMessages(sessionID, 80)
                 permissionRepository.refresh()
                 questionRepository.refresh()
@@ -248,7 +248,7 @@ class SessionDetailViewModel @Inject constructor(
     fun abort(sessionID: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                sessionRepository.abortSession(sessionID)
+                sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
             } catch (_: Exception) {}
         }
     }
@@ -256,7 +256,7 @@ class SessionDetailViewModel @Inject constructor(
     fun replyPermission(requestID: String, reply: PermissionReply, message: String?) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                permissionRepository.reply(requestID, reply, message)
+                permissionRepository.reply(requestID, reply, message, currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "replyPermission failed", e)
                 _errorMessage.emit(e.message ?: "Permission reply failed")
@@ -267,7 +267,7 @@ class SessionDetailViewModel @Inject constructor(
     fun replyQuestion(requestID: String, answers: List<List<String>>) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                questionRepository.reply(requestID, answers)
+                questionRepository.reply(requestID, answers, currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "replyQuestion failed", e)
                 _errorMessage.emit(e.message ?: "Question reply failed")
@@ -278,7 +278,7 @@ class SessionDetailViewModel @Inject constructor(
     fun rejectQuestion(requestID: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                questionRepository.reject(requestID)
+                questionRepository.reject(requestID, currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "rejectQuestion failed", e)
                 _errorMessage.emit(e.message ?: "Question reject failed")
@@ -391,7 +391,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _isCompacting.value = true
             try {
-                apiClient.summarizeSession(sessionID, model.providerID, model.modelID)
+                apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
                 delay(2000)
                 messageRepository.syncMessages(sessionID, 80)
                 sessionRepository.refreshSessionStatusesFromMessages()

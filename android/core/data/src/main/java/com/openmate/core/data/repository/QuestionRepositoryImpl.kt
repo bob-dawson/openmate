@@ -22,13 +22,13 @@ class QuestionRepositoryImpl @Inject constructor(
         dao.replaceAll(dtos.map { it.toDomain().toEntity() })
     }
 
-    override suspend fun reply(requestID: String, answers: List<List<String>>) {
-        api.replyQuestion(requestID, answers)
+    override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) {
+        api.replyQuestion(requestID, answers, directory)
         dbProvider.getActive().questionDao().delete(requestID)
     }
 
-    override suspend fun reject(requestID: String) {
-        api.rejectQuestion(requestID)
+    override suspend fun reject(requestID: String, directory: String?) {
+        api.rejectQuestion(requestID, directory)
         dbProvider.getActive().questionDao().delete(requestID)
     }
 

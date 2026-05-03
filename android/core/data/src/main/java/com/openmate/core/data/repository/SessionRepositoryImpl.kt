@@ -79,8 +79,8 @@ class SessionRepositoryImpl @Inject constructor(
         dao.upsert(updated)
     }
 
-    override suspend fun abortSession(id: String) {
-        api.abortSession(id)
+    override suspend fun abortSession(id: String, directory: String?) {
+        api.abortSession(id, directory)
     }
 
     override suspend fun refreshSessionStatuses() {
@@ -125,7 +125,8 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun syncSessionStatusFromRemote(sessionID: String) {
         try {
-            val page = api.getMessages(sessionID, 1, null)
+            val directory = dbProvider.getActive().sessionDao().getById(sessionID)?.directory?.ifBlank { null }
+            val page = api.getMessages(sessionID, 1, null, directory)
             val hasIncomplete = page.items.any { it.info.role == "assistant" && it.info.time.completed == null }
             val newStatus = if (hasIncomplete) SessionStatus.BUSY.name else SessionStatus.IDLE.name
             val db = dbProvider.getActive()

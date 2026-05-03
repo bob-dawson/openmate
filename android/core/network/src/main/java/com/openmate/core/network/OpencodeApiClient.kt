@@ -66,10 +66,11 @@ class OpencodeApiClient(
         patch("/session/$id", body)
     }
 
-    suspend fun getMessages(sessionID: String, limit: Int, before: String?): MessagesPage {
+    suspend fun getMessages(sessionID: String, limit: Int, before: String?, directory: String? = null): MessagesPage {
         val params = mutableMapOf<String, String>()
         params["limit"] = limit.toString()
         before?.let { params["before"] = it }
+        directory?.let { params["directory"] = it }
         val url = buildUrl("/session/$sessionID/message", params)
         val request = Request.Builder().url(url).get().build()
         val response = client.newCall(request).execute()
@@ -91,6 +92,7 @@ class OpencodeApiClient(
         modelID: String? = null,
         agent: String? = null,
         files: List<FileAttachment> = emptyList(),
+        directory: String? = null,
     ) {
         val textParts = listOf(
             mapOf("type" to "text", "text" to content)
@@ -121,44 +123,55 @@ class OpencodeApiClient(
         }
         val bodyMap = parts + extraFields
         val body = mapToJson(bodyMap)
-        android.util.Log.d("OpencodeApiClient", "sendPrompt url=$baseUrl/session/$sessionID/prompt_async body=$body")
-        postUnit("/session/$sessionID/prompt_async", body)
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/session/$sessionID/prompt_async", body, params)
     }
 
-    suspend fun abortSession(sessionID: String) {
-        postUnit("/session/$sessionID/abort", emptyMap<String, String>())
+    suspend fun abortSession(sessionID: String, directory: String? = null) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/session/$sessionID/abort", emptyMap<String, String>(), params)
     }
 
     suspend fun listPermissions(): List<PermissionDto> {
         return getList("/permission")
     }
 
-    suspend fun replyPermission(requestID: String, reply: String, message: String?) {
+    suspend fun replyPermission(requestID: String, reply: String, message: String?, directory: String? = null) {
         val body = mutableMapOf<String, String>()
         body["reply"] = reply
         message?.let { body["message"] = it }
-        postUnit("/permission/$requestID/reply", body)
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/permission/$requestID/reply", body, params)
     }
 
     suspend fun listQuestions(): List<QuestionDto> {
         return getList("/question")
     }
 
-    suspend fun replyQuestion(requestID: String, answers: List<List<String>>) {
+    suspend fun replyQuestion(requestID: String, answers: List<List<String>>, directory: String? = null) {
         val body = mapOf("answers" to answers)
-        postUnit("/question/$requestID/reply", body)
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/question/$requestID/reply", body, params)
     }
 
-    suspend fun rejectQuestion(requestID: String) {
-        postUnit("/question/$requestID/reject", emptyMap<String, String>())
+    suspend fun rejectQuestion(requestID: String, directory: String? = null) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/question/$requestID/reject", emptyMap<String, String>(), params)
     }
 
     suspend fun getSessionStatuses(): Map<String, SessionStatusDto> {
         return get("/session/status")
     }
 
-    suspend fun getTodos(sessionID: String): List<com.openmate.core.domain.model.TodoInfo> {
-        val url = buildUrl("/session/$sessionID/todo", emptyMap())
+    suspend fun getTodos(sessionID: String, directory: String? = null): List<com.openmate.core.domain.model.TodoInfo> {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        val url = buildUrl("/session/$sessionID/todo", params)
         val request = Request.Builder().url(url).get().build()
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: return emptyList()
@@ -185,7 +198,6 @@ class OpencodeApiClient(
     }
 
     suspend fun getProviders(): ProviderListDto {
-        android.util.Log.d("OpencodeApiClient", "getProviders baseUrl=$baseUrl")
         return get("/provider")
     }
 
@@ -193,12 +205,14 @@ class OpencodeApiClient(
         return getList("/skill")
     }
 
-    suspend fun summarizeSession(sessionID: String, providerID: String, modelID: String) {
+    suspend fun summarizeSession(sessionID: String, providerID: String, modelID: String, directory: String? = null) {
         val body = mapOf(
             "providerID" to providerID,
             "modelID" to modelID,
         )
-        postUnit("/session/$sessionID/summarize", body)
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/session/$sessionID/summarize", body, params)
     }
 
     private inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T {
@@ -231,19 +245,16 @@ class OpencodeApiClient(
         return handleResponse(response)
     }
 
-    private fun postUnit(path: String, body: Any) {
+    private fun postUnit(path: String, body: Any, params: Map<String, String> = emptyMap()) {
         val jsonStr = when (body) {
             is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
             is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body))
             else -> json.encodeToString(JsonElement.serializer(), JsonPrimitive(body.toString()))
         }
-        val url = "$baseUrl$path"
-        android.util.Log.d("OpencodeApiClient", "postUnit START url=$url json=$jsonStr")
+        val url = buildUrl(path, params)
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val request = Request.Builder().url(url).post(requestBody).build()
-        android.util.Log.d("OpencodeApiClient", "postUnit EXECUTING...")
         val response = client.newCall(request).execute()
-        android.util.Log.d("OpencodeApiClient", "postUnit GOT response: ${response.code} body=${response.body?.string()?.take(200)}")
         if (!response.isSuccessful) {
             throw ServerUnavailableException("HTTP ${response.code}")
         }

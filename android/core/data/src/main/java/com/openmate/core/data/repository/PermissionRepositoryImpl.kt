@@ -23,9 +23,9 @@ class PermissionRepositoryImpl @Inject constructor(
         dao.replaceAll(dtos.map { it.toDomain().toEntity() })
     }
 
-    override suspend fun reply(requestID: String, reply: PermissionReply, message: String?) {
+    override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) {
         dbProvider.getActive().permissionDao().delete(requestID)
-        api.replyPermission(requestID, reply.value, message)
+        api.replyPermission(requestID, reply.value, message, directory)
     }
 
     override fun observePending(): Flow<List<PermissionRequest>> {
