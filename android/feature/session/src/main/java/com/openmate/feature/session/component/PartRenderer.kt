@@ -67,6 +67,13 @@ private val WarningColor = Color(0xFFFFA500)
 private val AgentColor = Color(0xFF9D7CD8)
 private val questionJson = Json { ignoreUnknownKeys = true }
 
+private val ansiRegex = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
+
+private fun stripAnsi(s: String?): String? {
+    if (s == null) return null
+    return ansiRegex.replace(s, "")
+}
+
 sealed class DisplayItem {
     data class TextItem(val text: String, val isUser: Boolean) : DisplayItem()
     data class ToolItem(
@@ -282,8 +289,8 @@ fun List<Part>.toDisplayItems(isUser: Boolean): List<DisplayItem> {
                 items.add(DisplayItem.ToolItem(
                     toolName = part.toolName,
                     state = part.state,
-                    args = part.args,
-                    result = part.result,
+                    args = stripAnsi(part.args),
+                    result = stripAnsi(part.result),
                     files = nextPatch?.files ?: emptyList(),
                     hash = nextPatch?.hash,
                     callID = part.toolCallID,
