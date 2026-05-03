@@ -35,50 +35,115 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openmate.core.network.OpencodeApiClient
-import com.openmate.core.network.dto.FileNodeDto
+import com.openmate.core.network.dto.BridgeDirEntryDto
+import com.openmate.core.network.dto.BridgeSearchResultDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+
+private data class DirItem(val name: String, val fullPath: String)
+
+private fun normalizePath(path: String): String {
+    return path.replace('\\', '/')
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DirectoryPickerSheet(
     apiClient: OpencodeApiClient,
+    initialDirectory: String = "",
     onSelect: (path: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var currentPath by remember { mutableStateOf("") }
-    var directories by remember { mutableStateOf<List<FileNodeDto>>(emptyList()) }
-    var searchQuery by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<String>>(emptyList()) }
+    var currentPath by remember { mutableStateOf(normalizePath(initialDirectory)) }
+    var isAtRoot by remember { mutableStateOf(initialDirectory.isBlank()) }
+    var directories by remember { mutableStateOf<List<DirItem>>(emptyList()) }
+    var searchResults by remember { mutableStateOf<List<DirItem>>(emptyList()) }
+    var pathInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf("") }
+    var createError by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(currentPath) {
+    fun loadRoots() {
         scope.launch(Dispatchers.IO) {
             isLoading = true
+            loadError = ""
             try {
-                val nodes = apiClient.listFiles(if (currentPath.isBlank()) "." else currentPath)
-                directories = nodes.filter { it.type == "directory" && !it.ignored }.sortedBy { it.name.lowercase() }
-            } catch (_: Exception) {
+                val roots = apiClient.bridgeListRoots()
+                directories = roots.map { DirItem(name = it.name, fullPath = normalizePath(it.path)) }
+                isAtRoot = true
+            } catch (e: Exception) {
                 directories = emptyList()
+                loadError = e.message ?: "Failed to list roots"
             }
             isLoading = false
         }
     }
 
-    LaunchedEffect(searchQuery) {
-        if (searchQuery.length >= 2) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    searchResults = apiClient.searchFiles(searchQuery, 20)
-                        .filter { it.endsWith("/") || !it.contains(".") }
-                } catch (_: Exception) {
-                    searchResults = emptyList()
+    fun loadDir(path: String) {
+        scope.launch(Dispatchers.IO) {
+            isLoading = true
+            loadError = ""
+            try {
+                val all = apiClient.bridgeListDir(path)
+                directories = all.filter { it.isDirectory }.map { e ->
+                    val separator = if (path.endsWith("/")) "" else "/"
+                    DirItem(name = e.name, fullPath = normalizePath("$path$separator${e.name}"))
                 }
+                isAtRoot = false
+            } catch (e: Exception) {
+                directories = emptyList()
+                loadError = e.message ?: "Failed to list directory"
             }
+            isLoading = false
+        }
+    }
+
+    fun navigateTo(path: String) {
+        currentPath = normalizePath(path)
+        pathInput = currentPath
+        if (path.isBlank()) {
+            loadRoots()
         } else {
+            loadDir(path)
+        }
+    }
+
+    fun goUp() {
+        if (isAtRoot) return
+        val parent = currentPath.substringBeforeLast("/", "").substringBeforeLast("\\", "")
+        if (parent.isBlank() || parent.length <= 3) {
+            navigateTo("")
+        } else {
+            navigateTo(parent)
+        }
+    }
+
+    fun doPrefixSearch(query: String) {
+        val normalized = normalizePath(query)
+        if (normalized.length < 2) {
             searchResults = emptyList()
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                val results = apiClient.bridgeSearch("", normalized, "prefix", 100)
+                searchResults = results.map { r -> DirItem(
+                    name = r.path.substringAfterLast("/"),
+                    fullPath = normalizePath(r.path),
+                ) }
+            } catch (_: Exception) {
+                searchResults = emptyList()
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (initialDirectory.isNotBlank()) {
+            navigateTo(normalizePath(initialDirectory))
+        } else {
+            loadRoots()
         }
     }
 
@@ -90,7 +155,7 @@ fun DirectoryPickerSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .height(520.dp),
+                .height(560.dp),
         ) {
             Text(
                 text = "Select Directory",
@@ -99,7 +164,7 @@ fun DirectoryPickerSheet(
             )
 
             Text(
-                text = if (currentPath.isBlank()) "/" else currentPath,
+                text = if (isAtRoot) "/" else currentPath,
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -108,12 +173,16 @@ fun DirectoryPickerSheet(
             )
 
             OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                label = { Text("Search directories") },
+                value = pathInput,
+                onValueChange = { newPath ->
+                    pathInput = newPath
+                    createError = ""
+                    doPrefixSearch(newPath)
+                },
+                label = { Text("Path (prefix search or create)") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 8.dp),
+                    .padding(bottom = 4.dp),
                 singleLine = true,
             )
 
@@ -121,52 +190,83 @@ fun DirectoryPickerSheet(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = {
-                    val parent = currentPath.substringBeforeLast("/", "")
-                    currentPath = parent
-                }, enabled = currentPath.isNotBlank()) {
+                TextButton(onClick = { goUp() }, enabled = !isAtRoot) {
                     Text("..")
                 }
                 Spacer(modifier = Modifier.weight(1f))
+                if (pathInput.isNotBlank()) {
+                    TextButton(onClick = {
+                        val target = normalizePath(pathInput)
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                apiClient.bridgeMkdir(target, true)
+                                onSelect(target)
+                            } catch (e: Exception) {
+                                createError = e.message ?: "Failed to create directory"
+                            }
+                        }
+                    }) {
+                        Text("Create & Use")
+                    }
+                }
                 TextButton(
-                    onClick = { onSelect(if (currentPath.isBlank()) "." else currentPath) },
+                    onClick = { onSelect(if (isAtRoot) "/" else currentPath) },
                 ) {
                     Text("Use this dir")
                 }
             }
+
+            if (createError.isNotBlank()) {
+                Text(
+                    text = createError,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+
             HorizontalDivider()
 
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.padding(16.dp).size(24.dp).align(Alignment.CenterHorizontally),
                 )
-            } else if (searchQuery.length >= 2 && searchResults.isNotEmpty()) {
+            } else if (loadError.isNotBlank()) {
+                Text(
+                    text = loadError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else if (searchResults.isNotEmpty()) {
                 LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-                    items(searchResults) { path ->
+                    items(searchResults) { item ->
                         DirectoryRow(
-                            name = path.substringAfterLast("/").trimEnd('/'),
-                            fullPath = path,
+                            name = item.name,
+                            fullPath = item.fullPath,
                             onClick = {
-                                currentPath = path.trimEnd('/')
-                                searchQuery = ""
+                                navigateTo(item.fullPath)
+                                searchResults = emptyList()
                             },
                         )
                     }
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-                    item {
-                        DirectoryRow(
-                            name = ". (current)",
-                            fullPath = currentPath.ifBlank { "." },
-                            onClick = { onSelect(if (currentPath.isBlank()) "." else currentPath) },
-                        )
+                    if (!isAtRoot) {
+                        item {
+                            DirectoryRow(
+                                name = ". (current)",
+                                fullPath = currentPath,
+                                onClick = { onSelect(currentPath) },
+                            )
+                        }
                     }
-                    items(directories, key = { it.path }) { dir ->
+                    items(directories, key = { it.fullPath }) { dir ->
                         DirectoryRow(
                             name = dir.name,
-                            fullPath = dir.absolute.ifBlank { dir.path },
-                            onClick = { currentPath = dir.absolute.ifBlank { dir.path } },
+                            fullPath = dir.fullPath,
+                            onClick = { navigateTo(dir.fullPath) },
                         )
                     }
                 }

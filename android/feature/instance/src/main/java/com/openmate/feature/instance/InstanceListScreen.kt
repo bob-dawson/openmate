@@ -161,6 +161,7 @@ private fun InstanceCard(
                             ConnectionStatus.CONNECTED -> StatusDot("在线", Color(0xFF7fd88f))
                             ConnectionStatus.CONNECTING -> StatusDot("连接中...", Color(0xFFf5a742))
                             ConnectionStatus.ERROR -> StatusDot("连接失败", Color(0xFFe06c75))
+                            ConnectionStatus.NOT_BRIDGE -> StatusDot("非Bridge", Color(0xFFe06c75))
                             else -> StatusDot("未连接", Color(0xFF808080))
                         }
                     }

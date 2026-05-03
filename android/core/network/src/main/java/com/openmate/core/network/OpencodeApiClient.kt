@@ -1,5 +1,14 @@
 package com.openmate.core.network
 
+import com.openmate.core.network.dto.BridgeDirEntryDto
+import com.openmate.core.network.dto.BridgeFileContent
+import com.openmate.core.network.dto.BridgeFileStatDto
+import com.openmate.core.network.dto.BridgeMkdirRequest
+import com.openmate.core.network.dto.BridgeRootEntryDto
+import com.openmate.core.network.dto.BridgeSearchRequest
+import com.openmate.core.network.dto.BridgeSearchResultDto
+import com.openmate.core.network.dto.BridgeStatusResponse
+import com.openmate.core.network.dto.BridgeWriteRequest
 import com.openmate.core.network.dto.FileNodeDto
 import com.openmate.core.network.dto.HealthDto
 import com.openmate.core.network.dto.MessageWithPartsDto
@@ -15,6 +24,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.parseToJsonElement
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.serializer
 import okhttp3.MediaType.Companion.toMediaType
@@ -213,6 +225,89 @@ class OpencodeApiClient(
         val params = mutableMapOf<String, String>()
         directory?.let { params["directory"] = it }
         postUnit("/session/$sessionID/summarize", body, params)
+    }
+
+    suspend fun bridgeListRoots(): List<BridgeRootEntryDto> {
+        return getList("/api/bridge/fs/roots")
+    }
+
+    suspend fun bridgeListDir(path: String): List<BridgeDirEntryDto> {
+        return getList("/api/bridge/fs/list", mapOf("path" to path))
+    }
+
+    suspend fun bridgeStat(path: String): BridgeFileStatDto {
+        return get("/api/bridge/fs/stat", mapOf("path" to path))
+    }
+
+    suspend fun bridgeReadFile(path: String): BridgeFileContent {
+        val url = buildUrl("/api/bridge/fs/read", mapOf("path" to path))
+        val request = Request.Builder().url(url).get().build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}")
+        }
+        val mime = response.header("content-type", "text/plain") ?: "text/plain"
+        if (mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") || mime.contains("yaml") || mime.contains("markdown") || mime.contains("toml")) {
+            val body = response.body?.string() ?: ""
+            return BridgeFileContent(content = body, mime = mime, isBase64 = false)
+        }
+        val body = response.body?.string() ?: ""
+        if (body.startsWith("{")) {
+            try {
+                val element = json.parseToJsonElement(body)
+                val obj = element.jsonObject
+                val encoding = obj["encoding"]?.jsonPrimitive?.content
+                val fileMime = obj["mime"]?.jsonPrimitive?.content ?: "application/octet-stream"
+                if (encoding == "base64") {
+                    val data = obj["data"]?.jsonPrimitive?.content ?: ""
+                    val bytes = android.util.Base64.decode(data, android.util.Base64.DEFAULT)
+                    return BridgeFileContent(content = String(bytes, Charsets.UTF_8), mime = fileMime, isBase64 = true)
+                }
+            } catch (_: Exception) {}
+        }
+        return BridgeFileContent(content = body, mime = mime, isBase64 = false)
+    }
+
+    suspend fun bridgeWriteFile(path: String, content: String, createDirs: Boolean = false) {
+        val body = BridgeWriteRequest(path, content, createDirs)
+        val jsonStr = json.encodeToString(BridgeWriteRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = buildUrl("/api/bridge/fs/write", emptyMap())
+        val request = Request.Builder().url(url).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}")
+        }
+    }
+
+    suspend fun bridgeMkdir(path: String, recursive: Boolean = true) {
+        val body = BridgeMkdirRequest(path, recursive)
+        val jsonStr = json.encodeToString(BridgeMkdirRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = buildUrl("/api/bridge/fs/mkdir", emptyMap())
+        val request = Request.Builder().url(url).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}")
+        }
+    }
+
+    suspend fun bridgeSearch(path: String, query: String, searchType: String = "filename", maxResults: Int = 50): List<BridgeSearchResultDto> {
+        val body = BridgeSearchRequest(path, query, searchType, maxResults)
+        val jsonStr = json.encodeToString(BridgeSearchRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = buildUrl("/api/bridge/fs/search", emptyMap())
+        val request = Request.Builder().url(url).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: return emptyList()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
+        }
+        return json.decodeFromString(responseBody)
+    }
+
+    suspend fun bridgeStatus(): BridgeStatusResponse {
+        return get("/api/bridge/status")
     }
 
     private inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T {

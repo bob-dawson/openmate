@@ -12,6 +12,7 @@ class ConnectionStatusTest {
                 ConnectionStatus.CONNECTING,
                 ConnectionStatus.CONNECTED,
                 ConnectionStatus.ERROR,
+                ConnectionStatus.NOT_BRIDGE,
             )
     }
 }

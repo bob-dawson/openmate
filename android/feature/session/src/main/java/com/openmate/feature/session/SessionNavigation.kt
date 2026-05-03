@@ -5,6 +5,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.openmate.feature.session.component.WorkspaceBrowserScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -13,6 +14,7 @@ object SessionRoutes {
     const val SESSION_LIST = "session_list"
     const val SESSION_DETAIL = "session_detail"
     const val SUBTASK_DETAIL = "subtask_detail"
+    const val WORKSPACE_BROWSER = "workspace_browser"
 }
 
 fun NavGraphBuilder.sessionScreens(
@@ -54,6 +56,10 @@ fun NavGraphBuilder.sessionScreens(
             onNavigateToSubtask = { subtaskSessionID, title ->
                 navController.navigate("${SessionRoutes.SUBTASK_DETAIL}/$subtaskSessionID?title=${URLEncoder.encode(title, "UTF-8")}")
             },
+            onNavigateToBrowser = { directory ->
+                val encoded = URLEncoder.encode(directory, "UTF-8")
+                navController.navigate("${SessionRoutes.WORKSPACE_BROWSER}/$encoded")
+            },
             onBack = { navController.popBackStack() },
         )
     }
@@ -69,6 +75,17 @@ fun NavGraphBuilder.sessionScreens(
         SubtaskDetailScreen(
             subtaskSessionID = subtaskSessionID,
             title = title,
+            onBack = { navController.popBackStack() },
+        )
+    }
+    composable(
+        route = "${SessionRoutes.WORKSPACE_BROWSER}/{directory}",
+        arguments = listOf(navArgument("directory") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        val encoded = backStackEntry.arguments?.getString("directory") ?: return@composable
+        val directory = URLDecoder.decode(encoded, "UTF-8")
+        WorkspaceBrowserScreen(
+            initialDirectory = directory,
             onBack = { navController.popBackStack() },
         )
     }

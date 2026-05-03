@@ -67,6 +67,7 @@ fun SessionDetailScreen(
     sessionID: String,
     onBack: () -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
+    onNavigateToBrowser: (directory: String) -> Unit = {},
     viewModel: SessionDetailViewModel = hiltViewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -194,6 +195,13 @@ fun SessionDetailScreen(
                                 onClick = {
                                     menuExpanded = false
                                     showFilePicker = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Browse Files") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onNavigateToBrowser(viewModel.getWorkingDirectory())
                                 },
                             )
                             DropdownMenuItem(
@@ -435,6 +443,7 @@ fun SessionDetailScreen(
     if (showFilePicker) {
         FilePickerSheet(
             apiClient = viewModel.apiClient,
+            initialDirectory = viewModel.getWorkingDirectory(),
             onSelect = { path, filename ->
                 viewModel.attachFile(path, filename)
                 showFilePicker = false

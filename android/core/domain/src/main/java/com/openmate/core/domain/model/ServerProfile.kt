@@ -7,7 +7,7 @@ data class ServerProfile(
     val id: String,
     val name: String,
     val address: String,
-    val port: Int = 4096,
+    val port: Int = 4097,
     val password: String? = null,
     val createdAt: Long,
     val lastConnectedAt: Long? = null,

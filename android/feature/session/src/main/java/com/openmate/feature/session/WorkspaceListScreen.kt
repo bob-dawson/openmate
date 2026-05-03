@@ -494,12 +494,14 @@ private fun ConnectionDot(status: ConnectionStatus) {
         ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
         ConnectionStatus.CONNECTING -> Color(0xFFf5a742)
         ConnectionStatus.ERROR -> Color(0xFFe06c75)
+        ConnectionStatus.NOT_BRIDGE -> Color(0xFFe06c75)
         ConnectionStatus.DISCONNECTED -> Color(0xFF808080)
     }
     val label = when (status) {
         ConnectionStatus.CONNECTED -> "在线"
         ConnectionStatus.CONNECTING -> "连接中"
         ConnectionStatus.ERROR -> "连接失败"
+        ConnectionStatus.NOT_BRIDGE -> "非Bridge"
         ConnectionStatus.DISCONNECTED -> "未连接"
     }
     Row(

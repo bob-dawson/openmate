@@ -36,6 +36,11 @@ class ConnectionManager @Inject constructor(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    val client: OpencodeApiClient get() = apiClient
+
     init {
         scope.launch {
             sseEventRepository.observeConnectionStatus().collect { status ->
@@ -44,6 +49,9 @@ class ConnectionManager @Inject constructor(
                 if (status == ConnectionStatus.CONNECTED) {
                     sessionRepository.refreshSessionStatuses()
                 }
+                if (status == ConnectionStatus.ERROR) {
+                    _errorMessage.value = "Connection lost"
+                }
             }
         }
     }
@@ -51,10 +59,28 @@ class ConnectionManager @Inject constructor(
     fun connect(profile: ServerProfile) {
         scope.launch {
             _connectionStatus.value = ConnectionStatus.CONNECTING
+            _errorMessage.value = null
             _activeProfile.value = profile
 
             dbProvider.setActive(profile.id)
             apiClient.baseUrl = "http://${profile.address}:${profile.port}"
+
+            try {
+                val status = apiClient.bridgeStatus()
+                if (status.bridge.version.isBlank()) {
+                    _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
+                    _errorMessage.value = "Not a Bridge server. Only Bridge connections are supported."
+                    dbProvider.clearActive()
+                    _activeProfile.value = null
+                    return@launch
+                }
+            } catch (e: Exception) {
+                _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
+                _errorMessage.value = "Bridge not reachable: ${e.message}"
+                dbProvider.clearActive()
+                _activeProfile.value = null
+                return@launch
+            }
 
             val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
             profileRepository.save(updated)
@@ -63,8 +89,13 @@ class ConnectionManager @Inject constructor(
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
             } catch (e: Exception) {
                 _connectionStatus.value = ConnectionStatus.ERROR
+                _errorMessage.value = e.message ?: "Connection failed"
             }
         }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     fun disconnect() {
@@ -73,5 +104,6 @@ class ConnectionManager @Inject constructor(
         _activeProfile.value = null
         _isConnected.value = false
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
+        _errorMessage.value = null
     }
 }

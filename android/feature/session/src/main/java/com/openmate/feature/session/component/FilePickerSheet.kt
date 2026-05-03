@@ -4,12 +4,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -34,7 +32,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openmate.core.network.OpencodeApiClient
-import com.openmate.core.network.dto.FileNodeDto
+import com.openmate.core.network.dto.BridgeDirEntryDto
+import com.openmate.core.network.dto.BridgeSearchResultDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -42,62 +41,47 @@ import kotlinx.coroutines.launch
 @Composable
 fun FilePickerSheet(
     apiClient: OpencodeApiClient,
+    initialDirectory: String = "",
     onSelect: (path: String, filename: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var currentPath by remember { mutableStateOf("") }
-    var files by remember { mutableStateOf<List<FileNodeDto>>(emptyList()) }
+    var currentPath by remember { mutableStateOf(initialDirectory) }
+    var entries by remember { mutableStateOf<List<BridgeDirEntryDto>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<String>>(emptyList()) }
+    var searchResults by remember { mutableStateOf<List<BridgeSearchResultDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
-    var serverDir by remember { mutableStateOf("") }
+    var loadError by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        scope.launch(Dispatchers.IO) {
-            try {
-                serverDir = apiClient.getPath().directory
-            } catch (_: Exception) {}
-        }
-    }
-
-    LaunchedEffect(Unit) {
+    fun loadDir(path: String) {
         scope.launch(Dispatchers.IO) {
             isLoading = true
+            loadError = ""
             try {
-                val nodes = apiClient.listFiles(".")
-                files = nodes.filter { !it.ignored }.sortedWith(
-                    compareBy<FileNodeDto> { it.type != "directory" }.thenBy { it.name.lowercase() }
-                )
-            } catch (_: Exception) {
-                files = emptyList()
+                entries = apiClient.bridgeListDir(path.ifBlank { "." })
+            } catch (e: Exception) {
+                entries = emptyList()
+                loadError = e.message ?: "Failed to list directory"
             }
             isLoading = false
         }
     }
 
     LaunchedEffect(currentPath) {
-        if (currentPath.isBlank()) return@LaunchedEffect
-        scope.launch(Dispatchers.IO) {
-            isLoading = true
-            try {
-                val nodes = apiClient.listFiles(currentPath)
-                files = nodes.filter { !it.ignored }.sortedWith(
-                    compareBy<FileNodeDto> { it.type != "directory" }.thenBy { it.name.lowercase() }
-                )
-            } catch (_: Exception) {
-                files = emptyList()
-            }
-            isLoading = false
-        }
+        loadDir(currentPath)
     }
 
     LaunchedEffect(searchQuery) {
         if (searchQuery.length >= 2) {
             scope.launch(Dispatchers.IO) {
                 try {
-                    searchResults = apiClient.searchFiles(searchQuery, 30)
+                    searchResults = apiClient.bridgeSearch(
+                        currentPath.ifBlank { "." },
+                        searchQuery,
+                        "filename",
+                        30,
+                    )
                 } catch (_: Exception) {
                     searchResults = emptyList()
                 }
@@ -124,7 +108,7 @@ fun FilePickerSheet(
             )
 
             Text(
-                text = if (currentPath.isBlank()) "/" else currentPath,
+                text = currentPath.ifBlank { "/" },
                 style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -151,7 +135,7 @@ fun FilePickerSheet(
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
                     color = if (currentPath.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = if (currentPath.isNotBlank()) Modifier.clickable {
-                        currentPath = currentPath.substringBeforeLast("/", "")
+                        currentPath = currentPath.substringBeforeLast("/", "").substringBeforeLast("\\", "")
                     } else Modifier,
                 )
             }
@@ -161,17 +145,23 @@ fun FilePickerSheet(
                 CircularProgressIndicator(
                     modifier = Modifier.padding(16.dp).size(24.dp).align(Alignment.CenterHorizontally),
                 )
+            } else if (loadError.isNotBlank()) {
+                Text(
+                    text = loadError,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(16.dp),
+                )
             } else if (searchQuery.length >= 2) {
                 if (searchResults.isNotEmpty()) {
                     LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-                        items(searchResults) { relPath ->
-                            val name = relPath.substringAfterLast("/").trimEnd('/')
-                            val absPath = if (serverDir.isNotBlank()) java.io.File(serverDir, relPath.trimEnd('/')).path else relPath
+                        items(searchResults) { result ->
+                            val name = result.path.substringAfterLast("/").substringAfterLast("\\")
                             FileRow(
                                 name = name,
-                                path = absPath,
+                                path = result.path,
                                 isDir = false,
-                                onClick = { onSelect(absPath, name) },
+                                onClick = { onSelect(result.path, name) },
                             )
                         }
                     }
@@ -185,16 +175,17 @@ fun FilePickerSheet(
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-                    items(files, key = { it.path }) { node ->
+                    items(entries, key = { "${it.name}_${it.isDirectory}" }) { entry ->
                         FileRow(
-                            name = node.name,
-                            path = node.path,
-                            isDir = node.type == "directory",
+                            name = entry.name,
+                            path = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}",
+                            isDir = entry.isDirectory,
                             onClick = {
-                                if (node.type == "directory") {
-                                    currentPath = node.path
+                                if (entry.isDirectory) {
+                                    currentPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
                                 } else {
-                                    onSelect(node.absolute.ifBlank { node.path }, node.name)
+                                    val fullPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
+                                    onSelect(fullPath, entry.name)
                                 }
                             },
                         )
@@ -225,6 +216,13 @@ private fun FileRow(name: String, path: String, isDir: Boolean, onClick: () -> U
                 ),
                 color = if (isDir) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             )
+            if (isDir) {
+                Text(
+                    text = "/",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
         Text(
             text = path,

@@ -15,9 +15,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -38,8 +38,8 @@ fun AddInstanceScreen(
     val password by viewModel.password.collectAsState()
     val testResult by viewModel.testResult.collectAsState()
 
-    LaunchedEffect(editProfileId) {
-        if (editProfileId != null) {
+    if (editProfileId != null) {
+        LaunchedEffect(editProfileId) {
             viewModel.loadProfileForEdit(editProfileId)
         }
     }
@@ -57,7 +57,7 @@ fun AddInstanceScreen(
         ) {
             OutlinedTextField(
                 value = name,
-                onValueChange = { viewModel.name.value = it },
+                onValueChange = { viewModel.name.value = it; viewModel.clearTestResult() },
                 label = { Text("Name") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -65,7 +65,7 @@ fun AddInstanceScreen(
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
                 value = address,
-                onValueChange = { viewModel.address.value = it },
+                onValueChange = { viewModel.address.value = it; viewModel.clearTestResult() },
                 label = { Text("Address") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -73,7 +73,7 @@ fun AddInstanceScreen(
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
                 value = port,
-                onValueChange = { viewModel.port.value = it },
+                onValueChange = { viewModel.port.value = it; viewModel.clearTestResult() },
                 label = { Text("Port") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -95,10 +95,38 @@ fun AddInstanceScreen(
             ) {
                 Text("Test Connection")
             }
+            Spacer(modifier = Modifier.height(8.dp))
             when (testResult) {
                 is TestResult.Testing -> Text("Testing...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                is TestResult.Success -> Text("Connected!", color = MaterialTheme.colorScheme.primary)
-                is TestResult.Error -> Text((testResult as TestResult.Error).message, color = MaterialTheme.colorScheme.error)
+                is TestResult.Success -> {
+                    val status = (testResult as TestResult.Success).status
+                    Column {
+                        Text(
+                            "Bridge v${status.bridge.version} connected!",
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            "OpenCode: ${status.opencode.status}",
+                            color = when (status.opencode.status) {
+                                "running" -> MaterialTheme.colorScheme.primary
+                                "crashed" -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (status.opencode.directory.isNotBlank()) {
+                            Text(
+                                "Dir: ${status.opencode.directory}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                is TestResult.Error -> Text(
+                    (testResult as TestResult.Error).message,
+                    color = MaterialTheme.colorScheme.error,
+                )
                 null -> {}
             }
             Spacer(modifier = Modifier.height(16.dp))

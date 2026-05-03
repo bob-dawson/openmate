@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.BridgeStatusResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +24,7 @@ class AddInstanceViewModel @Inject constructor(
 
     val name = MutableStateFlow("")
     val address = MutableStateFlow("")
-    val port = MutableStateFlow("4096")
+    val port = MutableStateFlow("4097")
     val password = MutableStateFlow("")
 
     private val _testResult = MutableStateFlow<TestResult?>(null)
@@ -58,19 +59,23 @@ class AddInstanceViewModel @Inject constructor(
         viewModelScope.launch {
             _testResult.value = TestResult.Testing
             try {
-                withContext(Dispatchers.IO) {
-                    val portNum = port.value.toIntOrNull() ?: throw IllegalArgumentException("Invalid port")
+                val status = withContext(Dispatchers.IO) {
+                    val portNum = port.value.toIntOrNull()
+                        ?: throw IllegalArgumentException("Invalid port")
                     val url = "http://${address.value}:$portNum"
                     val saved = apiClient.baseUrl
                     apiClient.baseUrl = url
                     try {
-                        val health = apiClient.healthCheck()
-                        if (!health.healthy) throw IllegalStateException("Server unhealthy")
+                        apiClient.bridgeStatus()
                     } finally {
                         apiClient.baseUrl = saved
                     }
                 }
-                _testResult.value = TestResult.Success
+                if (status.bridge.version.isBlank()) {
+                    _testResult.value = TestResult.Error("Not a Bridge server")
+                } else {
+                    _testResult.value = TestResult.Success(status)
+                }
             } catch (e: Exception) {
                 _testResult.value = TestResult.Error(e.message ?: "Connection failed")
             }
@@ -82,21 +87,39 @@ class AddInstanceViewModel @Inject constructor(
         if (name.value.isBlank() || address.value.isBlank() || portNum == null || portNum !in 1..65535) {
             return
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             _isSaving.value = true
-            val profile = ServerProfile(
-                id = editProfileId ?: UUID.randomUUID().toString(),
-                name = name.value,
-                address = address.value,
-                port = portNum,
-                password = password.value.ifBlank { null },
-                createdAt = editProfileId?.let {
-                    profileRepository.getById(it)?.createdAt
-                } ?: System.currentTimeMillis(),
-            )
-            profileRepository.save(profile)
-            _isSaving.value = false
-            withContext(Dispatchers.Main) { onSaved() }
+            try {
+                withContext(Dispatchers.IO) {
+                    val url = "http://${address.value}:$portNum"
+                    val saved = apiClient.baseUrl
+                    apiClient.baseUrl = url
+                    try {
+                        val status = apiClient.bridgeStatus()
+                        if (status.bridge.version.isBlank()) {
+                            throw IllegalStateException("Not a Bridge server")
+                        }
+                    } finally {
+                        apiClient.baseUrl = saved
+                    }
+                }
+                val profile = ServerProfile(
+                    id = editProfileId ?: UUID.randomUUID().toString(),
+                    name = name.value,
+                    address = address.value,
+                    port = portNum,
+                    password = password.value.ifBlank { null },
+                    createdAt = editProfileId?.let {
+                        profileRepository.getById(it)?.createdAt
+                    } ?: System.currentTimeMillis(),
+                )
+                profileRepository.save(profile)
+                withContext(Dispatchers.Main) { onSaved() }
+            } catch (e: Exception) {
+                _testResult.value = TestResult.Error("Save failed: ${e.message}")
+            } finally {
+                _isSaving.value = false
+            }
         }
     }
 
@@ -107,6 +130,6 @@ class AddInstanceViewModel @Inject constructor(
 
 sealed interface TestResult {
     data object Testing : TestResult
-    data object Success : TestResult
+    data class Success(val status: BridgeStatusResponse) : TestResult
     data class Error(val message: String) : TestResult
 }
