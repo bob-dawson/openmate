@@ -36,6 +36,7 @@ import java.net.HttpURLConnection
 
 class OpencodeApiClient(
     private val client: OkHttpClient,
+    private val downloadClient: OkHttpClient = client,
     var baseUrl: String = "http://localhost:8080",
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -316,7 +317,7 @@ class OpencodeApiClient(
     ) {
         val url = buildUrl("/api/bridge/fs/download", mapOf("path" to path))
         val request = Request.Builder().url(url).get().build()
-        val response = client.newCall(request).execute()
+        val response = downloadClient.newCall(request).execute()
         if (!response.isSuccessful) {
             throw ServerUnavailableException("HTTP ${response.code}")
         }
@@ -324,7 +325,7 @@ class OpencodeApiClient(
         val contentLength = body.contentLength()
         destFile.parentFile?.mkdirs()
         body.byteStream().buffered().use { input ->
-            destFile.outputStream().buffered().use { output ->
+            destFile.outputStream().buffered(64 * 1024).use { output ->
                 val buffer = ByteArray(64 * 1024)
                 var downloaded = 0L
                 var lastProgress = 0L
@@ -333,8 +334,8 @@ class OpencodeApiClient(
                     if (read == -1) break
                     output.write(buffer, 0, read)
                     downloaded += read
-                    if (downloaded - lastProgress >= 64 * 1024) {
-                        onProgress?.invoke(downloaded, if (contentLength > 0) contentLength else downloaded)
+                    if (onProgress != null && downloaded - lastProgress >= 512 * 1024) {
+                        onProgress.invoke(downloaded, if (contentLength > 0) contentLength else downloaded)
                         lastProgress = downloaded
                     }
                 }

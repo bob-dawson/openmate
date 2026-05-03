@@ -34,13 +34,26 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @Named("download")
+    fun provideDownloadOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
     fun provideSseClient(@Named("sse") client: OkHttpClient): SseClient {
         return SseClient(client)
     }
 
     @Provides
     @Singleton
-    fun provideOpencodeApiClient(@Named("api") client: OkHttpClient): OpencodeApiClient {
-        return OpencodeApiClient(client)
+    fun provideOpencodeApiClient(
+        @Named("api") client: OkHttpClient,
+        @Named("download") downloadClient: OkHttpClient,
+    ): OpencodeApiClient {
+        return OpencodeApiClient(client, downloadClient)
     }
 }

@@ -65,8 +65,10 @@ class WorkspaceBrowserViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _downloadState.value = DownloadState(downloading = true, totalBytes = fileSize)
             try {
-                val sanitized = filename.replace(Regex("[^a-zA-Z0-9_.\\-]"), "_")
-                val localFile = File(cacheDir, "${System.currentTimeMillis()}_$sanitized")
+                val subDir = File(cacheDir, remotePath.hashCode().toString())
+                subDir.mkdirs()
+                val safeName = filename.replace("/", "_").replace("\\", "_")
+                val localFile = File(subDir, safeName)
                 apiClient.bridgeDownloadFile(remotePath, localFile) { downloaded, total ->
                     _downloadState.value = DownloadState(
                         downloading = true,
