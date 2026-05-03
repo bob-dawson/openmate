@@ -33,6 +33,10 @@ impl PathGuard {
             }
         };
 
+        if self.allowed_paths.is_empty() {
+            return Ok(canonical);
+        }
+
         for allowed in &self.allowed_paths {
             let canonical_allowed = if allowed.exists() {
                 allowed
@@ -120,6 +124,15 @@ mod tests {
         assert!(result.is_err());
 
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_empty_allowed_paths_allows_all() {
+        let guard = PathGuard {
+            allowed_paths: vec![],
+        };
+        let result = guard.validate("C:\\Windows\\System32");
+        assert!(result.is_ok());
     }
 
     #[test]

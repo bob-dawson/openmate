@@ -16,6 +16,22 @@ pub async fn proxy_opencode_request(
     let stripped = path.strip_prefix("/api/opencode").unwrap_or(path);
     let target_url = format!("{}{}", opencode_url, stripped);
 
+    do_proxy(&opencode_url, &target_url, req).await
+}
+
+pub async fn proxy_fallback(
+    State(state): State<AppState>,
+    req: Request,
+) -> Result<Response, AppError> {
+    let opencode_url = state.config.opencode_url();
+
+    let path = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+    let target_url = format!("{}{}", opencode_url, path);
+
+    do_proxy(&opencode_url, &target_url, req).await
+}
+
+async fn do_proxy(_opencode_url: &str, target_url: &str, req: Request) -> Result<Response, AppError> {
     let method = req.method().clone();
     let headers = req.headers().clone();
 
@@ -24,7 +40,7 @@ pub async fn proxy_opencode_request(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read request body: {}", e)))?;
 
     let client = reqwest::Client::new();
-    let mut req_builder = client.request(method, &target_url);
+    let mut req_builder = client.request(method, target_url);
 
     for (name, value) in headers.iter() {
         let name_str = name.as_str();

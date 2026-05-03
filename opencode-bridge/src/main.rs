@@ -60,7 +60,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/bridge/fs/write", post(fs::router::write))
         .route("/files/{*path}", get(files::router::serve_file))
         .route("/api/opencode/global/event", get(proxy::sse::sse_proxy))
+        .route("/global/event", get(proxy::sse::sse_proxy))
         .route("/api/opencode/{*path}", any(proxy::rest::proxy_opencode_request))
+        .fallback(any(proxy::rest::proxy_fallback))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);
