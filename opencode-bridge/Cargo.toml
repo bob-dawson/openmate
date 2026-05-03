@@ -18,6 +18,7 @@ thiserror = "2"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["io"] }
 futures = "0.3"
 async-stream = "0.3"
 clap = { version = "4", features = ["derive"] }

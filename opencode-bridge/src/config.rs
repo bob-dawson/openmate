@@ -104,14 +104,9 @@ impl Config {
 
     pub fn effective_allowed_paths(&self) -> Vec<PathBuf> {
         if self.fs.allowed_paths.is_empty() {
-            if self.opencode.directory.is_empty() {
-                vec![std::env::current_dir().unwrap_or_default()]
-            } else {
-                vec![PathBuf::from(&self.opencode.directory)]
-            }
-        } else {
-            self.fs.allowed_paths.iter().map(PathBuf::from).collect()
+            return Vec::new()
         }
+        self.fs.allowed_paths.iter().map(PathBuf::from).collect()
     }
 
     pub fn load_from(path: &PathBuf) -> anyhow::Result<Self> {
@@ -194,11 +189,10 @@ mod tests {
     }
 
     #[test]
-    fn test_effective_allowed_paths_from_directory() {
-        let mut config = Config::default();
-        config.opencode.directory = "/tmp/test-project".to_string();
+    fn test_effective_allowed_paths_empty_allows_all() {
+        let config = Config::default();
         let paths = config.effective_allowed_paths();
-        assert_eq!(paths, vec![PathBuf::from("/tmp/test-project")]);
+        assert!(paths.is_empty());
     }
 
     #[test]

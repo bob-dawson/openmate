@@ -268,6 +268,30 @@ async fn restart_loop(
         tracing::info!("Auto-restart attempt #{}...", attempt);
 
         {
+            let current = *status_arc.read().await;
+            if current == OpencodeStatus::Running || current == OpencodeStatus::Starting {
+                tracing::info!("opencode is already {} , skip restart", match current {
+                    OpencodeStatus::Running => "running",
+                    OpencodeStatus::Starting => "starting",
+                    _ => "",
+                });
+                return;
+            }
+        }
+
+        {
+            let client = reqwest::Client::new();
+            if let Ok(resp) = client.get(format!("{}/global/health", opencode_url)).send().await {
+                if resp.status().is_success() {
+                    tracing::info!("opencode health check passed, marking as Running");
+                    let mut s = status_arc.write().await;
+                    *s = OpencodeStatus::Running;
+                    return;
+                }
+            }
+        }
+
+        {
             let mut s = status_arc.write().await;
             *s = OpencodeStatus::Starting;
         }
@@ -312,6 +336,11 @@ async fn restart_loop(
                 }
 
                 {
+                    let current = *status_arc.read().await;
+                    if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
+                        tracing::info!("opencode was stopped, not restarting");
+                        return;
+                    }
                     let mut s = status_arc.write().await;
                     *s = OpencodeStatus::Crashed;
                 }

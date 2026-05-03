@@ -17,6 +17,37 @@ pub struct DirEntry {
     pub is_directory: bool,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RootEntry {
+    pub name: String,
+    pub path: String,
+}
+
+pub fn list_roots() -> Vec<RootEntry> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut roots = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let drive = format!("{}:/", letter as char);
+            if Path::new(&drive).exists() {
+                roots.push(RootEntry {
+                    name: format!("{}:", letter as char),
+                    path: format!("{}:/", letter as char),
+                });
+            }
+        }
+        roots
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        vec![RootEntry {
+            name: "/".to_string(),
+            path: "/".to_string(),
+        }]
+    }
+}
+
 pub fn list_dir(path: &Path) -> Result<Vec<DirEntry>, AppError> {
     let entries = std::fs::read_dir(path)
         .map_err(|_| AppError::PathNotFound(path.display().to_string()))?;

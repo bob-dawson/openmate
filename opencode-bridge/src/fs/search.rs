@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchRequest {
     pub path: String,
     pub query: String,
@@ -29,14 +30,22 @@ fn default_max_results() -> usize {
 }
 
 pub fn search_files(request: &SearchRequest) -> Result<Vec<SearchResult>, String> {
-    let root = Path::new(&request.path);
-    if !root.exists() {
-        return Err(format!("Path does not exist: {}", request.path));
-    }
-
     match request.search_type.as_str() {
-        "filename" => search_by_filename(root, &request.query, request.max_results),
-        "content" => search_by_content(root, &request.query, request.max_results),
+        "filename" => {
+            let root = Path::new(&request.path);
+            if !root.exists() {
+                return Err(format!("Path does not exist: {}", request.path));
+            }
+            search_by_filename(root, &request.query, request.max_results)
+        }
+        "content" => {
+            let root = Path::new(&request.path);
+            if !root.exists() {
+                return Err(format!("Path does not exist: {}", request.path));
+            }
+            search_by_content(root, &request.query, request.max_results)
+        }
+        "prefix" => search_by_prefix(&request.query),
         _ => Err(format!("Unknown search type: {}", request.search_type)),
     }
 }
@@ -113,6 +122,79 @@ fn search_by_content(
 
         results.len() < max_results
     })?;
+
+    Ok(results)
+}
+
+fn search_by_prefix(query: &str) -> Result<Vec<SearchResult>, String> {
+    let normalized = query.replace('\\', "/");
+    let normalized = if normalized.starts_with('/') || normalized.len() >= 2 && normalized.as_bytes()[1] == b':' {
+        normalized
+    } else {
+        return Ok(Vec::new());
+    };
+
+    let (parent, prefix) = if normalized.ends_with('/') {
+        (normalized.clone(), String::new())
+    } else {
+        let idx = normalized.rfind('/');
+        match idx {
+            Some(i) => (normalized[..=i].to_string(), normalized[i + 1..].to_string()),
+            None => (normalized.clone(), String::new()),
+        }
+    };
+
+    let parent_path = Path::new(&parent);
+    if !parent_path.exists() || !parent_path.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let case_sensitive = !cfg!(target_os = "windows");
+    let prefix_for_cmp = if case_sensitive { prefix.clone() } else { prefix.to_lowercase() };
+
+    let mut results = Vec::new();
+    let entries = std::fs::read_dir(parent_path).map_err(|e| e.to_string())?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let name_for_cmp = if case_sensitive { name.clone() } else { name.to_lowercase() };
+        if prefix_for_cmp.is_empty() || name_for_cmp.starts_with(&prefix_for_cmp) {
+            let full = format!("{}/{}", parent.trim_end_matches('/'), name);
+            results.push(SearchResult {
+                path: full,
+                line: None,
+                column: None,
+                snippet: None,
+            });
+        }
+    }
+
+    if !prefix_for_cmp.is_empty() {
+        let full_prefix_path = format!("{}/{}", parent.trim_end_matches('/'), prefix);
+        let fp = Path::new(&full_prefix_path);
+        if fp.exists() && fp.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(fp) {
+                for entry in entries.flatten() {
+                    if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                        let child_name = entry.file_name().to_string_lossy().to_string();
+                        results.push(SearchResult {
+                            path: format!("{}/{}", full_prefix_path.trim_end_matches('/'), child_name),
+                            line: None,
+                            column: None,
+                            snippet: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     Ok(results)
 }
