@@ -101,3 +101,13 @@ SELECT type, sequence, substr(text,1,40), toolName, mime, filename FROM PartEnti
 ```
 
 **重要**: 每次 app 重新安装（DB version 变更 + fallbackToDestructiveMigration）后，需要重新进入会话触发同步才能看到数据。
+
+## 编写复杂实现计划的规范
+
+遇到复杂实现计划时，**不要尝试写一份大而全的文档**。按以下步骤进行：
+
+1. 先总结需要修改哪几个模块，每个模块进行哪几个步骤（模块级大纲）
+2. 为每个步骤单独写一个实现文档（步骤级详情）
+3. 写完之后合并文档
+
+这样可以避免一次性编写过长文档导致遗漏或结构混乱。
