@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import com.openmate.feature.session.R
@@ -120,6 +121,19 @@ SmartAutoScroll(listState, messages.size, isLoading)
         derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 10 }
     }
 
+    var wasAtBottomBeforeIME by remember { mutableStateOf(true) }
+
+    LaunchedEffect(notAtBottom) {
+        if (!notAtBottom) wasAtBottomBeforeIME = true
+    }
+
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(imeBottom) {
+        if (imeBottom > 100 && wasAtBottomBeforeIME) {
+            listState.animateScrollToItem(messages.size)
+        }
+    }
+
     LaunchedEffect(sessionID) {
         viewModel.loadSession(sessionID)
     }
@@ -152,6 +166,7 @@ SmartAutoScroll(listState, messages.size, isLoading)
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.ime),
         topBar = {
             TopBar(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
@@ -270,8 +285,7 @@ SmartAutoScroll(listState, messages.size, isLoading)
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .imePadding(),
+                .background(MaterialTheme.colorScheme.background),
         ) {
             if (isStreaming) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -424,7 +438,7 @@ SmartAutoScroll(listState, messages.size, isLoading)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable {
                         coroutineScope.launch {
-                            listState.animateScrollToItem(messages.size - 1)
+                            listState.animateScrollToItem(messages.size)
                         }
                     }
                     .padding(8.dp),
