@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -28,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -38,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import com.openmate.feature.session.R
@@ -117,6 +120,15 @@ fun WorkspaceBrowserScreen(
         }
     }
 
+    fun openFile(file: File, filename: String) {
+        val ext = filename.substringAfterLast(".").lowercase()
+        if (ext == "apk") {
+            viewModel.installApk(file, filename)
+        } else {
+            viewModel.openWithSystemViewer(file, filename)
+        }
+    }
+
     fun openBinaryFile(path: String, filename: String, size: Long, modified: Long) {
         scope.launch(Dispatchers.IO) {
             val cached = viewModel.checkCache(path)
@@ -126,7 +138,7 @@ fun WorkspaceBrowserScreen(
                     && cached.modifiedTime == modified
             if (cacheValid) {
                 val localFile = File(cached!!.localPath)
-                viewModel.openWithSystemViewer(localFile, filename)
+                openFile(localFile, filename)
                 return@launch
             }
             if (size > LARGE_FILE_THRESHOLD) {
@@ -134,7 +146,7 @@ fun WorkspaceBrowserScreen(
                 return@launch
             }
             viewModel.downloadAndOpen(path, filename, size, modified) { file ->
-                viewModel.openWithSystemViewer(file, filename)
+                openFile(file, filename)
             }
         }
     }
@@ -161,6 +173,19 @@ fun WorkspaceBrowserScreen(
         searchQuery = ""
         searchResults = emptyList()
         loadDir(currentPath)
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.retryPendingApkInstall()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     LaunchedEffect(searchQuery) {
@@ -193,7 +218,7 @@ fun WorkspaceBrowserScreen(
                 TextButton(onClick = {
                     largeFileConfirm = null
                     viewModel.downloadAndOpen(confirm.path, confirm.filename, confirm.size, confirm.modified) { file ->
-                        viewModel.openWithSystemViewer(file, confirm.filename)
+                        openFile(file, confirm.filename)
                     }
                 }) { Text(stringResource(R.string.download)) }
             },
@@ -489,37 +514,42 @@ private fun FileViewer(
                                 ),
                                 syntaxHighlightColor = CodeBlockBackground,
                                 syntaxHighlightTextColor = CodeBlockText,
+                                isTextSelectable = true,
                             )
                         }
                     }
                 }
                 content.length > 500_000 -> {
-                    LazyColumn {
-                        item {
-                            Text(
-                                text = stringResource(R.string.file_to_large, content.length),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(bottom = 8.dp),
-                            )
-                        }
-                        item {
-                            Text(
-                                text = content.take(500_000),
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                    SelectionContainer {
+                        LazyColumn {
+                            item {
+                                Text(
+                                    text = stringResource(R.string.file_to_large, content.length),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 8.dp),
+                                )
+                            }
+                            item {
+                                Text(
+                                    text = content.take(500_000),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                         }
                     }
                 }
                 else -> {
-                    LazyColumn {
-                        item {
-                            Text(
-                                text = content.ifEmpty { stringResource(R.string.empty_file) },
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
+                    SelectionContainer {
+                        LazyColumn {
+                            item {
+                                Text(
+                                    text = content.ifEmpty { stringResource(R.string.empty_file) },
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                         }
                     }
                 }

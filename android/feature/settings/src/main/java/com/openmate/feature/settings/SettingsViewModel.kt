@@ -56,9 +56,6 @@ class SettingsViewModel @Inject constructor(
     private val _cacheSize = MutableStateFlow(appContext.getString(R.string.calculating))
     val cacheSize: StateFlow<String> = _cacheSize.asStateFlow()
 
-    private val _cachePolicyLabel = MutableStateFlow(appContext.getString(R.string.cache_policy_lru))
-    val cachePolicyLabel: StateFlow<String> = _cachePolicyLabel.asStateFlow()
-
     init {
         loadActiveProfile()
         refreshCacheSize()

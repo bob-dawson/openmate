@@ -2,6 +2,9 @@ package com.openmate.feature.session
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
@@ -96,16 +99,53 @@ class WorkspaceBrowserViewModel @Inject constructor(
         }
     }
 
+    private var pendingApkFile: File? = null
+    private var pendingApkName: String? = null
+
+    fun installApk(file: File, filename: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (appContext.packageManager.canRequestPackageInstalls()) {
+                openWithSystemViewer(file, filename)
+            } else {
+                pendingApkFile = file
+                pendingApkName = filename
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${appContext.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                appContext.startActivity(intent)
+            }
+        } else {
+            openWithSystemViewer(file, filename)
+        }
+    }
+
+    fun retryPendingApkInstall() {
+        val file = pendingApkFile ?: return
+        val name = pendingApkName ?: return
+        pendingApkFile = null
+        pendingApkName = null
+        openWithSystemViewer(file, name)
+    }
+
     fun openWithSystemViewer(file: File, filename: String) {
         val uri = FileProvider.getUriForFile(appContext, "${appContext.packageName}.fileprovider", file)
         val ext = filename.substringAfterLast(".", "").lowercase()
         val mime = guessMime(ext)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        val intent = if (ext == "apk") {
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        } else {
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mime)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
         }
         try {
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (ext != "apk") intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             appContext.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "No app to open file", e)

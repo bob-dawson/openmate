@@ -628,18 +628,6 @@ private fun SettingsContent(
                         )
                     },
                 )
-                SettingsRow(
-                    title = stringResource(R.string.cache_policy),
-                    subtitle = viewModel.cachePolicyLabel.collectAsState().value,
-                    showDivider = false,
-                    trailing = {
-                        Text(
-                            text = "\u203A",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                )
             }
         }
 
