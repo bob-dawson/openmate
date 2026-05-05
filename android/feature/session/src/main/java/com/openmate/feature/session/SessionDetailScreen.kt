@@ -88,6 +88,7 @@ fun SessionDetailScreen(
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val todos by viewModel.todos.collectAsState()
+    val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
     val providers by viewModel.providers.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
@@ -115,8 +116,18 @@ SmartAutoScroll(listState, messages.size, isLoading)
         derivedStateOf { listState.canScrollForward }
     }
 
+    val atTop by remember {
+        derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 10 }
+    }
+
     LaunchedEffect(sessionID) {
         viewModel.loadSession(sessionID)
+    }
+
+    LaunchedEffect(atTop, hasOlderMessages) {
+        if (atTop && hasOlderMessages) {
+            viewModel.loadOlderMessages()
+        }
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current

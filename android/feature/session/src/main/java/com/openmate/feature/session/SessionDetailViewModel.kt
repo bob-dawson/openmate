@@ -76,6 +76,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    private val _hasOlderMessages = MutableStateFlow(false)
+    val hasOlderMessages: StateFlow<Boolean> = _hasOlderMessages.asStateFlow()
+
     private val _pendingAssistantId = MutableStateFlow<String?>(null)
     val pendingAssistantId: StateFlow<String?> = _pendingAssistantId.asStateFlow()
 
@@ -109,6 +112,8 @@ companion object {
     private var currentSessionID: String? = null
     private var currentDirectory: String = ""
     private var draftSessionID: String? = null
+    private var olderMessagesCursor: String? = null
+    private var isLoadingOlder = false
     private var pollJob: Job? = null
     private var observePermJob: Job? = null
     private var observeQJob: Job? = null
@@ -124,6 +129,23 @@ companion object {
         val savedDraft = loadDraft(sid)
         _inputText.value = savedDraft.text
         _attachedFiles.value = savedDraft.files
+    }
+
+    fun loadOlderMessages() {
+        if (isLoadingOlder) return
+        val sid = currentSessionID ?: return
+        val cursor = olderMessagesCursor ?: return
+        isLoadingOlder = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val nextCursor = messageRepository.loadOlderMessages(sid, cursor, 20)
+                olderMessagesCursor = nextCursor
+                _hasOlderMessages.value = nextCursor != null
+            } catch (e: Exception) {
+                Log.e(TAG, "loadOlderMessages failed", e)
+            }
+            isLoadingOlder = false
+        }
     }
 
     fun loadSession(sessionID: String) {
@@ -142,7 +164,9 @@ companion object {
                 Log.e(TAG, "loadSession title failed", e)
             }
             try {
-                messageRepository.syncMessages(sessionID, 80)
+                val cursor = messageRepository.syncMessages(sessionID, 80)
+                olderMessagesCursor = cursor
+                _hasOlderMessages.value = cursor != null
             } catch (e: Exception) {
                 Log.e(TAG, "syncMessages failed", e)
             }
@@ -186,7 +210,11 @@ companion object {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.getSession(sid)
-                messageRepository.syncMessages(sid, 80)
+                val cursor = messageRepository.syncMessages(sid, 80)
+                if (cursor != null && olderMessagesCursor == null) {
+                    olderMessagesCursor = cursor
+                    _hasOlderMessages.value = true
+                }
                 sessionRepository.refreshSessionStatusesFromMessages()
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
@@ -202,7 +230,11 @@ companion object {
                 delay(POLL_INTERVAL_MS)
                 val sid = currentSessionID ?: continue
                 try {
-                    messageRepository.syncMessages(sid, 80)
+                    val cursor = messageRepository.syncMessages(sid, 80)
+                    if (cursor != null && olderMessagesCursor == null) {
+                        olderMessagesCursor = cursor
+                        _hasOlderMessages.value = true
+                    }
                     sessionRepository.refreshSessionStatusesFromMessages()
                     todoRepository.refreshTodos(sid)
                 } catch (e: Exception) {

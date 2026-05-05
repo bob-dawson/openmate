@@ -31,17 +31,24 @@ class MessageRepositoryImpl @Inject constructor(
         private val metadataJson = Json { ignoreUnknownKeys = true }
     }
 
-    override suspend fun syncMessages(sessionID: String, initialLimit: Int) {
+    override suspend fun syncMessages(sessionID: String, initialLimit: Int): String? {
         val db = dbProvider.getActive()
         val directory = db.sessionDao().getById(sessionID)?.directory?.ifBlank { null }
         val anchor = db.sessionDao().getSyncAnchor(sessionID)
         var limit = if (anchor != null) SYNC_LIMIT_INITIAL else initialLimit
         var cursor: String? = null
         var syncedAnchor = false
+        var oldestCursor: String? = null
 
         while (!syncedAnchor) {
             val page = api.getMessages(sessionID, limit, cursor, directory)
             if (page.items.isEmpty()) break
+
+            if (oldestCursor == null || cursor != null) {
+                oldestCursor = page.nextCursor ?: oldestCursor
+            } else {
+                oldestCursor = page.nextCursor
+            }
 
             upsertPage(sessionID, page.items)
 
@@ -64,13 +71,16 @@ class MessageRepositoryImpl @Inject constructor(
         if (newAnchor != null) {
             db.sessionDao().updateSyncAnchor(sessionID, newAnchor)
         }
+
+        return oldestCursor
     }
 
-    override suspend fun loadOlderMessages(sessionID: String, cursor: String, limit: Int) {
+    override suspend fun loadOlderMessages(sessionID: String, cursor: String, limit: Int): String? {
         val directory = dbProvider.getActive().sessionDao().getById(sessionID)?.directory?.ifBlank { null }
         val page = api.getMessages(sessionID, limit, cursor, directory)
-        if (page.items.isEmpty()) return
+        if (page.items.isEmpty()) return null
         upsertPage(sessionID, page.items)
+        return page.nextCursor
     }
 
     private suspend fun upsertPage(sessionID: String, items: List<MessageWithPartsDto>) {

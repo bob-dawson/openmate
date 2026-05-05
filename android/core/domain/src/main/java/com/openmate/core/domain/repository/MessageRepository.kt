@@ -6,8 +6,8 @@ import kotlinx.coroutines.flow.Flow
 data class FileAttachment(val path: String, val filename: String, val mime: String)
 
 interface MessageRepository {
-    suspend fun syncMessages(sessionID: String, initialLimit: Int = 80)
-    suspend fun loadOlderMessages(sessionID: String, cursor: String, limit: Int = 20)
+    suspend fun syncMessages(sessionID: String, initialLimit: Int = 80): String?
+    suspend fun loadOlderMessages(sessionID: String, cursor: String, limit: Int = 20): String?
     suspend fun sendMessage(
         sessionID: String,
         content: String,
