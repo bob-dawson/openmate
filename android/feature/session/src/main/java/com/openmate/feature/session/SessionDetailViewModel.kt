@@ -28,9 +28,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,6 +53,7 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
+    val userMessageIndices: StateFlow<List<Int>> = _messages.map { msgs -> msgs.indices.filter { i -> msgs[i].role == MessageRole.USER } }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _pendingPermissions = MutableStateFlow<List<PermissionRequest>>(emptyList())
     val pendingPermissions: StateFlow<List<PermissionRequest>> = _pendingPermissions.asStateFlow()
@@ -95,14 +99,16 @@ class SessionDetailViewModel @Inject constructor(
     private val _recentModels = MutableStateFlow<List<ModelRef>>(loadRecentModels())
     val recentModels: StateFlow<List<ModelRef>> = _recentModels.asStateFlow()
 
-    companion object {
+companion object {
         private const val TAG = "SessionDetailVM"
         private const val POLL_INTERVAL_MS = 15_000L
         private const val KEY_RECENT_MODELS = "recent_models"
+        private const val KEY_DRAFTS = "draft_messages"
     }
 
     private var currentSessionID: String? = null
     private var currentDirectory: String = ""
+    private var draftSessionID: String? = null
     private var pollJob: Job? = null
     private var observePermJob: Job? = null
     private var observeQJob: Job? = null
@@ -111,6 +117,13 @@ class SessionDetailViewModel @Inject constructor(
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    fun restoreDraft() {
+        val sid = currentSessionID ?: return
+        val savedDraft = loadDraft(sid)
+        _inputText.value = savedDraft.text
+        _attachedFiles.value = savedDraft.files
     }
 
     fun loadSession(sessionID: String) {
@@ -156,6 +169,10 @@ class SessionDetailViewModel @Inject constructor(
             resolveDefaultModel()
             _isLoading.value = false
         }
+        draftSessionID = sessionID
+        val savedDraft = loadDraft(sessionID)
+        _inputText.value = savedDraft.text
+        _attachedFiles.value = savedDraft.files
         observeMessages(sessionID)
         observeSessionStatus(sessionID)
         observePermissions()
@@ -222,6 +239,7 @@ class SessionDetailViewModel @Inject constructor(
         val agent = _selectedAgent.value
         val files = _attachedFiles.value
         _attachedFiles.value = emptyList()
+        clearDraft(sessionID)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID, agent, files, currentDirectory.ifBlank { null })
@@ -243,6 +261,7 @@ class SessionDetailViewModel @Inject constructor(
 
     fun updateInput(text: String) {
         _inputText.value = text
+        draftSessionID?.let { saveDraft(it, text, _attachedFiles.value) }
     }
 
     fun abort(sessionID: String) {
@@ -422,10 +441,12 @@ class SessionDetailViewModel @Inject constructor(
     fun attachFile(path: String, filename: String) {
         val mime = guessMime(filename)
         _attachedFiles.value = _attachedFiles.value + FileAttachment(path, filename, mime)
+        draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
     }
 
     fun removeAttachedFile(index: Int) {
         _attachedFiles.value = _attachedFiles.value.toMutableList().apply { removeAt(index) }
+        draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
     }
 
     private fun guessMime(filename: String): String {
@@ -449,6 +470,33 @@ class SessionDetailViewModel @Inject constructor(
             filename.endsWith(".svg") -> "image/svg+xml"
             else -> "text/plain"
         }
+    }
+
+    private data class DraftData(val text: String, val files: List<FileAttachment>)
+
+    private fun saveDraft(sessionID: String, text: String, files: List<FileAttachment>) {
+        val filesRaw = files.joinToString("||") { "${it.path}::${it.filename}::${it.mime}" }
+        prefs.edit()
+            .putString("draft_text_$sessionID", text)
+            .putString("draft_files_$sessionID", filesRaw)
+            .apply()
+    }
+
+    private fun loadDraft(sessionID: String): DraftData {
+        val text = prefs.getString("draft_text_$sessionID", "") ?: ""
+        val filesRaw = prefs.getString("draft_files_$sessionID", "") ?: ""
+        val files = if (filesRaw.isBlank()) emptyList() else filesRaw.split("||").mapNotNull { entry ->
+            val parts = entry.split("::")
+            if (parts.size == 3) FileAttachment(parts[0], parts[1], parts[2]) else null
+        }
+        return DraftData(text, files)
+    }
+
+    private fun clearDraft(sessionID: String) {
+        prefs.edit()
+            .remove("draft_text_$sessionID")
+            .remove("draft_files_$sessionID")
+            .apply()
     }
 
     private fun loadRecentModels(): List<ModelRef> {

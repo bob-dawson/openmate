@@ -132,6 +132,15 @@
 
     <string name="skills">Skills</string>
     <string name="search_skills">Search skills</string>
+    <string name="search_messages">Search messages</string>
+    <string name="tab_my_messages">My messages</string>
+    <string name="tab_agent_messages">Agent</string>
+    <string name="tab_all_messages">All</string>
+    <string name="enter_search_query">Enter search query</string>
+    <string name="no_search_results">No results</string>
+    <string name="label_you">You</string>
+    <string name="label_agent">Agent</string>
+    <string name="scroll_to_bottom">Scroll to bottom</string>
 
     <string name="content_desc_back">Back</string>
     <string name="content_desc_more">More</string>

@@ -8,7 +8,6 @@ import com.openmate.feature.instance.InstanceRoutes
 import com.openmate.feature.instance.instanceScreens
 import com.openmate.feature.session.SessionRoutes
 import com.openmate.feature.session.sessionScreens
-import com.openmate.feature.settings.settingsScreen
 
 @Composable
 fun OpenMateNavHost() {
@@ -19,6 +18,5 @@ fun OpenMateNavHost() {
     ) {
         instanceScreens(navController)
         sessionScreens(navController)
-        settingsScreen(navController)
     }
 }

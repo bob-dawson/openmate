@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="workspace">工作区</string>
+    <string name="sessions">会话</string>
+    <string name="settings">设置</string>
+    <string name="search_sessions">搜索会话</string>
+    <string name="new_session">新会话</string>
+    <string name="session_title_optional">标题（可选）</string>
+    <string name="select_directory">选择目录</string>
+    <string name="create">创建</string>
+    <string name="cancel">取消</string>
+    <string name="session_count">%1$d 个会话</string>
+    <string name="no_workspaces">暂无工作区</string>
+    <string name="no_sessions">暂无会话</string>
+    <string name="untitled">未命名</string>
+
+    <string name="session_archived">已归档</string>
+    <string name="session_error">错误</string>
+    <string name="session_busy">忙碌</string>
+    <string name="session_idle">空闲</string>
+
+    <string name="chat">聊天</string>
+    <string name="abort">终止</string>
+    <string name="model">模型</string>
+    <string name="mode_plan">模式: 规划 → 构建</string>
+    <string name="mode_build">模式: 构建 → 规划</string>
+    <string name="compact">压缩</string>
+    <string name="compacting">压缩中…</string>
+    <string name="skill">技能</string>
+    <string name="attach_file">附加文件</string>
+    <string name="browse_files">浏览文件</string>
+    <string name="refresh">刷新</string>
+    <string name="rename">重命名</string>
+    <string name="no_messages">暂无消息</string>
+    <string name="rename_session">重命名</string>
+    <string name="confirm">确认</string>
+    <string name="delete_session">删除会话</string>
+    <string name="delete_session_confirm">确定要删除此会话？此操作不可撤销。</string>
+    <string name="input_message">输入消息…</string>
+    <string name="delete">删除</string>
+
+    <string name="status_connected">在线</string>
+    <string name="status_connecting">连接中…</string>
+    <string name="status_error">连接失败</string>
+    <string name="status_not_bridge">非 Bridge</string>
+    <string name="status_disconnected">已断开</string>
+    <string name="not_connected">未连接</string>
+    <string name="disconnect">断开</string>
+
+    <string name="permission_request">权限请求</string>
+    <string name="allow">允许</string>
+    <string name="always">始终允许</string>
+    <string name="deny">拒绝</string>
+    <string name="question">问题</string>
+    <string name="reject">拒绝</string>
+    <string name="submit">提交</string>
+    <string name="waiting_response">等待回复…</string>
+
+    <string name="queued">排队中</string>
+    <string name="thinking">思考中…</string>
+    <string name="aborted">已终止</string>
+
+    <string name="todo">待办</string>
+    <string name="todo_in_progress">进行中</string>
+    <string name="todo_pending">待处理</string>
+    <string name="todo_completed">已完成</string>
+    <string name="todo_collapse">折叠</string>
+    <string name="todo_expand">查看全部 ›</string>
+    <string name="priority_high">高</string>
+    <string name="priority_medium">中</string>
+    <string name="priority_low">低</string>
+
+    <string name="thinking_prefix">思考: %1$s</string>
+    <string name="tool_waiting">等待…</string>
+    <string name="subtask_label">任务</string>
+    <string name="tool_cwd">目录: %1$s</string>
+
+    <string name="notifications">通知</string>
+    <string name="notify_permissions">权限请求</string>
+    <string name="notify_permissions_desc">opencode 需要确认时推送</string>
+    <string name="notify_questions">问题</string>
+    <string name="notify_questions_desc">opencode 提问时推送</string>
+    <string name="notify_complete">会话完成</string>
+    <string name="notify_complete_desc">助手回复完成时推送</string>
+    <string name="notify_errors">错误提醒</string>
+    <string name="notify_errors_desc">API 错误或连接断开时推送</string>
+    <string name="auto_allow_rules">自动允许规则</string>
+    <string name="auto_allow_read">自动允许读取</string>
+    <string name="auto_allow_grep">自动允许 Glob/Grep</string>
+    <string name="auto_allow_bash">自动允许 Bash</string>
+    <string name="security_risk">⚠️ 安全风险</string>
+    <string name="cache_storage">缓存与存储</string>
+    <string name="file_cache">文件缓存</string>
+    <string name="clear">清除</string>
+    <string name="cache_policy">消息缓存策略</string>
+    <string name="about">关于</string>
+    <string name="version">版本</string>
+    <string name="open_source_licenses">开源许可</string>
+
+    <string name="files">文件</string>
+    <string name="search_files">搜索文件</string>
+    <string name="search_content">搜索内容</string>
+    <string name="search_in_content">搜索文件内容…</string>
+    <string name="filename_filter">文件名过滤（如 *.kt）</string>
+    <string name="search_button">搜索</string>
+    <string name="searching">搜索中…</string>
+    <string name="content_search_results">%1$d 个结果</string>
+    <string name="line_info">第 %1$d 行</string>
+    <string name="tab_files">文件</string>
+    <string name="tab_content">内容</string>
+    <string name="no_results_found">未找到结果</string>
+    <string name="no_files_found">未找到文件</string>
+    <string name="empty_directory">空目录</string>
+    <string name="downloading">下载中…</string>
+    <string name="large_file">大文件</string>
+    <string name="large_file_confirm">此文件大小 %1$s，仍然下载？</string>
+    <string name="download">下载</string>
+    <string name="empty_file">（空文件）</string>
+    <string name="file_to_large">（文件过大: %1$d 字符，显示前 500K）</string>
+
+    <string name="select_directory_title">选择目录</string>
+    <string name="path_prefix_search">路径（前缀搜索或创建）</string>
+    <string name="create_and_use">创建并使用</string>
+    <string name="use_this_dir">使用此目录</string>
+    <string name="current_dir">. （当前）</string>
+
+    <string name="select_model">选择模型</string>
+    <string name="search_models">搜索模型或提供商</string>
+    <string name="current_model">当前: </string>
+    <string name="no_models_found">未找到模型</string>
+    <string name="recent">最近</string>
+
+    <string name="skills">技能</string>
+    <string name="search_skills">搜索技能</string>
+    <string name="search_messages">搜索消息</string>
+    <string name="tab_my_messages">我的消息</string>
+    <string name="tab_agent_messages">助手</string>
+    <string name="tab_all_messages">全部</string>
+    <string name="enter_search_query">输入搜索词</string>
+    <string name="no_search_results">无结果</string>
+    <string name="label_you">你</string>
+    <string name="label_agent">助手</string>
+    <string name="scroll_to_bottom">回到底部</string>
+
+    <string name="content_desc_back">返回</string>
+    <string name="content_desc_more">更多</string>
+    <string name="content_desc_new_session">新会话</string>
+    <string name="content_desc_send">发送</string>
+</resources>

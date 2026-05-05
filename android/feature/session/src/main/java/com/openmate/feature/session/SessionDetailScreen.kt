@@ -17,9 +17,12 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -36,6 +39,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -55,13 +59,16 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.ui.component.TopBar
+import com.openmate.core.ui.component.SmartAutoScroll
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.MessageItem
 import com.openmate.feature.session.component.FilePickerSheet
 import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
+import com.openmate.feature.session.component.MessageSearchPanel
 import com.openmate.feature.session.component.TodoListCard
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,6 +97,7 @@ fun SessionDetailScreen(
     val skills by viewModel.skills.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var menuExpanded by remember { mutableStateOf(false) }
@@ -98,25 +106,29 @@ fun SessionDetailScreen(
     var showModelPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
     var showFilePicker by remember { mutableStateOf(false) }
+    var showSearchPanel by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
 
-    val atBottom by remember {
-        derivedStateOf { !listState.canScrollForward }
+SmartAutoScroll(listState, messages.size, isLoading)
+
+    val notAtBottom by remember {
+        derivedStateOf { listState.canScrollForward }
     }
 
     LaunchedEffect(sessionID) {
         viewModel.loadSession(sessionID)
     }
 
-    LaunchedEffect(isLoading) {
-        if (!isLoading && messages.isNotEmpty()) {
-            listState.scrollToItem(messages.size - 1)
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.restoreDraft()
+            }
         }
-    }
-
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -134,6 +146,13 @@ fun SessionDetailScreen(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
                 actions = {
+                    IconButton(onClick = { showSearchPanel = true }) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = stringResource(R.string.search_messages),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(
@@ -146,15 +165,13 @@ fun SessionDetailScreen(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
                         ) {
-                            if (isStreaming) {
-                                DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.abort)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        viewModel.abort(sessionID)
-                                    },
-                                )
-                            }
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.abort)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.abort(sessionID)
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.model)) },
                                 onClick = {
@@ -234,11 +251,15 @@ fun SessionDetailScreen(
             )
         },
     ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(padding)
                 .imePadding(),
         ) {
             if (isStreaming) {
@@ -289,8 +310,8 @@ fun SessionDetailScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            }
-                        }
+}
+}
                     }
                 }
             }
@@ -368,6 +389,43 @@ fun SessionDetailScreen(
                 onSend = { viewModel.sendMessage(sessionID) },
             )
         }
+
+        if (showSearchPanel) {
+            MessageSearchPanel(
+                messages = messages,
+                onNavigateToMessage = { index ->
+                    coroutineScope.launch {
+                        showSearchPanel = false
+                        listState.animateScrollToItem(index)
+                    }
+                },
+                onClose = { showSearchPanel = false },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        if (notAtBottom && !showSearchPanel) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 96.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(messages.size - 1)
+                        }
+                    }
+                    .padding(8.dp),
+            ) {
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.scroll_to_bottom),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
     }
 
     if (showRenameDialog) {

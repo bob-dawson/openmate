@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.openmate.feature.session.R
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openmate.core.ui.component.SmartAutoScroll
 import com.openmate.core.ui.component.TopBar
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.MessageItem
@@ -56,17 +57,7 @@ fun SubtaskDetailScreen(
         viewModel.loadSession(subtaskSessionID)
     }
 
-    LaunchedEffect(isLoading) {
-        if (!isLoading && messages.isNotEmpty()) {
-            listState.scrollToItem(messages.size - 1)
-        }
-    }
-
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty() && !isLoading) {
-            listState.animateScrollToItem(messages.size - 1)
-        }
-    }
+    SmartAutoScroll(listState, messages.size, isLoading)
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {

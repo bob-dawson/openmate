@@ -65,14 +65,6 @@ fun MessageItem(
             .fillMaxWidth()
             .padding(vertical = 2.dp, horizontal = 12.dp),
     ) {
-        if (modelLabel != null) {
-            Text(
-                text = modelLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
-            )
-        }
         if (isEmptyAssistant) {
             if (message.completedAt == null) {
                 ThinkingIndicator()
@@ -92,18 +84,30 @@ fun MessageItem(
             )
         }
         if (isQueued) {
-            Box(
-                modifier = Modifier
-                    .padding(start = 4.dp, top = 2.dp, bottom = 4.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(MaterialTheme.colorScheme.primary)
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.queued),
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.queued),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+                if (message.createdAt > 0) {
+                    val modelText = modelLabel?.let { " · $it" } ?: ""
+                    Text(
+                        text = " ${message.createdAt.toTimeString()}$modelText",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         } else if (message.createdAt > 0) {
             val timeText = message.createdAt.toTimeString()
@@ -112,8 +116,9 @@ fun MessageItem(
                 val duration = completedAt - message.createdAt
                 " · ${formatDurationMillis(duration)}"
             } else ""
+            val modelText = modelLabel?.let { " · $it" } ?: ""
             Text(
-                text = timeText + durationText,
+                text = timeText + durationText + modelText,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
