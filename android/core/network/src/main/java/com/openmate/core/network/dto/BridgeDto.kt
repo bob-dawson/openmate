@@ -74,6 +74,7 @@ data class BridgeSearchRequest(
     val query: String,
     val searchType: String = "filename",
     val maxResults: Int = 50,
+    val glob: String? = null,
 )
 
 data class BridgeFileContent(

@@ -130,6 +130,15 @@
     <!-- File Browser -->
     <string name="files">文件</string>
     <string name="search_files">搜索文件</string>
+    <string name="search_content">搜索内容</string>
+    <string name="search_in_content">搜索文件内容…</string>
+    <string name="search_button">搜索</string>
+    <string name="searching">搜索中…</string>
+    <string name="content_search_results">%1$d 条结果</string>
+    <string name="line_info">第 %1$d 行</string>
+    <string name="tab_files">文件</string>
+    <string name="tab_content">内容</string>
+    <string name="no_results_found">未找到结果</string>
     <string name="no_files_found">未找到文件</string>
     <string name="empty_directory">空目录</string>
     <string name="downloading">下载中…</string>

@@ -10,6 +10,8 @@ pub struct SearchRequest {
     pub search_type: String,
     #[serde(default = "default_max_results")]
     pub max_results: usize,
+    #[serde(default)]
+    pub glob: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,23 +32,63 @@ fn default_max_results() -> usize {
 }
 
 pub fn search_files(request: &SearchRequest) -> Result<Vec<SearchResult>, String> {
+    let glob_pattern = request.glob.as_deref().filter(|g| !g.is_empty());
     match request.search_type.as_str() {
         "filename" => {
             let root = Path::new(&request.path);
             if !root.exists() {
                 return Err(format!("Path does not exist: {}", request.path));
             }
-            search_by_filename(root, &request.query, request.max_results)
+            search_by_filename(root, &request.query, request.max_results, glob_pattern)
         }
         "content" => {
             let root = Path::new(&request.path);
             if !root.exists() {
                 return Err(format!("Path does not exist: {}", request.path));
             }
-            search_by_content(root, &request.query, request.max_results)
+            search_by_content(root, &request.query, request.max_results, glob_pattern)
         }
         "prefix" => search_by_prefix(&request.query),
         _ => Err(format!("Unknown search type: {}", request.search_type)),
+    }
+}
+
+fn glob_matches(pattern: &str, name: &str) -> bool {
+    let p = pattern.to_lowercase();
+    let n = name.to_lowercase();
+    let pi: Vec<char> = p.chars().collect();
+    let ni: Vec<char> = n.chars().collect();
+    fn match_at(pi: &[char], ni: &[char]) -> bool {
+        if pi.is_empty() {
+            return ni.is_empty();
+        }
+        if pi[0] == '*' {
+            if pi.len() == 1 {
+                return true;
+            }
+            for i in 0..=ni.len() {
+                if match_at(&pi[1..], &ni[i..]) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ni.is_empty() {
+            return false;
+        }
+        if pi[0] == '?' || pi[0] == ni[0] {
+            return match_at(&pi[1..], &ni[1..]);
+        }
+        false
+    }
+    match_at(&pi, &ni)
+}
+
+fn should_skip_file(name: &str, glob_pattern: Option<&str>) -> bool {
+    if let Some(pattern) = glob_pattern {
+        !glob_matches(pattern, name)
+    } else {
+        false
     }
 }
 
@@ -54,6 +96,7 @@ fn search_by_filename(
     root: &Path,
     query: &str,
     max_results: usize,
+    glob_pattern: Option<&str>,
 ) -> Result<Vec<SearchResult>, String> {
     let mut results = Vec::new();
     let query_lower = query.to_lowercase();
@@ -66,6 +109,9 @@ fn search_by_filename(
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
+        if should_skip_file(&name, glob_pattern) {
+            return true;
+        }
         if name.to_lowercase().contains(&query_lower) {
             results.push(SearchResult {
                 path: path.to_string_lossy().to_string(),
@@ -84,6 +130,7 @@ fn search_by_content(
     root: &Path,
     query: &str,
     max_results: usize,
+    glob_pattern: Option<&str>,
 ) -> Result<Vec<SearchResult>, String> {
     let mut results = Vec::new();
 
@@ -93,6 +140,14 @@ fn search_by_content(
         }
 
         if !path.is_file() {
+            return true;
+        }
+
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if should_skip_file(&name, glob_pattern) {
             return true;
         }
 
@@ -257,6 +312,7 @@ mod tests {
             query: "rs".to_string(),
             search_type: "filename".to_string(),
             max_results: 50,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 1);
@@ -276,6 +332,7 @@ mod tests {
             query: "readme".to_string(),
             search_type: "filename".to_string(),
             max_results: 50,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 1);
@@ -294,6 +351,7 @@ mod tests {
             query: "TODO".to_string(),
             search_type: "content".to_string(),
             max_results: 50,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 1);
@@ -313,6 +371,7 @@ mod tests {
             query: "XYZ".to_string(),
             search_type: "content".to_string(),
             max_results: 50,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 1);
@@ -333,6 +392,7 @@ mod tests {
             query: "file_".to_string(),
             search_type: "filename".to_string(),
             max_results: 3,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 3);
@@ -354,6 +414,7 @@ mod tests {
             query: "findme".to_string(),
             search_type: "content".to_string(),
             max_results: 50,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 1);
@@ -369,6 +430,7 @@ mod tests {
             query: "test".to_string(),
             search_type: "filename".to_string(),
             max_results: 50,
+            glob: None,
         };
         assert!(search_files(&req).is_err());
     }
@@ -381,6 +443,7 @@ mod tests {
             query: "test".to_string(),
             search_type: "regex".to_string(),
             max_results: 50,
+            glob: None,
         };
         assert!(search_files(&req).is_err());
 
@@ -397,6 +460,7 @@ mod tests {
             query: "TODO".to_string(),
             search_type: "content".to_string(),
             max_results: 50,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 2);
@@ -418,10 +482,90 @@ mod tests {
             query: "main.rs".to_string(),
             search_type: "filename".to_string(),
             max_results: 50,
+            glob: None,
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].path.contains("src"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_glob_filters_filename_search() {
+        let dir = unique_test_dir("glob_fn");
+        fs::write(dir.join("app.rs"), "fn main()").unwrap();
+        fs::write(dir.join("app.ts"), "function main()").unwrap();
+        fs::write(dir.join("readme.md"), "# app").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "app".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: Some("*.rs".to_string()),
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].path.ends_with("app.rs"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_glob_filters_content_search() {
+        let dir = unique_test_dir("glob_content");
+        fs::write(dir.join("app.rs"), "fn find() {}").unwrap();
+        fs::write(dir.join("app.ts"), "function find() {}").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "find".to_string(),
+            search_type: "content".to_string(),
+            max_results: 50,
+            glob: Some("*.rs".to_string()),
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].path.ends_with("app.rs"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_glob_wildcard_question_mark() {
+        let dir = unique_test_dir("glob_qmark");
+        fs::write(dir.join("a1.txt"), "x").unwrap();
+        fs::write(dir.join("a2.txt"), "x").unwrap();
+        fs::write(dir.join("ab12.txt"), "x").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "a".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: Some("a?.txt".to_string()),
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_glob_case_insensitive() {
+        let dir = unique_test_dir("glob_case");
+        fs::write(dir.join("App.RS"), "fn main()").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "app".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: Some("*.rs".to_string()),
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 1);
 
         let _ = fs::remove_dir_all(&dir);
     }

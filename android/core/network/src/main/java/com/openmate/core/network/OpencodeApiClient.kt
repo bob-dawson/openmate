@@ -292,8 +292,8 @@ class OpencodeApiClient(
         }
     }
 
-    suspend fun bridgeSearch(path: String, query: String, searchType: String = "filename", maxResults: Int = 50): List<BridgeSearchResultDto> {
-        val body = BridgeSearchRequest(path, query, searchType, maxResults)
+    suspend fun bridgeSearch(path: String, query: String, searchType: String = "filename", maxResults: Int = 50, glob: String? = null): List<BridgeSearchResultDto> {
+        val body = BridgeSearchRequest(path, query, searchType, maxResults, glob)
         val jsonStr = json.encodeToString(BridgeSearchRequest.serializer(), body)
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val url = buildUrl("/api/bridge/fs/search", emptyMap())
