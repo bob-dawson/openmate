@@ -302,17 +302,14 @@ fun List<Part>.toDisplayItems(isUser: Boolean): List<DisplayItem> {
             is Part.PatchPart -> {
                 patches.add(part)
             }
-            is Part.StepStartPart -> {
-                items.add(DisplayItem.TextItem("▸ step", isUser = false))
-            }
-            is Part.StepFinishPart -> {}
+            is Part.StepStartPart, is Part.StepFinishPart,
+            is Part.SnapshotPart -> {}
             is Part.CompactionPart -> {
                 items.add(DisplayItem.TextItem("▸ compaction", isUser = false))
             }
             is Part.RetryPart -> {
                 items.add(DisplayItem.TextItem("▸ retry #${part.attempt}${part.error?.let { ": $it" } ?: ""}", isUser = false))
             }
-            is Part.SnapshotPart -> {}
             is Part.AgentPart -> {
                 items.add(DisplayItem.TextItem("▸ agent: ${part.name}", isUser = false))
             }
