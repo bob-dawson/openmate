@@ -146,8 +146,10 @@ class OpencodeApiClient(
         postUnit("/session/$sessionID/abort", emptyMap<String, String>(), params)
     }
 
-    suspend fun listPermissions(): List<PermissionDto> {
-        return getList("/permission")
+    suspend fun listPermissions(directory: String? = null): List<PermissionDto> {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        return getList("/permission", params)
     }
 
     suspend fun replyPermission(requestID: String, reply: String, message: String?, directory: String? = null) {
@@ -159,8 +161,10 @@ class OpencodeApiClient(
         postUnit("/permission/$requestID/reply", body, params)
     }
 
-    suspend fun listQuestions(): List<QuestionDto> {
-        return getList("/question")
+    suspend fun listQuestions(directory: String? = null): List<QuestionDto> {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        return getList("/question", params)
     }
 
     suspend fun replyQuestion(requestID: String, answers: List<List<String>>, directory: String? = null) {

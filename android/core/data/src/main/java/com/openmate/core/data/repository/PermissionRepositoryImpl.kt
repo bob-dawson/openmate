@@ -17,8 +17,8 @@ class PermissionRepositoryImpl @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
 ) : PermissionRepository {
 
-    override suspend fun refresh() {
-        val dtos = api.listPermissions()
+    override suspend fun refresh(directory: String) {
+        val dtos = api.listPermissions(directory)
         val dao = dbProvider.getActive().permissionDao()
         dao.replaceAll(dtos.map { it.toDomain().toEntity() })
     }

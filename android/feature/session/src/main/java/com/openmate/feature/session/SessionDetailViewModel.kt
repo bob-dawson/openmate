@@ -144,12 +144,12 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "refreshStatusFromMessages failed", e)
             }
             try {
-                permissionRepository.refresh()
+                permissionRepository.refresh(currentDirectory)
             } catch (e: Exception) {
                 Log.e(TAG, "refreshPermissions failed", e)
             }
             try {
-                questionRepository.refresh()
+                questionRepository.refresh(currentDirectory)
             } catch (e: Exception) {
                 Log.e(TAG, "refreshQuestions failed", e)
             }
@@ -192,8 +192,8 @@ class SessionDetailViewModel @Inject constructor(
                     Log.e(TAG, "poll sync failed", e)
                 }
                 try {
-                    permissionRepository.refresh()
-                    questionRepository.refresh()
+                    permissionRepository.refresh(currentDirectory)
+                    questionRepository.refresh(currentDirectory)
                 } catch (e: Exception) {
                     Log.e(TAG, "poll permission/question failed", e)
                 }
@@ -226,15 +226,15 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID, agent, files, currentDirectory.ifBlank { null })
                 messageRepository.syncMessages(sessionID, 80)
-                permissionRepository.refresh()
-                questionRepository.refresh()
+                permissionRepository.refresh(currentDirectory)
+                questionRepository.refresh(currentDirectory)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
             }
             try {
-                permissionRepository.refresh()
-                questionRepository.refresh()
+                permissionRepository.refresh(currentDirectory)
+                questionRepository.refresh(currentDirectory)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage permission refresh failed", e)
             }
@@ -476,8 +476,8 @@ class SessionDetailViewModel @Inject constructor(
                     if (hasIncompleteAssistant) {
                         viewModelScope.launch(Dispatchers.IO) {
                             try {
-                                permissionRepository.refresh()
-                                questionRepository.refresh()
+                                permissionRepository.refresh(currentDirectory)
+                                questionRepository.refresh(currentDirectory)
                             } catch (_: Exception) {}
                         }
                     }

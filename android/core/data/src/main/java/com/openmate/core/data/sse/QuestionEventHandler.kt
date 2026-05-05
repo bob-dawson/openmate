@@ -12,11 +12,14 @@ open class QuestionEventHandler @Inject constructor(
     private val api: OpencodeApiClient,
     private val dbProvider: ActiveDatabaseProvider,
 ) {
+    var activeDirectory: String = ""
+
     open suspend fun handle(type: String, event: SseData) {
         when (type) {
             "question.asked" -> {
                 try {
-                    val dtos = api.listQuestions()
+                    if (activeDirectory.isBlank()) return
+                    val dtos = api.listQuestions(activeDirectory)
                     val dao = dbProvider.getActive().questionDao()
                     dao.deleteAll()
                     dtos.forEach { dao.upsert(it.toDomain().toEntity()) }

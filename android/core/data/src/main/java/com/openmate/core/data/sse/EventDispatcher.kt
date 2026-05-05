@@ -11,7 +11,12 @@ class EventDispatcher @Inject constructor(
     private val questionHandler: QuestionEventHandler,
     private val todoHandler: TodoEventHandler,
 ) {
-    var activeDirectory: String? = null
+    var activeDirectory: String = ""
+        set(value) {
+            field = value
+            permissionHandler.activeDirectory = value
+            questionHandler.activeDirectory = value
+        }
 
     suspend fun dispatch(event: SseData) {
         val type = event.type

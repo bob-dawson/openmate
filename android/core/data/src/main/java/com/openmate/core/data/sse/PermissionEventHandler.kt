@@ -12,11 +12,14 @@ open class PermissionEventHandler @Inject constructor(
     private val api: OpencodeApiClient,
     private val dbProvider: ActiveDatabaseProvider,
 ) {
+    var activeDirectory: String = ""
+
     open suspend fun handle(type: String, event: SseData) {
         when (type) {
             "permission.asked" -> {
                 try {
-                    val dtos = api.listPermissions()
+                    if (activeDirectory.isBlank()) return
+                    val dtos = api.listPermissions(activeDirectory)
                     val dao = dbProvider.getActive().permissionDao()
                     dao.deleteAll()
                     dtos.forEach { dao.upsert(it.toDomain().toEntity()) }

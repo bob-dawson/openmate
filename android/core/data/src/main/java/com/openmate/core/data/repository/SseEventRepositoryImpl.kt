@@ -63,7 +63,7 @@ class SseEventRepositoryImpl @Inject constructor(
         eventJob?.cancel()
         eventJob = null
         isSubscribed = false
-        eventDispatcher.activeDirectory = null
+        eventDispatcher.activeDirectory = ""
         sseClient.disconnect()
     }
 
