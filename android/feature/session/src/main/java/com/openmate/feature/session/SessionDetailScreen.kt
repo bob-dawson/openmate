@@ -1,5 +1,8 @@
 package com.openmate.feature.session
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +65,7 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.ui.component.TopBar
 import com.openmate.core.ui.component.SmartAutoScroll
+import com.openmate.feature.session.component.AttachOptionSheet
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.MessageItem
 import com.openmate.feature.session.component.FilePickerSheet
@@ -90,6 +95,7 @@ fun SessionDetailScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val todos by viewModel.todos.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
+    val isUploading by viewModel.isUploading.collectAsState()
     val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
     val providers by viewModel.providers.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
@@ -100,6 +106,19 @@ fun SessionDetailScreen(
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia(9),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.uploadAndAttach(uris, context.contentResolver)
+    }
+
+    val fileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.uploadAndAttach(uris, context.contentResolver)
+    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     var menuExpanded by remember { mutableStateOf(false) }
@@ -109,6 +128,7 @@ fun SessionDetailScreen(
     var showSkillPicker by remember { mutableStateOf(false) }
     var showFilePicker by remember { mutableStateOf(false) }
     var showSearchPanel by remember { mutableStateOf(false) }
+    var showAttachSheet by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
 
 SmartAutoScroll(listState, messages.size, isLoading)
@@ -129,7 +149,7 @@ SmartAutoScroll(listState, messages.size, isLoading)
 
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottom) {
-        if (imeBottom > 100 && wasAtBottomBeforeIME) {
+        if (imeBottom > 100 && wasAtBottomBeforeIME && messages.size > 0) {
             listState.animateScrollToItem(messages.size)
         }
     }
@@ -235,15 +255,8 @@ SmartAutoScroll(listState, messages.size, isLoading)
                                     showSkillPicker = true
                                 },
                              )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.attach_file)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    showFilePicker = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.browse_files)) },
+                             DropdownMenuItem(
+                                 text = { Text(stringResource(R.string.browse_files)) },
                                 onClick = {
                                     menuExpanded = false
                                     onNavigateToBrowser(viewModel.getWorkingDirectory())
@@ -288,6 +301,9 @@ SmartAutoScroll(listState, messages.size, isLoading)
                 .background(MaterialTheme.colorScheme.background),
         ) {
             if (isStreaming) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            if (isUploading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             if (isLoading) {
@@ -412,6 +428,8 @@ SmartAutoScroll(listState, messages.size, isLoading)
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
                 onSend = { viewModel.sendMessage(sessionID) },
+                onAttach = { showAttachSheet = true },
+                isUploading = isUploading,
             )
         }
 
@@ -421,7 +439,7 @@ SmartAutoScroll(listState, messages.size, isLoading)
                 onNavigateToMessage = { index ->
                     coroutineScope.launch {
                         showSearchPanel = false
-                        listState.animateScrollToItem(index)
+                        if (index >= 0) listState.animateScrollToItem(index)
                     }
                 },
                 onClose = { showSearchPanel = false },
@@ -438,7 +456,7 @@ SmartAutoScroll(listState, messages.size, isLoading)
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable {
                         coroutineScope.launch {
-                            listState.animateScrollToItem(messages.size)
+                            if (messages.size > 0) listState.animateScrollToItem(messages.size)
                         }
                     }
                     .padding(8.dp),
@@ -534,6 +552,23 @@ SmartAutoScroll(listState, messages.size, isLoading)
                 showFilePicker = false
             },
             onDismiss = { showFilePicker = false },
+        )
+    }
+
+    if (showAttachSheet) {
+        AttachOptionSheet(
+            onGallery = {
+                galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+            },
+            onFiles = {
+                fileLauncher.launch(arrayOf(
+                    "application/*", "text/*", "audio/*", "image/*", "video/*"
+                ))
+            },
+            onServerFiles = {
+                showFilePicker = true
+            },
+            onDismiss = { showAttachSheet = false },
         )
     }
 }

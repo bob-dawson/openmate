@@ -284,6 +284,17 @@ class OpencodeApiClient(
         }
     }
 
+    suspend fun bridgeUploadFile(path: String, bytes: ByteArray, createDirs: Boolean = true) {
+        val params = mapOf("path" to path, "createDirs" to createDirs.toString())
+        val url = buildUrl("/api/bridge/fs/upload", params)
+        val requestBody = bytes.toRequestBody("application/octet-stream".toMediaType())
+        val request = Request.Builder().url(url).put(requestBody).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("Upload failed: HTTP ${response.code}")
+        }
+    }
+
     suspend fun bridgeMkdir(path: String, recursive: Boolean = true) {
         val body = BridgeMkdirRequest(path, recursive)
         val jsonStr = json.encodeToString(BridgeMkdirRequest.serializer(), body)

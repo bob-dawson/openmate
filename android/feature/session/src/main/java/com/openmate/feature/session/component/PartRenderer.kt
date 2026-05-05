@@ -383,7 +383,26 @@ fun PartColumn(
                         } else {
                             val summary = toolSummary(item.toolName, item.args, item.result)
                             if (item.toolName == "task" && onNavigateToSubtask != null) {
-                                TaskToolLine(item, summary, onNavigateToSubtask)
+                                val subtaskSessionID = remember(item.metadata, item.result) {
+                                    item.metadata.str("sessionId")
+                                        ?: item.result?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+                                }
+                                val subtaskPerms = subtaskSessionID?.let { sid ->
+                                    pendingPermissions.filter { it.sessionID == sid }
+                                } ?: emptyList()
+                                val subtaskQs = subtaskSessionID?.let { sid ->
+                                    pendingQuestions.filter { it.sessionID == sid }
+                                } ?: emptyList()
+                                TaskToolLine(
+                                    item = item,
+                                    summary = summary,
+                                    onNavigate = onNavigateToSubtask,
+                                    subtaskPermissions = subtaskPerms,
+                                    subtaskQuestions = subtaskQs,
+                                    onReplyPermission = onReplyPermission,
+                                    onReplyQuestion = onReplyQuestion,
+                                    onRejectQuestion = onRejectQuestion,
+                                )
                             } else {
                                 RunningToolLine(item)
                             }
@@ -650,6 +669,11 @@ private fun TaskToolLine(
     item: DisplayItem.ToolItem,
     summary: ToolSummary,
     onNavigate: (subtaskSessionID: String, title: String) -> Unit,
+    subtaskPermissions: List<PermissionRequest> = emptyList(),
+    subtaskQuestions: List<QuestionRequest> = emptyList(),
+    onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
+    onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
+    onRejectQuestion: (String) -> Unit = {},
 ) {
     val subtaskSessionID = remember(item.metadata, item.result) {
         item.metadata.str("sessionId")
@@ -658,41 +682,60 @@ private fun TaskToolLine(
     val isRunning = item.state == ToolCallState.RUNNING
     val canNavigate = subtaskSessionID != null
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (canNavigate) Modifier.clickable { onNavigate(subtaskSessionID!!, summary.text) } else Modifier)
-            .padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (isRunning) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(14.dp),
-                strokeWidth = 2.dp,
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-        }
-        Text(
-            text = stringResource(R.string.subtask_label),
-            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-            color = AgentColor,
-        )
-        if (summary.text.isNotBlank()) {
-            Spacer(modifier = Modifier.width(4.dp))
-            if (isFilePath(summary.text)) {
-                StartEllipsisText(text = summary.text, style = MaterialTheme.typography.bodySmall, color = AgentColor)
-            } else {
-                Text(text = summary.text, style = MaterialTheme.typography.bodySmall, color = AgentColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (canNavigate) Modifier.clickable { onNavigate(subtaskSessionID!!, summary.text) } else Modifier)
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isRunning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(14.dp),
+                    strokeWidth = 2.dp,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
             }
-        }
-        if (canNavigate) {
-            Spacer(modifier = Modifier.width(4.dp))
             Text(
-                text = "→",
-                style = MaterialTheme.typography.labelSmall,
+                text = stringResource(R.string.subtask_label),
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = AgentColor,
             )
-}
+            if (summary.text.isNotBlank()) {
+                Spacer(modifier = Modifier.width(4.dp))
+                if (isFilePath(summary.text)) {
+                    StartEllipsisText(text = summary.text, style = MaterialTheme.typography.bodySmall, color = AgentColor)
+                } else {
+                    Text(text = summary.text, style = MaterialTheme.typography.bodySmall, color = AgentColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (canNavigate) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "→",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AgentColor,
+                )
+            }
+        }
+
+        if (isRunning) {
+            subtaskPermissions.forEach { perm ->
+                PermissionCard(
+                    request = perm,
+                    onReply = { reply, msg -> onReplyPermission(perm.id, reply, msg) },
+                )
+            }
+            subtaskQuestions.forEach { question ->
+                QuestionCard(
+                    questions = question.questions,
+                    matchedRequest = question,
+                    onReply = { answers -> onReplyQuestion(question.id, answers) },
+                    onReject = { onRejectQuestion(question.id) },
+                )
+            }
+        }
     }
 }
 

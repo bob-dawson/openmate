@@ -142,6 +142,14 @@
     <string name="label_agent">Agent</string>
     <string name="scroll_to_bottom">Scroll to bottom</string>
 
+    <string name="attach">Attach</string>
+    <string name="from_gallery">From gallery</string>
+    <string name="from_files">From files</string>
+    <string name="from_server">Server files</string>
+    <string name="uploading">Uploading…</string>
+    <string name="file_too_large">File %1$s exceeds 20MB limit</string>
+    <string name="upload_failed">Upload failed: %1$s</string>
+
     <string name="content_desc_back">Back</string>
     <string name="content_desc_more">More</string>
     <string name="content_desc_new_session">New Session</string>

@@ -60,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/bridge/fs/search", post(fs::router::search))
         .route("/api/bridge/fs/stat", get(fs::router::stat))
         .route("/api/bridge/fs/write", post(fs::router::write))
+        .route("/api/bridge/fs/upload", axum::routing::put(fs::router::upload))
         .route("/files/{*path}", get(files::router::serve_file))
         .route("/api/opencode/global/event", get(proxy::sse::sse_proxy))
         .route("/global/event", get(proxy::sse::sse_proxy))

@@ -31,6 +31,17 @@ pub struct WriteRequest {
     pub create_dirs: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UploadQuery {
+    pub path: String,
+    #[serde(default = "default_true")]
+    pub create_dirs: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
 pub async fn roots() -> impl IntoResponse {
     Json(operations::list_roots())
 }
@@ -184,6 +195,20 @@ pub async fn write(
         .map_err(|e| AppError::PathNotAllowed(e))?;
 
     operations::write_file(&validated_path, body.content.as_bytes(), body.create_dirs)?;
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+pub async fn upload(
+    State(state): State<AppState>,
+    Query(query): Query<UploadQuery>,
+    body: axum::body::Bytes,
+) -> Result<impl IntoResponse, AppError> {
+    let guard = PathGuard::from_config(&state.config);
+    let validated_path = guard
+        .validate(&query.path)
+        .map_err(|e| AppError::PathNotAllowed(e))?;
+
+    operations::write_file(&validated_path, &body, query.create_dirs)?;
     Ok(Json(serde_json::json!({ "success": true })))
 }
 

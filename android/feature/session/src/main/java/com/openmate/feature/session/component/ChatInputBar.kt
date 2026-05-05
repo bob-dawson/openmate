@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -28,6 +29,8 @@ fun ChatInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    onAttach: () -> Unit = {},
+    isUploading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -37,6 +40,19 @@ fun ChatInputBar(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
+        IconButton(
+            onClick = onAttach,
+            modifier = Modifier.height(40.dp),
+            colors = IconButtonDefaults.iconButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+        ) {
+            Icon(
+                Icons.Default.Add,
+                contentDescription = stringResource(R.string.attach),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
@@ -58,7 +74,7 @@ fun ChatInputBar(
         )
         IconButton(
             onClick = onSend,
-            enabled = text.isNotBlank(),
+            enabled = text.isNotBlank() && !isUploading,
             modifier = Modifier.height(40.dp),
             colors = IconButtonDefaults.iconButtonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant,

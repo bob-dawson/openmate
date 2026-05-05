@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 
 @Composable
 fun SmartAutoScroll(
@@ -30,20 +31,30 @@ fun SmartAutoScroll(
         derivedStateOf { followBottom && listState.canScrollForward }
     }
 
+    suspend fun scrollToBottom() {
+        autoScrolling = true
+        val idx = listState.layoutInfo.totalItemsCount - 1
+        if (idx >= 0) {
+            listState.animateScrollToItem(idx, 0)
+        }
+        delay(100)
+        val idx2 = listState.layoutInfo.totalItemsCount - 1
+        if (idx2 >= 0 && listState.canScrollForward) {
+            listState.animateScrollToItem(idx2, 0)
+        }
+        followBottom = true
+        autoScrolling = false
+    }
+
     LaunchedEffect(isLoading) {
         if (!isLoading && messageCount > 0) {
-            autoScrolling = true
-            listState.scrollToItem(messageCount)
-            followBottom = true
-            autoScrolling = false
+            scrollToBottom()
         }
     }
 
     LaunchedEffect(messageCount, needScroll) {
         if (messageCount > 0 && !isLoading && needScroll) {
-            autoScrolling = true
-            listState.scrollToItem(messageCount)
-            autoScrolling = false
+            scrollToBottom()
         }
     }
 }

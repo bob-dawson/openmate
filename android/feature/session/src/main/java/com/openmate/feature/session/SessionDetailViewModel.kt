@@ -79,6 +79,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _hasOlderMessages = MutableStateFlow(false)
     val hasOlderMessages: StateFlow<Boolean> = _hasOlderMessages.asStateFlow()
 
+    private val _isUploading = MutableStateFlow(false)
+    val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
+
     private val _pendingAssistantId = MutableStateFlow<String?>(null)
     val pendingAssistantId: StateFlow<String?> = _pendingAssistantId.asStateFlow()
 
@@ -146,6 +149,42 @@ companion object {
             }
             isLoadingOlder = false
         }
+    }
+
+    fun uploadAndAttach(uriList: List<android.net.Uri>, contentResolver: android.content.ContentResolver) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isUploading.value = true
+            for (uri in uriList) {
+                try {
+                    val filename = resolveFilename(uri, contentResolver)
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw Exception("Cannot read $filename")
+                    if (bytes.size > 20 * 1024 * 1024) {
+                        _errorMessage.value = appContext.getString(R.string.file_too_large, filename)
+                        continue
+                    }
+                    val serverPath = "${currentDirectory.ifBlank { "." }}/.openmate/upload/$filename"
+                    apiClient.bridgeUploadFile(serverPath, bytes, createDirs = true)
+                    _attachedFiles.value = _attachedFiles.value + FileAttachment(serverPath, filename, guessMime(filename))
+                    draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
+                } catch (e: Exception) {
+                    _errorMessage.value = appContext.getString(R.string.upload_failed, e.message ?: "Unknown error")
+                }
+            }
+            _isUploading.value = false
+        }
+    }
+
+    private fun resolveFilename(uri: android.net.Uri, contentResolver: android.content.ContentResolver): String {
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (nameIndex >= 0 && cursor.moveToFirst()) {
+                val name = cursor.getString(nameIndex)
+                if (!name.isNullOrBlank()) return name
+            }
+        }
+        val lastSegment = uri.lastPathSegment ?: "unknown"
+        return lastSegment.substringAfterLast("/")
     }
 
     fun loadSession(sessionID: String) {

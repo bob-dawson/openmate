@@ -142,6 +142,14 @@
     <string name="label_agent">助手</string>
     <string name="scroll_to_bottom">回到底部</string>
 
+    <string name="attach">附件</string>
+    <string name="from_gallery">从相册选取</string>
+    <string name="from_files">从文件选取</string>
+    <string name="from_server">服务端文件</string>
+    <string name="uploading">上传中…</string>
+    <string name="file_too_large">%1$s 超过 20MB 限制</string>
+    <string name="upload_failed">上传失败：%1$s</string>
+
     <string name="content_desc_back">返回</string>
     <string name="content_desc_more">更多</string>
     <string name="content_desc_new_session">新会话</string>
