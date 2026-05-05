@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -18,6 +19,7 @@ fun SmartAutoScroll(
 ) {
     var followBottom by remember { mutableStateOf(true) }
     var autoScrolling by remember { mutableStateOf(false) }
+    var prevCount by remember { mutableIntStateOf(0) }
 
     if (!listState.canScrollForward && !autoScrolling) followBottom = true
 
@@ -33,26 +35,31 @@ fun SmartAutoScroll(
 
     suspend fun scrollToBottom() {
         autoScrolling = true
-        val idx = listState.layoutInfo.totalItemsCount - 1
-        if (idx >= 0) {
-            listState.animateScrollToItem(idx, 0)
+        if (messageCount > 0) {
+            listState.animateScrollToItem(messageCount)
         }
         delay(100)
-        val idx2 = listState.layoutInfo.totalItemsCount - 1
-        if (idx2 >= 0 && listState.canScrollForward) {
-            listState.animateScrollToItem(idx2, 0)
+        if (messageCount > 0 && listState.canScrollForward) {
+            listState.animateScrollToItem(messageCount)
         }
         followBottom = true
         autoScrolling = false
     }
 
-    LaunchedEffect(isLoading) {
-        if (!isLoading && messageCount > 0) {
+    LaunchedEffect(messageCount) {
+        if (messageCount > 0 && !isLoading) {
+            val isInitialLoad = prevCount == 0
+            prevCount = messageCount
+            if (isInitialLoad) {
+                delay(150)
+            }
             scrollToBottom()
+        } else {
+            prevCount = messageCount
         }
     }
 
-    LaunchedEffect(messageCount, needScroll) {
+    LaunchedEffect(needScroll) {
         if (messageCount > 0 && !isLoading && needScroll) {
             scrollToBottom()
         }
