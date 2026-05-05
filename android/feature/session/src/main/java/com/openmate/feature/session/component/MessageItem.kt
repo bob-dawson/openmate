@@ -50,7 +50,14 @@ fun MessageItem(
         if (provider.isNotBlank()) "$provider/$model" else model
     } else null
     val isEmptyAssistant = !isUser && message.parts.none {
-        it is Part.TextPart && it.text.isNotBlank() || it is Part.ToolInvocationPart || it is Part.FilePart
+        it is Part.TextPart && it.text.isNotBlank() && !it.synthetic
+                || it is Part.ToolInvocationPart
+                || it is Part.FilePart
+                || it is Part.ReasoningPart
+                || it is Part.SubtaskPart
+                || it is Part.AgentPart
+                || it is Part.PatchPart
+                || it is Part.SnapshotPart
     }
 
     Column(
