@@ -159,4 +159,27 @@
     <string name="attach_to_session">Attach to session</string>
     <string name="download_to">Download to…</string>
     <string name="local_files">Local Files</string>
+
+    <string name="cannot_read_file">Cannot read file</string>
+    <string name="file_too_large_upload">File too large (max 100MB)</string>
+    <string name="upload_complete">Upload complete: %1$s</string>
+    <string name="upload_failed_msg">Upload failed: %1$s</string>
+    <string name="failed_list_dir">Failed to list directory</string>
+    <string name="failed_read_file">Failed to read file</string>
+    <string name="file_cached">File already cached</string>
+    <string name="download_complete">Download complete: %1$s</string>
+    <string name="stat_failed">Cannot stat file: %1$s</string>
+    <string name="dir_deleted">Directory deleted</string>
+    <string name="file_deleted">File deleted</string>
+    <string name="delete_failed">Delete failed: %1$s</string>
+    <string name="renamed_to">Renamed to %1$s</string>
+    <string name="rename_failed">Rename failed: %1$s</string>
+    <string name="dir_created">Directory created: %1$s</string>
+    <string name="create_dir_failed">Create failed: %1$s</string>
+    <string name="dir_download_not_supported">Directory download not supported</string>
+    <string name="download_failed_msg">Download failed: %1$s</string>
+    <string name="search_hint">Search…</string>
+    <string name="close_search">Close search</string>
+    <string name="previous">Previous</string>
+    <string name="next_result">Next</string>
 </resources>

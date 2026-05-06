@@ -26,4 +26,10 @@
 
     <string name="content_desc_add_instance">Add Instance</string>
     <string name="content_desc_more">More</string>
+
+    <string name="pairing_required">Pairing Required</string>
+    <string name="pairing_message">Enter this PIN in the Bridge CLI to approve:</string>
+    <string name="pairing_instruction">Run: opencode-bridge approve %1$s</string>
+    <string name="confirm">Confirm</string>
+    <string name="cancel">Cancel</string>
 </resources>

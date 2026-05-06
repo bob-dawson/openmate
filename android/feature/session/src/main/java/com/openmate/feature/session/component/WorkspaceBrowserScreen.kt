@@ -172,10 +172,10 @@ fun WorkspaceBrowserScreen(
                     val filename = viewModel.resolveFilename(context, uri)
                     val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
                         stream.readBytes()
-                    } ?: throw Exception("Cannot read file")
+                    } ?: throw Exception(context.getString(R.string.cannot_read_file))
 
                     if (bytes.size > 100 * 1024 * 1024) {
-                        throw Exception("File too large (max 100MB)")
+                        throw Exception(context.getString(R.string.file_too_large_upload))
                     }
 
                     val targetPath = if (currentPath.isBlank()) {
@@ -187,7 +187,7 @@ fun WorkspaceBrowserScreen(
                     apiClient.bridgeUploadFile(targetPath, bytes, createDirs = false)
 
                     scope.launch(Dispatchers.Main) {
-                        Toast.makeText(context, "Upload complete: $filename", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.upload_complete, filename), Toast.LENGTH_SHORT).show()
                         scope.launch(Dispatchers.IO) {
                             isLoading = true
                             loadError = ""
@@ -195,14 +195,14 @@ fun WorkspaceBrowserScreen(
                                 entries = apiClient.bridgeListDir(currentPath.ifBlank { "." })
                             } catch (e: Exception) {
                                 entries = emptyList()
-                                loadError = e.message ?: "Failed to list directory"
+                                loadError = e.message ?: context.getString(R.string.failed_list_dir)
                             }
                             isLoading = false
                         }
                     }
                 } catch (e: Exception) {
                     scope.launch(Dispatchers.Main) {
-                        Toast.makeText(context, "Upload failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.upload_failed_msg, e.message), Toast.LENGTH_SHORT).show()
                     }
                 }
                 isUploading = false
@@ -257,7 +257,7 @@ fun WorkspaceBrowserScreen(
                 entries = result
             } catch (e: Exception) {
                 entries = emptyList()
-                loadError = e.message ?: "Failed to list directory"
+                loadError = e.message ?: context.getString(R.string.failed_list_dir)
             }
             isLoading = false
         }
@@ -272,7 +272,7 @@ fun WorkspaceBrowserScreen(
                 fileContent = apiClient.bridgeReadFile(path)
                 viewingFile = FileViewState(path, path.substringAfterLast("/"))
             } catch (e: Exception) {
-                fileError = e.message ?: "Failed to read file"
+                fileError = e.message ?: context.getString(R.string.failed_read_file)
                 fileContent = null
                 viewingFile = FileViewState(path, path.substringAfterLast("/"))
             }
@@ -311,13 +311,13 @@ fun WorkspaceBrowserScreen(
             val cached = viewModel.getCachedFile(path, filename)
             if (cached != null) {
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, "File already cached", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.file_cached), Toast.LENGTH_SHORT).show()
                 }
                 return@launch
             }
             viewModel.downloadFile(path, filename, size) {
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Download complete: $filename", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.download_complete, filename), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -332,7 +332,7 @@ fun WorkspaceBrowserScreen(
                     val stat = apiClient.bridgeStat(path)
                     openBinaryFile(path, filename, stat.size, stat.modified)
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Cannot stat file: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.stat_failed, e.message), Toast.LENGTH_SHORT).show()
                 }
             }
         } else {
@@ -345,12 +345,12 @@ fun WorkspaceBrowserScreen(
             try {
                 apiClient.bridgeDelete(path, recursive = isDir)
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, if (isDir) "Directory deleted" else "File deleted", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (isDir) context.getString(R.string.dir_deleted) else context.getString(R.string.file_deleted), Toast.LENGTH_SHORT).show()
                     loadDir(currentPath)
                 }
             } catch (e: Exception) {
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Delete failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.delete_failed, e.message), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -363,12 +363,12 @@ fun WorkspaceBrowserScreen(
                 val newPath = if (parent.isBlank()) newName else "$parent/$newName"
                 apiClient.bridgeRename(oldPath, newPath)
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Renamed to $newName", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.renamed_to, newName), Toast.LENGTH_SHORT).show()
                     loadDir(currentPath)
                 }
             } catch (e: Exception) {
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Rename failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.rename_failed, e.message), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -380,12 +380,12 @@ fun WorkspaceBrowserScreen(
                 val path = if (currentPath.isBlank()) name else "$currentPath/$name"
                 apiClient.bridgeMkdir(path, recursive = false)
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Directory created: $name", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.dir_created, name), Toast.LENGTH_SHORT).show()
                     loadDir(currentPath)
                 }
             } catch (e: Exception) {
                 scope.launch(Dispatchers.Main) {
-                    Toast.makeText(context, "Create failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.create_dir_failed, e.message), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -975,7 +975,7 @@ fun WorkspaceBrowserScreen(
                             text = { Text(stringResource(R.string.download)) },
                             onClick = {
                                 contextMenu = contextMenu.copy(expanded = false)
-                                Toast.makeText(context, "Directory download not yet implemented", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.dir_download_not_supported), Toast.LENGTH_SHORT).show()
                             },
                         )
                     }
@@ -1015,7 +1015,7 @@ fun WorkspaceBrowserScreen(
                     try {
                         viewModel.apiClient.bridgeDownloadFile(dlPath, destFile) { _, _ -> }
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.download_failed_msg, e.message), Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -1164,7 +1164,7 @@ private fun FileViewer(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("Search...") },
+                            placeholder = { Text(stringResource(R.string.search_hint)) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             textStyle = MaterialTheme.typography.bodyMedium,
@@ -1177,7 +1177,7 @@ private fun FileViewer(
                         }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Close search",
+                                contentDescription = stringResource(R.string.close_search),
                                 tint = MaterialTheme.colorScheme.primary,
                             )
                         }
@@ -1192,12 +1192,12 @@ private fun FileViewer(
                             IconButton(onClick = {
                                 currentMatchIndex = if (currentMatchIndex > 0) currentMatchIndex - 1 else matchIndices.lastIndex
                             }) {
-                                Icon(Icons.Filled.KeyboardArrowUp, "Previous")
+                                Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.previous))
                             }
                             IconButton(onClick = {
                                 currentMatchIndex = if (currentMatchIndex < matchIndices.lastIndex) currentMatchIndex + 1 else 0
                             }) {
-                                Icon(Icons.Filled.KeyboardArrowDown, "Next")
+                                Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.next_result))
                             }
                         }
                     },
@@ -1239,7 +1239,7 @@ private fun FileViewer(
                             IconButton(onClick = { showSearch = true }) {
                                 Icon(
                                     imageVector = Icons.Filled.Search,
-                                    contentDescription = "Search",
+                                    contentDescription = stringResource(R.string.search_files),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }

@@ -384,10 +384,47 @@ data class SessionMessageEntity(
 
 ### SessionMessage 内容截断规则
 
+> **待讨论**：以下截断策略为初始草案，需要逐条确认。
+
+#### 事件级大字段分析
+
+每个 `session.next.*` 事件回写 SessionMessage 时，需要决定哪些字段保留、截断或跳过。以下是所有大字段的完整清单：
+
+| 事件类型 | 大字段 | 典型大小 | 移动端展示需求 | 草案策略 |
+|----------|--------|---------|---------------|---------|
+| `text.ended` | `text` | 数百~数万字符 | LLM 回复正文，核心内容 | 截断至 2000 字符 |
+| `reasoning.ended` | `text` | 数千~数十万字符（推理模型） | 可折叠展示，用户偶尔查看 | 保留前后各 100 字符，中间 `...[truncated]...` |
+| `tool.success/progress` | `content[].text` | 数百~数十KB（grep 结果、文件内容等） | 工具输出，用户可能展开查看 | 跳过 content，只存 name/status/time |
+| `tool.success/progress` | `structured` | 不定（结构化输出） | 部分工具有用（如搜索结果摘要） | 跳过 |
+| `tool.input.ended` | `text` | 数百~数万字符（工具输入 JSON） | 一般不展示 | 截断至 500 字符？或跳过？ |
+| `tool.called` | `input` | 数百~数万字符（工具调用参数） | 一般不展示 | 截断至 500 字符？或跳过？ |
+| `shell.ended` | `output` | 数百~数十KB | 用户可能查看命令输出 | **跳过** |
+| `prompted` | `prompt.text` | 数十~数千字符 | 用户输入，核心内容 | 截断至 2000 字符 |
+| `prompted` | `prompt.files[].source.text` | 数百~数十KB | 文件附件内容 | 跳过 source.text，保留 name/uri/mime |
+| `step.started/ended` | `snapshot` | 数千~数十KB（对话快照） | 不展示 | **跳过** |
+| `compaction.ended` | `text` | 数千字符（压缩摘要） | 历史上下文摘要 | 全量保留？截断？ |
+| `compaction.ended` | `include` | 数千字符 | 压缩包含的内容说明 | 跳过？ |
+| `step.failed/tool.failed` | `error.message` | 数百~数千字符 | 错误信息，有用 | 全量保留 |
+| `retried` | `error.responseBody` | 数百~数十KB | 不展示 | 跳过 |
+
+#### 需要讨论的问题
+
+1. **reasoning**：保留前后各 100 字符，中间用 `...[truncated]...` 标记。UI 可展示推理开头+结尾，让用户感知方向和结论。
+2. **tool input**（`tool.input.ended.text` / `tool.called.input`）：截断 500 字 vs 跳过？用户是否需要看到工具调用了什么参数？
+3. **tool output**（`tool.success.content[].text`）：完全跳过 vs 保留前 500 字？
+   - 某些工具输出很短（如 `file_exists → true`），跳过可能丢失有用信息
+   - 是否按 tool name 区分？比如 bash/Read 输出大，但 list_directory 输出小
+4. **shell.output**：完全跳过 vs 保留前 500 字？
+5. **compaction**：全量保留 vs 截断？移动端是否需要完整的压缩摘要？
+6. **prompt.text**：2000 字符是否够？用户粘贴大段代码时可能更长
+7. **tool.structured**：是否部分工具有用的结构化输出需要保留？
+
+#### 旧版截断规则（参考）
+
 | Message 类型 | 字段 | 同步策略 |
 |-------------|------|---------|
 | `assistant` | `content[].text` (type=text) | 截断至 2000 字符 |
-| `assistant` | `content[]` (type=reasoning) | **跳过**，不存储 |
+| `assistant` | `content[]` (type=reasoning) | 保留前后各 100 字符，中间 `...[truncated]...` |
 | `assistant` | `content[]` (type=tool, state=completed) | 跳过 output content，只存 name/status/time |
 | `assistant` | `content[]` (type=tool, state=running) | 只存 name/callID |
 | `assistant` | `snapshot` | **跳过** |

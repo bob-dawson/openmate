@@ -159,4 +159,27 @@
     <string name="attach_to_session">附加到会话</string>
     <string name="download_to">下载到…</string>
     <string name="local_files">本地文件</string>
+
+    <string name="cannot_read_file">无法读取文件</string>
+    <string name="file_too_large_upload">文件过大（最大100MB）</string>
+    <string name="upload_complete">上传完成：%1$s</string>
+    <string name="upload_failed_msg">上传失败：%1$s</string>
+    <string name="failed_list_dir">列出目录失败</string>
+    <string name="failed_read_file">读取文件失败</string>
+    <string name="file_cached">文件已缓存</string>
+    <string name="download_complete">下载完成：%1$s</string>
+    <string name="stat_failed">无法获取文件信息：%1$s</string>
+    <string name="dir_deleted">目录已删除</string>
+    <string name="file_deleted">文件已删除</string>
+    <string name="delete_failed">删除失败：%1$s</string>
+    <string name="renamed_to">已重命名为 %1$s</string>
+    <string name="rename_failed">重命名失败：%1$s</string>
+    <string name="dir_created">目录已创建：%1$s</string>
+    <string name="create_dir_failed">创建失败：%1$s</string>
+    <string name="dir_download_not_supported">不支持目录下载</string>
+    <string name="download_failed_msg">下载失败：%1$s</string>
+    <string name="search_hint">搜索…</string>
+    <string name="close_search">关闭搜索</string>
+    <string name="previous">上一个</string>
+    <string name="next_result">下一个</string>
 </resources>

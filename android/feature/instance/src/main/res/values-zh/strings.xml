@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="add_instance">添加实例</string>
+    <string name="instances">实例</string>
+    <string name="edit_instance">编辑实例</string>
+    <string name="instance_name">名称</string>
+    <string name="instance_address">地址</string>
+    <string name="instance_port">端口</string>
+    <string name="instance_password">密码（可选）</string>
+    <string name="test_connection">测试连接</string>
+    <string name="testing">测试中…</string>
+    <string name="bridge_connected">Bridge v%1$s 已连接！</string>
+    <string name="opencode_status">OpenCode：%1$s</string>
+    <string name="opencode_dir">目录：%1$s</string>
+    <string name="save">保存</string>
+    <string name="instance_count">%1$d 个实例</string>
+    <string name="add_first_instance">添加你的第一个 OpenCode 实例</string>
+    <string name="edit">编辑</string>
+    <string name="delete">删除</string>
+
+    <string name="status_connected">在线</string>
+    <string name="status_connecting">连接中…</string>
+    <string name="status_error">连接失败</string>
+    <string name="status_not_bridge">非 Bridge</string>
+    <string name="status_disconnected">已断开</string>
+
+    <string name="content_desc_add_instance">添加实例</string>
+    <string name="content_desc_more">更多</string>
+
+    <string name="pairing_required">需要配对</string>
+    <string name="pairing_message">在 Bridge CLI 中输入此 PIN 以批准连接：</string>
+    <string name="pairing_instruction">运行：opencode-bridge approve %1$s</string>
+    <string name="confirm">确认</string>
+    <string name="cancel">取消</string>
+</resources>

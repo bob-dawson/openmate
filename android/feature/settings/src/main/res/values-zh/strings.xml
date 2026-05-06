@@ -33,4 +33,15 @@
     <string name="display">显示</string>
     <string name="show_reasoning">显示思考过程</string>
     <string name="show_reasoning_subtitle">显示 AI 助手的思考消息</string>
+    <string name="local_files">本地文件</string>
+    <string name="navigate_up">返回上级</string>
+    <string name="content_desc_back">返回</string>
+    <string name="content_desc_create_dir">创建目录</string>
+    <string name="empty_directory">空目录</string>
+    <string name="open">打开</string>
+    <string name="move_to">移动到…</string>
+    <string name="delete_directory">删除目录</string>
+    <string name="delete_dir_confirm">确定要删除 %1$s 吗？</string>
+    <string name="create">创建</string>
+    <string name="directory_name_hint">目录名称</string>
 </resources>

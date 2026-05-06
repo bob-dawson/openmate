@@ -30,7 +30,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.openmate.core.ui.R
 import java.io.File
 
 @Composable
@@ -57,7 +59,7 @@ fun DirectoryPickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Select directory")
+            Text(stringResource(R.string.select_directory))
         },
         text = {
             Column {
@@ -72,7 +74,7 @@ fun DirectoryPickerDialog(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
+                                contentDescription = stringResource(R.string.content_desc_back),
                                 modifier = Modifier.size(18.dp),
                             )
                         }
@@ -92,7 +94,7 @@ fun DirectoryPickerDialog(
                     ) {
                         Icon(
                             Icons.Default.CreateNewFolder,
-                            contentDescription = "New folder",
+                            contentDescription = stringResource(R.string.new_folder),
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
@@ -103,7 +105,7 @@ fun DirectoryPickerDialog(
 
                 if (subDirs.isEmpty() && !showCreateDir) {
                     Text(
-                        text = "No subdirectories",
+                        text = stringResource(R.string.no_subdirectories),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 16.dp),
@@ -145,7 +147,7 @@ fun DirectoryPickerDialog(
                         OutlinedTextField(
                             value = newDirName,
                             onValueChange = { newDirName = it },
-                            placeholder = { Text("Folder name") },
+                            placeholder = { Text(stringResource(R.string.folder_name_hint)) },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
@@ -160,7 +162,7 @@ fun DirectoryPickerDialog(
                                 }
                             },
                         ) {
-                            Text("Create")
+                            Text(stringResource(R.string.create))
                         }
                     }
                 }
@@ -168,12 +170,12 @@ fun DirectoryPickerDialog(
         },
         confirmButton = {
             TextButton(onClick = { onSelect(currentDir) }) {
-                Text("Select here")
+                Text(stringResource(R.string.select_here))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         },
     )

@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -94,7 +95,7 @@ fun LocalFileManagerScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Local Files")
+                        Text(stringResource(R.string.local_files))
                         if (!isAtRoot && relativePath.isNotBlank()) {
                             Text(
                                 text = relativePath,
@@ -109,11 +110,11 @@ fun LocalFileManagerScreen(
                 navigationIcon = {
                     if (!isAtRoot) {
                         IconButton(onClick = { viewModel.navigateUp() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Navigate up")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.navigate_up))
                         }
                     } else {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.content_desc_back))
                         }
                     }
                 },
@@ -123,7 +124,7 @@ fun LocalFileManagerScreen(
                     }) {
                         Icon(
                             Icons.Default.CreateNewFolder,
-                            contentDescription = "Create directory",
+                            contentDescription = stringResource(R.string.content_desc_create_dir),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -140,7 +141,7 @@ fun LocalFileManagerScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "Empty directory",
+                    stringResource(R.string.empty_directory),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -186,32 +187,32 @@ fun LocalFileManagerScreen(
             ) {
                 Column {
                     if (entry.isDirectory) {
-                        ContextMenuItem("Rename") {
+                        ContextMenuItem(stringResource(R.string.rename)) {
                             contextMenuEntry = null
                             showRenameDialog = Pair(entry, entry.name)
                         }
-                        ContextMenuItem("Delete", isDestructive = true) {
+                        ContextMenuItem(stringResource(R.string.delete), isDestructive = true) {
                             contextMenuEntry = null
                             showDeleteConfirm = entry
                         }
                     } else {
-                        ContextMenuItem("Open") {
+                        ContextMenuItem(stringResource(R.string.open)) {
                             contextMenuEntry = null
                             viewModel.openFile(entry)
                         }
-                        ContextMenuItem("Share") {
+                        ContextMenuItem(stringResource(R.string.share)) {
                             contextMenuEntry = null
                             viewModel.shareFile(entry)
                         }
-                        ContextMenuItem("Move to...") {
+                        ContextMenuItem(stringResource(R.string.move_to)) {
                             contextMenuEntry = null
                             showMovePicker = entry
                         }
-                        ContextMenuItem("Rename") {
+                        ContextMenuItem(stringResource(R.string.rename)) {
                             contextMenuEntry = null
                             showRenameDialog = Pair(entry, entry.name)
                         }
-                        ContextMenuItem("Delete", isDestructive = true) {
+                        ContextMenuItem(stringResource(R.string.delete), isDestructive = true) {
                             contextMenuEntry = null
                             showDeleteConfirm = entry
                         }
@@ -225,19 +226,19 @@ fun LocalFileManagerScreen(
         val entry = showDeleteConfirm!!
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
-            title = { Text(if (entry.isDirectory) "Delete directory" else "Delete file") },
-            text = { Text("Are you sure you want to delete ${entry.name}?") },
+            title = { Text(if (entry.isDirectory) stringResource(R.string.delete_directory) else stringResource(R.string.delete_file)) },
+            text = { Text(stringResource(R.string.delete_dir_confirm, entry.name)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteFile(entry)
                     showDeleteConfirm = null
                 }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -248,7 +249,7 @@ fun LocalFileManagerScreen(
         var newName by remember { mutableStateOf(initialName) }
         AlertDialog(
             onDismissRequest = { showRenameDialog = null },
-            title = { Text("Rename") },
+            title = { Text(stringResource(R.string.rename)) },
             text = {
                 OutlinedTextField(
                     value = newName,
@@ -263,12 +264,12 @@ fun LocalFileManagerScreen(
                     }
                     showRenameDialog = null
                 }) {
-                    Text("Confirm")
+                    Text(stringResource(R.string.confirm))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = null }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )
@@ -278,13 +279,13 @@ fun LocalFileManagerScreen(
         var dirName by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showCreateDirDialog = false },
-            title = { Text("Create directory") },
+            title = { Text(stringResource(R.string.content_desc_create_dir)) },
             text = {
                 OutlinedTextField(
                     value = dirName,
                     onValueChange = { dirName = it },
                     singleLine = true,
-                    placeholder = { Text("Directory name") },
+                    placeholder = { Text(stringResource(R.string.directory_name_hint)) },
                 )
             },
             confirmButton = {
@@ -294,12 +295,12 @@ fun LocalFileManagerScreen(
                     }
                     showCreateDirDialog = false
                 }) {
-                    Text("Create")
+                    Text(stringResource(R.string.create))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDirDialog = false }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )

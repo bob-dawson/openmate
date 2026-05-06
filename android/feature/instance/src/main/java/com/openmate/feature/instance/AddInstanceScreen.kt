@@ -154,10 +154,10 @@ fun AddInstanceScreen(
     if (uiState is AddInstanceUiState.Pairing || (pin != null && uiState !is AddInstanceUiState.Error)) {
         AlertDialog(
             onDismissRequest = { viewModel.cancelPairing() },
-            title = { Text("Pairing Required") },
+            title = { Text(stringResource(R.string.pairing_required)) },
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Enter this PIN in the Bridge CLI to approve:")
+                    Text(stringResource(R.string.pairing_message))
                     Spacer(modifier = Modifier.height(16.dp))
                     if (pin != null) {
                         Text(
@@ -170,7 +170,7 @@ fun AddInstanceScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Run: opencode-bridge approve <PIN>",
+                        stringResource(R.string.pairing_instruction, pin ?: ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -184,13 +184,13 @@ fun AddInstanceScreen(
                     if (uiState is AddInstanceUiState.ConfirmingPairing) {
                         CircularProgressIndicator(modifier = Modifier.height(16.dp))
                     } else {
-                        Text("Confirm")
+                        Text(stringResource(R.string.confirm))
                     }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.cancelPairing() }) {
-                    Text("Cancel")
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )

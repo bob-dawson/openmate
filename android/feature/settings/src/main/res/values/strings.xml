@@ -33,4 +33,15 @@
     <string name="display">Display</string>
     <string name="show_reasoning">Show reasoning</string>
     <string name="show_reasoning_subtitle">Display agent reasoning messages</string>
+    <string name="local_files">Local Files</string>
+    <string name="navigate_up">Navigate up</string>
+    <string name="content_desc_back">Back</string>
+    <string name="content_desc_create_dir">Create directory</string>
+    <string name="empty_directory">Empty directory</string>
+    <string name="open">Open</string>
+    <string name="move_to">Move to…</string>
+    <string name="delete_directory">Delete directory</string>
+    <string name="delete_dir_confirm">Are you sure you want to delete %1$s?</string>
+    <string name="create">Create</string>
+    <string name="directory_name_hint">Directory name</string>
 </resources>
