@@ -4,14 +4,14 @@ use axum::routing::{get, post};
 use std::net::SocketAddr;
 use tower::ServiceExt;
 
-use opencode_bridge::auth;
-use opencode_bridge::bridge;
-use opencode_bridge::config::Config;
-use opencode_bridge::files;
-use opencode_bridge::fs;
-use opencode_bridge::state::create_app_state;
+use openmate::auth;
+use openmate::bridge;
+use openmate::config::Config;
+use openmate::files;
+use openmate::fs;
+use openmate::state::create_app_state;
 
-fn test_app(config: Config) -> (Router, opencode_bridge::state::AppState) {
+fn test_app(config: Config) -> (Router, openmate::state::AppState) {
     let state = create_app_state(config);
     let router = Router::new()
         .route("/api/bridge/status", get(bridge::router::status))

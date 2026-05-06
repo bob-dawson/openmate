@@ -1,8 +1,8 @@
 [package]
-name = "opencode-bridge"
+name = "openmate"
 version = "0.1.0"
 edition = "2024"
-description = "Bridge Agent for OpenMate - proxy, process management, and file serving"
+description = "OpenMate Bridge - proxy, process management, file serving, and authentication"
 
 [dependencies]
 axum = { version = "0.8", features = ["macros"] }
@@ -25,6 +25,9 @@ clap = { version = "4", features = ["derive"] }
 hmac = "0.12"
 sha2 = "0.10"
 getrandom = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
 
 [dev-dependencies]
 http-body-util = "0.1"
