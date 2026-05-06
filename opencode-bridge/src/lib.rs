@@ -6,4 +6,10 @@ pub mod files;
 pub mod fs;
 pub mod process;
 pub mod proxy;
+pub mod server;
 pub mod state;
+
+#[cfg(target_os = "windows")]
+pub mod service_windows;
+#[cfg(target_os = "linux")]
+pub mod service_linux;

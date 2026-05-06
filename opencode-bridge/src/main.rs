@@ -1,21 +1,9 @@
-use axum::Router;
-use axum::routing::{any, get, post};
 use clap::{Parser, Subcommand};
-use openmate::auth;
-use openmate::bridge;
 use openmate::config::Config;
-use openmate::files;
-use openmate::fs;
-use openmate::proxy;
-use openmate::state::create_app_state;
-use std::net::SocketAddr;
 use std::path::PathBuf;
-use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
-use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
-#[command(name = "opencode-bridge", about = "Bridge Agent for OpenMate")]
+#[command(name = "openmate", about = "OpenMate Bridge")]
 struct Args {
     #[arg(short, long)]
     config: Option<PathBuf>,
@@ -30,13 +18,17 @@ enum Commands {
         pin: String,
     },
     ResetToken,
+    Install,
+    Uninstall,
+    Service,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
 
@@ -49,69 +41,20 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::ResetToken) => {
             return run_reset_token().await;
         }
+        Some(Commands::Install) => {
+            return run_install();
+        }
+        Some(Commands::Uninstall) => {
+            return run_uninstall();
+        }
+        Some(Commands::Service) => {
+            return run_service_mode();
+        }
         None => {}
     }
 
     let config = Config::find_and_load(args.config)?;
-
-    tracing::info!("OpenCode Bridge starting");
-    tracing::info!("Bridge listen: {}:{}", config.bridge.hostname, config.bridge.port);
-    tracing::info!("OpenCode target: {}", config.opencode_url());
-    tracing::info!(
-        "Allowed paths: {:?}",
-        config.effective_allowed_paths()
-    );
-    tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
-
-    let app_state = create_app_state(config.clone());
-
-    if config.opencode.auto_start {
-        tracing::info!("Auto-starting opencode...");
-        if let Err(e) = app_state.opencode_manager.start().await {
-            tracing::warn!("Auto-start failed: {}", e);
-        }
-    }
-
-    let app = Router::new()
-        .route("/api/bridge/status", get(bridge::router::status))
-        .route("/api/bridge/opencode/start", post(bridge::router::start_opencode))
-        .route("/api/bridge/opencode/stop", post(bridge::router::stop_opencode))
-        .route("/api/bridge/opencode/restart", post(bridge::router::restart_opencode))
-        .route("/api/bridge/pair/request", post(auth::pair::pair_request))
-        .route("/api/bridge/pair/approve", post(auth::pair::pair_approve))
-        .route("/api/bridge/pair/confirm", post(auth::pair::pair_confirm))
-        .route("/api/bridge/fs/roots", get(fs::router::roots))
-        .route("/api/bridge/fs/list", get(fs::router::list))
-        .route("/api/bridge/fs/read", get(fs::router::read))
-        .route("/api/bridge/fs/download", get(fs::router::download))
-        .route("/api/bridge/fs/mkdir", post(fs::router::mkdir))
-        .route("/api/bridge/fs/search", post(fs::router::search))
-        .route("/api/bridge/fs/stat", get(fs::router::stat))
-        .route("/api/bridge/fs/write", post(fs::router::write))
-        .route("/api/bridge/fs/upload", axum::routing::put(fs::router::upload).layer(axum::extract::DefaultBodyLimit::max(100 * 1024 * 1024)))
-        .route("/files/{*path}", get(files::router::serve_file))
-        .route("/api/opencode/global/event", get(proxy::sse::sse_proxy))
-        .route("/global/event", get(proxy::sse::sse_proxy))
-        .route("/api/opencode/{*path}", any(proxy::rest::proxy_opencode_request))
-        .fallback(any(proxy::rest::proxy_fallback))
-        .layer(axum::middleware::from_fn_with_state(
-            app_state.clone(),
-            auth::middleware::auth_middleware,
-        ))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(app_state);
-
-    let listener = tokio::net::TcpListener::bind(config.bridge_listen_addr()).await?;
-    tracing::info!("Bridge listening on {}", config.bridge_listen_addr());
-
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await?;
-
-    Ok(())
+    openmate::server::run_server(config, None).await
 }
 
 async fn run_approve(pin: &str) -> anyhow::Result<()> {
@@ -137,7 +80,55 @@ async fn run_approve(pin: &str) -> anyhow::Result<()> {
 }
 
 async fn run_reset_token() -> anyhow::Result<()> {
-    auth::key::SecretKey::delete_key_file()?;
-    tracing::info!("Secret key deleted. All tokens are now invalid. A new key will be generated on next start.");
+    openmate::auth::key::SecretKey::delete_key_file()?;
+    tracing::info!(
+        "Secret key deleted. All tokens are now invalid. A new key will be generated on next start."
+    );
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn run_install() -> anyhow::Result<()> {
+    openmate::service_windows::install()
+}
+
+#[cfg(target_os = "linux")]
+fn run_install() -> anyhow::Result<()> {
+    openmate::service_linux::install()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn run_install() -> anyhow::Result<()> {
+    anyhow::bail!("Service installation is not supported on this platform");
+}
+
+#[cfg(target_os = "windows")]
+fn run_uninstall() -> anyhow::Result<()> {
+    openmate::service_windows::uninstall()
+}
+
+#[cfg(target_os = "linux")]
+fn run_uninstall() -> anyhow::Result<()> {
+    openmate::service_linux::uninstall()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn run_uninstall() -> anyhow::Result<()> {
+    anyhow::bail!("Service uninstallation is not supported on this platform");
+}
+
+#[cfg(target_os = "windows")]
+fn run_service_mode() -> anyhow::Result<()> {
+    openmate::service_windows::run_service()
+}
+
+#[cfg(target_os = "linux")]
+async fn run_service_mode() -> anyhow::Result<()> {
+    let config = Config::find_and_load(None)?;
+    openmate::server::run_server(config, None).await
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn run_service_mode() -> anyhow::Result<()> {
+    anyhow::bail!("Service mode is not supported on this platform");
 }

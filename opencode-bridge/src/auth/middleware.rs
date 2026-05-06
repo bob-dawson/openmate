@@ -45,7 +45,6 @@ pub async fn auth_middleware(
         return (StatusCode::FORBIDDEN, "Forbidden").into_response();
     }
 
-    let has_auth = req.headers().get("authorization").is_some();
     if let Some(auth_header) = req.headers().get("authorization") {
         if let Some(token_str) = auth_header
             .to_str()

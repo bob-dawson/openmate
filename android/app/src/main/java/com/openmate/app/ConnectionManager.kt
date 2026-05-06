@@ -69,7 +69,6 @@ class ConnectionManager @Inject constructor(
             _activeProfile.value = profile
             
             tokenStore.setActiveProfileId(profile.id)
-            android.util.Log.d("ConnectionManager", "activeToken after setActiveProfileId: ${tokenStore.activeToken?.length ?: "null"} chars")
 
             dbProvider.setActive(profile.id)
             apiClient.baseUrl = "http://${profile.address}:${profile.port}"
