@@ -2,12 +2,8 @@
 setlocal
 
 echo === Stopping Bridge ===
-sc query OpenMate >nul 2>&1
-if %errorlevel% equ 0 (
-    net stop OpenMate 2>nul
-) else (
-    taskkill /F /IM openmate.exe 2>nul
-)
+net stop OpenMate >nul 2>&1
+taskkill /F /IM openmate.exe >nul 2>&1
 timeout /t 2 /nobreak >nul
 
 echo === Copying Bridge binary ===
@@ -18,13 +14,10 @@ if %errorlevel% neq 0 (
 )
 
 echo === Starting Bridge ===
-sc query OpenMate >nul 2>&1
-if %errorlevel% equ 0 (
-    net start OpenMate
-) else (
+net start OpenMate >nul 2>&1
+if %errorlevel% neq 0 (
     start "" "D:\openmate\opencode-bridge\release\openmate.exe"
 )
-timeout /t 3 /nobreak >nul
 
 :bridge_fail
 
