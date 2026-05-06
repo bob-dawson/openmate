@@ -93,7 +93,7 @@ private val TABS = listOf(
 fun WorkspaceListScreen(
     onNavigateToWorkspace: (String) -> Unit,
     onNavigateToDetail: (String) -> Unit,
-    onNavigateToCacheManager: () -> Unit,
+    onNavigateToLocalFileManager: () -> Unit,
     onBack: () -> Unit,
     viewModel: WorkspaceListViewModel = hiltViewModel(),
     settingsViewModel: SettingsViewModel = hiltViewModel(),
@@ -260,7 +260,7 @@ fun WorkspaceListScreen(
             2 -> {
                 SettingsContent(
                     viewModel = settingsViewModel,
-                    onNavigateToCacheManager = onNavigateToCacheManager,
+                    onNavigateToLocalFileManager = onNavigateToLocalFileManager,
                     onDisconnect = {
                         settingsViewModel.disconnect()
                         onBack()
@@ -507,7 +507,7 @@ private fun ConnectionDot(status: ConnectionStatus) {
 @Composable
 private fun SettingsContent(
     viewModel: SettingsViewModel,
-    onNavigateToCacheManager: () -> Unit,
+    onNavigateToLocalFileManager: () -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -548,7 +548,7 @@ private fun SettingsContent(
                     title = stringResource(R.string.manage),
                     subtitle = stringResource(R.string.file_count, viewModel.cacheFileCount.collectAsState().value),
                     showDivider = false,
-                    modifier = Modifier.clickable { onNavigateToCacheManager() },
+                    modifier = Modifier.clickable { onNavigateToLocalFileManager() },
                 )
             }
         }
