@@ -130,8 +130,9 @@ fun SessionDetailScreen(
     var showSearchPanel by remember { mutableStateOf(false) }
     var showAttachSheet by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
+    var userNavigating by remember { mutableStateOf(false) }
 
-SmartAutoScroll(listState, messages.size, isLoading)
+    SmartAutoScroll(listState, messages.size, isLoading, userNavigating)
 
     val notAtBottom by remember {
         derivedStateOf { listState.canScrollForward }
@@ -438,8 +439,10 @@ SmartAutoScroll(listState, messages.size, isLoading)
                 messages = messages,
                 onNavigateToMessage = { index ->
                     coroutineScope.launch {
+                        userNavigating = true
                         showSearchPanel = false
                         if (index >= 0) listState.animateScrollToItem(index)
+                        userNavigating = false
                     }
                 },
                 onClose = { showSearchPanel = false },

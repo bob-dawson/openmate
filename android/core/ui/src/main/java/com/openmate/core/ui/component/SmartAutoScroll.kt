@@ -16,12 +16,17 @@ fun SmartAutoScroll(
     listState: LazyListState,
     messageCount: Int,
     isLoading: Boolean,
+    userNavigating: Boolean = false,
 ) {
     var followBottom by remember { mutableStateOf(true) }
     var autoScrolling by remember { mutableStateOf(false) }
     var prevCount by remember { mutableIntStateOf(0) }
 
     if (!listState.canScrollForward && !autoScrolling) followBottom = true
+
+    LaunchedEffect(userNavigating) {
+        if (userNavigating) followBottom = false
+    }
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress && listState.canScrollForward && !autoScrolling) {

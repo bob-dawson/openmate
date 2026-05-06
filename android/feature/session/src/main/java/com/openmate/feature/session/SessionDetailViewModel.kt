@@ -88,6 +88,13 @@ class SessionDetailViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private val _disableAutoScroll = MutableStateFlow(false)
+    val disableAutoScroll: StateFlow<Boolean> = _disableAutoScroll.asStateFlow()
+
+    fun setDisableAutoScroll(value: Boolean) {
+        _disableAutoScroll.value = value
+    }
+
     private val _sessionTitle = MutableStateFlow("")
     val sessionTitle: StateFlow<String> = _sessionTitle.asStateFlow()
 
