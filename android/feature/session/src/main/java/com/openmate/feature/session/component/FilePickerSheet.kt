@@ -4,10 +4,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openmate.feature.session.R
@@ -38,6 +41,12 @@ import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeSearchResultDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+private enum class FileSortColumn { NAME, SIZE, MODIFIED }
+private enum class FileSortOrder { ASC, DESC }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,6 +64,59 @@ fun FilePickerSheet(
     var isLoading by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+
+    var sortColumn by remember { mutableStateOf(FileSortColumn.NAME) }
+    var sortOrder by remember { mutableStateOf(FileSortOrder.ASC) }
+
+    fun canNavigateUp(): Boolean {
+        if (currentPath.isBlank()) return false
+        val normalizedCurrent = currentPath.replace("\\", "/")
+        val normalizedInitial = initialDirectory.replace("\\", "/")
+        if (normalizedCurrent == normalizedInitial) return false
+        return normalizedCurrent.count { it == '/' } > 0
+    }
+
+    fun navigateUp(): String {
+        return currentPath.replace("\\", "/").substringBeforeLast("/", "")
+    }
+
+    fun formatSize(size: Long): String {
+        return when {
+            size >= 1024 * 1024 * 1024 -> String.format("%.1f GB", size / (1024.0 * 1024 * 1024))
+            size >= 1024 * 1024 -> String.format("%.1f MB", size / (1024.0 * 1024))
+            size >= 1024 -> String.format("%.1f KB", size / 1024.0)
+            else -> "$size B"
+        }
+    }
+
+    fun formatTime(timestamp: Long): String {
+        if (timestamp <= 0) return "-"
+        val ts = if (timestamp > 1_000_000_000_000) timestamp / 1000 else timestamp
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        return sdf.format(Date(ts * 1000))
+    }
+
+    fun sortEntries(list: List<BridgeDirEntryDto>): List<BridgeDirEntryDto> {
+        val dirs = list.filter { it.isDirectory }
+        val files = list.filter { !it.isDirectory }
+        val comparator = when (sortColumn) {
+            FileSortColumn.NAME -> compareBy<BridgeDirEntryDto> { it.name.lowercase() }
+            FileSortColumn.SIZE -> compareBy { it.size }
+            FileSortColumn.MODIFIED -> compareBy { it.modified }
+        }
+        val sortedDirs = if (sortOrder == FileSortOrder.ASC) dirs.sortedWith(comparator) else dirs.sortedWith(comparator.reversed())
+        val sortedFiles = if (sortOrder == FileSortOrder.ASC) files.sortedWith(comparator) else files.sortedWith(comparator.reversed())
+        return sortedDirs + sortedFiles
+    }
+
+    fun toggleSort(column: FileSortColumn) {
+        if (sortColumn == column) {
+            sortOrder = if (sortOrder == FileSortOrder.ASC) FileSortOrder.DESC else FileSortOrder.ASC
+        } else {
+            sortColumn = column
+            sortOrder = FileSortOrder.ASC
+        }
+    }
 
     fun loadDir(path: String) {
         scope.launch(Dispatchers.IO) {
@@ -135,10 +197,8 @@ fun FilePickerSheet(
                 Text(
                     text = "..",
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Medium),
-                    color = if (currentPath.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = if (currentPath.isNotBlank()) Modifier.clickable {
-                        currentPath = currentPath.substringBeforeLast("/", "").substringBeforeLast("\\", "")
-                    } else Modifier,
+                    color = if (canNavigateUp()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = if (canNavigateUp()) Modifier.clickable { currentPath = navigateUp() } else Modifier,
                 )
             }
             HorizontalDivider()
@@ -162,6 +222,8 @@ fun FilePickerSheet(
                             FileRow(
                                 name = name,
                                 path = result.path,
+                                size = "",
+                                modified = "",
                                 isDir = false,
                                 onClick = { onSelect(result.path, name) },
                             )
@@ -176,17 +238,26 @@ fun FilePickerSheet(
                     )
                 }
             } else {
+                HeaderRow(
+                    sortColumn = sortColumn,
+                    sortOrder = sortOrder,
+                    onSort = { toggleSort(it) },
+                )
+                HorizontalDivider()
+                val sortedEntries = sortEntries(entries)
                 LazyColumn(contentPadding = PaddingValues(vertical = 4.dp)) {
-                    items(entries, key = { "${it.name}_${it.isDirectory}" }) { entry ->
+                    items(sortedEntries, key = { "${it.name}_${it.isDirectory}" }) { entry ->
                         FileRow(
                             name = entry.name,
                             path = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}",
+                            size = if (entry.isDirectory) "-" else formatSize(entry.size),
+                            modified = formatTime(entry.modified),
                             isDir = entry.isDirectory,
                             onClick = {
                                 if (entry.isDirectory) {
                                     currentPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
                                 } else {
-                                    val fullPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
+                                    val fullPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}".replace("\\", "/")
                                     onSelect(fullPath, entry.name)
                                 }
                             },
@@ -199,39 +270,107 @@ fun FilePickerSheet(
 }
 
 @Composable
-private fun FileRow(name: String, path: String, isDir: Boolean, onClick: () -> Unit) {
+private fun HeaderRow(
+    sortColumn: FileSortColumn,
+    sortOrder: FileSortOrder,
+    onSort: (FileSortColumn) -> Unit,
+) {
+    val nameIcon = when {
+        sortColumn == FileSortColumn.NAME && sortOrder == FileSortOrder.ASC -> "▲"
+        sortColumn == FileSortColumn.NAME && sortOrder == FileSortOrder.DESC -> "▼"
+        else -> ""
+    }
+    val sizeIcon = when {
+        sortColumn == FileSortColumn.SIZE && sortOrder == FileSortOrder.ASC -> "▲"
+        sortColumn == FileSortColumn.SIZE && sortOrder == FileSortOrder.DESC -> "▼"
+        else -> ""
+    }
+    val timeIcon = when {
+        sortColumn == FileSortColumn.MODIFIED && sortOrder == FileSortOrder.ASC -> "▲"
+        sortColumn == FileSortColumn.MODIFIED && sortOrder == FileSortOrder.DESC -> "▼"
+        else -> ""
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.file_browser_name) + " $nameIcon",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onSort(FileSortColumn.NAME) },
+        )
+        Text(
+            text = stringResource(R.string.file_browser_size) + " $sizeIcon",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.End,
+            modifier = Modifier
+                .width(80.dp)
+                .clickable { onSort(FileSortColumn.SIZE) },
+        )
+        Text(
+            text = stringResource(R.string.file_browser_modified) + " $timeIcon",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.End,
+            modifier = Modifier
+                .width(140.dp)
+                .padding(start = 8.dp)
+                .clickable { onSort(FileSortColumn.MODIFIED) },
+        )
+    }
+}
+
+@Composable
+private fun FileRow(
+    name: String,
+    path: String,
+    size: String,
+    modified: String,
+    isDir: Boolean,
+    onClick: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 4.dp, vertical = 8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = if (isDir) "📁 " else "📄 ",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Text(
-                text = name,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontWeight = if (isDir) FontWeight.Medium else FontWeight.Normal
-                ),
-                color = if (isDir) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            )
-            if (isDir) {
-                Text(
-                    text = "/",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
         Text(
-            text = path,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = if (isDir) "📁 $name" else "📄 $name",
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontWeight = if (isDir) FontWeight.Medium else FontWeight.Normal,
+            ),
+            color = if (isDir) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
         )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = size,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(80.dp),
+            )
+            Text(
+                text = modified,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(140.dp).padding(start = 8.dp),
+            )
+        }
     }
 }

@@ -58,8 +58,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import com.openmate.feature.session.R
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
@@ -68,6 +68,7 @@ import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.BridgeSearchResultDto
 import com.openmate.core.ui.theme.TopBarBackground
+import com.openmate.feature.session.R
 import com.openmate.feature.session.DownloadState
 import com.openmate.feature.session.WorkspaceBrowserViewModel
 import dev.jeziellago.compose.markdowntext.MarkdownText
@@ -75,11 +76,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val CodeBlockBackground = Color(0xFF2a2a3a)
 private val CodeBlockText = Color(0xFFe0e0f0)
 
 private const val LARGE_FILE_THRESHOLD = 10 * 1024 * 1024L
+
+private enum class SortColumn { NAME, SIZE, MODIFIED }
+private enum class SortOrder { ASC, DESC }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,13 +117,54 @@ fun WorkspaceBrowserScreen(
     var largeFileConfirm by remember { mutableStateOf<LargeFileConfirm?>(null) }
     val scope = rememberCoroutineScope()
 
+    var sortColumn by remember { mutableStateOf(SortColumn.NAME) }
+    var sortOrder by remember { mutableStateOf(SortOrder.ASC) }
+
+    fun formatSize(size: Long): String {
+        return when {
+            size >= 1024 * 1024 * 1024 -> String.format("%.1f GB", size / (1024.0 * 1024 * 1024))
+            size >= 1024 * 1024 -> String.format("%.1f MB", size / (1024.0 * 1024))
+            size >= 1024 -> String.format("%.1f KB", size / 1024.0)
+            else -> "$size B"
+        }
+    }
+
+    fun formatTime(timestamp: Long): String {
+        if (timestamp <= 0) return "-"
+        val ts = if (timestamp > 1_000_000_000_000) timestamp / 1000 else timestamp
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        return sdf.format(Date(ts * 1000))
+    }
+
+    fun sortEntries(list: List<BridgeDirEntryDto>): List<BridgeDirEntryDto> {
+        val dirs = list.filter { it.isDirectory }
+        val files = list.filter { !it.isDirectory }
+        val comparator = when (sortColumn) {
+            SortColumn.NAME -> compareBy<BridgeDirEntryDto> { it.name.lowercase() }
+            SortColumn.SIZE -> compareBy { it.size }
+            SortColumn.MODIFIED -> compareBy { it.modified }
+        }
+        val sortedDirs = if (sortOrder == SortOrder.ASC) dirs.sortedWith(comparator) else dirs.sortedWith(comparator.reversed())
+        val sortedFiles = if (sortOrder == SortOrder.ASC) files.sortedWith(comparator) else files.sortedWith(comparator.reversed())
+        return sortedDirs + sortedFiles
+    }
+
+    fun toggleSort(column: SortColumn) {
+        if (sortColumn == column) {
+            sortOrder = if (sortOrder == SortOrder.ASC) SortOrder.DESC else SortOrder.ASC
+        } else {
+            sortColumn = column
+            sortOrder = SortOrder.ASC
+        }
+    }
+
     fun loadDir(path: String) {
         scope.launch(Dispatchers.IO) {
             isLoading = true
             loadError = ""
             try {
                 val result = apiClient.bridgeListDir(path.ifBlank { "." })
-                entries = result.sortedWith(compareByDescending<BridgeDirEntryDto> { it.isDirectory }.thenBy { it.name.lowercase() })
+                entries = result
             } catch (e: Exception) {
                 entries = emptyList()
                 loadError = e.message ?: "Failed to list directory"
@@ -540,13 +588,21 @@ fun WorkspaceBrowserScreen(
                         )
                     }
                 } else {
+                    BrowserHeaderRow(
+                        sortColumn = sortColumn,
+                        sortOrder = sortOrder,
+                        onSort = { toggleSort(it) },
+                    )
+                    HorizontalDivider()
+                    val sortedEntries = sortEntries(entries)
                     LazyColumn {
-                        items(entries, key = { "${it.name}_${it.isDirectory}" }) { entry ->
+                        items(sortedEntries, key = { "${it.name}_${it.isDirectory}" }) { entry ->
                             BrowserFileRow(
                                 name = entry.name,
                                 path = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}",
                                 isDir = entry.isDirectory,
-                                size = entry.size,
+                                size = if (entry.isDirectory) "-" else formatSize(entry.size),
+                                modified = formatTime(entry.modified),
                                 onClick = {
                                     if (entry.isDirectory) {
                                         currentPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
@@ -908,11 +964,70 @@ private fun FileViewer(
 }
 
 @Composable
+private fun BrowserHeaderRow(
+    sortColumn: SortColumn,
+    sortOrder: SortOrder,
+    onSort: (SortColumn) -> Unit,
+) {
+    val nameIcon = when {
+        sortColumn == SortColumn.NAME && sortOrder == SortOrder.ASC -> "▲"
+        sortColumn == SortColumn.NAME && sortOrder == SortOrder.DESC -> "▼"
+        else -> ""
+    }
+    val sizeIcon = when {
+        sortColumn == SortColumn.SIZE && sortOrder == SortOrder.ASC -> "▲"
+        sortColumn == SortColumn.SIZE && sortOrder == SortOrder.DESC -> "▼"
+        else -> ""
+    }
+    val timeIcon = when {
+        sortColumn == SortColumn.MODIFIED && sortOrder == SortOrder.ASC -> "▲"
+        sortColumn == SortColumn.MODIFIED && sortOrder == SortOrder.DESC -> "▼"
+        else -> ""
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.file_browser_name) + " $nameIcon",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .weight(1f)
+                .clickable { onSort(SortColumn.NAME) },
+        )
+        Text(
+            text = stringResource(R.string.file_browser_size) + " $sizeIcon",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.End,
+            modifier = Modifier
+                .width(80.dp)
+                .clickable { onSort(SortColumn.SIZE) },
+        )
+        Text(
+            text = stringResource(R.string.file_browser_modified) + " $timeIcon",
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.End,
+            modifier = Modifier
+                .width(120.dp)
+                .padding(start = 8.dp)
+                .clickable { onSort(SortColumn.MODIFIED) },
+        )
+    }
+}
+
+@Composable
 private fun BrowserFileRow(
     name: String,
     path: String,
     isDir: Boolean,
-    size: Long = 0,
+    size: String = "",
+    modified: String = "",
     onClick: () -> Unit,
 ) {
     Column(
@@ -921,44 +1036,36 @@ private fun BrowserFileRow(
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = if (isDir) "📁 " else "📄 ",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = name + if (isDir) "/" else "",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = if (isDir) FontWeight.Medium else FontWeight.Normal,
-                    ),
-                    color = if (isDir) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (!isDir && size > 0) {
-                Text(
-                    text = formatSize(size),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
         Text(
-            text = path,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = if (isDir) "📁 $name" else "📄 $name",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = if (isDir) FontWeight.Medium else FontWeight.Normal,
+            ),
+            color = if (isDir) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
         )
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = size,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(80.dp),
+            )
+            Text(
+                text = modified,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(120.dp).padding(start = 8.dp),
+            )
+        }
     }
     HorizontalDivider()
 }

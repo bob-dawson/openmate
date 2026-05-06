@@ -154,4 +154,8 @@
     <string name="content_desc_more">More</string>
     <string name="content_desc_new_session">New Session</string>
     <string name="content_desc_send">Send</string>
+
+    <string name="file_browser_name">Name</string>
+    <string name="file_browser_size">Size</string>
+    <string name="file_browser_modified">Modified</string>
 </resources>
