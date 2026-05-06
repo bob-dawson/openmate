@@ -108,6 +108,5 @@ SELECT type, sequence, substr(text,1,40), toolName, mime, filename FROM PartEnti
 
 1. 先总结需要修改哪几个模块，每个模块进行哪几个步骤（模块级大纲）
 2. 为每个步骤单独写一个实现文档（步骤级详情）
-3. 写完之后合并文档
 
 这样可以避免一次性编写过长文档导致遗漏或结构混乱。

@@ -81,6 +81,7 @@ import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.BridgeSearchResultDto
 import com.openmate.core.ui.theme.TopBarBackground
+import com.openmate.core.ui.component.DirectoryPickerDialog
 import com.openmate.feature.session.R
 import com.openmate.feature.session.DownloadState
 import com.openmate.feature.session.WorkspaceBrowserViewModel
@@ -123,6 +124,7 @@ data class FileContextMenuState(
 fun WorkspaceBrowserScreen(
     initialDirectory: String,
     onBack: () -> Unit,
+    onAttach: ((path: String, filename: String) -> Unit)? = null,
     viewModel: WorkspaceBrowserViewModel = hiltViewModel(),
 ) {
     val apiClient = viewModel.apiClient
@@ -158,6 +160,7 @@ fun WorkspaceBrowserScreen(
     var showCreateDirDialog by remember { mutableStateOf(false) }
     var newDirName by remember { mutableStateOf("") }
     var isUploading by remember { mutableStateOf(false) }
+    var showDownloadToPicker by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -951,6 +954,22 @@ fun WorkspaceBrowserScreen(
                                 openBinaryFile(fullPath, menuEntry.name, menuEntry.size, menuEntry.modified)
                             },
                         )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.download_to)) },
+                            onClick = {
+                                contextMenu = contextMenu.copy(expanded = false)
+                                showDownloadToPicker = Pair(fullPath, menuEntry.name)
+                            },
+                        )
+                        if (onAttach != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.attach_to_session)) },
+                                onClick = {
+                                    contextMenu = contextMenu.copy(expanded = false)
+                                    onAttach(fullPath, menuEntry.name)
+                                },
+                            )
+                        }
                     } else {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.download)) },
@@ -977,6 +996,30 @@ fun WorkspaceBrowserScreen(
                 }
             }
         }
+    }
+
+    if (showDownloadToPicker != null) {
+        val (dlPath, dlFilename) = showDownloadToPicker!!
+        val rootDir = remember {
+            val dir = File(context.cacheDir, "file_cache")
+            dir.mkdirs()
+            dir
+        }
+        DirectoryPickerDialog(
+            rootDir = rootDir,
+            onDismiss = { showDownloadToPicker = null },
+            onSelect = { targetDir ->
+                showDownloadToPicker = null
+                val destFile = File(targetDir, dlFilename)
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        viewModel.apiClient.bridgeDownloadFile(dlPath, destFile) { _, _ -> }
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+        )
     }
 }
 

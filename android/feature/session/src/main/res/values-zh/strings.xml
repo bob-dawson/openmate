@@ -75,7 +75,7 @@
     <string name="subtask_label">任务</string>
     <string name="tool_cwd">目录: %1$s</string>
 
-    <string name="cache">缓存</string>
+    <string name="cache">本地文件</string>
     <string name="manage">管理</string>
     <string name="file_count">%1$d 个文件</string>
     <string name="about">关于</string>
@@ -156,4 +156,7 @@
     <string name="confirm_delete_file">确定要删除此文件吗？</string>
     <string name="confirm_delete_directory">确定要删除此目录及其所有内容吗？</string>
     <string name="enter_new_name">输入新名称</string>
+    <string name="attach_to_session">附加到会话</string>
+    <string name="download_to">下载到…</string>
+    <string name="local_files">本地文件</string>
 </resources>

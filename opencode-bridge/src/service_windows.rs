@@ -45,10 +45,18 @@ pub fn install() -> anyhow::Result<()> {
     let service = service_manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
     service.set_description(SERVICE_DESCRIPTION)?;
 
-    let start_service = service_manager.open_service(SERVICE_NAME, ServiceAccess::START)?;
-    start_service.start(&[] as &[OsString])?;
-
-    println!("{} service installed and started successfully.", SERVICE_NAME);
+    println!("{} service installed successfully.", SERVICE_NAME);
+    println!("");
+    println!("IMPORTANT: This service must NOT run as LocalSystem.");
+    println!("Please update the service to run as your user account:");
+    println!("  1. Open services.msc");
+    println!("  2. Find '{}' service", SERVICE_NAME);
+    println!("  3. Right-click → Properties → Log On");
+    println!("  4. Select 'This account' and enter your Windows username and password");
+    println!("  5. Click OK, then start the service");
+    println!("");
+    println!("Or run from command line (as Administrator):");
+    println!("  sc config {} obj= \\\"{}\\\" password= <your_password>", SERVICE_NAME, std::env::var("USERNAME").unwrap_or_else(|_| "USERNAME".to_string()));
     Ok(())
 }
 
@@ -84,7 +92,21 @@ fn service_main(_arguments: Vec<OsString>) {
     }
 }
 
+fn is_running_as_local_system() -> bool {
+    let username = std::env::var("USERNAME").unwrap_or_default();
+    username.eq_ignore_ascii_case("SYSTEM")
+        || username.eq_ignore_ascii_case("LOCALSYSTEM")
+        || username.eq_ignore_ascii_case("$")
+}
+
 fn run_service_inner() -> anyhow::Result<()> {
+    if is_running_as_local_system() {
+        anyhow::bail!(
+            "Service is running as LocalSystem, which is not allowed. \
+             Please configure the service to run as your user account in services.msc"
+        );
+    }
+
     let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
 
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
@@ -111,6 +133,7 @@ fn run_service_inner() -> anyhow::Result<()> {
     })?;
 
     let config = Config::find_and_load(None)?;
+    config.ensure_opencode_binary()?;
 
     let rt = tokio::runtime::Runtime::new()?;
     let notify = Arc::new(Notify::new());

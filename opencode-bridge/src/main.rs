@@ -89,11 +89,37 @@ async fn run_reset_token() -> anyhow::Result<()> {
 
 #[cfg(target_os = "windows")]
 fn run_install() -> anyhow::Result<()> {
+    let config_path = Config::find_or_create_config_path();
+    let mut config = if config_path.exists() {
+        Config::load_from(&config_path)?
+    } else {
+        Config::default()
+    };
+
+    config.resolve_opencode_binary()?;
+    println!("opencode binary resolved: {}", config.opencode.binary);
+
+    config.save_to(&config_path)?;
+    println!("Config saved to {}", config_path.display());
+
     openmate::service_windows::install()
 }
 
 #[cfg(target_os = "linux")]
 fn run_install() -> anyhow::Result<()> {
+    let config_path = Config::find_or_create_config_path();
+    let mut config = if config_path.exists() {
+        Config::load_from(&config_path)?
+    } else {
+        Config::default()
+    };
+
+    config.resolve_opencode_binary()?;
+    println!("opencode binary resolved: {}", config.opencode.binary);
+
+    config.save_to(&config_path)?;
+    println!("Config saved to {}", config_path.display());
+
     openmate::service_linux::install()
 }
 

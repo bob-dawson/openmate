@@ -1,8 +1,5 @@
 package com.openmate.feature.session
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -65,10 +62,8 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.ui.component.TopBar
 import com.openmate.core.ui.component.SmartAutoScroll
-import com.openmate.feature.session.component.AttachOptionSheet
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.MessageItem
-import com.openmate.feature.session.component.FilePickerSheet
 import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
@@ -110,17 +105,6 @@ fun SessionDetailScreen(
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
     val showReasoning by remember { mutableStateOf(prefs.getBoolean("show_reasoning", true)) }
 
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(9),
-    ) { uris ->
-        if (uris.isNotEmpty()) viewModel.uploadAndAttach(uris, context.contentResolver)
-    }
-
-    val fileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments(),
-    ) { uris ->
-        if (uris.isNotEmpty()) viewModel.uploadAndAttach(uris, context.contentResolver)
-    }
     val snackbarHostState = remember { SnackbarHostState() }
 
     var menuExpanded by remember { mutableStateOf(false) }
@@ -128,9 +112,7 @@ fun SessionDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
-    var showFilePicker by remember { mutableStateOf(false) }
     var showSearchPanel by remember { mutableStateOf(false) }
-    var showAttachSheet by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     var userNavigating by remember { mutableStateOf(false) }
 
@@ -432,7 +414,6 @@ fun SessionDetailScreen(
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
                 onSend = { viewModel.sendMessage(sessionID) },
-                onAttach = { showAttachSheet = true },
                 isUploading = isUploading,
             )
         }
@@ -546,35 +527,6 @@ fun SessionDetailScreen(
                 showSkillPicker = false
             },
             onDismiss = { showSkillPicker = false },
-        )
-    }
-
-    if (showFilePicker) {
-        FilePickerSheet(
-            apiClient = viewModel.apiClient,
-            initialDirectory = viewModel.getWorkingDirectory(),
-            onSelect = { path, filename ->
-                viewModel.attachFile(path, filename)
-                showFilePicker = false
-            },
-            onDismiss = { showFilePicker = false },
-        )
-    }
-
-    if (showAttachSheet) {
-        AttachOptionSheet(
-            onGallery = {
-                galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
-            },
-            onFiles = {
-                fileLauncher.launch(arrayOf(
-                    "application/*", "text/*", "audio/*", "image/*", "video/*"
-                ))
-            },
-            onServerFiles = {
-                showFilePicker = true
-            },
-            onDismiss = { showAttachSheet = false },
         )
     }
 }

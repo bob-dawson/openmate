@@ -17,9 +17,18 @@ echo === Starting Bridge ===
 net start OpenMate >nul 2>&1
 if %errorlevel% equ 0 goto :bridge_ok
 
+sc.exe query OpenMate >nul 2>&1
+if %errorlevel% equ 0 (
+    echo Service installed but failed to start. Check services.msc for account configuration.
+    goto :bridge_fail
+)
+
 echo Service not installed, installing...
 "D:\openmate\opencode-bridge\release\openmate.exe" install
-if %errorlevel% equ 0 goto :bridge_ok
+if %errorlevel% equ 0 (
+    echo Service installed. Please configure user account in services.msc, then start manually.
+    goto :bridge_fail
+)
 
 echo Install failed, starting in foreground...
 start "" "D:\openmate\opencode-bridge\release\openmate.exe"

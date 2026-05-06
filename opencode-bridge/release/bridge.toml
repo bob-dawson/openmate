@@ -1,9 +1,10 @@
 [bridge]
 port = 4097
 hostname = "0.0.0.0"
+auth_enabled = true
 
 [opencode]
-binary = "opencode"
+binary = 'C:\Users\bob_d\AppData\Roaming\npm\opencode.cmd'
 hostname = "127.0.0.1"
 port = 4096
 directory = ""

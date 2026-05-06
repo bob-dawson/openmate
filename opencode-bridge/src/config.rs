@@ -1,7 +1,7 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     #[serde(default = "default_bridge")]
     pub bridge: BridgeConfig,
@@ -13,7 +13,7 @@ pub struct Config {
     pub fs: FsConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct BridgeConfig {
     #[serde(default = "default_port")]
     pub port: u16,
@@ -23,7 +23,7 @@ pub struct BridgeConfig {
     pub auth_enabled: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct OpencodeConfig {
     #[serde(default = "default_binary")]
     pub binary: String,
@@ -39,7 +39,7 @@ pub struct OpencodeConfig {
     pub auto_restart: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct FsConfig {
     #[serde(default)]
     pub allowed_paths: Vec<String>,
@@ -143,6 +143,67 @@ impl Config {
         tracing::info!("No config file found, using defaults");
         Ok(Config::default())
     }
+
+    pub fn find_config_path() -> Option<PathBuf> {
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+
+        let mut candidates = vec![PathBuf::from("bridge.toml")];
+        if let Some(dir) = exe_dir {
+            candidates.push(dir.join("bridge.toml"));
+        }
+        candidates.push(dirs_config_path());
+
+        for path in &candidates {
+            if path.exists() {
+                return Some(path.clone());
+            }
+        }
+        None
+    }
+
+    pub fn find_or_create_config_path() -> PathBuf {
+        if let Some(path) = Self::find_config_path() {
+            return path;
+        }
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from("."));
+        exe_dir.join("bridge.toml")
+    }
+
+    pub fn save_to(&self, path: &PathBuf) -> anyhow::Result<()> {
+        let content = toml::to_string_pretty(self)?;
+        std::fs::write(path, content)?;
+        Ok(())
+    }
+
+    pub fn resolve_opencode_binary(&mut self) -> anyhow::Result<()> {
+        if self.opencode.binary != "opencode" && PathBuf::from(&self.opencode.binary).is_absolute() {
+            if PathBuf::from(&self.opencode.binary).exists() {
+                return Ok(());
+            }
+        }
+
+        let resolved = which_opencode()?;
+        self.opencode.binary = resolved.to_str()
+            .ok_or_else(|| anyhow::anyhow!("Resolved path is not valid UTF-8"))?
+            .to_string();
+        Ok(())
+    }
+
+    pub fn ensure_opencode_binary(&self) -> anyhow::Result<()> {
+        let path = PathBuf::from(&self.opencode.binary);
+        if !path.is_absolute() {
+            anyhow::bail!("opencode binary is not an absolute path: {}", self.opencode.binary);
+        }
+        if !path.exists() {
+            anyhow::bail!("opencode binary not found: {}", self.opencode.binary);
+        }
+        Ok(())
+    }
 }
 
 fn dirs_config_path() -> PathBuf {
@@ -150,6 +211,42 @@ fn dirs_config_path() -> PathBuf {
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
     PathBuf::from(home).join(".opencode").join("bridge.toml")
+}
+
+fn which_opencode() -> anyhow::Result<PathBuf> {
+    let path_var = std::env::var("PATH").unwrap_or_default();
+    let sep = if cfg!(windows) { ';' } else { ':' };
+
+    for dir in path_var.split(sep) {
+        let dir = PathBuf::from(dir);
+        if !dir.exists() {
+            continue;
+        }
+
+        #[cfg(windows)]
+        {
+            for ext in &["cmd", "exe", "ps1"] {
+                let candidate = dir.join(format!("opencode.{}", ext));
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            let candidate = dir.join("opencode");
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    anyhow::bail!(
+        "opencode not found in PATH. \
+         Install opencode first: https://opencode.ai \
+         Or set the full path in bridge.toml [opencode] binary"
+    )
 }
 
 impl Default for Config {
