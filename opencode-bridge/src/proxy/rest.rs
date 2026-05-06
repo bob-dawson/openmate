@@ -39,7 +39,7 @@ async fn do_proxy(
     let method = req.method().clone();
     let headers = req.headers().clone();
 
-    let body_bytes = axum::body::to_bytes(req.into_body(), 10 * 1024 * 1024)
+    let body_bytes = axum::body::to_bytes(req.into_body(), 100 * 1024 * 1024)
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to read request body: {}", e)))?;
 
