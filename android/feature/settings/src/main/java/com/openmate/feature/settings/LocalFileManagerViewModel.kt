@@ -141,8 +141,8 @@ class LocalFileManagerViewModel @Inject constructor(
         if (entry.isDirectory) return
         val ext = entry.name.substringAfterLast('.', "")
         if (ext == "apk") {
-            pendingApkFile = entry.file
-            pendingApkName = entry.name
+            pendingApkFile = null
+            pendingApkName = null
             FileOpener.installApk(appContext, entry.file, entry.name)
         } else {
             FileOpener.openWithSystemViewer(appContext, entry.file, entry.name)
@@ -175,6 +175,8 @@ class LocalFileManagerViewModel @Inject constructor(
     fun retryPendingApkInstall() {
         val file = pendingApkFile ?: return
         val name = pendingApkName ?: return
+        pendingApkFile = null
+        pendingApkName = null
         FileOpener.installApk(appContext, file, name)
     }
 

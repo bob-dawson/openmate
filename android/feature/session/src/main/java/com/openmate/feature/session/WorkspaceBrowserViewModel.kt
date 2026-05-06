@@ -45,15 +45,14 @@ class WorkspaceBrowserViewModel @Inject constructor(
         return cacheDir
     }
 
-    private fun computeLocalPath(remotePath: String, filename: String): File {
-        val subDir = File(cacheDir, remotePath.hashCode().toString())
-        subDir.mkdirs()
+    private fun computeLocalPath(filename: String): File {
+        cacheDir.mkdirs()
         val safeName = filename.replace("/", "_").replace("\\", "_")
-        return File(subDir, safeName)
+        return File(cacheDir, safeName)
     }
 
     fun getCachedFile(remotePath: String, filename: String): File? {
-        val localFile = computeLocalPath(remotePath, filename)
+        val localFile = computeLocalPath(filename)
         return if (localFile.exists() && localFile.length() > 0) localFile else null
     }
 
@@ -66,7 +65,7 @@ class WorkspaceBrowserViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _downloadState.value = DownloadState(downloading = true, totalBytes = fileSize)
             try {
-                val localFile = computeLocalPath(remotePath, filename)
+                val localFile = computeLocalPath(filename)
                 apiClient.bridgeDownloadFile(remotePath, localFile) { downloaded, total ->
                     _downloadState.value = DownloadState(
                         downloading = true,
@@ -93,7 +92,7 @@ class WorkspaceBrowserViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             _downloadState.value = DownloadState(downloading = true, totalBytes = fileSize)
             try {
-                val localFile = computeLocalPath(remotePath, filename)
+                val localFile = computeLocalPath(filename)
                 apiClient.bridgeDownloadFile(remotePath, localFile) { downloaded, total ->
                     _downloadState.value = DownloadState(
                         downloading = true,
