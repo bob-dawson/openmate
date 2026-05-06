@@ -15,9 +15,17 @@ if %errorlevel% neq 0 (
 
 echo === Starting Bridge ===
 net start OpenMate >nul 2>&1
-if %errorlevel% neq 0 (
-    start "" "D:\openmate\opencode-bridge\release\openmate.exe"
-)
+if %errorlevel% equ 0 goto :bridge_ok
+
+echo Service not installed, installing...
+"D:\openmate\opencode-bridge\release\openmate.exe" install
+if %errorlevel% equ 0 goto :bridge_ok
+
+echo Install failed, starting in foreground...
+start "" "D:\openmate\opencode-bridge\release\openmate.exe"
+
+:bridge_ok
+timeout /t 3 /nobreak >nul
 
 :bridge_fail
 
