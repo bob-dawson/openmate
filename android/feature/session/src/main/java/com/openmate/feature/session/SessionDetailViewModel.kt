@@ -346,6 +346,8 @@ companion object {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
+                // Immediately refresh session after abort
+                refresh()
             } catch (_: Exception) {}
         }
     }
