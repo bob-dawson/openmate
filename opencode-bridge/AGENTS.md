@@ -1,6 +1,6 @@
-# AGENTS.md — opencode-bridge
+# AGENTS.md — OpenMate Bridge
 
-Rust 反向代理 + 进程管理 + 文件服务，位于 Android 客户端与 opencode serve 之间。
+Rust 反向代理 + 进程管理 + 文件服务 + 认证，位于 Android 客户端与 opencode serve 之间。
 
 ## 架构
 
@@ -9,29 +9,57 @@ Android 客户端  ──→  Bridge (port 4097)  ──→  opencode serve (por
                        │
                        ├─ 代理转发 (fallback)
                        ├─ 进程管理 (auto-start / auto-restart)
+                       ├─ 认证 (HMAC-SHA256 token + PIN 配对)
                        └─ 扩展 API (/api/bridge/*)
 ```
 
 ## 构建 & 测试
 
 ```powershell
-cargo build --release          # 产出 target/release/opencode-bridge.exe (~6MB)
-cargo test                     # 46 单元 + 10 集成测试
+cargo build --release          # 产出 target/release/openmate.exe
+cargo test                     # 65 单元 + 17 集成测试
 cargo test --test integration  # 仅集成测试
 ```
 
 ## 运行
 
 ```powershell
-# 无配置文件直接启动（使用全部默认值）
-opencode-bridge.exe
+# 前台运行（使用全部默认值）
+openmate.exe
 
 # 指定配置
-opencode-bridge.exe -c bridge.toml
+openmate.exe -c bridge.toml
 
 # 环境变量控制日志级别
-RUST_LOG=debug opencode-bridge.exe
+RUST_LOG=debug openmate.exe
 ```
+
+## 服务管理
+
+```powershell
+# 安装为系统服务（Windows: Win32 Service, Linux: systemd）
+openmate.exe install
+
+# 卸载服务
+openmate.exe uninstall
+
+# 服务模式运行（由系统调用，用户不直接用）
+openmate.exe service
+```
+
+Windows 服务使用 `windows-service` crate，服务名 `OpenMate`，启动类型=自动，install 后自动启动。
+Linux 生成 systemd unit 到 `/etc/systemd/system/openmate.service`，install 后自动 enable + start。
+
+## CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `openmate` | 前台运行 |
+| `openmate install` | 安装为系统服务 |
+| `openmate uninstall` | 卸载系统服务 |
+| `openmate service` | 服务模式运行 |
+| `openmate approve <pin>` | 批准配对 PIN |
+| `openmate reset-token` | 重置密钥（所有 token 失效） |
 
 ## 配置文件 (bridge.toml)
 
@@ -41,6 +69,7 @@ RUST_LOG=debug opencode-bridge.exe
 [bridge]
 port = 4097          # Bridge 监听端口
 hostname = "0.0.0.0" # 监听地址
+auth_enabled = true  # 是否启用认证
 
 [opencode]
 binary = "opencode"    # opencode 可执行文件名 (PATH 中或全路径)
@@ -60,13 +89,18 @@ allowed_paths = []     # 空=允许所有路径
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/bridge/status` | Bridge 版本 + opencode 状态 |
+| GET | `/api/bridge/status` | Bridge 版本 + opencode 状态 + auth_enabled |
 | POST | `/api/bridge/opencode/start` | 启动 opencode |
 | POST | `/api/bridge/opencode/stop` | 停止 opencode |
 | POST | `/api/bridge/opencode/restart` | 重启 opencode |
+| POST | `/api/bridge/pair/request` | 请求配对 PIN |
+| POST | `/api/bridge/pair/approve` | 批准 PIN (仅 localhost) |
+| POST | `/api/bridge/pair/confirm` | 确认配对，获取 token |
 | GET | `/api/bridge/fs/list?path=` | 目录列表 (目录优先排序) |
 | GET | `/api/bridge/fs/stat?path=` | 文件/目录元数据 |
 | GET | `/api/bridge/fs/read?path=` | 读文件 (文本→text/plain, 二进制→base64 JSON) |
+| GET | `/api/bridge/fs/download?path=` | 流式下载文件 |
+| PUT | `/api/bridge/fs/upload?path=` | 上传文件 (max 100MB) |
 | POST | `/api/bridge/fs/write` | 写文件 `{path, content, createDirs}` |
 | POST | `/api/bridge/fs/mkdir` | 创建目录 `{path, recursive}` |
 | POST | `/api/bridge/fs/search` | 搜索 `{path, query, searchType, maxResults}` |
@@ -87,6 +121,14 @@ allowed_paths = []     # 空=允许所有路径
 | GET | `/global/event` | → opencode SSE 事件流 |
 | GET | `/experimental/session` | → 会话列表 |
 | * | `/{*path}` | → 其他所有 opencode API |
+
+## 认证
+
+- `auth_enabled = true` 时，所有非公开路径需要 Bearer token
+- 公开路径：`/api/bridge/status`、`/api/bridge/pair/request`、`/api/bridge/pair/confirm`
+- 仅 localhost 路径：`/api/bridge/pair/approve`
+- Token: HMAC-SHA256 签名，128 字符 hex，存储在 `~/.opencode/bridge_secret_key`
+- 代理转发到 opencode 时自动剥离 Authorization 头
 
 ## 进程管理
 
@@ -110,11 +152,20 @@ allowed_paths = []     # 空=允许所有路径
 
 ```
 src/
-├── main.rs              # 入口、CLI、路由注册
+├── main.rs              # CLI 入口 (install/uninstall/service/approve/reset-token)
+├── server.rs            # axum server 启动 + graceful shutdown
 ├── lib.rs               # 库入口（导出所有模块）
 ├── config.rs            # TOML 配置加载 + 默认值
 ├── error.rs             # AppError 枚举 + HTTP 状态码映射
 ├── state.rs             # AppState、OpencodeStatus
+├── service_windows.rs   # Windows 服务 (windows-service crate)
+├── service_linux.rs     # Linux 服务 (systemd unit)
+├── auth/
+│   ├── mod.rs
+│   ├── key.rs           # SecretKey 生成/加载
+│   ├── token.rs         # Token 生成/验证 (HMAC-SHA256)
+│   ├── pair.rs          # PIN 配对流程 (request/approve/confirm)
+│   └── middleware.rs    # 认证中间件 (public/localhost/bearer)
 ├── bridge/router.rs     # Bridge 管理 API handlers
 ├── process/
 │   ├── mod.rs
@@ -134,7 +185,7 @@ src/
     └── router.rs        # 静态文件服务 (MIME 推测)
 
 tests/
-└── integration.rs       # 10 个端到端集成测试 (tower::ServiceExt)
+└── integration.rs       # 17 个集成测试 (tower::ServiceExt)
 ```
 
 ## 关键设计决策
@@ -144,7 +195,6 @@ tests/
 - **PathGuard** 对不存在的路径用 `find_existing_ancestor()` 向上找存在的父目录做 canonicalize
 - **SSE 代理** 用 mpsc channel + ReceiverStream，自动重连（3s/5s 间隔）
 - **lib.rs + main.rs** 分离：lib 导出模块供集成测试使用，main 只做入口
-
-## 待处理
-
-见 `TODO.md`
+- **server.rs** 提取为独立模块，供前台模式和服务模式共用
+- **认证** HMAC-SHA256 token + PIN 配对，token 绑定 IP
+- **服务管理** Windows 用 `windows-service` crate（纯 Rust），Linux 用 systemd unit
