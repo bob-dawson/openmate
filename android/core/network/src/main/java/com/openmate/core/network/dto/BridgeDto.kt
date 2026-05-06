@@ -1,5 +1,6 @@
 package com.openmate.core.network.dto
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -46,6 +47,8 @@ data class BridgeStatusResponse(
 data class BridgeInfoDto(
     val version: String = "",
     val port: Int = 0,
+    @SerialName("auth_enabled")
+    val authEnabled: Boolean = false,
 )
 
 @Serializable
@@ -81,4 +84,24 @@ data class BridgeFileContent(
     val content: String,
     val mime: String,
     val isBase64: Boolean,
+)
+
+@Serializable
+data class PairRequestResponse(
+    val pin: String = "",
+)
+
+@Serializable
+data class PairApproveRequest(
+    val pin: String = "",
+)
+
+@Serializable
+data class PairConfirmRequest(
+    val pin: String = "",
+)
+
+@Serializable
+data class PairConfirmResponse(
+    val token: String = "",
 )

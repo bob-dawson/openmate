@@ -7,6 +7,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +25,7 @@ class ConnectionManager @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
+    private val tokenStore: TokenStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -38,6 +40,9 @@ class ConnectionManager @Inject constructor(
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    private val _needsRepairing = MutableStateFlow<String?>(null)
+    val needsRepairing: StateFlow<String?> = _needsRepairing.asStateFlow()
 
     val client: OpencodeApiClient get() = apiClient
 
@@ -60,7 +65,11 @@ class ConnectionManager @Inject constructor(
         scope.launch {
             _connectionStatus.value = ConnectionStatus.CONNECTING
             _errorMessage.value = null
+            _needsRepairing.value = null
             _activeProfile.value = profile
+            
+            tokenStore.setActiveProfileId(profile.id)
+            android.util.Log.d("ConnectionManager", "activeToken after setActiveProfileId: ${tokenStore.activeToken?.length ?: "null"} chars")
 
             dbProvider.setActive(profile.id)
             apiClient.baseUrl = "http://${profile.address}:${profile.port}"
@@ -70,15 +79,22 @@ class ConnectionManager @Inject constructor(
                 if (status.bridge.version.isBlank()) {
                     _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
                     _errorMessage.value = "Not a Bridge server. Only Bridge connections are supported."
-                    dbProvider.clearActive()
-                    _activeProfile.value = null
+                    clearConnection()
                     return@launch
+                }
+
+                if (status.bridge.authEnabled) {
+                    val token = tokenStore.getToken(profile.id)
+                    if (token == null) {
+                        _needsRepairing.value = profile.id
+                        _connectionStatus.value = ConnectionStatus.DISCONNECTED
+                        return@launch
+                    }
                 }
             } catch (e: Exception) {
                 _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
                 _errorMessage.value = "Bridge not reachable: ${e.message}"
-                dbProvider.clearActive()
-                _activeProfile.value = null
+                clearConnection()
                 return@launch
             }
 
@@ -94,16 +110,33 @@ class ConnectionManager @Inject constructor(
         }
     }
 
+    fun confirmRepairing(profileId: String, token: String) {
+        scope.launch {
+            tokenStore.saveToken(profileId, token)
+            _needsRepairing.value = null
+            _activeProfile.value?.let { connect(it) }
+        }
+    }
+
+    fun clearNeedsRepairing() {
+        _needsRepairing.value = null
+    }
+
     fun clearError() {
         _errorMessage.value = null
     }
 
     fun disconnect() {
         sseEventRepository.disconnect()
+        scope.launch { clearConnection() }
+    }
+
+    private suspend fun clearConnection() {
         dbProvider.clearActive()
         _activeProfile.value = null
         _isConnected.value = false
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
-        _errorMessage.value = null
+        tokenStore.setActiveProfileId(null)
     }
 }
+

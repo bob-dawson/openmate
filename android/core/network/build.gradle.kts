@@ -35,6 +35,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.hilt.android)
+    implementation(libs.datastore.preferences)
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)

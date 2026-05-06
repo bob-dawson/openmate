@@ -35,6 +35,30 @@ pub enum AppError {
     #[error("Not a directory: {0}")]
     NotADirectory(String),
 
+    #[error("Rate limited")]
+    RateLimited,
+
+    #[error("Forbidden")]
+    Forbidden,
+
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+
+    #[error("Pair not found")]
+    PairNotFound,
+
+    #[error("Pair expired")]
+    PairExpired,
+
+    #[error("Pair not approved")]
+    PairNotApproved,
+
+    #[error("Pair attempts exceeded")]
+    PairAttemptsExceeded,
+
+    #[error("Unauthorized")]
+    Unauthorized,
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -55,6 +79,14 @@ impl IntoResponse for AppError {
             AppError::PathNotAllowed(_) => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::PathNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::NotADirectory(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
+            AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::PairNotFound => (StatusCode::NOT_FOUND, self.to_string()),
+            AppError::PairExpired => (StatusCode::GONE, self.to_string()),
+            AppError::PairNotApproved => (StatusCode::FORBIDDEN, self.to_string()),
+            AppError::PairAttemptsExceeded => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };

@@ -19,6 +19,8 @@ pub struct BridgeConfig {
     pub port: u16,
     #[serde(default = "default_hostname")]
     pub hostname: String,
+    #[serde(default = "default_true")]
+    pub auth_enabled: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -47,6 +49,7 @@ fn default_bridge() -> BridgeConfig {
     BridgeConfig {
         port: default_port(),
         hostname: default_hostname(),
+        auth_enabled: true,
     }
 }
 

@@ -48,7 +48,7 @@ async fn do_proxy(
 
     for (name, value) in headers.iter() {
         let name_str = name.as_str();
-        if matches!(name_str, "host" | "connection" | "transfer-encoding") {
+        if matches!(name_str, "host" | "connection" | "transfer-encoding" | "authorization") {
             continue;
         }
         if let Ok(v) = value.to_str() {

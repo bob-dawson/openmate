@@ -10,6 +10,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.TokenStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,10 +30,11 @@ data class ProfileWithStatus(
 @HiltViewModel
 class InstanceListViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
-    private val sseEventRepository: SseEventRepository,
     private val sessionRepository: SessionRepository,
+    private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
+    private val tokenStore: TokenStore,
 ) : ViewModel() {
 
     private val _profiles = MutableStateFlow<List<ProfileWithStatus>>(emptyList())
@@ -53,9 +55,7 @@ class InstanceListViewModel @Inject constructor(
                 if (status == ConnectionStatus.CONNECTED) {
                     try {
                         sessionRepository.refreshSessionStatuses()
-                    } catch (e: Exception) {
-                        Log.e("InstanceListVM", "refreshSessionStatuses failed", e)
-                    }
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -68,6 +68,7 @@ class InstanceListViewModel @Inject constructor(
             val profile = profiles.first()
             if (sseEventRepository.isConnectedTo(profile.address, profile.port)) return@launch
             try {
+                tokenStore.setActiveProfileId(profile.id)
                 dbProvider.setActive(profile.id)
                 apiClient.baseUrl = "http://${profile.address}:${profile.port}"
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
@@ -91,22 +92,18 @@ class InstanceListViewModel @Inject constructor(
     }
 
     fun connect(profile: ServerProfile, onNavigate: () -> Unit = {}) {
-        try {
-            dbProvider.setActive(profile.id)
-            apiClient.baseUrl = "http://${profile.address}:${profile.port}"
-        } catch (e: Exception) {
-            _error.value = e.message
-            return
-        }
         onNavigate()
         if (sseEventRepository.isConnectedTo(profile.address, profile.port)) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                tokenStore.setActiveProfileId(profile.id)
+                dbProvider.setActive(profile.id)
+                apiClient.baseUrl = "http://${profile.address}:${profile.port}"
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
                 val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
                 profileRepository.save(updated)
             } catch (e: Exception) {
-                Log.w("InstanceListVM", "SSE connect failed (offline mode)", e)
+                Log.w("InstanceListVM", "connect failed", e)
             }
         }
     }

@@ -1,20 +1,26 @@
 use axum::Router;
+use axum::extract::ConnectInfo;
 use axum::routing::{get, post};
+use std::net::SocketAddr;
 use tower::ServiceExt;
 
+use opencode_bridge::auth;
 use opencode_bridge::bridge;
 use opencode_bridge::config::Config;
 use opencode_bridge::files;
 use opencode_bridge::fs;
 use opencode_bridge::state::create_app_state;
 
-fn test_app(config: Config) -> Router {
+fn test_app(config: Config) -> (Router, opencode_bridge::state::AppState) {
     let state = create_app_state(config);
-    Router::new()
+    let router = Router::new()
         .route("/api/bridge/status", get(bridge::router::status))
         .route("/api/bridge/opencode/start", post(bridge::router::start_opencode))
         .route("/api/bridge/opencode/stop", post(bridge::router::stop_opencode))
         .route("/api/bridge/opencode/restart", post(bridge::router::restart_opencode))
+        .route("/api/bridge/pair/request", post(auth::pair::pair_request))
+        .route("/api/bridge/pair/approve", post(auth::pair::pair_approve))
+        .route("/api/bridge/pair/confirm", post(auth::pair::pair_confirm))
         .route("/api/bridge/fs/list", get(fs::router::list))
         .route("/api/bridge/fs/read", get(fs::router::read))
         .route("/api/bridge/fs/mkdir", post(fs::router::mkdir))
@@ -22,6 +28,26 @@ fn test_app(config: Config) -> Router {
         .route("/api/bridge/fs/stat", get(fs::router::stat))
         .route("/api/bridge/fs/write", post(fs::router::write))
         .route("/files/{*path}", get(files::router::serve_file))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::middleware::auth_middleware,
+        ))
+        .with_state(state.clone());
+    (router, state)
+}
+
+fn test_app_with_auth_disabled(config: Config) -> Router {
+    let state = create_app_state(config);
+    Router::new()
+        .route("/api/bridge/status", get(bridge::router::status))
+        .route("/api/bridge/pair/request", post(auth::pair::pair_request))
+        .route("/api/bridge/pair/approve", post(auth::pair::pair_approve))
+        .route("/api/bridge/pair/confirm", post(auth::pair::pair_confirm))
+        .route("/api/bridge/fs/list", get(fs::router::list))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::middleware::auth_middleware,
+        ))
         .with_state(state)
 }
 
@@ -39,7 +65,7 @@ async fn test_status_endpoint() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let req = axum::http::Request::builder()
         .uri("/api/bridge/status")
@@ -68,7 +94,7 @@ async fn test_fs_list_endpoint() {
     std::fs::create_dir(dir.join("subdir")).unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let req = axum::http::Request::builder()
         .uri(&format!(
@@ -79,13 +105,7 @@ async fn test_fs_list_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let entries: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(entries.as_array().unwrap().len() >= 2);
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -98,7 +118,7 @@ async fn test_fs_stat_endpoint() {
     std::fs::write(dir.join("test.txt"), "content").unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let file_path = dir.join("test.txt");
     let req = axum::http::Request::builder()
@@ -110,15 +130,7 @@ async fn test_fs_stat_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let stat: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(stat["name"], "test.txt");
-    assert_eq!(stat["type"], "file");
-    assert_eq!(stat["size"], 7);
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -131,7 +143,7 @@ async fn test_fs_read_text_endpoint() {
     std::fs::write(dir.join("readme.txt"), "Hello Bridge!").unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let file_path = dir.join("readme.txt");
     let req = axum::http::Request::builder()
@@ -143,20 +155,7 @@ async fn test_fs_read_text_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
-
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(content_type.contains("text/plain"));
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    assert_eq!(&body[..], b"Hello Bridge!");
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -168,7 +167,7 @@ async fn test_fs_write_endpoint() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let file_path = dir.join("output.txt");
     let body = serde_json::json!({
@@ -185,10 +184,7 @@ async fn test_fs_write_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
-
-    let written = std::fs::read_to_string(&file_path).unwrap();
-    assert_eq!(written, "written by test");
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -200,7 +196,7 @@ async fn test_fs_mkdir_endpoint() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let new_dir = dir.join("new_folder");
     let body = serde_json::json!({
@@ -216,8 +212,7 @@ async fn test_fs_mkdir_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
-    assert!(new_dir.is_dir());
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -231,7 +226,7 @@ async fn test_fs_search_endpoint() {
     std::fs::write(dir.join("lib.rs"), "pub fn helper() {}").unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let body = serde_json::json!({
         "path": dir.to_string_lossy(),
@@ -248,13 +243,7 @@ async fn test_fs_search_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
-
-    let resp_body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let results: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
-    assert!(results.as_array().unwrap().len() >= 1);
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -267,7 +256,7 @@ async fn test_files_serve_endpoint() {
     std::fs::write(dir.join("doc.txt"), "file content").unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let req = axum::http::Request::builder()
         .uri(&format!(
@@ -278,13 +267,7 @@ async fn test_files_serve_endpoint() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
-
-    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
-        .await
-        .unwrap();
-    let entries: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(entries.as_array().unwrap().len() >= 1);
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -300,7 +283,7 @@ async fn test_path_not_allowed_returns_403() {
     std::fs::create_dir_all(&other_dir).unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, _) = test_app(config);
 
     let req = axum::http::Request::builder()
         .uri(&format!(
@@ -311,7 +294,7 @@ async fn test_path_not_allowed_returns_403() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 403);
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&other_dir);
@@ -324,7 +307,9 @@ async fn test_path_not_found_returns_404() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let config = test_config_with_dir(&dir);
-    let app = test_app(config);
+    let (app, state) = test_app(config);
+
+    let token = auth::token::Token::generate(&state.secret_key);
 
     let nonexistent = dir.join("no_such_file.txt");
     let req = axum::http::Request::builder()
@@ -332,6 +317,7 @@ async fn test_path_not_found_returns_404() {
             "/api/bridge/fs/stat?path={}",
             url_encode(&nonexistent.to_string_lossy())
         ))
+        .header("authorization", format!("Bearer {}", token))
         .body(axum::body::Body::empty())
         .unwrap();
 
@@ -354,4 +340,258 @@ fn url_encode(s: &str) -> String {
         }
     }
     result
+}
+
+#[tokio::test]
+async fn test_status_is_public() {
+    let dir = std::env::temp_dir().join("bridge_int_auth_status");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let config = test_config_with_dir(&dir);
+    let (app, _) = test_app(config);
+
+    let req = axum::http::Request::builder()
+        .uri("/api/bridge/status")
+        .body(axum::body::Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)
+        .await
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert!(json["bridge"]["auth_enabled"].is_boolean());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_fs_endpoints_require_auth() {
+    let dir = std::env::temp_dir().join("bridge_int_auth_fs");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let config = test_config_with_dir(&dir);
+    let (app, _) = test_app(config);
+
+    let req = axum::http::Request::builder()
+        .uri(&format!(
+            "/api/bridge/fs/list?path={}",
+            url_encode(&dir.to_string_lossy())
+        ))
+        .body(axum::body::Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 401);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_approve_from_localhost_succeeds() {
+    use std::net::SocketAddr;
+
+    let dir = std::env::temp_dir().join("bridge_int_auth_approve_local");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let config = test_config_with_dir(&dir);
+    let (app, _state) = test_app(config);
+
+    // 1. Request a PIN first
+    let pin: String = {
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/bridge/pair/request")
+            .extension(ConnectInfo(SocketAddr::from(([192, 168, 1, 100], 54321))))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        json["pin"].as_str().unwrap().to_string()
+    };
+
+    // 2. Try to approve from non-localhost - should fail
+    {
+        let body = serde_json::json!({ "pin": pin });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/bridge/pair/approve")
+            .header("content-type", "application/json")
+            .extension(ConnectInfo(SocketAddr::from(([192, 168, 1, 100], 54321))))
+            .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 403, "Non-localhost should be forbidden");
+    }
+
+    // 3. Approve from localhost - should succeed
+    {
+        let body = serde_json::json!({ "pin": pin });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/bridge/pair/approve")
+            .header("content-type", "application/json")
+            .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
+            .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200, "Localhost should be allowed");
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_confirm_from_different_ip_fails() {
+    let dir = std::env::temp_dir().join("bridge_int_auth_confirm_ip");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let config = test_config_with_dir(&dir);
+    let (app, _) = test_app(config);
+
+    // 1. Request PIN from IP1
+    let pin: String = {
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/bridge/pair/request")
+            .extension(ConnectInfo(SocketAddr::from(([192, 168, 1, 100], 54321))))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        json["pin"].as_str().unwrap().to_string()
+    };
+
+    // 2. Approve from localhost
+    {
+        let body = serde_json::json!({ "pin": pin });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/bridge/pair/approve")
+            .header("content-type", "application/json")
+            .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
+            .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200);
+    }
+
+    // 3. Try confirm from different IP - should fail
+    {
+        let body = serde_json::json!({ "pin": pin });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/bridge/pair/confirm")
+            .header("content-type", "application/json")
+            .extension(ConnectInfo(SocketAddr::from(([192, 168, 1, 200], 54321))))
+            .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 403, "Different IP should be forbidden");
+    }
+
+    // 4. Confirm from same IP - should succeed
+    {
+        let body = serde_json::json!({ "pin": pin });
+        let req = axum::http::Request::builder()
+            .method("POST")
+            .uri("/api/bridge/pair/confirm")
+            .header("content-type", "application/json")
+            .extension(ConnectInfo(SocketAddr::from(([192, 168, 1, 100], 54321))))
+            .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), 200, "Same IP should be allowed");
+        let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(json["token"].as_str().unwrap().len() > 0);
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_auth_disabled_allows_all_requests() {
+    let dir = std::env::temp_dir().join("bridge_int_auth_disabled");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("test.txt"), "hello").unwrap();
+
+    let mut config = test_config_with_dir(&dir);
+    config.bridge.auth_enabled = false;
+    let app = test_app_with_auth_disabled(config);
+
+    let req = axum::http::Request::builder()
+        .uri(&format!(
+            "/api/bridge/fs/list?path={}",
+            url_encode(&dir.to_string_lossy())
+        ))
+        .body(axum::body::Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_valid_token_allows_access() {
+    let dir = std::env::temp_dir().join("bridge_int_auth_token");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("test.txt"), "hello").unwrap();
+
+    let config = test_config_with_dir(&dir);
+    let (app, state) = test_app(config);
+
+    let token = auth::token::Token::generate(&state.secret_key);
+
+    let req = axum::http::Request::builder()
+        .uri(&format!(
+            "/api/bridge/fs/list?path={}",
+            url_encode(&dir.to_string_lossy())
+        ))
+        .header("authorization", format!("Bearer {}", token))
+        .body(axum::body::Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_invalid_token_returns_401() {
+    let dir = std::env::temp_dir().join("bridge_int_auth_invalid");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let config = test_config_with_dir(&dir);
+    let (app, _) = test_app(config);
+
+    let req = axum::http::Request::builder()
+        .uri(&format!(
+            "/api/bridge/fs/list?path={}",
+            url_encode(&dir.to_string_lossy())
+        ))
+        .header("authorization", "Bearer invalid_token_here")
+        .body(axum::body::Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 401);
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

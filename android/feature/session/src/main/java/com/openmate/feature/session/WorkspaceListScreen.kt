@@ -495,6 +495,7 @@ private fun ConnectionDot(status: ConnectionStatus) {
     val color = when (status) {
         ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
         ConnectionStatus.CONNECTING -> Color(0xFFf5a742)
+        ConnectionStatus.PAIRING -> Color(0xFFf5a742)
         ConnectionStatus.ERROR -> Color(0xFFe06c75)
         ConnectionStatus.NOT_BRIDGE -> Color(0xFFe06c75)
         ConnectionStatus.DISCONNECTED -> Color(0xFF808080)
@@ -502,6 +503,7 @@ private fun ConnectionDot(status: ConnectionStatus) {
     val label = when (status) {
         ConnectionStatus.CONNECTED -> stringResource(R.string.status_connected)
         ConnectionStatus.CONNECTING -> stringResource(R.string.status_connecting)
+        ConnectionStatus.PAIRING -> stringResource(R.string.status_connecting)
         ConnectionStatus.ERROR -> stringResource(R.string.status_error)
         ConnectionStatus.NOT_BRIDGE -> stringResource(R.string.status_not_bridge)
         ConnectionStatus.DISCONNECTED -> stringResource(R.string.status_disconnected)

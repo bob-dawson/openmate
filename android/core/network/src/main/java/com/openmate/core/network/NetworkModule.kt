@@ -15,30 +15,39 @@ object NetworkModule {
     @Provides
     @Singleton
     @Named("sse")
-    fun provideSseOkHttpClient(): OkHttpClient {
+    fun provideSseOkHttpClient(
+        tokenStore: TokenStore,
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .addInterceptor(BearerTokenInterceptor(tokenStore))
             .build()
     }
 
     @Provides
     @Singleton
     @Named("api")
-    fun provideApiOkHttpClient(): OkHttpClient {
+    fun provideApiOkHttpClient(
+        tokenStore: TokenStore,
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .addInterceptor(BearerTokenInterceptor(tokenStore))
             .build()
     }
 
     @Provides
     @Singleton
     @Named("download")
-    fun provideDownloadOkHttpClient(): OkHttpClient {
+    fun provideDownloadOkHttpClient(
+        tokenStore: TokenStore,
+    ): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
             .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .addInterceptor(BearerTokenInterceptor(tokenStore))
             .build()
     }
 

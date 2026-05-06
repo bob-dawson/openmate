@@ -1,12 +1,14 @@
 use axum::Router;
 use axum::routing::{any, get, post};
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use opencode_bridge::auth;
 use opencode_bridge::bridge;
 use opencode_bridge::config::Config;
 use opencode_bridge::files;
 use opencode_bridge::fs;
 use opencode_bridge::proxy;
 use opencode_bridge::state::create_app_state;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -17,6 +19,17 @@ use tracing_subscriber::EnvFilter;
 struct Args {
     #[arg(short, long)]
     config: Option<PathBuf>,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    Approve {
+        pin: String,
+    },
+    ResetToken,
 }
 
 #[tokio::main]
@@ -28,6 +41,17 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+
+    match args.command {
+        Some(Commands::Approve { pin }) => {
+            return run_approve(&pin).await;
+        }
+        Some(Commands::ResetToken) => {
+            return run_reset_token().await;
+        }
+        None => {}
+    }
+
     let config = Config::find_and_load(args.config)?;
 
     tracing::info!("OpenCode Bridge starting");
@@ -37,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
         "Allowed paths: {:?}",
         config.effective_allowed_paths()
     );
+    tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 
     let app_state = create_app_state(config.clone());
 
@@ -52,6 +77,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/bridge/opencode/start", post(bridge::router::start_opencode))
         .route("/api/bridge/opencode/stop", post(bridge::router::stop_opencode))
         .route("/api/bridge/opencode/restart", post(bridge::router::restart_opencode))
+        .route("/api/bridge/pair/request", post(auth::pair::pair_request))
+        .route("/api/bridge/pair/approve", post(auth::pair::pair_approve))
+        .route("/api/bridge/pair/confirm", post(auth::pair::pair_confirm))
         .route("/api/bridge/fs/roots", get(fs::router::roots))
         .route("/api/bridge/fs/list", get(fs::router::list))
         .route("/api/bridge/fs/read", get(fs::router::read))
@@ -66,6 +94,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/global/event", get(proxy::sse::sse_proxy))
         .route("/api/opencode/{*path}", any(proxy::rest::proxy_opencode_request))
         .fallback(any(proxy::rest::proxy_fallback))
+        .layer(axum::middleware::from_fn_with_state(
+            app_state.clone(),
+            auth::middleware::auth_middleware,
+        ))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);
@@ -73,7 +105,39 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(config.bridge_listen_addr()).await?;
     tracing::info!("Bridge listening on {}", config.bridge_listen_addr());
 
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
+    Ok(())
+}
+
+async fn run_approve(pin: &str) -> anyhow::Result<()> {
+    let config = Config::find_and_load(None)?;
+    let bridge_url = format!("http://127.0.0.1:{}", config.bridge.port);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/api/bridge/pair/approve", bridge_url))
+        .json(&serde_json::json!({ "pin": pin }))
+        .send()
+        .await?;
+
+    if resp.status().is_success() {
+        tracing::info!("PIN {} approved successfully", pin);
+    } else {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        anyhow::bail!("Failed to approve PIN: {} - {}", status, body);
+    }
+
+    Ok(())
+}
+
+async fn run_reset_token() -> anyhow::Result<()> {
+    auth::key::SecretKey::delete_key_file()?;
+    tracing::info!("Secret key deleted. All tokens are now invalid. A new key will be generated on next start.");
     Ok(())
 }

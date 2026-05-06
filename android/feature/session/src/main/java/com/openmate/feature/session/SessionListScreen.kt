@@ -279,6 +279,7 @@ private fun ConnectionDot(status: ConnectionStatus) {
     val color = when (status) {
         ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
         ConnectionStatus.CONNECTING -> Color(0xFFf5a742)
+        ConnectionStatus.PAIRING -> Color(0xFFf5a742)
         ConnectionStatus.ERROR -> Color(0xFFe06c75)
         ConnectionStatus.NOT_BRIDGE -> Color(0xFFe06c75)
         ConnectionStatus.DISCONNECTED -> Color(0xFF808080)

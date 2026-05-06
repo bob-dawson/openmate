@@ -12,6 +12,9 @@ import com.openmate.core.network.dto.BridgeWriteRequest
 import com.openmate.core.network.dto.FileNodeDto
 import com.openmate.core.network.dto.HealthDto
 import com.openmate.core.network.dto.MessageWithPartsDto
+import com.openmate.core.network.dto.PairConfirmRequest
+import com.openmate.core.network.dto.PairConfirmResponse
+import com.openmate.core.network.dto.PairRequestResponse
 import com.openmate.core.network.dto.PermissionDto
 import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.network.dto.QuestionDto
@@ -19,6 +22,8 @@ import com.openmate.core.network.dto.SessionDto
 import com.openmate.core.network.dto.PathInfo
 import com.openmate.core.network.dto.SessionStatusDto
 import com.openmate.core.network.dto.SkillInfoDto
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -325,6 +330,24 @@ class OpencodeApiClient(
         return get("/api/bridge/status")
     }
 
+    suspend fun bridgePairRequest(): PairRequestResponse {
+        return post("/api/bridge/pair/request", JsonObject(emptyMap()))
+    }
+
+    suspend fun bridgePairConfirm(pin: String): PairConfirmResponse = withContext(Dispatchers.IO) {
+        val body = PairConfirmRequest(pin)
+        val jsonStr = json.encodeToString(PairConfirmRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = buildUrl("/api/bridge/pair/confirm", emptyMap())
+        val request = Request.Builder().url(url).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
+        }
+        json.decodeFromString(responseBody)
+    }
+
     suspend fun bridgeDownloadFile(
         path: String,
         destFile: java.io.File,
@@ -360,25 +383,25 @@ class OpencodeApiClient(
         }
     }
 
-    private inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T {
+    private suspend inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
         val url = buildUrl(path, params)
         val request = Request.Builder().url(url).get().build()
         val response = client.newCall(request).execute()
-        return handleResponse(response)
+        handleResponse(response)
     }
 
-    private inline fun <reified T> getList(path: String, params: Map<String, String> = emptyMap()): List<T> {
+    private suspend inline fun <reified T> getList(path: String, params: Map<String, String> = emptyMap()): List<T> = withContext(Dispatchers.IO) {
         val url = buildUrl(path, params)
         val request = Request.Builder().url(url).get().build()
         val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: return emptyList()
+        val body = response.body?.string() ?: return@withContext emptyList()
         if (!response.isSuccessful) {
             throw ServerUnavailableException("HTTP ${response.code}: $body")
         }
-        return json.decodeFromString(body)
+        json.decodeFromString(body)
     }
 
-    private inline fun <reified T> post(path: String, body: Any, params: Map<String, String> = emptyMap()): T {
+    private suspend inline fun <reified T> post(path: String, body: Any, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
         val jsonStr = when (body) {
             is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
             else -> json.encodeToString(JsonElement.serializer(), mapToJson(body as Map<*, *>))
@@ -387,10 +410,10 @@ class OpencodeApiClient(
         val url = buildUrl(path, params)
         val request = Request.Builder().url(url).post(requestBody).build()
         val response = client.newCall(request).execute()
-        return handleResponse(response)
+        handleResponse(response)
     }
 
-    private fun postUnit(path: String, body: Any, params: Map<String, String> = emptyMap()) {
+    private suspend fun postUnit(path: String, body: Any, params: Map<String, String> = emptyMap()) = withContext(Dispatchers.IO) {
         val jsonStr = when (body) {
             is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
             is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body))
@@ -439,7 +462,7 @@ class OpencodeApiClient(
         })
     }
 
-    private fun delete(path: String) {
+    private suspend fun delete(path: String) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("$baseUrl$path").delete().build()
         val response = client.newCall(request).execute()
         if (!response.isSuccessful && response.code != HttpURLConnection.HTTP_NO_CONTENT) {
@@ -447,7 +470,7 @@ class OpencodeApiClient(
         }
     }
 
-    private fun patch(path: String, body: Any) {
+    private suspend fun patch(path: String, body: Any) = withContext(Dispatchers.IO) {
         val jsonStr = when (body) {
             is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
             is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body as Map<*, *>))
@@ -461,7 +484,7 @@ class OpencodeApiClient(
         }
     }
 
-    private inline fun <reified T> handleResponse(response: okhttp3.Response): T {
+    private suspend inline fun <reified T> handleResponse(response: okhttp3.Response): T = withContext(Dispatchers.IO) {
         val body = response.body?.string() ?: throw ServerUnavailableException("Empty response")
         if (!response.isSuccessful) {
             when (response.code) {
@@ -470,7 +493,7 @@ class OpencodeApiClient(
                 else -> throw ServerUnavailableException("HTTP ${response.code}: $body")
             }
         }
-        return json.decodeFromString(body)
+        json.decodeFromString(body)
     }
 
     private fun buildUrl(path: String, params: Map<String, String>): String {

@@ -6,4 +6,5 @@ enum class ConnectionStatus {
     CONNECTED,
     ERROR,
     NOT_BRIDGE,
+    PAIRING,
 }
