@@ -21,9 +21,13 @@ const SERVICE_DESCRIPTION: &str = "OpenMate Bridge - proxy, file serving, and au
 
 pub fn install() -> anyhow::Result<()> {
     let exe_path = std::env::current_exe()?;
+    let exe_str = exe_path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid exe path"))?;
+    println!("Installing service from: {}", exe_str);
 
     let manager_access = ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE;
-    let service_manager = ServiceManager::local_computer(None::<&str>, manager_access)?;
+    let service_manager = ServiceManager::local_computer(None::<&str>, manager_access).map_err(|e| {
+        anyhow::anyhow!("Failed to open service manager: {} (are you running as Administrator?)", e)
+    })?;
 
     let service_info = ServiceInfo {
         name: SERVICE_NAME.into(),
@@ -38,9 +42,11 @@ pub fn install() -> anyhow::Result<()> {
         account_password: None,
     };
 
-    let service = service_manager.create_service(&service_info, ServiceAccess::QUERY_STATUS | ServiceAccess::START)?;
+    let service = service_manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
     service.set_description(SERVICE_DESCRIPTION)?;
-    service.start(&[] as &[OsString])?;
+
+    let start_service = service_manager.open_service(SERVICE_NAME, ServiceAccess::START)?;
+    start_service.start(&[] as &[OsString])?;
 
     println!("{} service installed and started successfully.", SERVICE_NAME);
     Ok(())
@@ -48,10 +54,14 @@ pub fn install() -> anyhow::Result<()> {
 
 pub fn uninstall() -> anyhow::Result<()> {
     let manager_access = ServiceManagerAccess::CONNECT;
-    let service_manager = ServiceManager::local_computer(None::<&str>, manager_access)?;
+    let service_manager = ServiceManager::local_computer(None::<&str>, manager_access).map_err(|e| {
+        anyhow::anyhow!("Failed to open service manager: {} (are you running as Administrator?)", e)
+    })?;
 
     let access = ServiceAccess::QUERY_STATUS | ServiceAccess::STOP | ServiceAccess::DELETE;
-    let service = service_manager.open_service(SERVICE_NAME, access)?;
+    let service = service_manager.open_service(SERVICE_NAME, access).map_err(|e| {
+        anyhow::anyhow!("Failed to open service '{}': {} (is it installed?)", SERVICE_NAME, e)
+    })?;
 
     let status = service.query_status()?;
     if status.current_state != ServiceState::Stopped {
@@ -59,6 +69,7 @@ pub fn uninstall() -> anyhow::Result<()> {
         std::thread::sleep(Duration::from_secs(2));
     }
 
+    service.delete()?;
     drop(service);
 
     println!("{} service uninstalled successfully.", SERVICE_NAME);
