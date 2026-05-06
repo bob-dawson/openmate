@@ -38,6 +38,19 @@ pub struct UploadQuery {
     pub create_dirs: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DeleteRequest {
+    pub path: String,
+    #[serde(default)]
+    pub recursive: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenameRequest {
+    pub source: String,
+    pub destination: String,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -209,6 +222,35 @@ pub async fn upload(
         .map_err(|e| AppError::PathNotAllowed(e))?;
 
     operations::write_file(&validated_path, &body, query.create_dirs)?;
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+pub async fn delete(
+    State(state): State<AppState>,
+    Json(body): Json<DeleteRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let guard = PathGuard::from_config(&state.config);
+    let validated_path = guard
+        .validate(&body.path)
+        .map_err(|e| AppError::PathNotAllowed(e))?;
+
+    operations::delete_path(&validated_path, body.recursive)?;
+    Ok(Json(serde_json::json!({ "success": true })))
+}
+
+pub async fn rename(
+    State(state): State<AppState>,
+    Json(body): Json<RenameRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let guard = PathGuard::from_config(&state.config);
+    let validated_src = guard
+        .validate(&body.source)
+        .map_err(|e| AppError::PathNotAllowed(e))?;
+    let validated_dst = guard
+        .validate(&body.destination)
+        .map_err(|e| AppError::PathNotAllowed(e))?;
+
+    operations::rename_path(&validated_src, &validated_dst)?;
     Ok(Json(serde_json::json!({ "success": true })))
 }
 

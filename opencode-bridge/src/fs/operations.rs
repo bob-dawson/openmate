@@ -159,6 +159,33 @@ pub fn mkdir(path: &Path, recursive: bool) -> Result<(), AppError> {
     Ok(())
 }
 
+pub fn delete_path(path: &Path, recursive: bool) -> Result<(), AppError> {
+    let metadata = std::fs::metadata(path)
+        .map_err(|_| AppError::PathNotFound(path.display().to_string()))?;
+    
+    if metadata.is_dir() {
+        if recursive {
+            std::fs::remove_dir_all(path).map_err(AppError::Io)?;
+        } else {
+            std::fs::remove_dir(path).map_err(AppError::Io)?;
+        }
+    } else {
+        std::fs::remove_file(path).map_err(AppError::Io)?;
+    }
+    Ok(())
+}
+
+pub fn rename_path(src: &Path, dst: &Path) -> Result<(), AppError> {
+    if !src.exists() {
+        return Err(AppError::PathNotFound(src.display().to_string()));
+    }
+    if dst.exists() {
+        return Err(AppError::Internal(anyhow::anyhow!("Destination already exists")));
+    }
+    std::fs::rename(src, dst).map_err(AppError::Io)?;
+    Ok(())
+}
+
 fn format_permission(metadata: &std::fs::Metadata) -> String {
     let mut perms = String::new();
     if metadata.permissions().readonly() {

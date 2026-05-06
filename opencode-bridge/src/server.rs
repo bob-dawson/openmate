@@ -67,6 +67,8 @@ pub async fn run_server(
             axum::routing::put(fs::router::upload)
                 .layer(axum::extract::DefaultBodyLimit::max(100 * 1024 * 1024)),
         )
+        .route("/api/bridge/fs/delete", post(fs::router::delete))
+        .route("/api/bridge/fs/rename", post(fs::router::rename))
         .route("/files/{*path}", get(files::router::serve_file))
         .route(
             "/api/opencode/global/event",
