@@ -41,6 +41,7 @@ import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeSearchResultDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private data class DirItem(val name: String, val fullPath: String)
 
@@ -64,7 +65,8 @@ fun DirectoryPickerSheet(
     var pathInput by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf("") }
-    var createError by remember { mutableStateOf("") }
+    var confirmError by remember { mutableStateOf("") }
+    var isConfirming by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun loadRoots() {
@@ -141,6 +143,33 @@ fun DirectoryPickerSheet(
         }
     }
 
+    fun confirmDirectory(targetPath: String) {
+        confirmError = ""
+        isConfirming = true
+        scope.launch(Dispatchers.IO) {
+            try {
+                apiClient.bridgeListDir(targetPath)
+                withContext(Dispatchers.Main) {
+                    isConfirming = false
+                    onSelect(targetPath)
+                }
+            } catch (_: Exception) {
+                try {
+                    apiClient.bridgeMkdir(targetPath, true)
+                    withContext(Dispatchers.Main) {
+                        isConfirming = false
+                        onSelect(targetPath)
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        isConfirming = false
+                        confirmError = e.message ?: "Failed to create directory"
+                    }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (initialDirectory.isNotBlank()) {
             navigateTo(normalizePath(initialDirectory))
@@ -178,7 +207,7 @@ fun DirectoryPickerSheet(
                 value = pathInput,
                 onValueChange = { newPath ->
                     pathInput = newPath
-                    createError = ""
+                    confirmError = ""
                     doPrefixSearch(newPath)
                 },
                 label = { Text(stringResource(R.string.path_prefix_search)) },
@@ -196,31 +225,28 @@ fun DirectoryPickerSheet(
                     Text("..")
                 }
                 Spacer(modifier = Modifier.weight(1f))
-                if (pathInput.isNotBlank()) {
-                    TextButton(onClick = {
-                        val target = normalizePath(pathInput)
-                        scope.launch(Dispatchers.IO) {
-                            try {
-                                apiClient.bridgeMkdir(target, true)
-                                onSelect(target)
-                            } catch (e: Exception) {
-                                createError = e.message ?: "Failed to create directory"
-                            }
-                        }
-                    }) {
-                        Text(stringResource(R.string.create_and_use))
-                    }
-                }
                 TextButton(
-                    onClick = { onSelect(if (isAtRoot) "/" else currentPath) },
+                    onClick = {
+                        val target = if (pathInput.isNotBlank()) normalizePath(pathInput)
+                            else if (isAtRoot) "/" else currentPath
+                        confirmDirectory(target)
+                    },
+                    enabled = !isConfirming,
                 ) {
-                    Text(stringResource(R.string.use_this_dir))
+                    if (isConfirming) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Text(stringResource(R.string.confirm))
+                    }
                 }
             }
 
-            if (createError.isNotBlank()) {
+            if (confirmError.isNotBlank()) {
                 Text(
-                    text = createError,
+                    text = confirmError,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(bottom = 4.dp),
@@ -260,7 +286,7 @@ fun DirectoryPickerSheet(
                             DirectoryRow(
                                 name = stringResource(R.string.current_dir),
                                 fullPath = currentPath,
-                                onClick = { onSelect(currentPath) },
+                                onClick = { confirmDirectory(currentPath) },
                             )
                         }
                     }

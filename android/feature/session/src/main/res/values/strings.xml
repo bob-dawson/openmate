@@ -119,9 +119,7 @@
     <string name="file_to_large">(File too large: %1$d chars, showing first 500K)</string>
 
     <string name="select_directory_title">Select Directory</string>
-    <string name="path_prefix_search">Path (prefix search or create)</string>
-    <string name="create_and_use">Create &amp; Use</string>
-    <string name="use_this_dir">Use this dir</string>
+    <string name="path_prefix_search">Path (prefix search)</string>
     <string name="current_dir">. (current)</string>
 
     <string name="select_model">Select Model</string>

@@ -151,9 +151,7 @@
 
     <!-- Directory Picker -->
     <string name="select_directory_title">选择目录</string>
-    <string name="path_prefix_search">路径（前缀搜索或创建）</string>
-    <string name="create_and_use">创建并使用</string>
-    <string name="use_this_dir">使用此目录</string>
+    <string name="path_prefix_search">路径（前缀搜索）</string>
     <string name="current_dir">. (当前)</string>
 
     <!-- Model Picker -->
