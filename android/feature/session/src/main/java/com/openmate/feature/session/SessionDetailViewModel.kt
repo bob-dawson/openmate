@@ -22,6 +22,7 @@ import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
+import com.openmate.core.common.guessMimeForAttachment
 import com.openmate.core.network.dto.SkillInfoDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -172,7 +173,7 @@ companion object {
                     }
                     val serverPath = "${currentDirectory.ifBlank { "." }}/.openmate/upload/$filename"
                     apiClient.bridgeUploadFile(serverPath, bytes, createDirs = true)
-                    _attachedFiles.value = _attachedFiles.value + FileAttachment(serverPath, filename, guessMime(filename))
+                    _attachedFiles.value = _attachedFiles.value + FileAttachment(serverPath, filename, guessMimeForAttachment(filename))
                     draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
                 } catch (e: Exception) {
                     _errorMessage.value = appContext.getString(R.string.upload_failed, e.message ?: "Unknown error")
@@ -519,7 +520,7 @@ companion object {
     }
 
     fun attachFile(path: String, filename: String) {
-        val mime = guessMime(filename)
+        val mime = guessMimeForAttachment(filename)
         _attachedFiles.value = _attachedFiles.value + FileAttachment(path, filename, mime)
         draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
     }
@@ -527,17 +528,6 @@ companion object {
     fun removeAttachedFile(index: Int) {
         _attachedFiles.value = _attachedFiles.value.toMutableList().apply { removeAt(index) }
         draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
-    }
-
-    private fun guessMime(filename: String): String {
-        val ext = filename.substringAfterLast('.', "").lowercase()
-        return when (ext) {
-            "png" -> "image/png"
-            "jpg", "jpeg" -> "image/jpeg"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            else -> "text/plain"
-        }
     }
 
     private data class DraftData(val text: String, val files: List<FileAttachment>)
