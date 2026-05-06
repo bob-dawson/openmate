@@ -61,7 +61,7 @@ open class MessageEventHandler @Inject constructor(
 
     private suspend fun refreshMessages(sessionID: String) {
         try {
-            val page = apiClient.getMessages(sessionID, 80, null)
+            val page = apiClient.getMessages(sessionID, 10, null)
             val db = dbProvider.getActive()
             val domains = page.items.map { it.toDomain() }
             Log.d("MessageEventHandler", "refreshMessages: got ${domains.size} messages for $sessionID")

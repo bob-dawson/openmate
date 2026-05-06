@@ -210,7 +210,7 @@ companion object {
                 Log.e(TAG, "loadSession title failed", e)
             }
             try {
-                val cursor = messageRepository.syncMessages(sessionID, 80)
+                val cursor = messageRepository.syncMessages(sessionID, 10)
                 olderMessagesCursor = cursor
                 _hasOlderMessages.value = cursor != null
             } catch (e: Exception) {
@@ -256,7 +256,7 @@ companion object {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.getSession(sid)
-                val cursor = messageRepository.syncMessages(sid, 80)
+                val cursor = messageRepository.syncMessages(sid, 10)
                 if (cursor != null && olderMessagesCursor == null) {
                     olderMessagesCursor = cursor
                     _hasOlderMessages.value = true
@@ -276,7 +276,7 @@ companion object {
                 delay(POLL_INTERVAL_MS)
                 val sid = currentSessionID ?: continue
                 try {
-                    val cursor = messageRepository.syncMessages(sid, 80)
+                    val cursor = messageRepository.syncMessages(sid, 10)
                     if (cursor != null && olderMessagesCursor == null) {
                         olderMessagesCursor = cursor
                         _hasOlderMessages.value = true
@@ -321,7 +321,7 @@ companion object {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID, agent, files, currentDirectory.ifBlank { null })
-                messageRepository.syncMessages(sessionID, 80)
+                messageRepository.syncMessages(sessionID, 10)
                 permissionRepository.refresh(currentDirectory)
                 questionRepository.refresh(currentDirectory)
             } catch (e: Exception) {
@@ -492,7 +492,7 @@ companion object {
             try {
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
                 delay(2000)
-                messageRepository.syncMessages(sessionID, 80)
+                messageRepository.syncMessages(sessionID, 10)
                 sessionRepository.refreshSessionStatusesFromMessages()
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
