@@ -107,6 +107,8 @@ fun SessionDetailScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
+    val showReasoning by remember { mutableStateOf(prefs.getBoolean("show_reasoning", true)) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(9),
@@ -337,6 +339,7 @@ fun SessionDetailScreen(
                             onRejectQuestion = { id -> viewModel.rejectQuestion(id) },
                             onReplyPermission = { id, reply, msg -> viewModel.replyPermission(id, reply, msg) },
                             onNavigateToSubtask = onNavigateToSubtask,
+                            showReasoning = showReasoning,
                         )
                     }
                     if (messages.isEmpty()) {

@@ -21,6 +21,12 @@ pub struct SearchResult {
     pub line: Option<usize>,
     pub column: Option<usize>,
     pub snippet: Option<String>,
+    #[serde(default)]
+    pub is_directory: bool,
+    #[serde(default)]
+    pub size: u64,
+    #[serde(default)]
+    pub modified: u64,
 }
 
 fn default_search_type() -> String {
@@ -29,6 +35,22 @@ fn default_search_type() -> String {
 
 fn default_max_results() -> usize {
     50
+}
+
+fn file_meta(path: &Path) -> (bool, u64, u64) {
+    match std::fs::metadata(path) {
+        Ok(m) => {
+            let is_dir = m.is_dir();
+            let size = if is_dir { 0 } else { m.len() };
+            let modified = m.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            (is_dir, size, modified)
+        }
+        Err(_) => (false, 0, 0),
+    }
 }
 
 pub fn search_files(request: &SearchRequest) -> Result<Vec<SearchResult>, String> {
@@ -113,11 +135,15 @@ fn search_by_filename(
             return true;
         }
         if name.to_lowercase().contains(&query_lower) {
+            let (is_dir, size, modified) = file_meta(path);
             results.push(SearchResult {
                 path: path.to_string_lossy().to_string(),
                 line: None,
                 column: None,
                 snippet: None,
+                is_directory: is_dir,
+                size,
+                modified,
             });
         }
         results.len() < max_results
@@ -166,11 +192,15 @@ fn search_by_content(
                 } else {
                     line.to_string()
                 };
+                let (_, size, modified) = file_meta(path);
                 results.push(SearchResult {
                     path: path.to_string_lossy().to_string(),
                     line: Some(i + 1),
                     column: Some(line.find(query).unwrap_or(0) + 1),
                     snippet: Some(snippet),
+                    is_directory: false,
+                    size,
+                    modified,
                 });
             }
         }
@@ -222,11 +252,15 @@ fn search_by_prefix(query: &str) -> Result<Vec<SearchResult>, String> {
         let name_for_cmp = if case_sensitive { name.clone() } else { name.to_lowercase() };
         if prefix_for_cmp.is_empty() || name_for_cmp.starts_with(&prefix_for_cmp) {
             let full = format!("{}/{}", parent.trim_end_matches('/'), name);
+            let (_, _, modified) = file_meta(Path::new(&full));
             results.push(SearchResult {
                 path: full,
                 line: None,
                 column: None,
                 snippet: None,
+                is_directory: true,
+                size: 0,
+                modified,
             });
         }
     }
@@ -239,11 +273,16 @@ fn search_by_prefix(query: &str) -> Result<Vec<SearchResult>, String> {
                 for entry in entries.flatten() {
                     if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                         let child_name = entry.file_name().to_string_lossy().to_string();
+                        let child_path = format!("{}/{}", full_prefix_path.trim_end_matches('/'), child_name);
+                        let (_, _, modified) = file_meta(Path::new(&child_path));
                         results.push(SearchResult {
-                            path: format!("{}/{}", full_prefix_path.trim_end_matches('/'), child_name),
+                            path: child_path,
                             line: None,
                             column: None,
                             snippet: None,
+                            is_directory: true,
+                            size: 0,
+                            modified,
                         });
                     }
                 }

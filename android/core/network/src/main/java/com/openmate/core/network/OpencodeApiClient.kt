@@ -1,9 +1,11 @@
 package com.openmate.core.network
 
+import com.openmate.core.network.dto.BridgeDeleteRequest
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.BridgeFileStatDto
 import com.openmate.core.network.dto.BridgeMkdirRequest
+import com.openmate.core.network.dto.BridgeRenameRequest
 import com.openmate.core.network.dto.BridgeRootEntryDto
 import com.openmate.core.network.dto.BridgeSearchRequest
 import com.openmate.core.network.dto.BridgeSearchResultDto
@@ -309,6 +311,30 @@ class OpencodeApiClient(
         val response = client.newCall(request).execute()
         if (!response.isSuccessful) {
             throw ServerUnavailableException("HTTP ${response.code}")
+        }
+    }
+
+    suspend fun bridgeDelete(path: String, recursive: Boolean = false) {
+        val body = BridgeDeleteRequest(path, recursive)
+        val jsonStr = json.encodeToString(BridgeDeleteRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = buildUrl("/api/bridge/fs/delete", emptyMap())
+        val request = Request.Builder().url(url).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("Delete failed: HTTP ${response.code}")
+        }
+    }
+
+    suspend fun bridgeRename(source: String, destination: String) {
+        val body = BridgeRenameRequest(source, destination)
+        val jsonStr = json.encodeToString(BridgeRenameRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = buildUrl("/api/bridge/fs/rename", emptyMap())
+        val request = Request.Builder().url(url).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("Rename failed: HTTP ${response.code}")
         }
     }
 

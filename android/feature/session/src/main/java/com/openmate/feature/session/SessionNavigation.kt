@@ -6,6 +6,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.openmate.feature.session.component.WorkspaceBrowserScreen
+import com.openmate.feature.settings.CacheManagerScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -15,6 +16,7 @@ object SessionRoutes {
     const val SESSION_DETAIL = "session_detail"
     const val SUBTASK_DETAIL = "subtask_detail"
     const val WORKSPACE_BROWSER = "workspace_browser"
+    const val CACHE_MANAGER = "cache_manager"
 }
 
 fun NavGraphBuilder.sessionScreens(
@@ -28,6 +30,9 @@ fun NavGraphBuilder.sessionScreens(
             },
             onNavigateToDetail = { id ->
                 navController.navigate("${SessionRoutes.SESSION_DETAIL}/$id")
+            },
+            onNavigateToCacheManager = {
+                navController.navigate(SessionRoutes.CACHE_MANAGER)
             },
             onBack = { navController.popBackStack() },
         )
@@ -86,6 +91,11 @@ fun NavGraphBuilder.sessionScreens(
         val directory = URLDecoder.decode(encoded, "UTF-8")
         WorkspaceBrowserScreen(
             initialDirectory = directory,
+            onBack = { navController.popBackStack() },
+        )
+    }
+    composable(SessionRoutes.CACHE_MANAGER) {
+        CacheManagerScreen(
             onBack = { navController.popBackStack() },
         )
     }

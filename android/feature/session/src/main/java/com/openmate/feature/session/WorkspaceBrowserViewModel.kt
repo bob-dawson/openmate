@@ -4,14 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.database.ActiveDatabaseProvider
-import com.openmate.core.domain.model.CachedFile
-import com.openmate.core.domain.repository.FileCacheRepository
 import com.openmate.core.network.OpencodeApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,7 +34,6 @@ data class DownloadState(
 class WorkspaceBrowserViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     val apiClient: OpencodeApiClient,
-    private val cacheRepo: FileCacheRepository,
     private val dbProvider: ActiveDatabaseProvider,
 ) : ViewModel() {
     private val TAG = "WorkspaceBrowserVM"
@@ -45,33 +43,33 @@ class WorkspaceBrowserViewModel @Inject constructor(
 
     private val cacheDir get() = File(appContext.cacheDir, "file_cache")
 
-    private fun profileId(): String {
-        return dbProvider.getActiveProfileId() ?: "unknown"
-    }
-
     fun fileCacheDir(): File {
         cacheDir.mkdirs()
         return cacheDir
     }
 
-    suspend fun checkCache(remotePath: String): CachedFile? {
-        return cacheRepo.getCachedFile(remotePath, profileId())
+    private fun computeLocalPath(remotePath: String, filename: String): File {
+        val subDir = File(cacheDir, remotePath.hashCode().toString())
+        subDir.mkdirs()
+        val safeName = filename.replace("/", "_").replace("\\", "_")
+        return File(subDir, safeName)
+    }
+
+    fun getCachedFile(remotePath: String, filename: String): File? {
+        val localFile = computeLocalPath(remotePath, filename)
+        return if (localFile.exists() && localFile.length() > 0) localFile else null
     }
 
     fun downloadAndOpen(
         remotePath: String,
         filename: String,
         fileSize: Long,
-        modifiedTime: Long,
         onOpen: (File) -> Unit,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             _downloadState.value = DownloadState(downloading = true, totalBytes = fileSize)
             try {
-                val subDir = File(cacheDir, remotePath.hashCode().toString())
-                subDir.mkdirs()
-                val safeName = filename.replace("/", "_").replace("\\", "_")
-                val localFile = File(subDir, safeName)
+                val localFile = computeLocalPath(remotePath, filename)
                 apiClient.bridgeDownloadFile(remotePath, localFile) { downloaded, total ->
                     _downloadState.value = DownloadState(
                         downloading = true,
@@ -80,18 +78,35 @@ class WorkspaceBrowserViewModel @Inject constructor(
                         totalBytes = total,
                     )
                 }
-                cacheRepo.saveCachedFile(
-                    CachedFile(
-                        remotePath = remotePath,
-                        localPath = localFile.absolutePath,
-                        filename = filename,
-                        fileSize = localFile.length(),
-                        modifiedTime = modifiedTime,
-                        profileId = profileId(),
-                    )
-                )
                 _downloadState.value = DownloadState(downloading = false)
                 onOpen(localFile)
+            } catch (e: Exception) {
+                Log.e(TAG, "Download failed", e)
+                _downloadState.value = DownloadState(downloading = false, error = e.message ?: "Download failed")
+            }
+        }
+    }
+
+    fun downloadFile(
+        remotePath: String,
+        filename: String,
+        fileSize: Long,
+        onComplete: () -> Unit,
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _downloadState.value = DownloadState(downloading = true, totalBytes = fileSize)
+            try {
+                val localFile = computeLocalPath(remotePath, filename)
+                apiClient.bridgeDownloadFile(remotePath, localFile) { downloaded, total ->
+                    _downloadState.value = DownloadState(
+                        downloading = true,
+                        progress = if (total > 0) downloaded.toFloat() / total else 0f,
+                        downloadedBytes = downloaded,
+                        totalBytes = total,
+                    )
+                }
+                _downloadState.value = DownloadState(downloading = false)
+                onComplete()
             } catch (e: Exception) {
                 Log.e(TAG, "Download failed", e)
                 _downloadState.value = DownloadState(downloading = false, error = e.message ?: "Download failed")
@@ -156,6 +171,19 @@ class WorkspaceBrowserViewModel @Inject constructor(
                 appContext.startActivity(chooser)
             } catch (_: Exception) {}
         }
+    }
+
+    fun resolveFilename(context: Context, uri: Uri): String {
+        val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex >= 0) {
+                    return cursor.getString(nameIndex) ?: uri.lastPathSegment ?: "file"
+                }
+            }
+        }
+        return uri.lastPathSegment ?: "file"
     }
 }
 

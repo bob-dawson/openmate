@@ -35,6 +35,9 @@ data class BridgeSearchResultDto(
     val line: Int? = null,
     val column: Int? = null,
     val snippet: String? = null,
+    val isDirectory: Boolean = false,
+    val size: Long = 0L,
+    val modified: Long = 0L,
 )
 
 @Serializable
@@ -69,6 +72,18 @@ data class BridgeWriteRequest(
     val path: String,
     val content: String,
     val createDirs: Boolean = false,
+)
+
+@Serializable
+data class BridgeDeleteRequest(
+    val path: String,
+    val recursive: Boolean = false,
+)
+
+@Serializable
+data class BridgeRenameRequest(
+    val source: String,
+    val destination: String,
 )
 
 @Serializable

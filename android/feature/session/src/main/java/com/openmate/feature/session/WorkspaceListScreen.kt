@@ -74,7 +74,6 @@ import com.openmate.core.domain.model.Workspace
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.theme.Success
-import com.openmate.feature.session.component.DirectoryPickerSheet
 import com.openmate.feature.settings.SettingsViewModel
 
 private data class TabItem(
@@ -94,6 +93,7 @@ private val TABS = listOf(
 fun WorkspaceListScreen(
     onNavigateToWorkspace: (String) -> Unit,
     onNavigateToDetail: (String) -> Unit,
+    onNavigateToCacheManager: () -> Unit,
     onBack: () -> Unit,
     viewModel: WorkspaceListViewModel = hiltViewModel(),
     settingsViewModel: SettingsViewModel = hiltViewModel(),
@@ -260,7 +260,11 @@ fun WorkspaceListScreen(
             2 -> {
                 SettingsContent(
                     viewModel = settingsViewModel,
-                    onDisconnect = onBack,
+                    onNavigateToCacheManager = onNavigateToCacheManager,
+                    onDisconnect = {
+                        settingsViewModel.disconnect()
+                        onBack()
+                    },
                     modifier = Modifier.padding(padding),
                 )
             }
@@ -279,22 +283,6 @@ fun WorkspaceListScreen(
                         label = { Text(stringResource(R.string.session_title_optional)) },
                         singleLine = true,
                     )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showDirPicker = true }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = if (newSessionDirectory.isBlank()) stringResource(R.string.select_directory) else newSessionDirectory,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (newSessionDirectory.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
                 }
             },
             confirmButton = {
@@ -315,17 +303,6 @@ fun WorkspaceListScreen(
                     Text(stringResource(R.string.cancel))
                 }
             },
-        )
-    }
-
-    if (showDirPicker) {
-        DirectoryPickerSheet(
-            apiClient = viewModel.apiClient,
-            onSelect = { path ->
-                newSessionDirectory = path
-                showDirPicker = false
-            },
-            onDismiss = { showDirPicker = false },
         )
     }
 }
@@ -530,17 +507,11 @@ private fun ConnectionDot(status: ConnectionStatus) {
 @Composable
 private fun SettingsContent(
     viewModel: SettingsViewModel,
+    onNavigateToCacheManager: () -> Unit,
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val activeProfile by viewModel.activeProfile.collectAsState()
-    val notifyPermissions by viewModel.notifyPermissions.collectAsState()
-    val notifyQuestions by viewModel.notifyQuestions.collectAsState()
-    val notifyComplete by viewModel.notifyComplete.collectAsState()
-    val notifyErrors by viewModel.notifyErrors.collectAsState()
-    val autoAllowRead by viewModel.autoAllowRead.collectAsState()
-    val autoAllowGrep by viewModel.autoAllowGrep.collectAsState()
-    val autoAllowBash by viewModel.autoAllowBash.collectAsState()
 
     LazyColumn(
         modifier = modifier.padding(horizontal = 16.dp),
@@ -559,74 +530,41 @@ private fun SettingsContent(
         }
 
         item {
-            SectionHeader(title = stringResource(R.string.notifications))
-            SettingsCard {
-                SettingsToggle(
-                    title = stringResource(R.string.notify_permissions),
-                    subtitle = stringResource(R.string.notify_permissions_desc),
-                    checked = notifyPermissions,
-                    onCheckedChange = { viewModel.setNotifyPermissions(it) },
-                )
-                SettingsToggle(
-                    title = stringResource(R.string.notify_questions),
-                    subtitle = stringResource(R.string.notify_questions_desc),
-                    checked = notifyQuestions,
-                    onCheckedChange = { viewModel.setNotifyQuestions(it) },
-                )
-                SettingsToggle(
-                    title = stringResource(R.string.notify_complete),
-                    subtitle = stringResource(R.string.notify_complete_desc),
-                    checked = notifyComplete,
-                    onCheckedChange = { viewModel.setNotifyComplete(it) },
-                )
-                SettingsToggle(
-                    title = stringResource(R.string.notify_errors),
-                    subtitle = stringResource(R.string.notify_errors_desc),
-                    checked = notifyErrors,
-                    onCheckedChange = { viewModel.setNotifyErrors(it) },
-                    showDivider = false,
-                )
-            }
-        }
-
-        item {
-            SectionHeader(title = stringResource(R.string.auto_allow_rules))
-            SettingsCard {
-                SettingsToggle(
-                    title = stringResource(R.string.auto_allow_read),
-                    subtitle = null,
-                    checked = autoAllowRead,
-                    onCheckedChange = { viewModel.setAutoAllowRead(it) },
-                )
-                SettingsToggle(
-                    title = stringResource(R.string.auto_allow_grep),
-                    subtitle = null,
-                    checked = autoAllowGrep,
-                    onCheckedChange = { viewModel.setAutoAllowGrep(it) },
-                )
-                SettingsToggle(
-                    title = stringResource(R.string.auto_allow_bash),
-                    subtitle = stringResource(R.string.security_risk),
-                    subtitleColor = Color(0xFFf5a742),
-                    checked = autoAllowBash,
-                    onCheckedChange = { viewModel.setAutoAllowBash(it) },
-                    showDivider = false,
-                )
-            }
-        }
-
-        item {
-            SectionHeader(title = stringResource(R.string.cache_storage))
+            SectionHeader(title = stringResource(R.string.cache))
             SettingsCard {
                 SettingsRow(
-                    title = stringResource(R.string.file_cache),
+                    title = stringResource(R.string.cache),
                     subtitle = viewModel.cacheSize.collectAsState().value,
                     trailing = {
                         Text(
-                            text = stringResource(R.string.clear),
+                            text = stringResource(R.string.delete),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.clickable { viewModel.clearCache() },
+                        )
+                    },
+                )
+                SettingsRow(
+                    title = stringResource(R.string.manage),
+                    subtitle = stringResource(R.string.file_count, viewModel.cacheFileCount.collectAsState().value),
+                    showDivider = false,
+                    modifier = Modifier.clickable { onNavigateToCacheManager() },
+                )
+            }
+        }
+
+        item {
+            SectionHeader(title = stringResource(R.string.display))
+            SettingsCard {
+                val showReasoning by viewModel.showReasoning.collectAsState()
+                SettingsRow(
+                    title = stringResource(R.string.show_reasoning),
+                    subtitle = stringResource(R.string.show_reasoning_subtitle),
+                    showDivider = false,
+                    trailing = {
+                        Switch(
+                            checked = showReasoning,
+                            onCheckedChange = { viewModel.setShowReasoning(it) },
                         )
                     },
                 )
@@ -805,10 +743,11 @@ private fun SettingsToggle(
 private fun SettingsRow(
     title: String,
     subtitle: String?,
+    modifier: Modifier = Modifier,
     showDivider: Boolean = true,
     trailing: @Composable () -> Unit = {},
 ) {
-    Column {
+    Column(modifier = modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()

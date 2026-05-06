@@ -22,9 +22,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.openmate.feature.session.R
@@ -52,6 +54,9 @@ fun SubtaskDetailScreen(
     val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
+    val showReasoning by remember { mutableStateOf(prefs.getBoolean("show_reasoning", true)) }
 
     LaunchedEffect(subtaskSessionID) {
         viewModel.loadSession(subtaskSessionID)
@@ -111,6 +116,7 @@ fun SubtaskDetailScreen(
                             onReplyQuestion = { id, answers -> viewModel.replyQuestion(id, answers) },
                             onRejectQuestion = { id -> viewModel.rejectQuestion(id) },
                             onReplyPermission = { id, reply, msg -> viewModel.replyPermission(id, reply, msg) },
+                            showReasoning = showReasoning,
                         )
                     }
                     if (messages.isEmpty()) {

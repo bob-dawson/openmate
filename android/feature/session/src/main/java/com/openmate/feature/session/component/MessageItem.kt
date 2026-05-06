@@ -41,6 +41,7 @@ fun MessageItem(
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
     onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    showReasoning: Boolean = true,
 ) {
     val isUser = message.role == MessageRole.USER
     val isQueued = isUser && pendingAssistantId != null && message.id > pendingAssistantId
@@ -53,7 +54,7 @@ fun MessageItem(
         it is Part.TextPart && it.text.isNotBlank() && !it.synthetic
                 || it is Part.ToolInvocationPart
                 || it is Part.FilePart
-                || it is Part.ReasoningPart
+                || (showReasoning && it is Part.ReasoningPart)
                 || it is Part.SubtaskPart
                 || it is Part.AgentPart
                 || it is Part.PatchPart
@@ -81,6 +82,7 @@ fun MessageItem(
                 onRejectQuestion = onRejectQuestion,
                 onReplyPermission = onReplyPermission,
                 onNavigateToSubtask = onNavigateToSubtask,
+                showReasoning = showReasoning,
             )
         }
         if (isQueued) {

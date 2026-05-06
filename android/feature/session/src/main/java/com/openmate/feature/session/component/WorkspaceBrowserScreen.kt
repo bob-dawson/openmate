@@ -1,8 +1,12 @@
 package com.openmate.feature.session.component
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,13 +26,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -77,6 +90,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import java.util.Date
 import java.util.Locale
 
@@ -87,6 +110,13 @@ private const val LARGE_FILE_THRESHOLD = 10 * 1024 * 1024L
 
 private enum class SortColumn { NAME, SIZE, MODIFIED }
 private enum class SortOrder { ASC, DESC }
+
+data class FileContextMenuState(
+    val entry: BridgeDirEntryDto? = null,
+    val path: String = "",
+    val expanded: Boolean = false,
+    val screenOffset: Pair<Int, Int> = Pair(0, 0),
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,9 +146,66 @@ fun WorkspaceBrowserScreen(
     var fileError by remember { mutableStateOf("") }
     var largeFileConfirm by remember { mutableStateOf<LargeFileConfirm?>(null) }
     val scope = rememberCoroutineScope()
+    val itemPositions = remember { mutableStateMapOf<String, Offset>() }
+    val density = LocalDensity.current
 
     var sortColumn by remember { mutableStateOf(SortColumn.NAME) }
     var sortOrder by remember { mutableStateOf(SortOrder.ASC) }
+
+    var contextMenu by remember { mutableStateOf(FileContextMenuState()) }
+    var showRenameDialog by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showDeleteConfirm by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var showCreateDirDialog by remember { mutableStateOf(false) }
+    var newDirName by remember { mutableStateOf("") }
+    var isUploading by remember { mutableStateOf(false) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            scope.launch(Dispatchers.IO) {
+                isUploading = true
+                try {
+                    val filename = viewModel.resolveFilename(context, uri)
+                    val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+                        stream.readBytes()
+                    } ?: throw Exception("Cannot read file")
+
+                    if (bytes.size > 100 * 1024 * 1024) {
+                        throw Exception("File too large (max 100MB)")
+                    }
+
+                    val targetPath = if (currentPath.isBlank()) {
+                        filename
+                    } else {
+                        "$currentPath/$filename"
+                    }
+
+                    apiClient.bridgeUploadFile(targetPath, bytes, createDirs = false)
+
+                    scope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Upload complete: $filename", Toast.LENGTH_SHORT).show()
+                        scope.launch(Dispatchers.IO) {
+                            isLoading = true
+                            loadError = ""
+                            try {
+                                entries = apiClient.bridgeListDir(currentPath.ifBlank { "." })
+                            } catch (e: Exception) {
+                                entries = emptyList()
+                                loadError = e.message ?: "Failed to list directory"
+                            }
+                            isLoading = false
+                        }
+                    }
+                } catch (e: Exception) {
+                    scope.launch(Dispatchers.Main) {
+                        Toast.makeText(context, "Upload failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                isUploading = false
+            }
+        }
+    }
 
     fun formatSize(size: Long): String {
         return when {
@@ -201,22 +288,34 @@ fun WorkspaceBrowserScreen(
 
     fun openBinaryFile(path: String, filename: String, size: Long, modified: Long) {
         scope.launch(Dispatchers.IO) {
-            val cached = viewModel.checkCache(path)
-            val cacheValid = cached != null
-                    && File(cached.localPath).exists()
-                    && cached.fileSize == size
-                    && cached.modifiedTime == modified
-            if (cacheValid) {
-                val localFile = File(cached!!.localPath)
-                openFile(localFile, filename)
+            val cached = viewModel.getCachedFile(path, filename)
+            if (cached != null) {
+                openFile(cached, filename)
                 return@launch
             }
             if (size > LARGE_FILE_THRESHOLD) {
-                largeFileConfirm = LargeFileConfirm(path, filename, size, modified)
+                largeFileConfirm = LargeFileConfirm(path, filename, size)
                 return@launch
             }
-            viewModel.downloadAndOpen(path, filename, size, modified) { file ->
+            viewModel.downloadAndOpen(path, filename, size) { file ->
                 openFile(file, filename)
+            }
+        }
+    }
+
+    fun downloadOnly(path: String, filename: String, size: Long, modified: Long) {
+        scope.launch(Dispatchers.IO) {
+            val cached = viewModel.getCachedFile(path, filename)
+            if (cached != null) {
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "File already cached", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+            viewModel.downloadFile(path, filename, size) {
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Download complete: $filename", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -235,6 +334,57 @@ fun WorkspaceBrowserScreen(
             }
         } else {
             openTextFile(path)
+        }
+    }
+
+    fun deleteItem(path: String, isDir: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                apiClient.bridgeDelete(path, recursive = isDir)
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, if (isDir) "Directory deleted" else "File deleted", Toast.LENGTH_SHORT).show()
+                    loadDir(currentPath)
+                }
+            } catch (e: Exception) {
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Delete failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun renameItem(oldPath: String, newName: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val parent = oldPath.substringBeforeLast("/", "")
+                val newPath = if (parent.isBlank()) newName else "$parent/$newName"
+                apiClient.bridgeRename(oldPath, newPath)
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Renamed to $newName", Toast.LENGTH_SHORT).show()
+                    loadDir(currentPath)
+                }
+            } catch (e: Exception) {
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Rename failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun createDirectory(name: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val path = if (currentPath.isBlank()) name else "$currentPath/$name"
+                apiClient.bridgeMkdir(path, recursive = false)
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Directory created: $name", Toast.LENGTH_SHORT).show()
+                    loadDir(currentPath)
+                }
+            } catch (e: Exception) {
+                scope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, "Create failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -308,6 +458,23 @@ fun WorkspaceBrowserScreen(
 
     val canGoUp = currentPath.isNotBlank() && currentPath != "/" && currentPath.count { it == '/' } > 0
 
+    if (isUploading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.uploading),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+        return
+    }
+
     largeFileConfirm?.let { confirm ->
         AlertDialog(
             onDismissRequest = { largeFileConfirm = null },
@@ -316,13 +483,87 @@ fun WorkspaceBrowserScreen(
             confirmButton = {
                 TextButton(onClick = {
                     largeFileConfirm = null
-                    viewModel.downloadAndOpen(confirm.path, confirm.filename, confirm.size, confirm.modified) { file ->
+                    viewModel.downloadAndOpen(confirm.path, confirm.filename, confirm.size) { file ->
                         openFile(file, confirm.filename)
                     }
                 }) { Text(stringResource(R.string.download)) }
             },
             dismissButton = {
                 TextButton(onClick = { largeFileConfirm = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
+    showRenameDialog?.let { (path, name) ->
+        var newName by remember { mutableStateOf(name) }
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = null },
+            title = { Text(stringResource(R.string.enter_new_name)) },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRenameDialog = null
+                        renameItem(path, newName)
+                    },
+                    enabled = newName.isNotBlank() && newName != name,
+                ) { Text(stringResource(R.string.confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
+    showDeleteConfirm?.let { (path, isDir) ->
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = null },
+            title = { Text(if (isDir) stringResource(R.string.delete_directory) else stringResource(R.string.delete_file)) },
+            text = { Text(if (isDir) stringResource(R.string.confirm_delete_directory) else stringResource(R.string.confirm_delete_file)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = null
+                        deleteItem(path, isDir)
+                    },
+                ) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = null }) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+
+    if (showCreateDirDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDirDialog = false },
+            title = { Text(stringResource(R.string.create_directory)) },
+            text = {
+                OutlinedTextField(
+                    value = newDirName,
+                    onValueChange = { newDirName = it },
+                    label = { Text(stringResource(R.string.enter_new_name)) },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showCreateDirDialog = false
+                        createDirectory(newDirName)
+                        newDirName = ""
+                    },
+                    enabled = newDirName.isNotBlank(),
+                ) { Text(stringResource(R.string.create)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateDirDialog = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -375,6 +616,22 @@ fun WorkspaceBrowserScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.content_desc_back),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                        Icon(
+                            imageVector = Icons.Filled.UploadFile,
+                            contentDescription = stringResource(R.string.upload),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    IconButton(onClick = { showCreateDirDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Filled.CreateNewFolder,
+                            contentDescription = stringResource(R.string.create_directory),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
@@ -531,11 +788,26 @@ fun WorkspaceBrowserScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                     LazyColumn {
-                        items(contentResults) { result ->
-                            ContentSearchResultRow(
-                                result = result,
-                                onClick = { onFileClick(result.path) },
-                            )
+                        items(contentResults, key = { it.path }) { result ->
+                            val name = result.path.substringAfterLast("/").substringAfterLast("\\")
+                            val resultPath = result.path
+                            Box(
+                                modifier = Modifier.onGloballyPositioned { coords ->
+                                    itemPositions[resultPath] = coords.positionInWindow()
+                                }
+                            ) {
+                                ContentSearchResultRow(
+                                    result = result,
+                                    onClick = { onFileClick(resultPath) },
+                                    onLongClick = {
+                                        contextMenu = FileContextMenuState(
+                                            entry = BridgeDirEntryDto(name = name, size = result.size, modified = result.modified, isDirectory = result.isDirectory),
+                                            path = resultPath,
+                                            expanded = true,
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 } else if (contentQuery.isNotBlank() && contentResults.isEmpty()) {
@@ -553,14 +825,30 @@ fun WorkspaceBrowserScreen(
             } else if (filenameQuery.length >= 2) {
                 if (filenameResults.isNotEmpty()) {
                     LazyColumn {
-                        items(filenameResults) { result ->
+                        items(filenameResults, key = { it.path }) { result ->
                             val name = result.path.substringAfterLast("/").substringAfterLast("\\")
-                            BrowserFileRow(
-                                name = name,
-                                path = result.path,
-                                isDir = false,
-                                onClick = { onFileClick(result.path) },
-                            )
+                            val resultPath = result.path
+                            Box(
+                                modifier = Modifier.onGloballyPositioned { coords ->
+                                    itemPositions[resultPath] = coords.positionInWindow()
+                                }
+                            ) {
+                                BrowserFileRow(
+                                    name = name,
+                                    path = resultPath,
+                                    isDir = result.isDirectory,
+                                    size = if (result.isDirectory) "-" else formatSize(result.size),
+                                    modified = if (result.modified > 0) formatTime(result.modified) else "",
+                                    onClick = { onFileClick(resultPath) },
+                                    onLongClick = {
+                                        contextMenu = FileContextMenuState(
+                                            entry = BridgeDirEntryDto(name = name, size = result.size, modified = result.modified, isDirectory = result.isDirectory),
+                                            path = resultPath,
+                                            expanded = true,
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 } else {
@@ -597,23 +885,95 @@ fun WorkspaceBrowserScreen(
                     val sortedEntries = sortEntries(entries)
                     LazyColumn {
                         items(sortedEntries, key = { "${it.name}_${it.isDirectory}" }) { entry ->
-                            BrowserFileRow(
-                                name = entry.name,
-                                path = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}",
-                                isDir = entry.isDirectory,
-                                size = if (entry.isDirectory) "-" else formatSize(entry.size),
-                                modified = formatTime(entry.modified),
-                                onClick = {
-                                    if (entry.isDirectory) {
-                                        currentPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
-                                    } else {
-                                        val fullPath = if (currentPath.isBlank()) entry.name else "${currentPath}/${entry.name}"
-                                        onFileClick(fullPath)
-                                    }
-                                },
-                            )
+                            val fullPath = if (currentPath.isBlank()) entry.name else "$currentPath/${entry.name}"
+                            Box(
+                                modifier = Modifier.onGloballyPositioned { coords ->
+                                    itemPositions[fullPath] = coords.positionInWindow()
+                                }
+                            ) {
+                                BrowserFileRow(
+                                    name = entry.name,
+                                    path = fullPath,
+                                    isDir = entry.isDirectory,
+                                    size = if (entry.isDirectory) "-" else formatSize(entry.size),
+                                    modified = formatTime(entry.modified),
+                                    onClick = {
+                                        if (entry.isDirectory) {
+                                            currentPath = fullPath
+                                        } else {
+                                            onFileClick(fullPath)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        contextMenu = FileContextMenuState(
+                                            entry = entry,
+                                            path = fullPath,
+                                            expanded = true,
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    if (contextMenu.expanded && contextMenu.entry != null) {
+        val pos = itemPositions[contextMenu.path]
+        val menuEntry = contextMenu.entry!!
+        val fullPath = contextMenu.path
+        Popup(
+            alignment = Alignment.TopStart,
+            offset = if (pos != null) IntOffset(pos.x.roundToInt(), pos.y.roundToInt()) else IntOffset.Zero,
+            onDismissRequest = { contextMenu = contextMenu.copy(expanded = false) },
+            properties = PopupProperties(focusable = true),
+        ) {
+            Card(
+                modifier = Modifier.widthIn(max = 250.dp),
+                shape = RoundedCornerShape(12.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            ) {
+                Column {
+                    if (!menuEntry.isDirectory) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.download)) },
+                            onClick = {
+                                contextMenu = contextMenu.copy(expanded = false)
+                                downloadOnly(fullPath, menuEntry.name, menuEntry.size, menuEntry.modified)
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.download_and_open)) },
+                            onClick = {
+                                contextMenu = contextMenu.copy(expanded = false)
+                                openBinaryFile(fullPath, menuEntry.name, menuEntry.size, menuEntry.modified)
+                            },
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.download)) },
+                            onClick = {
+                                contextMenu = contextMenu.copy(expanded = false)
+                                Toast.makeText(context, "Directory download not yet implemented", Toast.LENGTH_SHORT).show()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.rename)) },
+                        onClick = {
+                            contextMenu = contextMenu.copy(expanded = false)
+                            showRenameDialog = Pair(fullPath, menuEntry.name)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            contextMenu = contextMenu.copy(expanded = false)
+                            showDeleteConfirm = Pair(fullPath, menuEntry.isDirectory)
+                        },
+                    )
                 }
             }
         }
@@ -621,12 +981,14 @@ fun WorkspaceBrowserScreen(
 }
 
 private data class FileViewState(val path: String, val name: String)
-private data class LargeFileConfirm(val path: String, val filename: String, val size: Long, val modified: Long)
+private data class LargeFileConfirm(val path: String, val filename: String, val size: Long)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ContentSearchResultRow(
     result: BridgeSearchResultDto,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val filename = result.path.substringAfterLast("/").substringAfterLast("\\")
     val relativePath = result.path
@@ -634,7 +996,10 @@ private fun ContentSearchResultRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Row(
@@ -1021,6 +1386,7 @@ private fun BrowserHeaderRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BrowserFileRow(
     name: String,
@@ -1029,11 +1395,15 @@ private fun BrowserFileRow(
     size: String = "",
     modified: String = "",
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Text(

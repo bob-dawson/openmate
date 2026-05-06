@@ -266,7 +266,7 @@ private fun parseTodoArgs(args: String?): List<TodoInfo>? {
     }
 }
 
-fun List<Part>.toDisplayItems(isUser: Boolean): List<DisplayItem> {
+fun List<Part>.toDisplayItems(isUser: Boolean, showReasoning: Boolean = true): List<DisplayItem> {
     val items = mutableListOf<DisplayItem>()
     val patches = mutableListOf<Part.PatchPart>()
     var i = 0
@@ -279,7 +279,9 @@ fun List<Part>.toDisplayItems(isUser: Boolean): List<DisplayItem> {
                 }
             }
             is Part.ReasoningPart -> {
-                items.add(DisplayItem.ReasoningItem(part.text))
+                if (showReasoning) {
+                    items.add(DisplayItem.ReasoningItem(part.text))
+                }
             }
             is Part.ToolInvocationPart -> {
                 val nextPatch = if (i + 1 < this.size && this[i + 1] is Part.PatchPart) {
@@ -336,9 +338,10 @@ fun PartColumn(
     onReplyPermission: (String, PermissionReply, String?) -> Unit,
     onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    showReasoning: Boolean = true,
 ) {
-    val showReasoning = remember { mutableStateOf(true) }
-    val displayItems = parts.toDisplayItems(isUser)
+    val reasoningExpanded = remember { mutableStateOf(true) }
+    val displayItems = parts.toDisplayItems(isUser, showReasoning)
 
     Column(modifier = modifier) {
         displayItems.forEach { item ->
@@ -427,7 +430,7 @@ fun PartColumn(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(start = 8.dp, top = 4.dp)
-                                .clickable { showReasoning.value = !showReasoning.value },
+                                .clickable { reasoningExpanded.value = !reasoningExpanded.value },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(
@@ -438,12 +441,12 @@ fun PartColumn(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (showReasoning.value) "▼ Thinking" else "▶ Thinking",
+                                text = if (reasoningExpanded.value) "▼ Thinking" else "▶ Thinking",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             )
                         }
-                        AnimatedVisibility(visible = showReasoning.value) {
+                        AnimatedVisibility(visible = reasoningExpanded.value) {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                             ) {
