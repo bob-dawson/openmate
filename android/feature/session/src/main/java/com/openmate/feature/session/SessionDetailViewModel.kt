@@ -530,24 +530,12 @@ companion object {
     }
 
     private fun guessMime(filename: String): String {
-        return when {
-            filename.endsWith(".kt") -> "text/kotlin"
-            filename.endsWith(".java") -> "text/java"
-            filename.endsWith(".py") -> "text/python"
-            filename.endsWith(".ts") -> "text/typescript"
-            filename.endsWith(".tsx") -> "text/typescript"
-            filename.endsWith(".js") -> "text/javascript"
-            filename.endsWith(".json") -> "application/json"
-            filename.endsWith(".xml") -> "text/xml"
-            filename.endsWith(".md") -> "text/markdown"
-            filename.endsWith(".yaml") || filename.endsWith(".yml") -> "text/yaml"
-            filename.endsWith(".toml") -> "text/toml"
-            filename.endsWith(".css") -> "text/css"
-            filename.endsWith(".html") -> "text/html"
-            filename.endsWith(".png") -> "image/png"
-            filename.endsWith(".jpg") || filename.endsWith(".jpeg") -> "image/jpeg"
-            filename.endsWith(".gif") -> "image/gif"
-            filename.endsWith(".svg") -> "image/svg+xml"
+        val ext = filename.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
             else -> "text/plain"
         }
     }
