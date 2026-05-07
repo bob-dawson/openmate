@@ -2,36 +2,28 @@ package com.openmate.core.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import com.openmate.core.database.dao.MessageDao
-import com.openmate.core.database.dao.PartDao
-import com.openmate.core.database.dao.PermissionDao
-import com.openmate.core.database.dao.QuestionDao
 import com.openmate.core.database.dao.SessionDao
-import com.openmate.core.database.dao.TodoDao
-import com.openmate.core.database.entity.MessageEntity
-import com.openmate.core.database.entity.PartEntity
-import com.openmate.core.database.entity.PermissionEntity
-import com.openmate.core.database.entity.QuestionEntity
+import com.openmate.core.database.dao.SessionMessageDao
+import com.openmate.core.database.dao.SessionMessageFullContentDao
+import com.openmate.core.database.dao.SyncStateDao
 import com.openmate.core.database.entity.SessionEntity
-import com.openmate.core.database.entity.TodoEntity
+import com.openmate.core.database.entity.SessionMessageEntity
+import com.openmate.core.database.entity.SessionMessageFullContentEntity
+import com.openmate.core.database.entity.SyncStateEntity
 
 @Database(
     entities = [
         SessionEntity::class,
-        MessageEntity::class,
-        PartEntity::class,
-        PermissionEntity::class,
-        QuestionEntity::class,
-        TodoEntity::class,
+        SyncStateEntity::class,
+        SessionMessageEntity::class,
+        SessionMessageFullContentEntity::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
-    abstract fun messageDao(): MessageDao
-    abstract fun partDao(): PartDao
-    abstract fun permissionDao(): PermissionDao
-    abstract fun questionDao(): QuestionDao
-    abstract fun todoDao(): TodoDao
+    abstract fun syncStateDao(): SyncStateDao
+    abstract fun sessionMessageDao(): SessionMessageDao
+    abstract fun sessionMessageFullContentDao(): SessionMessageFullContentDao
 }
