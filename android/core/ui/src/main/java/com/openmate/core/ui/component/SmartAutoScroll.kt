@@ -22,8 +22,6 @@ fun SmartAutoScroll(
     var autoScrolling by remember { mutableStateOf(false) }
     var prevCount by remember { mutableIntStateOf(0) }
 
-    if (!listState.canScrollForward && !autoScrolling) followBottom = true
-
     LaunchedEffect(userNavigating) {
         if (userNavigating) followBottom = false
     }
@@ -52,13 +50,15 @@ fun SmartAutoScroll(
     }
 
     LaunchedEffect(messageCount) {
-        if (messageCount > 0 && !isLoading) {
+        if (messageCount > 0) {
             val isInitialLoad = prevCount == 0
             prevCount = messageCount
             if (isInitialLoad) {
                 delay(150)
+                scrollToBottom()
+            } else if (!isLoading && followBottom) {
+                scrollToBottom()
             }
-            scrollToBottom()
         } else {
             prevCount = messageCount
         }

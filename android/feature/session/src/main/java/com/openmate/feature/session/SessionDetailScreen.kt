@@ -443,6 +443,7 @@ fun SessionDetailScreen(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable {
                         coroutineScope.launch {
+                            userNavigating = false
                             if (messages.size > 0) listState.animateScrollToItem(messages.size)
                         }
                     }
