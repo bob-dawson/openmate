@@ -8,6 +8,7 @@ pub mod process;
 pub mod proxy;
 pub mod server;
 pub mod state;
+pub mod sync;
 
 #[cfg(target_os = "windows")]
 pub mod service_windows;
