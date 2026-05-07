@@ -71,4 +71,10 @@ object NetworkModule {
     fun provideSyncApiClient(@Named("api") client: OkHttpClient): SyncApiClient {
         return SyncApiClient(client)
     }
+
+    @Provides
+    @Singleton
+    fun provideSyncSseClient(@Named("sse") client: OkHttpClient): SyncSseClient {
+        return SyncSseClient(client)
+    }
 }
