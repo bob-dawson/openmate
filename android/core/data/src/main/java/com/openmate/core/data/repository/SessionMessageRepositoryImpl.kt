@@ -28,7 +28,9 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     override suspend fun initSync(sessionId: String, limit: Int) {
         val db = dbProvider.getActive()
+        Log.d("SyncRepo", "initSync start: sessionId=$sessionId")
         val response = syncApiClient.init(sessionId, limit)
+        Log.d("SyncRepo", "initSync got ${response.messages.size} messages, maxSeq=${response.maxSeq}")
         val entities = response.messages.map { dto ->
             val truncatedData = MobileTruncator.truncate(dto.type, dto.data)
             dto.copy(data = truncatedData).let { SessionMessageMapper.dtoToEntity(it) }

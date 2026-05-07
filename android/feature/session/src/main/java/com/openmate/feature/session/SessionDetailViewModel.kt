@@ -18,6 +18,9 @@ import com.openmate.core.common.guessMimeForAttachment
 import com.openmate.core.network.SyncSseClient
 import com.openmate.core.data.sync.SyncSseHandler
 import com.openmate.core.network.dto.SkillInfoDto
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -452,7 +455,13 @@ class SessionDetailViewModel @Inject constructor(
                 sessionMessageRepository.observeMessages(sessionID).collect { list ->
                     _messages.value = list
                     val lastAssistant = list.lastOrNull { it.type == "assistant" }
-                    val isStillStreaming = lastAssistant != null
+                    val isStillStreaming = if (lastAssistant != null) {
+                        try {
+                            val jsonObj = kotlinx.serialization.json.Json.parseToJsonElement(lastAssistant.data).jsonObject
+                            val time = jsonObj["time"]?.jsonObject
+                            time?.containsKey("completed") != true
+                        } catch (_: Exception) { false }
+                    } else false
                     _isStreaming.value = isStillStreaming
                 }
             } catch (e: Exception) {

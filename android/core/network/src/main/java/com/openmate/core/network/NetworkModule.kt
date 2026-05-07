@@ -68,8 +68,8 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideSyncApiClient(@Named("api") client: OkHttpClient): SyncApiClient {
-        return SyncApiClient(client)
+    fun provideSyncApiClient(@Named("api") client: OkHttpClient, opencodeApiClient: OpencodeApiClient): SyncApiClient {
+        return SyncApiClient(client, opencodeApiClient)
     }
 
     @Provides

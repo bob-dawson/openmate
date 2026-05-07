@@ -11,13 +11,14 @@ import javax.inject.Named
 
 class SyncApiClient @Inject constructor(
     @param:Named("api") private val client: OkHttpClient,
+    private val opencodeApiClient: OpencodeApiClient,
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
-    var baseUrl: String = ""
+    private val baseUrl: String get() = opencodeApiClient.baseUrl
 
     suspend fun init(sessionId: String, limit: Int = 30): InitResponseDto =
         withContext(Dispatchers.IO) {
