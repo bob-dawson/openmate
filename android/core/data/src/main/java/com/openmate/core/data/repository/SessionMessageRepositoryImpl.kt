@@ -16,6 +16,7 @@ import com.openmate.core.network.SyncApiClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.jsonObject
+import androidx.room.withTransaction
 import javax.inject.Inject
 
 class SessionMessageRepositoryImpl @Inject constructor(
@@ -31,17 +32,19 @@ class SessionMessageRepositoryImpl @Inject constructor(
     override suspend fun initSync(sessionId: String, limit: Int) {
         val db = dbProvider.getActive()
         Log.d("SyncRepo", "initSync start: sessionId=$sessionId")
+
+        val seqResponse = syncApiClient.events(sessionId, Long.MAX_VALUE)
+        val currentSeq = seqResponse.maxSeq ?: 0L
+        db.syncStateDao().upsert(SyncStateEntity(sessionId, currentSeq))
+        Log.d("SyncRepo", "initSync saved cursor seq=$currentSeq")
+
         val response = syncApiClient.init(sessionId, limit)
-        Log.d("SyncRepo", "initSync got ${response.messages.size} messages, maxSeq=${response.maxSeq}")
+        Log.d("SyncRepo", "initSync got ${response.messages.size} messages")
         val entities = response.messages.map { dto ->
             val truncatedData = MobileTruncator.truncate(dto.type, dto.data)
             dto.copy(data = truncatedData).let { SessionMessageMapper.dtoToEntity(it) }
         }
         db.sessionMessageDao().replaceAllForSession(sessionId, entities)
-        response.maxSeq?.let { seq ->
-            db.syncStateDao().upsert(SyncStateEntity(sessionId, seq))
-            Log.d("SyncRepo", "initSync saved maxSeq=$seq to sync_state")
-        }
     }
 
     override suspend fun incrementalSync(sessionId: String) {
@@ -50,13 +53,16 @@ class SessionMessageRepositoryImpl @Inject constructor(
             Log.w("SyncRepo", "incrementalSync skip: no sync state for $sessionId")
             return
         }
-        Log.d("SyncRepo", "incrementalSync: sessionId=$sessionId afterSeq=${syncState.lastSeq}")
+        val t0 = System.currentTimeMillis()
+        Log.d("SyncRepo", ">> incrementalSync START: sessionId=$sessionId afterSeq=${syncState.lastSeq}")
+
         val response = syncApiClient.events(sessionId, syncState.lastSeq)
+        val t1 = System.currentTimeMillis()
         if (response.events.isEmpty()) {
-            Log.d("SyncRepo", "incrementalSync: no new events")
+            Log.d("SyncRepo", "<< incrementalSync END: no new events (${t1 - t0}ms)")
             return
         }
-        Log.d("SyncRepo", "incrementalSync: got ${response.events.size} events, maxSeq=${response.maxSeq}")
+        Log.d("SyncRepo", "  fetch events: ${response.events.size} events in ${t1 - t0}ms, maxSeq=${response.maxSeq}")
 
         val loader = EventReplayer.DbLoader { action ->
             when (action) {
@@ -70,34 +76,50 @@ class SessionMessageRepositoryImpl @Inject constructor(
         val replayer = EventReplayer()
         val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
         val changes = replayer.replay(events, sessionId, loader)
+        val t2 = System.currentTimeMillis()
+        Log.d("SyncRepo", "  replay: ${events.size} events -> ${changes.size} changes in ${t2 - t1}ms")
 
+        val coalesced = mutableMapOf<String, ReplayChange>()
         for (change in changes) {
-            when (change) {
-                is ReplayChange.Insert -> {
-                    val existing = db.sessionMessageDao().getById(change.entity.id)
-                    if (existing != null) continue
-                    val truncated = MobileTruncator.truncate(change.entity.type,
-                        kotlinx.serialization.json.Json.parseToJsonElement(change.entity.data).jsonObject)
-                    db.sessionMessageDao().upsert(change.entity.copy(data = truncated.toString()))
-                }
-                is ReplayChange.Update -> {
-                    val existing = db.sessionMessageDao().getById(change.id) ?: continue
-                    val truncated = MobileTruncator.truncate(existing.type, change.data)
-                    db.sessionMessageDao().upsert(SessionMessageEntity(
-                        id = change.id,
-                        sessionId = existing.sessionId,
-                        type = existing.type,
-                        data = truncated.toString(),
-                        timeCreated = existing.timeCreated,
-                        timeUpdated = change.timeUpdated,
-                    ))
-                }
+            val key = when (change) {
+                is ReplayChange.Insert -> change.entity.id
+                is ReplayChange.Update -> change.id
+            }
+            val prev = coalesced[key]
+            if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
+                coalesced[key] = ReplayChange.Insert(prev.entity.copy(
+                    data = change.data.toString(),
+                    timeUpdated = change.timeUpdated,
+                ))
+            } else {
+                coalesced[key] = change
             }
         }
 
-        response.maxSeq?.let { seq ->
+        db.withTransaction {
+            for (change in coalesced.values) {
+                when (change) {
+                    is ReplayChange.Insert -> {
+                        db.sessionMessageDao().upsert(change.entity)
+                    }
+                    is ReplayChange.Update -> {
+                        val existing = db.sessionMessageDao().getById(change.id) ?: continue
+                        db.sessionMessageDao().upsert(SessionMessageEntity(
+                            id = change.id,
+                            sessionId = existing.sessionId,
+                            type = existing.type,
+                            data = change.data.toString(),
+                            timeCreated = existing.timeCreated,
+                            timeUpdated = change.timeUpdated,
+                        ))
+                    }
+                }
+            }
+
+            val seq = response.maxSeq ?: 0L
             db.syncStateDao().upsert(SyncStateEntity(sessionId, seq))
-            Log.d("SyncRepo", "incrementalSync updated lastSeq=$seq")
+            val t3 = System.currentTimeMillis()
+            Log.d("SyncRepo", "<< incrementalSync END: ${events.size} evts -> ${changes.size} chgs -> ${coalesced.size} writes, lastSeq=$seq, db=${t3 - t2}ms, total=${t3 - t0}ms")
         }
     }
 

@@ -1,18 +1,25 @@
 package com.openmate.feature.session.component
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.openmate.core.domain.model.SessionMessage
+import com.openmate.core.ui.component.MessageBubble
 import kotlinx.serialization.json.*
 
 @Composable
 fun SessionMessageRenderer(
     entity: SessionMessage,
+    showReasoning: Boolean = true,
     onFullContentRequest: (messageId: String) -> Unit,
 ) {
     val dataJson = remember(entity.data) {
@@ -21,145 +28,137 @@ fun SessionMessageRenderer(
 
     when (entity.type) {
         "user" -> UserMessageItem(dataJson)
-        "assistant" -> AssistantMessageItem(dataJson)
-        "model-switched" -> ModelSwitchedItem(dataJson)
-        "agent-switched" -> AgentSwitchedItem(dataJson)
-        "compaction" -> CompactionItem(dataJson)
-        "shell" -> ShellMessageItem(dataJson)
+        "assistant" -> AssistantMessageItem(dataJson, showReasoning)
         "synthetic" -> { }
-        else -> UnknownMessageItem(entity)
+        else -> { }
     }
 }
 
 @Composable
 fun UserMessageItem(data: JsonObject) {
     val text = data["text"]?.jsonPrimitive?.contentOrNull ?: ""
-    Surface(
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(12.dp),
-            style = MaterialTheme.typography.bodyLarge,
-        )
+    if (text.isNotBlank()) {
+        MessageBubble(text = text, isUser = true, modifier = Modifier.fillMaxWidth())
     }
 }
 
 @Composable
-fun AssistantMessageItem(data: JsonObject) {
+fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true) {
     val content = data["content"]?.jsonArray ?: return
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+    val reasoningExpanded = remember { mutableStateOf(true) }
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
         for (item in content) {
             val obj = item.jsonObject
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
                 "text" -> {
                     val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: ""
                     if (text.isNotBlank()) {
-                        Text(
-                            text = text,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(vertical = 2.dp)
-                        )
+                        MessageBubble(text = text, isUser = false, modifier = Modifier.fillMaxWidth())
                     }
                 }
                 "tool" -> {
                     val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "tool"
                     val state = obj["state"]?.jsonObject
                     val status = state?.get("status")?.jsonPrimitive?.contentOrNull ?: ""
-                    Text(
-                        text = "\u2699 $name ($status)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 2.dp)
+                    val input = state?.get("input")?.toString()
+                    val structuredResult = state?.get("structured")
+                    val contentArr = state?.get("content")?.jsonArray
+                    val errorObj = state?.get("error")
+
+                    val resultText = when {
+                        errorObj != null -> errorObj.toString()
+                        contentArr != null && contentArr.isNotEmpty() -> {
+                            contentArr.joinToString("\n") { elem ->
+                                elem.jsonObject["text"]?.jsonPrimitive?.contentOrNull ?: elem.toString()
+                            }
+                        }
+                        structuredResult != null -> structuredResult.toString()
+                        else -> null
+                    }
+
+                    val displayItem = DisplayItem.ToolItem(
+                        toolName = name,
+                        state = when (status) {
+                            "pending" -> com.openmate.core.domain.model.ToolCallState.PENDING
+                            "running" -> com.openmate.core.domain.model.ToolCallState.RUNNING
+                            "completed" -> com.openmate.core.domain.model.ToolCallState.COMPLETED
+                            "error" -> com.openmate.core.domain.model.ToolCallState.ERROR
+                            else -> com.openmate.core.domain.model.ToolCallState.COMPLETED
+                        },
+                        args = input,
+                        result = resultText,
+                        files = emptyList(),
+                        hash = null,
                     )
+
+                    when (status) {
+                        "pending" -> PendingToolLine(displayItem)
+                        "running" -> RunningToolLine(displayItem)
+                        "error" -> ErrorToolLine(displayItem)
+                        else -> {
+                            val summary = toolSummary(name, input, resultText)
+                            if (name == "task") {
+                                TaskToolLine(
+                                    item = displayItem,
+                                    summary = summary,
+                                    onNavigate = { _, _ -> },
+                                )
+                            } else if (summary.isBlock) {
+                                BlockToolLine(displayItem, summary)
+                            } else {
+                                InlineToolLine(displayItem)
+                            }
+                        }
+                    }
                 }
                 "reasoning" -> {
                     val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: ""
-                    if (text.isNotBlank()) {
-                        Text(
-                            text = "\uD83D\uDCAD $text",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(vertical = 2.dp)
-                        )
+                    if (text.isNotBlank() && showReasoning) {
+                        val filtered = text.replace(Regex("\\[REDACTED\\][\\s\\S]*?\\[REDACTED\\]"), "[REDACTED]")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 8.dp, top = 4.dp)
+                                .clickable { reasoningExpanded.value = !reasoningExpanded.value },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .height(16.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (reasoningExpanded.value) "▼ Thinking" else "▶ Thinking",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
+                        AnimatedVisibility(visible = reasoningExpanded.value) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(2.dp)
+                                        .fillMaxWidth()
+                                        .padding(start = 8.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = filtered,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
-        val agent = data["agent"]?.jsonPrimitive?.contentOrNull
-        val model = data["model"]?.jsonObject
-        if (agent != null || model != null) {
-            val modelStr = model?.let { "${it["providerID"]?.jsonPrimitive?.contentOrNull}/${it["id"]?.jsonPrimitive?.contentOrNull}" } ?: ""
-            Text(
-                text = "\u25A3 $agent \u00B7 $modelStr",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp)
-            )
-        }
     }
-}
-
-@Composable
-fun ModelSwitchedItem(data: JsonObject) {
-    val model = data["model"]?.jsonObject ?: return
-    val providerID = model["providerID"]?.jsonPrimitive?.contentOrNull ?: ""
-    val id = model["id"]?.jsonPrimitive?.contentOrNull ?: ""
-    Text(
-        text = "\u25C7 Switched model to $providerID/$id",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-    )
-}
-
-@Composable
-fun AgentSwitchedItem(data: JsonObject) {
-    val agent = data["agent"]?.jsonPrimitive?.contentOrNull ?: ""
-    Text(
-        text = "\u25A3 Switched agent to $agent",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-    )
-}
-
-@Composable
-fun CompactionItem(data: JsonObject) {
-    val summary = data["summary"]?.jsonPrimitive?.contentOrNull ?: ""
-    if (summary.isNotBlank()) {
-        Text(
-            text = "\uD83D\uDCDD Compaction: ${summary.take(200)}${if (summary.length > 200) "..." else ""}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-        )
-    }
-}
-
-@Composable
-fun ShellMessageItem(data: JsonObject) {
-    val command = data["command"]?.jsonPrimitive?.contentOrNull ?: ""
-    val output = data["output"]?.jsonPrimitive?.contentOrNull ?: ""
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
-        Text(text = "$ $command", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-        if (output.isNotBlank()) {
-            Text(
-                text = output.take(500),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun UnknownMessageItem(entity: SessionMessage) {
-    Text(
-        text = "[${entity.type}] ${entity.id.take(20)}",
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
 }

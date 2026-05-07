@@ -92,7 +92,7 @@ sealed class DisplayItem {
     data class FileItem(val filename: String?, val mime: String, val url: String) : DisplayItem()
 }
 
-private data class ToolSummary(
+internal data class ToolSummary(
     val icon: String,
     val text: String,
     val isBlock: Boolean,
@@ -104,7 +104,7 @@ private fun JsonObject?.str(key: String): String? =
 private fun JsonObject.bool(key: String): Boolean =
     (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.boolean ?: false
 
-private fun isFilePath(text: String): Boolean {
+internal fun isFilePath(text: String): Boolean {
     return text.contains("/") || text.contains("\\") || text.contains(".")
 }
 
@@ -146,7 +146,7 @@ private fun FontFamily.toTypeface(): Typeface {
     }
 }
 
-private fun toolSummary(toolName: String, args: String?, result: String?): ToolSummary {
+internal fun toolSummary(toolName: String, args: String?, result: String?): ToolSummary {
     val jsonArgs = try {
         if (args != null) questionJson.parseToJsonElement(args).jsonObject else null
     } catch (_: Exception) { null }
@@ -517,7 +517,7 @@ fun PartColumn(
 }
 
 @Composable
-private fun InlineToolLine(item: DisplayItem.ToolItem) {
+internal fun InlineToolLine(item: DisplayItem.ToolItem) {
     val summary = toolSummary(item.toolName, item.args, item.result)
     Row(
         modifier = Modifier.padding(vertical = 1.dp),
@@ -551,7 +551,7 @@ private fun InlineToolLine(item: DisplayItem.ToolItem) {
 }
 
 @Composable
-private fun RunningToolLine(item: DisplayItem.ToolItem) {
+internal fun RunningToolLine(item: DisplayItem.ToolItem) {
     val summary = toolSummary(item.toolName, item.args, item.result)
     Row(
         modifier = Modifier.padding(vertical = 2.dp),
@@ -590,7 +590,7 @@ private fun RunningToolLine(item: DisplayItem.ToolItem) {
 }
 
 @Composable
-private fun PendingToolLine(item: DisplayItem.ToolItem) {
+internal fun PendingToolLine(item: DisplayItem.ToolItem) {
     val summary = toolSummary(item.toolName, item.args, item.result)
     Row(
         modifier = Modifier.padding(vertical = 2.dp),
@@ -613,7 +613,7 @@ private fun PendingToolLine(item: DisplayItem.ToolItem) {
 }
 
 @Composable
-private fun ErrorToolLine(item: DisplayItem.ToolItem) {
+internal fun ErrorToolLine(item: DisplayItem.ToolItem) {
     val summary = toolSummary(item.toolName, item.args, item.result)
     val expanded = remember { mutableStateOf(false) }
     val textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None
@@ -668,7 +668,7 @@ private fun ErrorToolLine(item: DisplayItem.ToolItem) {
 private val TaskIdRegex = Regex("task_id:\\s*(ses_\\S+)")
 
 @Composable
-private fun TaskToolLine(
+internal fun TaskToolLine(
     item: DisplayItem.ToolItem,
     summary: ToolSummary,
     onNavigate: (subtaskSessionID: String, title: String) -> Unit,
@@ -743,7 +743,7 @@ private fun TaskToolLine(
 }
 
 @Composable
-private fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
+internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
     val expanded = remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(vertical = 2.dp)) {

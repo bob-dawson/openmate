@@ -288,6 +288,7 @@ fun SessionDetailScreen(
                     items(messages, key = { it.id }) { entity ->
                         SessionMessageRenderer(
                             entity = entity,
+                            showReasoning = showReasoning,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },

@@ -27,10 +27,13 @@ class SyncSseHandler @Inject constructor(
                 Log.d("SyncSseHandler", "received: session=${notification.sessionId} seq=${notification.seq}")
                 scope.launch {
                     try {
+                        val t0 = System.currentTimeMillis()
                         val lastSeq = repository.getLastSeq(notification.sessionId)
-                        if (lastSeq != null && notification.seq > lastSeq) {
+                        if (lastSeq != null && lastSeq > 0 && notification.seq > lastSeq) {
                             repository.incrementalSync(notification.sessionId)
-                            Log.d("SyncSseHandler", "incrementalSync done: session=${notification.sessionId}")
+                            Log.d("SyncSseHandler", "sync done: ${System.currentTimeMillis() - t0}ms")
+                        } else {
+                            Log.d("SyncSseHandler", "skip: lastSeq=$lastSeq notification.seq=${notification.seq}")
                         }
                     } catch (e: Exception) {
                         Log.w("SyncSseHandler", "sync failed: ${e.message}", e)

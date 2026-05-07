@@ -9,11 +9,13 @@ use crate::error::AppError;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitQuery {
     pub limit: Option<i64>,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventsQuery {
     pub after_seq: Option<i64>,
 }

@@ -33,10 +33,21 @@ impl SyncDb {
     pub fn get_init_snapshot(&self, session_id: &str, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
         let (messages, max_seq) = self.get_session_message_snapshot(session_id, limit)?;
         if !messages.is_empty() {
-            return Ok((messages, max_seq));
+            let seq = max_seq.or_else(|| self.query_max_seq(session_id));
+            return Ok((messages, seq));
         }
         let fallback = self.get_legacy_message_snapshot(session_id, limit)?;
-        Ok((fallback, None))
+        let seq = self.query_max_seq(session_id);
+        Ok((fallback, seq))
+    }
+
+    fn query_max_seq(&self, aggregate_id: &str) -> Option<i64> {
+        let conn = self.connect().ok()?;
+        conn.query_row(
+            "SELECT MAX(seq) FROM event WHERE aggregate_id = ?",
+            params![aggregate_id],
+            |row| row.get(0),
+        ).ok().flatten()
     }
 
     fn get_session_message_snapshot(&self, session_id: &str, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
