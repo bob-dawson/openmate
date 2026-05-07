@@ -15,8 +15,6 @@ import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.common.guessMimeForAttachment
-import com.openmate.core.network.SyncSseClient
-import com.openmate.core.data.sync.SyncSseHandler
 import com.openmate.core.network.dto.SkillInfoDto
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -41,8 +39,6 @@ class SessionDetailViewModel @Inject constructor(
     private val sessionMessageRepository: SessionMessageRepository,
     private val todoRepository: TodoRepository,
     internal val apiClient: OpencodeApiClient,
-    private val syncSseClient: SyncSseClient,
-    private val syncSseHandler: SyncSseHandler,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
 
@@ -105,7 +101,6 @@ class SessionDetailViewModel @Inject constructor(
     private var draftSessionID: String? = null
     private var observeMsgJob: Job? = null
     private var observeTodoJob: Job? = null
-    private var sseConnectJob: Job? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -168,7 +163,6 @@ class SessionDetailViewModel @Inject constructor(
         currentSessionID = sessionID
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
-        sseConnectJob?.cancel()
 
         viewModelScope.launch(Dispatchers.IO) {
             _isLoading.value = true
@@ -182,7 +176,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 sessionMessageRepository.initSync(sessionID, 30)
             } catch (e: Exception) {
-                Log.e(TAG, "initSync failed", e)
+                Log.e(TAG, "sync failed", e)
             }
             try {
                 todoRepository.refreshTodos(sessionID)
@@ -205,14 +199,13 @@ class SessionDetailViewModel @Inject constructor(
 
         observeMessages(sessionID)
         observeTodos(sessionID)
-        connectSse()
     }
 
     fun refresh() {
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                sessionMessageRepository.incrementalSync(sid)
+                sessionMessageRepository.initSync(sid)
                 sessionRepository.refreshSessionStatusesFromMessages()
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
@@ -221,27 +214,10 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    private fun connectSse() {
-        sseConnectJob?.cancel()
-        sseConnectJob = viewModelScope.launch(Dispatchers.IO) {
-            try {
-                syncSseHandler.start()
-                val baseUrl = apiClient.baseUrl
-                if (baseUrl.isNotBlank()) {
-                    syncSseClient.connect(baseUrl)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "SSE connect failed", e)
-            }
-        }
-    }
-
     override fun onCleared() {
         super.onCleared()
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
-        sseConnectJob?.cancel()
-        syncSseClient.disconnect()
     }
 
     fun sendMessage(sessionID: String) {
@@ -257,7 +233,7 @@ class SessionDetailViewModel @Inject constructor(
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
                 apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null })
                 delay(500)
-                sessionMessageRepository.incrementalSync(sessionID)
+                sessionMessageRepository.initSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
@@ -372,7 +348,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
                 delay(2000)
-                sessionMessageRepository.incrementalSync(sessionID)
+                sessionMessageRepository.initSync(sessionID)
                 sessionRepository.refreshSessionStatusesFromMessages()
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
@@ -453,6 +429,7 @@ class SessionDetailViewModel @Inject constructor(
         observeMsgJob = viewModelScope.launch {
             try {
                 sessionMessageRepository.observeMessages(sessionID).collect { list ->
+                    Log.d(TAG, "observeMessages: ${list.size} messages for $sessionID")
                     _messages.value = list
                     val lastAssistant = list.lastOrNull { it.type == "assistant" }
                     val isStillStreaming = if (lastAssistant != null) {

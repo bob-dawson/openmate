@@ -1,15 +1,19 @@
 package com.openmate.app
 
+import android.util.Log
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
+import com.openmate.core.data.sync.SyncSseHandler
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,8 +30,11 @@ class ConnectionManager @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
     private val tokenStore: TokenStore,
+    private val syncSseClient: SyncSseClient,
+    private val syncSseHandler: SyncSseHandler,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var syncSseJob: Job? = null
 
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
@@ -106,6 +113,16 @@ class ConnectionManager @Inject constructor(
                 _connectionStatus.value = ConnectionStatus.ERROR
                 _errorMessage.value = e.message ?: "Connection failed"
             }
+
+            try {
+                syncSseHandler.start()
+                syncSseJob?.cancel()
+                syncSseJob = scope.launch {
+                    syncSseClient.connect(apiClient.baseUrl)
+                }
+            } catch (e: Exception) {
+                Log.e("ConnectionManager", "Sync SSE start failed", e)
+            }
         }
     }
 
@@ -127,6 +144,8 @@ class ConnectionManager @Inject constructor(
 
     fun disconnect() {
         sseEventRepository.disconnect()
+        syncSseJob?.cancel()
+        syncSseClient.disconnect()
         scope.launch { clearConnection() }
     }
 
@@ -138,4 +157,3 @@ class ConnectionManager @Inject constructor(
         tokenStore.setActiveProfileId(null)
     }
 }
-

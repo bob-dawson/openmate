@@ -91,11 +91,16 @@ async fn forward_sync_events(
                 Err(_) => continue,
             };
 
-            if json["type"] != "sync" {
+            let payload = match json.get("payload") {
+                Some(p) => p,
+                None => continue,
+            };
+
+            if payload["type"] != "sync" {
                 continue;
             }
 
-            let sync_event = match json.get("syncEvent") {
+            let sync_event = match payload.get("syncEvent") {
                 Some(e) => e,
                 None => continue,
             };

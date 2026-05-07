@@ -12,6 +12,9 @@ interface SessionMessageDao {
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId ORDER BY timeCreated DESC LIMIT :limit")
     suspend fun getBySessionDesc(sessionId: String, limit: Int): List<SessionMessageEntity>
 
+    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId ORDER BY timeCreated ASC")
+    suspend fun getAllBySession(sessionId: String): List<SessionMessageEntity>
+
     @Query("SELECT * FROM session_message WHERE id = :id")
     suspend fun getById(id: String): SessionMessageEntity?
 

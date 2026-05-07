@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 10,
-    "identityHash": "4ea69007ac02a8dd166a5335eec7b359",
+    "version": 11,
+    "identityHash": "28a0231b7c9ac0dcc281b2255429003c",
     "entities": [
       {
         "tableName": "SessionEntity",
@@ -211,11 +211,35 @@
             "messageId"
           ]
         }
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `lastSeq` INTEGER NOT NULL, PRIMARY KEY(`sessionId`))",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSeq",
+            "columnName": "lastSeq",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4ea69007ac02a8dd166a5335eec7b359')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '28a0231b7c9ac0dcc281b2255429003c')"
     ]
   }
 }

@@ -14,16 +14,16 @@ import com.openmate.core.database.entity.SyncStateEntity
 @Database(
     entities = [
         SessionEntity::class,
-        SyncStateEntity::class,
         SessionMessageEntity::class,
         SessionMessageFullContentEntity::class,
+        SyncStateEntity::class,
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
-    abstract fun syncStateDao(): SyncStateDao
     abstract fun sessionMessageDao(): SessionMessageDao
     abstract fun sessionMessageFullContentDao(): SessionMessageFullContentDao
+    abstract fun syncStateDao(): SyncStateDao
 }

@@ -1,5 +1,6 @@
 package com.openmate.core.data.repository
 
+import android.util.Log
 import com.openmate.core.data.sync.EventReplayer
 import com.openmate.core.data.sync.MobileTruncator
 import com.openmate.core.data.sync.ReplayChange
@@ -14,6 +15,7 @@ import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.network.SyncApiClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.jsonObject
 import javax.inject.Inject
 
 class SessionMessageRepositoryImpl @Inject constructor(
@@ -38,34 +40,48 @@ class SessionMessageRepositoryImpl @Inject constructor(
         db.sessionMessageDao().replaceAllForSession(sessionId, entities)
         response.maxSeq?.let { seq ->
             db.syncStateDao().upsert(SyncStateEntity(sessionId, seq))
+            Log.d("SyncRepo", "initSync saved maxSeq=$seq to sync_state")
         }
     }
 
     override suspend fun incrementalSync(sessionId: String) {
         val db = dbProvider.getActive()
-        val state = db.syncStateDao().get(sessionId) ?: return
-        val response = syncApiClient.events(sessionId, state.lastSeq)
-        if (response.events.isEmpty()) return
+        val syncState = db.syncStateDao().get(sessionId) ?: run {
+            Log.w("SyncRepo", "incrementalSync skip: no sync state for $sessionId")
+            return
+        }
+        Log.d("SyncRepo", "incrementalSync: sessionId=$sessionId afterSeq=${syncState.lastSeq}")
+        val response = syncApiClient.events(sessionId, syncState.lastSeq)
+        if (response.events.isEmpty()) {
+            Log.d("SyncRepo", "incrementalSync: no new events")
+            return
+        }
+        Log.d("SyncRepo", "incrementalSync: got ${response.events.size} events, maxSeq=${response.maxSeq}")
+
+        val existingMessages = db.sessionMessageDao().getAllBySession(sessionId)
+        val existingIds = existingMessages.map { it.id }.toSet()
 
         val replayer = EventReplayer()
-        val events = response.events.map { ReplayEvent(it.id, it.type, it.data) }
-        val changes = replayer.replay(events, sessionId)
+        val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
+        val changes = replayer.replay(events, sessionId, existingMessages)
 
         for (change in changes) {
             when (change) {
                 is ReplayChange.Insert -> {
-                    db.sessionMessageDao().upsert(change.entity)
+                    if (change.entity.id in existingIds) continue
+                    val truncated = MobileTruncator.truncate(change.entity.type,
+                        kotlinx.serialization.json.Json.parseToJsonElement(change.entity.data).jsonObject)
+                    db.sessionMessageDao().upsert(change.entity.copy(data = truncated.toString()))
                 }
                 is ReplayChange.Update -> {
-                    val existing = db.sessionMessageDao().getById(change.id)
-                    val timeCreated = existing?.timeCreated ?: 0L
-                    val truncatedData = MobileTruncator.truncate(change.type, change.data)
+                    val existing = db.sessionMessageDao().getById(change.id) ?: continue
+                    val truncated = MobileTruncator.truncate(existing.type, change.data)
                     db.sessionMessageDao().upsert(SessionMessageEntity(
                         id = change.id,
-                        sessionId = change.sessionId,
-                        type = change.type,
-                        data = truncatedData.toString(),
-                        timeCreated = timeCreated,
+                        sessionId = sessionId,
+                        type = existing.type,
+                        data = truncated.toString(),
+                        timeCreated = existing.timeCreated,
                         timeUpdated = change.timeUpdated,
                     ))
                 }
@@ -74,6 +90,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
         response.maxSeq?.let { seq ->
             db.syncStateDao().upsert(SyncStateEntity(sessionId, seq))
+            Log.d("SyncRepo", "incrementalSync updated lastSeq=$seq")
         }
     }
 

@@ -74,7 +74,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideSyncSseClient(@Named("sse") client: OkHttpClient): SyncSseClient {
-        return SyncSseClient(client)
+    fun provideSyncSseClient(@Named("sse") client: OkHttpClient, tokenStore: TokenStore): SyncSseClient {
+        return SyncSseClient(client, tokenStore)
     }
 }

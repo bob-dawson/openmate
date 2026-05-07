@@ -1,9 +1,12 @@
 package com.openmate.core.data.sync
 
+import android.util.Log
 import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.network.SyncSseClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -13,15 +16,24 @@ class SyncSseHandler @Inject constructor(
     private val syncSseClient: SyncSseClient,
     private val repository: SessionMessageRepository,
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var collectJob: Job? = null
 
     fun start() {
-        syncSseClient.notifications
+        if (collectJob?.isActive == true) return
+        Log.d("SyncSseHandler", "start: subscribing to notifications")
+        collectJob = syncSseClient.notifications
             .onEach { notification ->
-                val lastSeq = repository.getLastSeq(notification.sessionId)
-                if (lastSeq != null && notification.seq > lastSeq) {
-                    scope.launch {
-                        repository.incrementalSync(notification.sessionId)
+                Log.d("SyncSseHandler", "received: session=${notification.sessionId} seq=${notification.seq}")
+                scope.launch {
+                    try {
+                        val lastSeq = repository.getLastSeq(notification.sessionId)
+                        if (lastSeq != null && notification.seq > lastSeq) {
+                            repository.incrementalSync(notification.sessionId)
+                            Log.d("SyncSseHandler", "incrementalSync done: session=${notification.sessionId}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w("SyncSseHandler", "sync failed: ${e.message}", e)
                     }
                 }
             }
