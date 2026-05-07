@@ -2,201 +2,500 @@
 
 ## 概述
 
-OpenCode 基于事件溯源(Event Sourcing)构建了一套完善的增量同步系统。移动客户端（Android 等）可以利用现有机制实现会话消息的新增、变更、删除的增量同步。
+移动端通过 OpenMate Bridge 直读 opencode SQLite 数据库，实现按会话按需加载的增量同步。核心思路：**冷启动走 SessionMessage 快照，后续走 Event 增量**。
 
-**前置条件**：需要设置环境变量 `OPENCODE_EXPERIMENTAL_WORKSPACES=true`（或 `OPENCODE_EXPERIMENTAL=true`）以启用事件持久化。未开启时 `/sync/history` 返回空数组。
+### 为什么不用 opencode 自带的 API
 
-## 服务端事件系统现状
+- **`/sync/history`**：全局同步不支持按会话过滤，半天数据 40MB；排除逻辑缺复合索引；旧会话无数据；实际上没有消费者（TUI 不用它，web 不存在）
+- **v2 message API**（`GET /api/session/{id}/message`）：只有分页没有增量语义（无 "since" 或 "changed after"），设计给 TUI "每次重新拉"的模式用，不适合移动端本地缓存场景
+- TUI 的 `sync-v2.tsx` 是纯内存处理（不持久化），每次打开全量拉取 + SSE 实时更新，关闭即丢弃。移动端需要离线可用、弱网友好
 
-OpenCode 服务端当前存在**两套并存的投影器**，同时写入两套数据模型：
+### Bridge 方案的优势
 
-### 旧模型（message + part）
+- 本地文件访问 SQLite（WAL 模式，读不阻塞写）
+- 按 `aggregate_id` + `seq` 过滤，自建索引支持高效查询
+- Bridge 自主控制截断和分页
+- 一次请求完成初始化（快照 + seq 锚点）
+- 移动端本地 Room 缓存，离线可查看
 
-- 表：`MessageTable` + `PartTable`
-- 事件类型：`session.created/updated/deleted.1`、`message.updated.1`、`message.removed.1`、`message.part.updated.1`、`message.part.removed.1`
-- 数据结构：消息和 Part 分离存储，Part 是消息的子行
+### 实验开关保障
 
-### 新模型（session.next → SessionMessage）
-
-- 表：`SessionMessageTable`
-- 事件类型：`session.next.*` 系列
-- 数据结构：所有消息类型统一为 `SessionMessage`，通过 `type` 字段区分
-- 投影器：`projectors-next.ts`，在旧投影器末尾 `...nextProjectors` 注入
-
-**建议移动端基于新模型（`session.next.*`）设计**，原因：
-1. 新模型是 opencode 的演进方向，旧模型将逐步废弃
-2. `SessionMessage` 统一结构更简单，不需要 message/part 两级关联
-3. 事件粒度更细，客户端可以更精确地更新 UI
+Bridge 确保运行时 `OPENCODE_EXPERIMENTAL=true` 已设置（v2 event 系统和 session_message 表的前提条件）。新版 OpenMate 客户端将自动配置此开关。
 
 ## 核心架构
 
 ```
-移动客户端                    OpenCode 服务端
-    │                              │
-    │──── POST /sync/history ──────│  (携带 lastKnownSeq)
-    │                              │
-    │◄─── events (seq > N) ────────│  (增量事件)
-    │                              │
-    │─── 回放事件，更新本地 DB ─────│
-    │                              │
-    │──── SSE（未来可用）───────────│  (实时推送，尚未实现)
-    │                              │
+移动端                           Bridge (port 4097)                    opencode (port 4096)
+  │                                  │                                     │
+  │── 打开会话 ──────────────────────│                                     │
+  │                                  │── SELECT session_message ──────►SQLite
+  │                                  │── SELECT event_sequence ───────►SQLite
+  │◄── 快照消息(截断) + maxSeq ─────│                                     │
+  │                                  │                                     │
+  │── 增量请求(sessionID, lastSeq) ──│                                     │
+  │                                  │── SELECT event WHERE seq > N ──►SQLite
+  │◄── 增量事件 ─────────────────────│                                     │
+  │                                  │                                     │
+  │── 回源请求(messageID) ───────────│                                     │
+  │                                  │── SELECT session_message full ─►SQLite
+  │◄── 完整消息内容 ─────────────────│                                     │
+  │                                  │                                     │
+  │═══ SSE /sync/events ═════════════│                                     │
+  │                                  │═══ SSE /global/event ═══════════════│
+  │                                  │◄── {type:"sync", syncEvent:{...}} ─│
+  │◄── {sessionID, seq} ────────────│── 过滤+提取轻量通知 ──│              │
 ```
 
-## 服务端数据库表结构（v1.14.39 实际）
+## 同步协议
 
-### 事件存储
+### 1. 打开会话（冷启动快照）
+
+用户打开某个对话时，Bridge 一次请求返回：
+
+1. **SessionMessage 快照**：读 `session_message` 表，按 `time_created DESC` 取最新 N 条（如 30 条），应用截断规则
+2. **seq 锚点**：读 `event_sequence` 表，返回该 `aggregate_id` 的当前 `max_seq`
+
+```json
+GET /sync/session/{sessionID}/init?limit=30
+
+Response:
+{
+  "messages": [
+    {
+      "id": "evt_xxx",
+      "sessionId": "ses_xxx",
+      "type": "user",
+      "data": { ... },
+      "timeCreated": 1778065464954
+    },
+    {
+      "id": "evt_yyy",
+      "type": "assistant",
+      "data": { ... },
+      "timeCreated": 1778065465334
+    }
+  ],
+  "maxSeq": 6686
+}
+```
+
+移动端收到后：
+- 将消息写入本地 `session_message` Room 表（替换旧 MessageEntity/PartEntity）
+- 将 `maxSeq` 写入 `sync_state` 表作为增量锚点
+- 此时初始化完成，可渲染 UI
+
+### 2. 增量同步
+
+移动端定期或在收到 SSE 通知后，请求增量事件：
+
+```json
+GET /sync/session/{sessionID}/events?afterSeq=6686
+
+Response:
+{
+  "events": [
+    {
+      "id": "evt_zzz",
+      "aggregateId": "ses_xxx",
+      "seq": 6687,
+      "type": "session.next.text.ended.1",
+      "data": { "sessionID": "ses_xxx", "text": "...", "timestamp": "..." }
+    }
+  ],
+  "maxSeq": 6690
+}
+```
+
+移动端收到后：
+- 本地运行 EventReplayer，将事件转换为 SessionMessage 变更
+- 对变更应用截断规则后写入 Room
+- 更新 `sync_state` 的 `lastSeq` 为新的 `maxSeq`
+
+### 3. 回源（三级展示）
+
+用户展开某条消息的完整内容时：
+
+```json
+GET /sync/session/{sessionID}/message/{messageID}/full
+
+Response:
+{
+  "id": "evt_yyy",
+  "type": "assistant",
+  "data": { ... }
+}
+```
+
+移动端缓存到 `session_message_full_content` 表。
+
+### 4. 会话列表
+
+拉取所有会话元数据（不含消息内容）：
+
+```json
+GET /sync/sessions
+
+Response:
+{
+  "sessions": [
+    {
+      "id": "ses_xxx",
+      "title": "广州天气",
+      "agent": "build",
+      "model": { ... },
+      "timeCreated": 1778065464954,
+      "timeUpdated": 1778065465334,
+      "hasEvents": true,
+      "maxSeq": 6686
+    }
+  ]
+}
+```
+
+`hasEvents` 表示该会话是否有 event 数据（用于决定是否启用增量同步）。
+
+### 5. SSE 变更通知
+
+移动端订阅 Bridge 的轻量 SSE 端点，实时感知会话数据变更：
+
+```
+GET /sync/events (SSE)
+
+客户端 ← Bridge ← opencode /global/event
+```
+
+**流程**：
+1. 移动端连接 `GET /sync/events` SSE
+2. Bridge 收到连接后，复用已有的 opencode `/global/event` SSE 连接
+3. opencode 推送完整事件（含 `data` 大字段），Bridge 解析过滤
+4. 对 `type=sync` 的事件，提取 `aggregateID`（即 sessionID）和 `seq`，转发轻量通知
+
+**opencode SSE 原始事件格式**（完整，数据量大）：
+```json
+{
+  "type": "sync",
+  "syncEvent": {
+    "type": "session.next.text.ended.1",
+    "id": "evt_xxx",
+    "seq": 6687,
+    "aggregateID": "ses_xxx",
+    "data": { "sessionID": "ses_xxx", "text": "...完整文本...", "timestamp": "..." }
+  }
+}
+```
+
+**Bridge 转发给移动端的轻量通知**（只含 sessionID + seq）：
+```json
+data: {"sessionID": "ses_xxx", "seq": 6687}
+```
+
+**移动端收到通知后**：
+- 若 `seq > lastSeq`（本地 sync_state），调用 `/sync/session/{sessionID}/events?afterSeq=lastSeq` 拉增量
+- 若 `seq <= lastSeq`，忽略（可能是重连后的重复通知）
+
+**与现有 Bridge SSE 透传的关系**：
+- 现有 `/global/event` SSE 透传保持不变，供其他客户端使用
+- 新增 `/sync/events` 专门为移动端服务，过滤 + 轻量化
+- 两个 SSE 端点独立，互不影响
+
+## Bridge 侧 SQL 查询
+
+### 初始化快照
+
+```sql
+-- 消息快照（最新 N 条，截断在 Bridge 层执行）
+SELECT id, session_id, type, time_created, time_updated, data
+FROM session_message
+WHERE session_id = ?
+ORDER BY time_created DESC
+LIMIT ?;
+
+-- seq 锚点
+SELECT seq FROM event_sequence WHERE aggregate_id = ?;
+```
+
+### 旧会话降级（无 session_message 数据时）
+
+```sql
+-- 检测是否有新表数据
+SELECT count(*) FROM session_message WHERE session_id = ?;
+
+-- 无新表数据时，从旧表拉取最后 N 条消息（映射容忍部分字段缺失）
+SELECT m.id, m.session_id, m.role, m.created_at,
+       p.id as part_id, p.type as part_type, p.sequence, p.text, p.tool_name, p.tool_state, p.tool_args, p.tool_result
+FROM message m
+LEFT JOIN part p ON p.message_id = m.id
+WHERE m.session_id = ?
+ORDER BY m.created_at DESC, p.sequence ASC
+LIMIT ?;
+```
+
+旧消息映射规则（容忍缺失）：
+- `message.role=assistant` + `part.type=text` → `SessionMessage.Assistant`（content 中一个 text item）
+- `message.role=assistant` + `part.type=tool-call` → assistant content 中的 tool item
+- `message.role=user` + `part.type=text` → `SessionMessage.User`
+- 其他 part 类型按最佳努力映射，无法映射的跳过
+- 旧表数据不保证完整性，不做 seq 锚点（每次打开都重新拉取）
+
+### 增量事件
+
+```sql
+SELECT id, aggregate_id, seq, type, data
+FROM event
+WHERE aggregate_id = ? AND seq > ?
+ORDER BY seq;
+```
+
+**索引**：我们自建两个复合索引（opencode 原始 schema 均缺少）：
+
+```sql
+-- event 增量查询：WHERE aggregate_id = ? AND seq > ? ORDER BY seq
+CREATE INDEX idx_event_aggregate_seq ON event(aggregate_id, seq);
+
+-- session_message 快照查询：WHERE session_id = ? ORDER BY time_created DESC LIMIT ?
+CREATE INDEX idx_session_message_session_time ON session_message(session_id, time_created DESC);
+```
+
+### 回源
+
+```sql
+SELECT id, type, data FROM session_message WHERE id = ?;
+```
+
+### 会话列表
+
+```sql
+SELECT s.id, s.title, s.agent, s.model, s.time_created, s.time_updated,
+       CASE WHEN es.seq IS NOT NULL THEN true ELSE false END as hasEvents,
+       es.seq as maxSeq
+FROM session s
+LEFT JOIN event_sequence es ON es.aggregate_id = s.id
+ORDER BY s.time_updated DESC;
+```
+
+## Event → SessionMessage 回放（移动端）
+
+移动端实现 EventReplayer（参考 opencode TUI `sync-v2.tsx` 的 307 行实现），将 `session.next.*` 事件转换为本地 DB 操作。
+
+### 事件分类
+
+| 分类 | 事件类型 | 处理方式 |
+|------|---------|---------|
+| **创建消息** | `prompted`, `step.started`, `agent.switched`, `model.switched`, `compaction.started`, `shell.started`, `synthetic` | INSERT 新 SessionMessage |
+| **更新消息** | `step.ended`, `step.failed`, `text.started`, `text.ended`, `tool.input.started`, `tool.input.ended`, `tool.called`, `tool.success`, `tool.failed`, `reasoning.started`, `reasoning.ended`, `compaction.delta`, `compaction.ended`, `shell.ended` | UPDATE 现有 SessionMessage 的 data JSON |
+| **跳过** | `text.delta`, `tool.input.delta`, `reasoning.delta`, `retried`, `tool.progress` | 不持久化（ended 事件含完整数据） |
+
+### 回放器核心状态
+
+回放器是有状态的，需要追踪"当前 assistant"和"当前 compaction"和"当前 shell"：
+
+```kotlin
+class EventReplayer {
+    private var currentAssistant: SessionMessage.Assistant? = null
+    private var currentCompaction: SessionMessage.Compaction? = null
+    private val activeShells = mutableMapOf<String, SessionMessage.Shell>()
+
+    fun replay(events: List<SyncEvent>): List<SessionMessageChange> {
+        // 按 seq 排序后逐条处理
+        // 返回 INSERT/UPDATE/DELETE 操作列表
+    }
+}
+```
+
+### 完整事件→消息映射
+
+| 事件类型 | 操作 | 详情 |
+|---------|------|------|
+| `agent.switched` | INSERT | 创建 `agent-switched` 消息：`{agent, time:{created}}` |
+| `model.switched` | INSERT | 创建 `model-switched` 消息：`{model:{id,providerID,variant}, time:{created}}` |
+| `prompted` | INSERT | 创建 `user` 消息：`{text, files, agents, time:{created}}` |
+| `synthetic` | INSERT | 创建 `synthetic` 消息：`{sessionID, text, time:{created}}` |
+| `shell.started` | INSERT | 创建 `shell` 消息：`{callID, command, output:"", time:{created}}` |
+| `shell.ended` | UPDATE | 更新 shell：`output=数据, time.completed=时间戳` |
+| `step.started` | INSERT | 创建 `assistant` 消息：`{agent, model, content:[], snapshot:{start}?, time:{created}}`；同时关闭前一个未完成的 assistant（设置其 time.completed） |
+| `step.ended` | UPDATE | 设置 assistant：`time.completed, finish, cost, tokens{total?,input,output,reasoning,cache{read,write}}, snapshot.end` |
+| `step.failed` | UPDATE | 设置 assistant：`time.completed, finish="error", error:{type:"unknown", message}` |
+| `text.started` | UPDATE | 追加 `{type:"text", text:""}` 到 assistant.content |
+| `text.ended` | UPDATE | 更新 assistant.content 中最后一个 text 的 `text` 字段（覆盖） |
+| `tool.input.started` | UPDATE | 追加 `{type:"tool", id:callID, name, time:{created}, state:{status:"pending", input:""}}` |
+| `tool.input.ended` | no-op | （input 已在 tool.called 完整记录） |
+| `tool.called` | UPDATE | 设置 tool：`time.ran, provider, state:{status:"running", input:{对象}, structured:{}, content:[]}` |
+| `tool.success` | UPDATE | 设置 tool：`state:{status:"completed", input:保留, structured, content}, provider, time.completed` |
+| `tool.failed` | UPDATE | 设置 tool：`state:{status:"error", error, input:保留, structured:保留, content:保留}, provider, time.completed` |
+| `reasoning.started` | UPDATE | 追加 `{type:"reasoning", id:reasoningID, text:""}` |
+| `reasoning.ended` | UPDATE | 更新 reasoning.text（覆盖） |
+| `retried` | no-op | |
+| `compaction.started` | INSERT | 创建 `compaction` 消息：`{reason, summary:"", time:{created}}` |
+| `compaction.delta` | UPDATE | 追加 compaction.summary（+=） |
+| `compaction.ended` | UPDATE | 设置 compaction：`summary=覆盖, include=messageID字符串` |
+
+### Shell 和 Synthetic 事件说明
+
+当前 opencode 的 event 表中**不包含** `shell.started`/`shell.ended`/`synthetic` 事件（这些仍走旧 projector）。但：
+
+- Shell 调用在 opencode 中通过 `bash` 工具执行，作为 assistant 消息的 tool content（name="bash"）存在于 session_message 表中
+- `SessionMessage.Shell` 类型是给未来"UI 直接发送 shell 命令"预留的，目前未启用
+- `SessionMessage.Synthetic` 同理
+- EventReplayer 应**预留这些事件的处理逻辑**（参考 TUI sync-v2.tsx），等 opencode 启用后自然生效
+
+### Compaction 后数据不删除
+
+验证确认：compaction 后旧消息**不会从 session_message 表中删除**。`compaction.include` 字段只是标记上下文分界点（告诉 LLM 从哪开始读取），不是删除标记。session_message 表是追加式的。
+
+### 数据完整性验证
+
+已通过实际数据库验证（会话 `ses_203a2838affeX2O5izmHusImSN`）：
+- 从 event 推算消息数：322 assistant + 60 user + 60 model-switched + 1 agent-switched + 5 compaction = **448**
+- SessionMessage 表实际：**448** ✓
+- `tool.success` 的 content/structured 与 SessionMessage 表**字节级一致** ✓
+- `text.ended` 的 `data.text` 包含完整文本（非 delta）✓
+- Delta 事件不持久化但不需要——ended 事件包含完整结果 ✓
+
+## 事件 data JSON 结构参考
+
+每个事件的 `data` 字段都包含 `sessionID` 和 `timestamp` 基础字段，以下列出各事件的特有字段（已从源码 + 实际 DB 双重验证）：
+
+### 所有事件共有字段
+
+```typescript
+{
+  sessionID: string,
+  timestamp: string  // ISO 8601，如 "2026-05-06T10:57:58.177Z"
+}
+```
+
+### 各事件类型 data 结构
+
+| 事件类型 | data 特有字段 |
+|---------|-------------|
+| `agent.switched` | `agent: string` |
+| `model.switched` | `model: { id, providerID, variant }` |
+| `prompted` | `prompt: { text, files?: FileAttachment[], agents?: AgentAttachment[] }` |
+| `synthetic` | `text: string` |
+| `shell.started` | `callID: string, command: string` |
+| `shell.ended` | `callID: string, output: string` |
+| `step.started` | `agent: string, model: { id, providerID, variant }, snapshot?: string` |
+| `step.ended` | `finish: string, cost: number, tokens: { total, input, output, reasoning, cache: { read, write } }, snapshot?: string` |
+| `step.failed` | `error: { type: "unknown", message: string }` |
+| `text.started` | （无额外字段） |
+| `text.delta` | `delta: string` |
+| `text.ended` | `text: string` |
+| `tool.input.started` | `callID: string, name: string` |
+| `tool.input.delta` | `callID: string, delta: string` |
+| `tool.input.ended` | `callID: string, text: string` |
+| `tool.called` | `callID: string, tool: string, input: Record<string, unknown>, provider: { executed: boolean, metadata? }` |
+| `tool.progress` | `callID: string, structured: Record<string, any>, content: ToolContent[]` |
+| `tool.success` | `callID: string, structured: Record<string, any>, content: ToolContent[], provider: { executed: boolean }` |
+| `tool.failed` | `callID: string, error: { type: "unknown", message: string }, provider: { executed: boolean }` |
+| `reasoning.started` | `reasoningID: string` |
+| `reasoning.delta` | `reasoningID: string, delta: string` |
+| `reasoning.ended` | `reasoningID: string, text: string` |
+| `retried` | `attempt: number, error: { message, isRetryable, statusCode?, ... }` |
+| `compaction.started` | `reason: "auto" \| "manual"` |
+| `compaction.delta` | `text: string` |
+| `compaction.ended` | `text: string, include?: string`（include 是单个 messageID） |
+
+### 共用子类型
+
+```typescript
+// FileAttachment
+{ uri: string, mime: string, name?: string, description?: string, source?: { start, end, text } }
+
+// AgentAttachment
+{ name: string, source?: { start, end, text } }
+
+// ToolContent (union)
+{ type: "text", text: string } | { type: "file", uri: string, mime: string, name?: string }
+
+// Tokens
+{ total: number, input: number, output: number, reasoning: number, cache: { read: number, write: number } }
+```
+
+## 旧会话兼容策略
+
+**旧会话定义**：event 表和 session_message 表启用前创建的会话。
+
+**数据分布**：347 会话中 323 个只有旧表数据。
+
+**策略**：
+
+1. Bridge 检测 session_message 表中该会话的数据量
+2. 有数据 → 正常走新流程（快照 + 增量）
+3. 无数据 → 从旧 `message` + `part` 表拉取最后 N 条消息，映射为 SessionMessage 格式
+4. 旧消息映射容忍部分字段缺失（如无 tokens、无 snapshot、无 reasoning）
+5. 旧会话不设 seq 锚点（每次打开都重新拉取）
+6. 一旦 opencode 对该会话产生新 event（如用户继续对话），自动切换到增量模式
+
+## 截断规则
+
+截断在 Bridge 层执行（初始化快照时），移动端只接收截断后的数据。增量事件中的数据在移动端 replay 时应用截断规则再写 DB。两处使用**同一套规则**。
+
+详见 [`2026-05-06-mobile-sync-truncation-rules.md`](2026-05-06-mobile-sync-truncation-rules.md)
+
+## 服务端数据库表结构
+
+### EventSequenceTable
 
 ```sql
 CREATE TABLE event_sequence (
   aggregate_id TEXT PRIMARY KEY,  -- 即 sessionID
   seq          INTEGER NOT NULL,
-  owner_id     TEXT               -- 新增：owner 标识，用于 workspace 场景
-);
-
-CREATE TABLE event (
-  id           TEXT PRIMARY KEY,
-  aggregate_id TEXT NOT NULL REFERENCES event_sequence(aggregate_id) ON DELETE CASCADE,
-  seq          INTEGER NOT NULL,
-  type         TEXT NOT NULL,    -- 如 "session.next.text.started.1"
-  data         TEXT NOT NULL     -- JSON
+  owner_id     TEXT
 );
 ```
 
-### 新模型：SessionMessageTable
+### EventTable
+
+```sql
+CREATE TABLE event (
+  id           TEXT PRIMARY KEY,    -- evt_ + ULID
+  aggregate_id TEXT NOT NULL REFERENCES event_sequence(aggregate_id) ON DELETE CASCADE,
+  seq          INTEGER NOT NULL,    -- per-aggregate 递增，从 0 开始
+  type         TEXT NOT NULL,       -- 如 "session.next.text.ended.1"（name.version）
+  data         TEXT NOT NULL        -- JSON
+);
+
+-- 我们自建的索引（opencode 原始 schema 缺少）
+CREATE INDEX idx_event_aggregate_seq ON event(aggregate_id, seq);
+```
+
+### SessionMessageTable
 
 ```sql
 CREATE TABLE session_message (
-  id           TEXT PRIMARY KEY,
+  id           TEXT PRIMARY KEY,    -- 同 event.id（evt_ 前缀）
   session_id   TEXT NOT NULL REFERENCES session(id) ON DELETE CASCADE,
-  type         TEXT NOT NULL,    -- assistant / user / shell / compaction / agent-switched / model-switched / synthetic
+  type         TEXT NOT NULL,       -- assistant / user / shell / compaction / agent-switched / model-switched / synthetic
   time_created INTEGER NOT NULL,
   time_updated INTEGER NOT NULL,
-  data         TEXT NOT NULL     -- JSON，内容因 type 而异
+  data         TEXT NOT NULL        -- JSON，内容因 type 而异
 );
+CREATE INDEX session_message_session_idx ON session_message(session_id);
+CREATE INDEX session_message_session_type_idx ON session_message(session_id, type);
+CREATE INDEX session_message_time_created_idx ON session_message(time_created);
 ```
 
-### 旧模型：MessageTable + PartTable（逐步废弃）
+### SessionTable
 
 ```sql
-CREATE TABLE message (
+CREATE TABLE session (
   id           TEXT PRIMARY KEY,
-  session_id   TEXT NOT NULL REFERENCES session(id) ON DELETE CASCADE,
+  project_id   TEXT NOT NULL,
+  slug         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  agent        TEXT,
+  model        TEXT,                -- JSON
   time_created INTEGER NOT NULL,
   time_updated INTEGER NOT NULL,
-  data         TEXT NOT NULL     -- JSON
-);
-
-CREATE TABLE part (
-  id           TEXT PRIMARY KEY,
-  message_id   TEXT NOT NULL REFERENCES message(id) ON DELETE CASCADE,
-  session_id   TEXT NOT NULL,
-  time_created INTEGER NOT NULL,
-  time_updated INTEGER NOT NULL,
-  data         TEXT NOT NULL     -- JSON
+  data         TEXT NOT NULL        -- JSON
 );
 ```
 
-## 增量同步协议
-
-### 1. 初始同步（拉取全量）
-
-```
-POST /sync/history
-Content-Type: application/json
-
-{
-  "ses_xxx": 0,    -- 本地未知该 session，从 0 开始
-  "ses_yyy": 0
-}
-```
-
-**响应（实际格式）：**
-
-```json
-[
-  { "id": "evt_001", "aggregate_id": "ses_xxx", "seq": 1, "type": "session.next.step.started.1", "data": { "sessionID": "ses_xxx", "timestamp": 1715012345678, "agent": "coder", "model": { "id": "glm-5.1", "providerID": "zai" } } },
-  { "id": "evt_002", "aggregate_id": "ses_xxx", "seq": 2, "type": "session.next.text.started.1", "data": { ... } },
-  { "id": "evt_003", "aggregate_id": "ses_xxx", "seq": 3, "type": "session.next.text.ended.1", "data": { ... } }
-]
-```
-
-**关键说明：**
-- 响应是**扁平数组**，不是按 session 分组的对象
-- `aggregate_id` 即 `sessionID`
-- 事件类型格式为 `name.version`（如 `session.next.text.ended.1`），不是 `message-v2.xxx`
-- 传空 `{}` 时返回所有 session 的全量事件
-
-### 2. 增量同步（拉取变更）
-
-```
-POST /sync/history
-Content-Type: application/json
-
-{
-  "ses_xxx": 3,     -- 本地已知 ses_xxx 到 seq=3
-  "ses_yyy": 5
-}
-```
-
-**响应：** 返回 `ses_xxx` 的 seq > 3 和 `ses_yyy` 的 seq > 5 的所有事件。未列出的 session 返回全量事件。
-
-### 3. 事件类型完整列表
-
-#### 会话级别事件（旧投影器，写 SessionTable）
-
-| 事件类型 | 含义 | 本地操作 |
-|----------|------|---------|
-| `session.created.1` | 创建会话 | INSERT session |
-| `session.updated.1` | 更新会话元数据 | UPDATE session |
-| `session.deleted.1` | 删除会话 | DELETE session + 级联 |
-
-#### 旧消息模型事件（旧投影器，写 MessageTable + PartTable）
-
-| 事件类型 | 含义 | 本地操作 |
-|----------|------|---------|
-| `message.updated.1` | 新增/变更消息 | UPSERT message |
-| `message.removed.1` | 删除消息 | DELETE message |
-| `message.part.updated.1` | 新增/变更 part | UPSERT part |
-| `message.part.removed.1` | 删除 part | DELETE part |
-
-#### 新消息模型事件（next 投影器，写 SessionMessageTable）
-
-| 事件类型 | 含义 | 对应 SessionMessage 类型 |
-|----------|------|------------------------|
-| `session.next.agent.switched.1` | 切换 Agent | `agent-switched` |
-| `session.next.model.switched.1` | 切换模型 | `model-switched` |
-| `session.next.prompted.1` | 用户发送消息 | `user` |
-| `session.next.synthetic.1` | 合成消息 | `synthetic` |
-| `session.next.shell.started.1` | Shell 命令开始 | `shell` |
-| `session.next.shell.ended.1` | Shell 命令结束 | `shell` (更新) |
-| `session.next.step.started.1` | 步骤开始 | `assistant` (创建) |
-| `session.next.step.ended.1` | 步骤结束 | `assistant` (完成) |
-| `session.next.step.failed.1` | 步骤失败 | `assistant` (错误) |
-| `session.next.text.started.1` | 文本输出开始 | `assistant` (添加 text content) |
-| `session.next.text.delta.1` | 文本增量 | **跳过**（流式更新，同步场景不需要） |
-| `session.next.text.ended.1` | 文本输出结束 | `assistant` (更新 text content) |
-| `session.next.tool.input.started.1` | 工具输入开始 | `assistant` (添加 tool content) |
-| `session.next.tool.input.delta.1` | 工具输入增量 | **跳过** |
-| `session.next.tool.input.ended.1` | 工具输入结束 | `assistant` (更新 tool content) |
-| `session.next.tool.called.1` | 工具被调用 | `assistant` (更新 tool state) |
-| `session.next.tool.progress.1` | 工具进度 | `assistant` (更新 tool state) |
-| `session.next.tool.success.1` | 工具执行成功 | `assistant` (更新 tool state=completed) |
-| `session.next.tool.failed.1` | 工具执行失败 | `assistant` (更新 tool state=error) |
-| `session.next.reasoning.started.1` | 推理开始 | `assistant` (添加 reasoning content) |
-| `session.next.reasoning.delta.1` | 推理增量 | **跳过** |
-| `session.next.reasoning.ended.1` | 推理结束 | `assistant` (更新 reasoning content) |
-| `session.next.retried.1` | 重试 | `assistant` |
-| `session.next.compaction.started.1` | 压缩开始 | `compaction` |
-| `session.next.compaction.delta.1` | 压缩增量 | **跳过** |
-| `session.next.compaction.ended.1` | 压缩结束 | `compaction` (更新) |
-
-### 4. SessionMessage 数据结构
+## SessionMessage 数据结构
 
 新模型中所有消息类型统一为 `SessionMessage`，通过 `type` 字段区分：
 
 ```typescript
-// 核心类型（Tagged Union）
 type SessionMessage =
   | AgentSwitched     // type: "agent-switched"
   | ModelSwitched     // type: "model-switched"
@@ -215,275 +514,90 @@ type SessionMessage =
   id: string,
   agent: string,
   model: { id, providerID, variant? },
-  content: AssistantContent[],  // 统一的内容数组
-  snapshot?: { start?, end? },
+  content: AssistantContent[],
+  snapshot?: { start?: string, end?: string },
   finish?: string,
   cost?: number,
-  tokens?: { input, output, reasoning, cache: { read, write } },
+  tokens?: { total, input, output, reasoning, cache: { read, write } },
   error?: { type: "unknown", message: string },
   time: { created: DateTimeUtc, completed?: DateTimeUtc },
   metadata?: Record<string, unknown>
 }
 
-// 内容类型（Tagged Union by "type"）
 type AssistantContent =
   | { type: "text", text: string }
   | { type: "reasoning", id: string, text: string }
-  | { type: "tool", id: string, name: string, state: ToolState, ... }
+  | { type: "tool", id: string, name: string, provider?: { executed, metadata? }, state: ToolState, time?: { created, ran?, completed? } }
+
+type ToolState =
+  | { status: "pending", input: string }
+  | { status: "running", input: Record<string, unknown>, structured: Record<string, any>, content: ToolContent[] }
+  | { status: "completed", input: Record<string, unknown>, structured: Record<string, any>, content: ToolContent[] }
+  | { status: "error", error: { type: "unknown", message: string }, input: Record<string, unknown>, structured: Record<string, any>, content: ToolContent[] }
 ```
 
-**与旧模型的关键差异：**
-- 旧模型：message + part 两级，part 是 message 的子行，需要 JOIN
-- 新模型：单个 SessionMessage 行，content 内嵌在 data JSON 中
-- 新模型的 `assistant` 类型把 text/reasoning/tool 统一为 `content` 数组
+**其他消息结构：**
 
-## 客户端同步流程
+```typescript
+// User
+{ type: "user", id, text, files?: FileAttachment[], agents?: AgentAttachment[], time: { created } }
 
-### 推荐方案：基于 session.next.* 事件
+// AgentSwitched
+{ type: "agent-switched", id, agent: string, time: { created } }
 
-```kotlin
-fun syncSessions(lastKnownSeqs: Map<String, Int>): SyncResult {
-    // 1. 请求增量事件
-    val events = httpPost("/sync/history", lastKnownSeqs)
+// ModelSwitched
+{ type: "model-switched", id, model: { id, providerID, variant }, time: { created } }
 
-    // 2. 按事件类型回放，更新本地 DB
-    db.transaction {
-        for (event in events) {
-            when {
-                event.type.startsWith("session.next.") -> replayNextEvent(event)
-                event.type.startsWith("session.") -> replaySessionEvent(event)
-                // 旧模型事件可选择忽略或双写
-            }
-        }
-        // 3. 更新 lastSeq
-        updateLastSeqs(events)
-    }
-}
+// Shell
+{ type: "shell", id, callID: string, command: string, output: string, time: { created, completed? } }
 
-fun replayNextEvent(event: SyncEvent) {
-    // session.next.* 事件由 SessionMessageUpdater 处理
-    // 核心逻辑：每个事件对应 SessionMessageTable 的一行 upsert
-    // - step.started → 创建 assistant 行
-    // - text.ended / tool.success → 更新 assistant 行的 content 数组
-    // - prompted → 创建 user 行
-    // 等等
-    when (event.type) {
-        "session.next.prompted.1" -> upsertUserMessage(event.data)
-        "session.next.step.started.1" -> upsertAssistantMessage(event.data)
-        "session.next.step.ended.1" -> completeAssistantMessage(event.data)
-        "session.next.text.ended.1" -> appendTextContent(event.data)
-        "session.next.tool.called.1" -> appendToolContent(event.data)
-        "session.next.tool.success.1" -> updateToolState(event.data)
-        // delta 类事件跳过
-    }
-}
+// Synthetic
+{ type: "synthetic", id, sessionID: string, text: string, time: { created } }
+
+// Compaction
+{ type: "compaction", id, reason: "auto"|"manual", summary: string, include?: string, time: { created } }
 ```
-
-### 幂等处理
-
-所有事件回放都是幂等的：
-- **UPSERT** 使用 `INSERT OR REPLACE` 或 `ON CONFLICT DO UPDATE`
-- **UPDATE/DELETE** 使用主键定位，不存在则跳过
-- **session.deleted** 级联删除关联的 SessionMessage
-
-### 断点续传
-
-- 客户端在本地持久化每个 session 的 `lastSeq`
-- 网络失败时记录失败状态，下次上线从断点处继续
-- `POST /sync/history` 返回 `seq > N` 的事件，天然支持重试
-
-## 实时推送（尚未实现）
-
-当前版本(v1.14.39) **SSE `/sync/stream` 尚未实现**。未来可用时：
-
-```
-GET /workspace/{workspaceId}/sync/stream
-
-data: {"aggregate_id":"ses_xxx","seq":6,"type":"session.next.text.ended.1","data":{...}}
-```
-
-客户端可：
-1. 上线时先拉取增量
-2. 建立 SSE 连接接收实时事件
-3. 断开时记录断点，下次用增量补全
 
 ## 移动端 Room 数据库设计
 
-### 基于新模型的表结构
+**新模型替换旧模型**：旧的 `MessageEntity` + `PartEntity` 表删除，用新的 `SessionMessageEntity` 替代。用户需卸载重装（fallbackToDestructiveMigration）。
 
 ```kotlin
 @Entity(tableName = "sync_state")
-data class SyncState(
+data class SyncStateEntity(
     @PrimaryKey val sessionId: String,
     val lastSeq: Int
 )
 
-@Entity(tableName = "session")
-data class SessionEntity(
-    @PrimaryKey val id: String,
-    val projectId: String,
-    val slug: String,
-    val title: String,
-    val agent: String? = null,
-    val model: String? = null,       // JSON
-    val timeCreated: Long,
-    val timeUpdated: Long
-)
-
-@Entity(
-    tableName = "session_message",
-    foreignKeys = [ForeignKey(
-        entity = SessionEntity::class,
-        parentColumns = ["id"],
-        childColumns = ["sessionId"],
-        onDelete = ForeignKey.CASCADE
-    )],
-    indices = [Index("sessionId"), Index("sessionId", "type"), Index("timeCreated")]
-)
-data class SessionMessageEntity(
-    @PrimaryKey val id: String,
-    val sessionId: String,
-    val type: String,                 // assistant / user / shell / compaction / agent-switched / model-switched / synthetic
-    val data: String,                 // JSON，内容因 type 而异
-    val timeCreated: Long,
-    val timeUpdated: Long
-)
-```
-
-### 与旧模型的对比
-
-| 维度 | 旧模型 (message + part) | 新模型 (session_message) |
-|------|------------------------|------------------------|
-| 表数量 | 2（message + part） | 1（session_message） |
-| 关联 | part → message → session | session_message → session |
-| 查询 | 需要 JOIN | 单表查询 |
-| 写入 | 每次更新写 part 行 | 每次更新写 session_message 行的 data JSON |
-| 内容大小 | part.data 较小（单个文本/工具） | session_message.data 较大（含完整 content 数组） |
-
-## 数据库膨胀分析与移动端优化
-
-### 服务端 DB 为何会膨胀到 700MB+
-
-| 原因 | 说明 | 占比预估 |
-|------|------|---------|
-| **PartTable.data / SessionMessageTable.data（大字段 JSON）** | 包含 LLM 输出全文、推理过程、工具执行输出、git diff 快照等。推理模型的 `reasoning` 文本可达数万~数十万 token | ~60% |
-| **EventTable 双重存储** | 每条变更同时写入 EventTable，事件日志**永不清理**。当前状态表 + 全量历史 ≈ 2x 数据量 | ~35% |
-| **Snapshot 数据** | step 事件中的 snapshot 字段存储 git diff 内容 | ~5% |
-
-**核心问题：EventTable 只增不删**，没有 TTL、归档或 rollup 机制。
-
-### 移动端同步优化策略
-
-| 策略 | 做法 | 效果 |
-|------|------|------|
-| **跳过 EventTable** | 不同步 event 表，只回放事件更新 SessionMessage 当前状态 | 节省 ~50% 存储 |
-| **跳过 delta 事件** | `session.next.text.delta.1`、`session.next.tool.input.delta.1`、`session.next.reasoning.delta.1` 等流式增量事件不需要回放 | 大幅减少事件处理量 |
-| **选择性同步 content** | reasoning 文本、大 tool 输出截断，移动端直接基于截断后的本地数据展示 | 大幅节省 |
-| **按 session 活跃度同步** | 只同步最近 N 天活跃的 session，旧 session 仅保留元数据 | 控制长期膨胀 |
-| **本地数据保留策略** | 设置存储上限（如 200MB），超出时清理最旧 session 的 data 缓存 | 防止无限膨胀 |
-
-### SessionMessage 内容截断规则
-
-> **待讨论**：以下截断策略为初始草案，需要逐条确认。
-
-#### 事件级大字段分析
-
-每个 `session.next.*` 事件回写 SessionMessage 时，需要决定哪些字段保留、截断或跳过。以下是所有大字段的完整清单：
-
-| 事件类型 | 大字段 | 典型大小 | 移动端展示需求 | 草案策略 |
-|----------|--------|---------|---------------|---------|
-| `text.ended` | `text` | 数百~数万字符 | LLM 回复正文，核心内容 | 截断至 2000 字符 |
-| `reasoning.ended` | `text` | 数千~数十万字符（推理模型） | 可折叠展示，用户偶尔查看 | 保留前后各 100 字符，中间 `...[truncated]...` |
-| `tool.success/progress` | `content[].text` | 数百~数十KB（grep 结果、文件内容等） | 工具输出，用户可能展开查看 | 跳过 content，只存 name/status/time |
-| `tool.success/progress` | `structured` | 不定（结构化输出） | 部分工具有用（如搜索结果摘要） | 跳过 |
-| `tool.input.ended` | `text` | 数百~数万字符（工具输入 JSON） | 一般不展示 | 截断至 500 字符？或跳过？ |
-| `tool.called` | `input` | 数百~数万字符（工具调用参数） | 一般不展示 | 截断至 500 字符？或跳过？ |
-| `shell.ended` | `output` | 数百~数十KB | 用户可能查看命令输出 | **跳过** |
-| `prompted` | `prompt.text` | 数十~数千字符 | 用户输入，核心内容 | 截断至 2000 字符 |
-| `prompted` | `prompt.files[].source.text` | 数百~数十KB | 文件附件内容 | 跳过 source.text，保留 name/uri/mime |
-| `step.started/ended` | `snapshot` | 数千~数十KB（对话快照） | 不展示 | **跳过** |
-| `compaction.ended` | `text` | 数千字符（压缩摘要） | 历史上下文摘要 | 全量保留？截断？ |
-| `compaction.ended` | `include` | 数千字符 | 压缩包含的内容说明 | 跳过？ |
-| `step.failed/tool.failed` | `error.message` | 数百~数千字符 | 错误信息，有用 | 全量保留 |
-| `retried` | `error.responseBody` | 数百~数十KB | 不展示 | 跳过 |
-
-#### 需要讨论的问题
-
-1. **reasoning**：保留前后各 100 字符，中间用 `...[truncated]...` 标记。UI 可展示推理开头+结尾，让用户感知方向和结论。
-2. **tool input**（`tool.input.ended.text` / `tool.called.input`）：截断 500 字 vs 跳过？用户是否需要看到工具调用了什么参数？
-3. **tool output**（`tool.success.content[].text`）：完全跳过 vs 保留前 500 字？
-   - 某些工具输出很短（如 `file_exists → true`），跳过可能丢失有用信息
-   - 是否按 tool name 区分？比如 bash/Read 输出大，但 list_directory 输出小
-4. **shell.output**：完全跳过 vs 保留前 500 字？
-5. **compaction**：全量保留 vs 截断？移动端是否需要完整的压缩摘要？
-6. **prompt.text**：2000 字符是否够？用户粘贴大段代码时可能更长
-7. **tool.structured**：是否部分工具有用的结构化输出需要保留？
-
-#### 旧版截断规则（参考）
-
-| Message 类型 | 字段 | 同步策略 |
-|-------------|------|---------|
-| `assistant` | `content[].text` (type=text) | 截断至 2000 字符 |
-| `assistant` | `content[]` (type=reasoning) | 保留前后各 100 字符，中间 `...[truncated]...` |
-| `assistant` | `content[]` (type=tool, state=completed) | 跳过 output content，只存 name/status/time |
-| `assistant` | `content[]` (type=tool, state=running) | 只存 name/callID |
-| `assistant` | `snapshot` | **跳过** |
-| `assistant` | `tokens` / `cost` | 同步（很小） |
-| `user` | `text` | 截断至 2000 字符 |
-| `shell` | `output` | **跳过** |
-| `compaction` | `summary` | 同步 |
-| `agent-switched` / `model-switched` | 全部 | 同步（很小） |
-
-### Room 实体设计
-
-移动端懒加载基于本地 DB，不需要网络请求。UI 列表页先加载摘要字段，用户展开时从本地 DB 读取完整 data：
-
-```kotlin
-@Entity(tableName = "session_message")
+@Entity(tableName = "session_message",
+    indices = [Index("sessionId"), Index("sessionId", "type"), Index("timeCreated")])
 data class SessionMessageEntity(
     @PrimaryKey val id: String,
     val sessionId: String,
     val type: String,
-    val data: String,                 // JSON（同步时已按截断规则处理）
+    val data: String,                     // JSON（截断后）
     val timeCreated: Long,
     val timeUpdated: Long
 )
+
+@Entity(tableName = "session_message_full_content")
+data class SessionMessageFullContentEntity(
+    @PrimaryKey val messageId: String,
+    val content: String,                  // 完整 JSON（回源后缓存）
+    val fetchedAt: Long
+)
 ```
-
-- 同步时按截断规则处理大字段后写入 `data`
-- UI 层展示列表时只解析 `data` 中的摘要信息（如 text 前 N 字符、tool name/status）
-- 用户展开时再从本地 DB 读取完整 `data` 渲染详情
-- 不需要 `session_message_content` 表，不需要网络请求回源
-
-## 与当前锚点方案的关系
-
-### 当前方案（锚点 + 分页）
-
-- 基于 `GET /session/:id/message` 分页 API
-- 用 `syncAnchor`（最后一条已完成的 assistant 消息 ID）标记同步进度
-- 无法检测删除，Part 全量同步
-
-### 迁移路径
-
-| 阶段 | 方案 | 说明 |
-|------|------|------|
-| **当前** | 锚点 + 分页 | 不依赖 experimental flag，立即可用 |
-| **过渡** | 锚点 + `/sync/history` 双写 | 开启 flag 后，同时用两种方式同步，验证一致性 |
-| **目标** | 纯 `/sync/history` + `session.next.*` | 基于事件溯源，支持删除检测、精确增量、实时推送 |
-
-### 渐进迁移注意
-
-- 开启 `OPENCODE_EXPERIMENTAL_WORKSPACES` 后，**只有新产生的事件**会被持久化，历史会话没有事件
-- 迁移期间可以：锚点方案负责历史会话，`/sync/history` 负责新会话
-- 旧模型事件（`message.updated.1` 等）和新模型事件（`session.next.*`）同时存在，客户端可选择只处理新模型
 
 ## 注意事项
 
-1. **单写入者模型**：每个 session 同一时间只能由一个客户端写入。移动端目前只做读同步，不写入新消息。
-2. **事件版本兼容**：事件类型包含版本号后缀（如 `.1`），客户端应忽略未知版本，未来版本升级时向后兼容。
-3. **数据量控制**：首次同步或长时间离线后，增量可能较大。建议客户端分页处理或配合进度提示。
-4. **序列号 gap 检测**：服务端 replay 时会检测 seq 跳跃，客户端不自行写入事件。
-5. **本地懒加载**：UI 列表先展示摘要，用户展开时从本地 DB 读取完整 data 渲染，无需网络请求。
-6. **存储上限**：移动端可设置存储上限（如 200MB），达到阈值时清理最旧 session 的懒加载缓存。
-7. **压缩传输**：`/sync/history` 响应应启用 gzip 压缩，大 JSON 传输量可减少 10-20 倍。
-8. **delta 事件跳过**：`text.delta`、`tool.input.delta`、`reasoning.delta` 等流式增量事件在同步场景中应跳过，只处理 `ended` 事件即可获得完整内容。
+1. **单写入者模型**：每个 session 同一时间只能由一个客户端写入事件。移动端只做读同步。
+2. **WAL 模式**：opencode 使用 WAL 模式，Bridge 读取不阻塞 opencode 写入。
+3. **旧会话降级**：无 session_message 数据时从旧表读取，映射容忍缺失。一旦有新 event 自动切换到增量模式。
+4. **seq 是 per-aggregate 递增**：每个会话独立 seq 从 0 开始，不是全局单调递增。增量同步锚点是 `(sessionId, lastSeq)` 对。
+5. **自建复合索引**：event 表缺 `(aggregate_id, seq)`，session_message 表缺 `(session_id, time_created DESC)`，Bridge 启动时自建。
+6. **delta 事件不持久化**：`text.delta`、`tool.input.delta`、`reasoning.delta` 在 event 表中不存在。`ended` 事件包含完整结果，不需要 delta。`compaction.delta` 也不持久化但 `compaction.ended` 有完整 summary。
+7. **截断双执行点**：Bridge 侧（快照时）和移动端侧（replay 时）。
+8. **三级展示**：折叠摘要 → 展开本地完整 data → 回源拉取完整内容缓存。
+9. **compaction 不删除消息**：session_message 表是追加式的，compaction 的 `include` 只是上下文分界标记。
+10. **step.ended tokens 含 total**：`tokens.total` 字段实际存在于 DB 中。
+11. **shell/synthetic 事件暂无数据**：replayer 预留处理逻辑，等 opencode 启用后自然生效。bash 工具调用作为 assistant tool content 正常存在。

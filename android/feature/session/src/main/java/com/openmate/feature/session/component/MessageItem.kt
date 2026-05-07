@@ -50,15 +50,41 @@ fun MessageItem(
         val model = message.modelID
         if (provider.isNotBlank()) "$provider/$model" else model
     } else null
-    val isEmptyAssistant = !isUser && message.parts.none {
+    val hasVisibleContent = message.parts.any {
         it is Part.TextPart && it.text.isNotBlank() && !it.synthetic
                 || it is Part.ToolInvocationPart
                 || it is Part.FilePart
-                || (showReasoning && it is Part.ReasoningPart)
                 || it is Part.SubtaskPart
                 || it is Part.AgentPart
                 || it is Part.PatchPart
                 || it is Part.SnapshotPart
+                || (showReasoning && it is Part.ReasoningPart)
+    }
+    val hasOnlyReasoning = !showReasoning && !message.parts.none { it is Part.ReasoningPart }
+        && message.parts.none {
+            it is Part.TextPart && it.text.isNotBlank() && !it.synthetic
+                    || it is Part.ToolInvocationPart
+                    || it is Part.FilePart
+                    || it is Part.SubtaskPart
+                    || it is Part.AgentPart
+                    || it is Part.PatchPart
+                    || it is Part.SnapshotPart
+        }
+
+    if (!isUser && !hasVisibleContent) {
+        if (hasOnlyReasoning) return
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp, horizontal = 12.dp),
+        ) {
+            if (message.completedAt == null) {
+                ThinkingIndicator()
+            } else {
+                AbortedIndicator()
+            }
+        }
+        return
     }
 
     Column(
@@ -66,25 +92,17 @@ fun MessageItem(
             .fillMaxWidth()
             .padding(vertical = 2.dp, horizontal = 12.dp),
     ) {
-        if (isEmptyAssistant) {
-            if (message.completedAt == null) {
-                ThinkingIndicator()
-            } else {
-                AbortedIndicator()
-            }
-        } else {
-            PartColumn(
-                parts = message.parts,
-                isUser = isUser,
-                pendingQuestions = pendingQuestions,
-                pendingPermissions = pendingPermissions,
-                onReplyQuestion = onReplyQuestion,
-                onRejectQuestion = onRejectQuestion,
-                onReplyPermission = onReplyPermission,
-                onNavigateToSubtask = onNavigateToSubtask,
-                showReasoning = showReasoning,
-            )
-        }
+        PartColumn(
+            parts = message.parts,
+            isUser = isUser,
+            pendingQuestions = pendingQuestions,
+            pendingPermissions = pendingPermissions,
+            onReplyQuestion = onReplyQuestion,
+            onRejectQuestion = onRejectQuestion,
+            onReplyPermission = onReplyPermission,
+            onNavigateToSubtask = onNavigateToSubtask,
+            showReasoning = showReasoning,
+        )
         if (isQueued) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
