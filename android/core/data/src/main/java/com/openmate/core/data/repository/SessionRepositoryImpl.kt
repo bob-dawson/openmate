@@ -112,15 +112,7 @@ class SessionRepositoryImpl @Inject constructor(
     }
 
     override suspend fun refreshSessionStatusesFromMessages() {
-        val db = dbProvider.getActive()
-        val busyIds = db.messageDao().getBusySessionIDs()
-        val allSessions = db.sessionDao().getAll()
-        for (session in allSessions) {
-            val newStatus = if (session.id in busyIds) SessionStatus.BUSY.name else SessionStatus.IDLE.name
-            if (session.status != newStatus) {
-                db.sessionDao().updateStatus(session.id, newStatus)
-            }
-        }
+        // TODO: reimplement using session_message table
     }
 
     override suspend fun syncSessionStatusFromRemote(sessionID: String) {

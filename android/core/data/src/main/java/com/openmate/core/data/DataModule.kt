@@ -41,4 +41,8 @@ abstract class DataModule {
     @Singleton
     abstract fun bindTodoRepository(impl: TodoRepositoryImpl): TodoRepository
 
+    @Binds
+    @Singleton
+    abstract fun bindSessionMessageRepository(impl: SessionMessageRepositoryImpl): SessionMessageRepository
+
 }
