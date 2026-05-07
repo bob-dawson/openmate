@@ -13,6 +13,7 @@ use crate::files;
 use crate::fs;
 use crate::proxy;
 use crate::state::create_app_state;
+use crate::sync;
 
 pub async fn run_server(
     config: Config,
@@ -30,6 +31,10 @@ pub async fn run_server(
 
     let app_state = create_app_state(config.clone());
 
+    if let Err(e) = app_state.sync_db.ensure_indexes() {
+        tracing::warn!("Failed to create sync indexes: {}", e);
+    }
+
     if config.opencode.auto_start {
         tracing::info!("Auto-starting opencode...");
         if let Err(e) = app_state.opencode_manager.start().await {
@@ -38,6 +43,11 @@ pub async fn run_server(
     }
 
     let app = Router::new()
+        .route("/api/bridge/sync/sessions", get(sync::router::sessions))
+        .route("/api/bridge/sync/session/{sessionID}/init", get(sync::router::init))
+        .route("/api/bridge/sync/session/{sessionID}/events", get(sync::router::events))
+        .route("/api/bridge/sync/session/{sessionID}/message/{messageID}/full", get(sync::router::full))
+        .route("/api/bridge/sync/events", get(sync::sse::sync_sse))
         .route("/api/bridge/status", get(bridge::router::status))
         .route(
             "/api/bridge/opencode/start",
