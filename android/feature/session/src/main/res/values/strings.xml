@@ -78,6 +78,8 @@
     <string name="cache">Local Files</string>
     <string name="manage">Manage</string>
     <string name="file_count">%1$d files</string>
+    <string name="refresh_stats">Refresh stats</string>
+    <string name="clear_cache_confirm">Are you sure you want to delete all cached files?</string>
     <string name="about">About</string>
     <string name="version">Version</string>
     <string name="open_source_licenses">Open source licenses</string>
@@ -159,6 +161,7 @@
     <string name="attach_to_session">Attach to session</string>
     <string name="download_to">Download to…</string>
     <string name="local_files">Local Files</string>
+    <string name="insert_file_path">Insert file path</string>
 
     <string name="cannot_read_file">Cannot read file</string>
     <string name="file_too_large_upload">File too large (max 100MB)</string>

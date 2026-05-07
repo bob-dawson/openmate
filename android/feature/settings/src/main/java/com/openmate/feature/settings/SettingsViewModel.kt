@@ -51,7 +51,7 @@ class SettingsViewModel @Inject constructor(
         refreshCacheInfo()
     }
 
-    private fun refreshCacheInfo() {
+    fun refreshCacheInfo() {
         viewModelScope.launch(Dispatchers.IO) {
             if (!cacheDir.exists()) {
                 _cacheSize.value = "0 B"

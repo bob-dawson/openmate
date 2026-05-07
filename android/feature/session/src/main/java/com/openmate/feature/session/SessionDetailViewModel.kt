@@ -26,19 +26,23 @@ import com.openmate.core.common.guessMimeForAttachment
 import com.openmate.core.network.dto.SkillInfoDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.inject.Inject
+
+object AttachmentBridge {
+    var pendingPath: String? = null
+}
 
 @HiltViewModel
 class SessionDetailViewModel @Inject constructor(
@@ -517,6 +521,17 @@ companion object {
     fun useSkill(skillName: String) {
         val current = _inputText.value
         _inputText.value = (if (current.isNotBlank()) "$current\n" else "") + "/skill $skillName"
+    }
+
+    fun insertFilePath(path: String) {
+        val current = _inputText.value
+        _inputText.value = if (current.isNotBlank()) "$current\n$path" else path
+    }
+
+    fun consumePendingPath() {
+        val path = AttachmentBridge.pendingPath ?: return
+        AttachmentBridge.pendingPath = null
+        insertFilePath(path)
     }
 
     fun attachFile(path: String, filename: String) {

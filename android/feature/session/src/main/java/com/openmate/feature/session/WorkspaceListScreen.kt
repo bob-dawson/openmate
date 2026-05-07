@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -34,6 +35,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -512,6 +514,28 @@ private fun SettingsContent(
     modifier: Modifier = Modifier,
 ) {
     val activeProfile by viewModel.activeProfile.collectAsState()
+    var showClearCacheDialog by remember { mutableStateOf(false) }
+
+    if (showClearCacheDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearCacheDialog = false },
+            title = { Text(stringResource(R.string.confirm)) },
+            text = { Text(stringResource(R.string.clear_cache_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.clearCache()
+                    showClearCacheDialog = false
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearCacheDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 
     LazyColumn(
         modifier = modifier.padding(horizontal = 16.dp),
@@ -540,7 +564,7 @@ private fun SettingsContent(
                             text = stringResource(R.string.delete),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.clickable { viewModel.clearCache() },
+                            modifier = Modifier.clickable { showClearCacheDialog = true },
                         )
                     },
                 )
@@ -549,6 +573,18 @@ private fun SettingsContent(
                     subtitle = stringResource(R.string.file_count, viewModel.cacheFileCount.collectAsState().value),
                     showDivider = false,
                     modifier = Modifier.clickable { onNavigateToLocalFileManager() },
+                    trailing = {
+                        IconButton(
+                            onClick = { viewModel.refreshCacheInfo() },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = stringResource(R.string.refresh_stats),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    },
                 )
             }
         }

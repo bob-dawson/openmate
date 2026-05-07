@@ -154,6 +154,7 @@ fun SessionDetailScreen(
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
                 viewModel.restoreDraft()
+                viewModel.consumePendingPath()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

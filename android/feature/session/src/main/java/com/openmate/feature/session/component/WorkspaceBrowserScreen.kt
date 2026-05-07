@@ -83,6 +83,7 @@ import com.openmate.core.network.dto.BridgeSearchResultDto
 import com.openmate.core.ui.theme.TopBarBackground
 import com.openmate.core.ui.component.DirectoryPickerDialog
 import com.openmate.feature.session.R
+import com.openmate.feature.session.AttachmentBridge
 import com.openmate.feature.session.DownloadState
 import com.openmate.feature.session.WorkspaceBrowserViewModel
 import dev.jeziellago.compose.markdowntext.MarkdownText
@@ -124,7 +125,6 @@ data class FileContextMenuState(
 fun WorkspaceBrowserScreen(
     initialDirectory: String,
     onBack: () -> Unit,
-    onAttach: ((path: String, filename: String) -> Unit)? = null,
     viewModel: WorkspaceBrowserViewModel = hiltViewModel(),
 ) {
     val apiClient = viewModel.apiClient
@@ -291,7 +291,7 @@ fun WorkspaceBrowserScreen(
 
     fun openBinaryFile(path: String, filename: String, size: Long, modified: Long) {
         scope.launch(Dispatchers.IO) {
-            val cached = viewModel.getCachedFile(path, filename)
+            val cached = viewModel.getCachedFile(path, filename, size, modified)
             if (cached != null) {
                 openFile(cached, filename)
                 return@launch
@@ -300,7 +300,7 @@ fun WorkspaceBrowserScreen(
                 largeFileConfirm = LargeFileConfirm(path, filename, size)
                 return@launch
             }
-            viewModel.downloadAndOpen(path, filename, size) { file ->
+            viewModel.downloadAndOpen(path, filename, size, modified) { file ->
                 openFile(file, filename)
             }
         }
@@ -308,14 +308,14 @@ fun WorkspaceBrowserScreen(
 
     fun downloadOnly(path: String, filename: String, size: Long, modified: Long) {
         scope.launch(Dispatchers.IO) {
-            val cached = viewModel.getCachedFile(path, filename)
+            val cached = viewModel.getCachedFile(path, filename, size, modified)
             if (cached != null) {
                 scope.launch(Dispatchers.Main) {
                     Toast.makeText(context, context.getString(R.string.file_cached), Toast.LENGTH_SHORT).show()
                 }
                 return@launch
             }
-            viewModel.downloadFile(path, filename, size) {
+            viewModel.downloadFile(path, filename, size, modified) {
                 scope.launch(Dispatchers.Main) {
                     Toast.makeText(context, context.getString(R.string.download_complete, filename), Toast.LENGTH_SHORT).show()
                 }
@@ -961,16 +961,16 @@ fun WorkspaceBrowserScreen(
                                 showDownloadToPicker = Pair(fullPath, menuEntry.name)
                             },
                         )
-                        if (onAttach != null) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.attach_to_session)) },
-                                onClick = {
-                                    contextMenu = contextMenu.copy(expanded = false)
-                                    onAttach(fullPath, menuEntry.name)
-                                },
-                            )
-                        }
-                    } else {
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.insert_file_path)) },
+                        onClick = {
+                            contextMenu = contextMenu.copy(expanded = false)
+                            AttachmentBridge.pendingPath = fullPath
+                            onBack()
+                        },
+                    )
+                    if (menuEntry.isDirectory) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.download)) },
                             onClick = {

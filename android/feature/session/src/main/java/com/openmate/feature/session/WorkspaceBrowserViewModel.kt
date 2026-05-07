@@ -47,19 +47,24 @@ class WorkspaceBrowserViewModel @Inject constructor(
 
     private fun computeLocalPath(filename: String): File {
         cacheDir.mkdirs()
-        val safeName = filename.replace("/", "_").replace("\\", "_")
+        val baseName = filename.substringAfterLast("/").substringAfterLast("\\")
+        val safeName = baseName.replace("/", "_").replace("\\", "_")
         return File(cacheDir, safeName)
     }
 
-    fun getCachedFile(remotePath: String, filename: String): File? {
+    fun getCachedFile(remotePath: String, filename: String, expectedSize: Long = -1, expectedModified: Long = -1): File? {
         val localFile = computeLocalPath(filename)
-        return if (localFile.exists() && localFile.length() > 0) localFile else null
+        if (!localFile.exists() || localFile.length() == 0L) return null
+        if (expectedSize > 0 && localFile.length() != expectedSize) return null
+        if (expectedModified > 0 && kotlin.math.abs(localFile.lastModified() - expectedModified) > 1000) return null
+        return localFile
     }
 
     fun downloadAndOpen(
         remotePath: String,
         filename: String,
         fileSize: Long,
+        remoteModified: Long = -1,
         onOpen: (File) -> Unit,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -74,6 +79,7 @@ class WorkspaceBrowserViewModel @Inject constructor(
                         totalBytes = total,
                     )
                 }
+                if (remoteModified > 0) localFile.setLastModified(remoteModified)
                 _downloadState.value = DownloadState(downloading = false)
                 onOpen(localFile)
             } catch (e: Exception) {
@@ -87,6 +93,7 @@ class WorkspaceBrowserViewModel @Inject constructor(
         remotePath: String,
         filename: String,
         fileSize: Long,
+        remoteModified: Long = -1,
         onComplete: () -> Unit,
     ) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -101,6 +108,7 @@ class WorkspaceBrowserViewModel @Inject constructor(
                         totalBytes = total,
                     )
                 }
+                if (remoteModified > 0) localFile.setLastModified(remoteModified)
                 _downloadState.value = DownloadState(downloading = false)
                 onComplete()
             } catch (e: Exception) {
