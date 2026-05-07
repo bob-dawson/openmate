@@ -58,17 +58,24 @@ class SessionMessageRepositoryImpl @Inject constructor(
         }
         Log.d("SyncRepo", "incrementalSync: got ${response.events.size} events, maxSeq=${response.maxSeq}")
 
-        val existingMessages = db.sessionMessageDao().getAllBySession(sessionId)
-        val existingIds = existingMessages.map { it.id }.toSet()
+        val loader = EventReplayer.DbLoader { action ->
+            when (action) {
+                is EventReplayer.DbLoader.Action.LoadById ->
+                    db.sessionMessageDao().getById(action.id)
+                is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
+                    db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
+            }
+        }
 
         val replayer = EventReplayer()
         val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
-        val changes = replayer.replay(events, sessionId, existingMessages)
+        val changes = replayer.replay(events, sessionId, loader)
 
         for (change in changes) {
             when (change) {
                 is ReplayChange.Insert -> {
-                    if (change.entity.id in existingIds) continue
+                    val existing = db.sessionMessageDao().getById(change.entity.id)
+                    if (existing != null) continue
                     val truncated = MobileTruncator.truncate(change.entity.type,
                         kotlinx.serialization.json.Json.parseToJsonElement(change.entity.data).jsonObject)
                     db.sessionMessageDao().upsert(change.entity.copy(data = truncated.toString()))
@@ -78,7 +85,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     val truncated = MobileTruncator.truncate(existing.type, change.data)
                     db.sessionMessageDao().upsert(SessionMessageEntity(
                         id = change.id,
-                        sessionId = sessionId,
+                        sessionId = existing.sessionId,
                         type = existing.type,
                         data = truncated.toString(),
                         timeCreated = existing.timeCreated,
@@ -96,7 +103,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     override suspend fun fetchFullMessage(sessionId: String, messageId: String) {
         val db = dbProvider.getActive()
-        val response = syncApiClient.fullMessage(sessionId, messageId)
+        val response = syncApiClient.full(sessionId, messageId)
         db.sessionMessageFullContentDao().upsert(SessionMessageFullContentEntity(
             messageId = response.id,
             content = response.data.toString(),

@@ -46,4 +46,13 @@ class SyncApiClient @Inject constructor(
             val body = response.body?.string() ?: throw Exception("Empty response")
             json.decodeFromString<SessionsResponseDto>(body)
         }
+
+    suspend fun full(sessionId: String, messageId: String): FullMessageResponseDto =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/message/$messageId/full"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            json.decodeFromString<FullMessageResponseDto>(body)
+        }
 }

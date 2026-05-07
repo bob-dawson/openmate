@@ -13,6 +13,7 @@ sealed class ReplayChange {
     data class Insert(val entity: SessionMessageEntity) : ReplayChange()
     data class Update(
         val id: String,
+        val type: String,
         val data: JsonObject,
         val timeUpdated: Long,
     ) : ReplayChange()
@@ -20,212 +21,203 @@ sealed class ReplayChange {
 
 class EventReplayer {
 
-    private data class ReplayState(
-        val messages: MutableList<JsonObject> = mutableListOf(),
-        var currentAssistantIndex: Int = -1,
-        var currentCompactionIndex: Int = -1,
-        val activeShells: MutableMap<String, Int> = mutableMapOf(),
-    )
+    private var cachedId: String? = null
+    private var cachedData: JsonObject? = null
+    private var cachedType: String? = null
+    private var cachedTimeCreated: Long = 0
 
-    fun replay(
+    private val activeShells = mutableMapOf<String, ShellEntry>()
+
+    private data class ShellEntry(val id: String, val data: JsonObject, val timeCreated: Long)
+
+    fun interface DbLoader {
+        suspend fun invoke(action: Action): SessionMessageEntity?
+
+        sealed class Action {
+            data class LoadById(val id: String) : Action()
+            data class LoadLatestIncompleteAssistant(val sessionId: String) : Action()
+        }
+    }
+
+    suspend fun replay(
         events: List<ReplayEvent>,
         sessionId: String,
-        existingMessages: List<SessionMessageEntity> = emptyList(),
+        loader: DbLoader,
     ): List<ReplayChange> {
-        val state = ReplayState()
         val changes = mutableListOf<ReplayChange>()
 
-        if (existingMessages.isNotEmpty()) {
-            val sorted = existingMessages.sortedByDescending { it.timeCreated }
-            for ((index, entity) in sorted.withIndex()) {
-                runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull()?.let { data ->
-                    state.messages.add(data)
-                    if (entity.type == "assistant" && data["time"]?.jsonObject?.containsKey("completed") != true) {
-                        state.currentAssistantIndex = index
-                    }
-                    if (entity.type == "shell" && data["time"]?.jsonObject?.containsKey("completed") != true) {
-                        data["callID"]?.jsonPrimitive?.contentOrNull?.let { callID ->
-                            state.activeShells[callID] = index
-                        }
-                    }
-                }
-            }
+        for (event in events) {
+            processEvent(event, sessionId, loader, changes)
         }
 
-        for (event in events) {
-            val props = event.data
-            val timestamp = props["timestamp"]?.jsonPrimitive?.let { prim ->
-                prim.longOrNull ?: runCatching { java.time.Instant.parse(prim.content).toEpochMilli() }.getOrNull()
-            } ?: System.currentTimeMillis()
-            val eventSessionId = props["sessionID"]?.jsonPrimitive?.contentOrNull ?: sessionId
+        return changes
+    }
 
-            when (event.type.substringBeforeLast(".")) {
-                "session.next.prompted" -> {
-                    val text = props["prompt"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: ""
-                    val files = props["prompt"]?.jsonObject?.get("files") ?: JsonArray(emptyList())
-                    val agents = props["prompt"]?.jsonObject?.get("agents") ?: JsonArray(emptyList())
-                    val msg = buildJsonObject {
-                        put("type", "user")
-                        put("id", event.id)
-                        put("text", text)
-                        put("files", files)
-                        put("agents", agents)
-                        put("time", buildJsonObject { put("created", timestamp) })
-                    }
-                    incrementAllIndices(state)
-                    state.messages.add(0, msg)
-                    changes += ReplayChange.Insert(msgToEntity(event.id, eventSessionId, "user", msg, timestamp))
-                }
+    private fun processEvent(
+        event: ReplayEvent,
+        sessionId: String,
+        loader: DbLoader,
+        changes: MutableList<ReplayChange>,
+    ) {
+        val props = event.data
+        val timestamp = parseTimestamp(props)
+        val eventType = event.type.substringBeforeLast(".")
 
+        when (eventType) {
                 "session.next.agent.switched" -> {
-                    val msg = buildJsonObject {
-                        put("type", "agent-switched")
-                        put("id", event.id)
+                    val data = buildJsonObject {
                         put("agent", props["agent"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    incrementAllIndices(state)
-                    state.messages.add(0, msg)
-                    changes += ReplayChange.Insert(msgToEntity(event.id, eventSessionId, "agent-switched", msg, timestamp))
+                    setCache(event.id, "agent-switched", data, timestamp)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "agent-switched", data, timestamp))
                 }
 
                 "session.next.model.switched" -> {
-                    val model = props["model"]?.jsonObject ?: buildJsonObject {}
-                    val msg = buildJsonObject {
-                        put("type", "model-switched")
-                        put("id", event.id)
-                        put("model", model)
+                    val data = buildJsonObject {
+                        put("model", props["model"]?.jsonObject ?: buildJsonObject {})
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    incrementAllIndices(state)
-                    state.messages.add(0, msg)
-                    changes += ReplayChange.Insert(msgToEntity(event.id, eventSessionId, "model-switched", msg, timestamp))
+                    setCache(event.id, "model-switched", data, timestamp)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "model-switched", data, timestamp))
+                }
+
+                "session.next.prompted" -> {
+                    val data = buildJsonObject {
+                        put("text", props["prompt"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: "")
+                        put("files", props["prompt"]?.jsonObject?.get("files") ?: JsonArray(emptyList()))
+                        put("agents", props["prompt"]?.jsonObject?.get("agents") ?: JsonArray(emptyList()))
+                        put("time", buildJsonObject { put("created", timestamp) })
+                    }
+                    setCache(event.id, "user", data, timestamp)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "user", data, timestamp))
                 }
 
                 "session.next.synthetic" -> {
-                    val msg = buildJsonObject {
-                        put("type", "synthetic")
-                        put("id", event.id)
-                        put("sessionID", eventSessionId)
+                    val data = buildJsonObject {
+                        put("sessionID", sessionId)
                         put("text", props["text"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    incrementAllIndices(state)
-                    state.messages.add(0, msg)
-                    changes += ReplayChange.Insert(msgToEntity(event.id, eventSessionId, "synthetic", msg, timestamp))
+                    setCache(event.id, "synthetic", data, timestamp)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "synthetic", data, timestamp))
                 }
 
                 "session.next.shell.started" -> {
                     val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val msg = buildJsonObject {
-                        put("type", "shell")
-                        put("id", event.id)
+                    val data = buildJsonObject {
                         put("callID", callID)
                         put("command", props["command"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("output", "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    incrementAllIndices(state)
-                    state.messages.add(0, msg)
-                    state.activeShells[callID] = 0
-                    changes += ReplayChange.Insert(msgToEntity(event.id, eventSessionId, "shell", msg, timestamp))
+                    activeShells[callID] = ShellEntry(event.id, data, timestamp)
+                    setCache(event.id, "shell", data, timestamp)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "shell", data, timestamp))
                 }
 
                 "session.next.shell.ended" -> {
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val idx = state.activeShells.remove(callID) ?: continue
-                    if (idx < state.messages.size) {
-                        val updated = updateMessage(state, idx) { existing ->
-                            existing["output"] = JsonPrimitive(props["output"]?.jsonPrimitive?.contentOrNull ?: "")
-                            val time = (existing["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
-                            time["completed"] = JsonPrimitive(timestamp)
-                            existing["time"] = JsonObject(time)
-                        }
-                        val id = updated["id"]?.jsonPrimitive?.contentOrNull ?: continue
-                        changes += ReplayChange.Update(id, updated, timestamp)
-                    }
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val shell = activeShells.remove(callID) ?: return
+                    val updated = shell.data.toMutableMap()
+                    updated["output"] = JsonPrimitive(props["output"]?.jsonPrimitive?.contentOrNull ?: "")
+                    val time = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                    time["completed"] = JsonPrimitive(timestamp)
+                    updated["time"] = JsonObject(time)
+                    val merged = JsonObject(updated)
+                    setCache(shell.id, "shell", merged, shell.timeCreated)
+                    changes += ReplayChange.Update(shell.id, "shell", merged, timestamp)
                 }
 
                 "session.next.step.started" -> {
-                    closeCurrentAssistant(state, changes, timestamp)
-                    val snapshot = props["snapshot"]?.jsonPrimitive?.contentOrNull
-                    val msg = buildJsonObject {
-                        put("type", "assistant")
-                        put("id", event.id)
+                    val cached = getCachedAssistant()
+                    if (cached != null) {
+                        val time = (cached.second["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                        if (!time.containsKey("completed")) {
+                            time["completed"] = JsonPrimitive(timestamp)
+                        }
+                        val merged = JsonObject(cached.second.toMutableMap().apply { put("time", JsonObject(time)) })
+                        setCache(cached.first, "assistant", merged, cached.third)
+                        changes += ReplayChange.Update(cached.first, "assistant", merged, timestamp)
+                    }
+
+                    val data = buildJsonObject {
                         put("agent", props["agent"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("model", props["model"]?.jsonObject ?: buildJsonObject {})
                         put("content", JsonArray(emptyList()))
+                        val snapshot = props["snapshot"]?.jsonPrimitive?.contentOrNull
                         if (snapshot != null) {
                             put("snapshot", buildJsonObject { put("start", snapshot) })
                         }
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    incrementAllIndices(state)
-                    state.messages.add(0, msg)
-                    state.currentAssistantIndex = 0
-                    changes += ReplayChange.Insert(msgToEntity(event.id, eventSessionId, "assistant", msg, timestamp))
+                    setCache(event.id, "assistant", data, timestamp)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "assistant", data, timestamp))
                 }
 
                 "session.next.step.ended" -> {
-                    val idx = state.currentAssistantIndex
-                    if (idx < 0 || idx >= state.messages.size) continue
-                    val updated = updateMessage(state, idx) { existing ->
-                        existing["finish"] = JsonPrimitive(props["finish"]?.jsonPrimitive?.contentOrNull ?: "")
-                        props["cost"]?.jsonPrimitive?.let { existing["cost"] = it; Unit }
-                        props["tokens"]?.jsonObject?.let { existing["tokens"] = it }
-                        val snapEnd = props["snapshot"]?.jsonPrimitive?.contentOrNull
-                        if (snapEnd != null) {
-                            val snap = (existing["snapshot"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
-                            snap["end"] = JsonPrimitive(snapEnd)
-                            existing["snapshot"] = JsonObject(snap)
-                        }
-                        val time = (existing["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
-                        time["completed"] = JsonPrimitive(timestamp)
-                        existing["time"] = JsonObject(time)
+                    val cached = cachedAssistant() ?: return
+                    val updated = cached.toMutableMap()
+                    updated["finish"] = JsonPrimitive(props["finish"]?.jsonPrimitive?.contentOrNull ?: "")
+                    props["cost"]?.jsonPrimitive?.let { updated["cost"] = it }
+                    props["tokens"]?.jsonObject?.let { updated["tokens"] = it }
+                    val snapEnd = props["snapshot"]?.jsonPrimitive?.contentOrNull
+                    if (snapEnd != null) {
+                        val snap = (updated["snapshot"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                        snap["end"] = JsonPrimitive(snapEnd)
+                        updated["snapshot"] = JsonObject(snap)
                     }
-                    val id = updated["id"]?.jsonPrimitive?.contentOrNull ?: continue
-                    changes += ReplayChange.Update(id, updated, timestamp)
+                    val time = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                    time["completed"] = JsonPrimitive(timestamp)
+                    updated["time"] = JsonObject(time)
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.step.failed" -> {
-                    val idx = state.currentAssistantIndex
-                    if (idx < 0 || idx >= state.messages.size) continue
-                    val updated = updateMessage(state, idx) { existing ->
-                        existing["finish"] = JsonPrimitive("error")
-                        props["error"]?.jsonObject?.let { existing["error"] = it }
-                        val time = (existing["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
-                        time["completed"] = JsonPrimitive(timestamp)
-                        existing["time"] = JsonObject(time)
-                    }
-                    val id = updated["id"]?.jsonPrimitive?.contentOrNull ?: continue
-                    changes += ReplayChange.Update(id, updated, timestamp)
+                    val cached = cachedAssistant() ?: return
+                    val updated = cached.toMutableMap()
+                    updated["finish"] = JsonPrimitive("error")
+                    props["error"]?.jsonObject?.let { updated["error"] = it }
+                    val time = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                    time["completed"] = JsonPrimitive(timestamp)
+                    updated["time"] = JsonObject(time)
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.text.started" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val content = assistant["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
+                    val cached = cachedAssistant() ?: return
+                    val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject { put("type", "text"); put("text", "") })
-                    assistant["content"] = JsonArray(content)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(content)
+                    updateCache(JsonObject(updated))
                 }
 
                 "session.next.text.ended" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val content = assistant["content"]?.jsonArray?.toMutableList() ?: continue
-                    val lastTextIdx = content.indexOfLast { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" }
-                    if (lastTextIdx >= 0) {
-                        val textObj = content[lastTextIdx].jsonObject.toMutableMap()
+                    val cached = cachedAssistant() ?: return
+                    val content = cached["content"]?.jsonArray?.toMutableList() ?: return
+                    val idx = content.indexOfLast { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" }
+                    if (idx >= 0) {
+                        val textObj = content[idx].jsonObject.toMutableMap()
                         textObj["text"] = JsonPrimitive(props["text"]?.jsonPrimitive?.contentOrNull ?: "")
-                        content[lastTextIdx] = JsonObject(textObj)
-                        assistant["content"] = JsonArray(content)
+                        content[idx] = JsonObject(textObj)
                     }
-                    emitAssistantUpdate(state, changes, timestamp)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(content)
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.tool.input.started" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val name = props["name"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = assistant["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
+                    val cached = cachedAssistant() ?: return
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val name = props["name"]?.jsonPrimitive?.contentOrNull ?: return
+                    val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject {
                         put("type", "tool")
                         put("id", callID)
@@ -236,14 +228,16 @@ class EventReplayer {
                             put("input", "")
                         })
                     })
-                    assistant["content"] = JsonArray(content)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(content)
+                    updateCache(JsonObject(updated))
                 }
 
                 "session.next.tool.called" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = assistant["content"]?.jsonArray ?: continue
-                    val toolIdx = findToolIndex(content, callID) ?: continue
+                    val cached = cachedAssistant() ?: return
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val content = cached["content"]?.jsonArray ?: return
+                    val toolIdx = findToolIndex(content, callID) ?: return
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
                     val timeObj = toolObj["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
@@ -257,17 +251,19 @@ class EventReplayer {
                         put("content", JsonArray(emptyList()))
                     }
                     mutableContent[toolIdx] = JsonObject(toolObj)
-                    assistant["content"] = JsonArray(mutableContent)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(mutableContent)
+                    updateCache(JsonObject(updated))
                 }
 
                 "session.next.tool.success" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = assistant["content"]?.jsonArray ?: continue
-                    val toolIdx = findToolIndex(content, callID) ?: continue
+                    val cached = cachedAssistant() ?: return
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val content = cached["content"]?.jsonArray ?: return
+                    val toolIdx = findToolIndex(content, callID) ?: return
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
-                    val prevState = toolObj["state"]?.jsonObject ?: continue
+                    val prevState = toolObj["state"]?.jsonObject ?: return
                     val prevInput = prevState["input"] ?: JsonObject(emptyMap())
                     toolObj["state"] = buildJsonObject {
                         put("status", "completed")
@@ -280,18 +276,21 @@ class EventReplayer {
                     timeObj["completed"] = JsonPrimitive(timestamp)
                     toolObj["time"] = JsonObject(timeObj)
                     mutableContent[toolIdx] = JsonObject(toolObj)
-                    assistant["content"] = JsonArray(mutableContent)
-                    emitAssistantUpdate(state, changes, timestamp)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(mutableContent)
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.tool.failed" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = assistant["content"]?.jsonArray ?: continue
-                    val toolIdx = findToolIndex(content, callID) ?: continue
+                    val cached = cachedAssistant() ?: return
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val content = cached["content"]?.jsonArray ?: return
+                    val toolIdx = findToolIndex(content, callID) ?: return
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
-                    val prevState = toolObj["state"]?.jsonObject ?: continue
+                    val prevState = toolObj["state"]?.jsonObject ?: return
                     toolObj["state"] = buildJsonObject {
                         put("status", "error")
                         put("error", props["error"] ?: buildJsonObject {})
@@ -304,26 +303,31 @@ class EventReplayer {
                     timeObj["completed"] = JsonPrimitive(timestamp)
                     toolObj["time"] = JsonObject(timeObj)
                     mutableContent[toolIdx] = JsonObject(toolObj)
-                    assistant["content"] = JsonArray(mutableContent)
-                    emitAssistantUpdate(state, changes, timestamp)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(mutableContent)
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.reasoning.started" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = assistant["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
+                    val cached = cachedAssistant() ?: return
+                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject {
                         put("type", "reasoning")
                         put("id", reasoningID)
                         put("text", "")
                     })
-                    assistant["content"] = JsonArray(content)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(content)
+                    updateCache(JsonObject(updated))
                 }
 
                 "session.next.reasoning.ended" -> {
-                    val assistant = getMutableAssistant(state) ?: continue
-                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val content = assistant["content"]?.jsonArray ?: continue
+                    val cached = cachedAssistant() ?: return
+                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val content = cached["content"]?.jsonArray ?: return
                     val idx = content.indexOfLast {
                         it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning" &&
                         it.jsonObject["id"]?.jsonPrimitive?.contentOrNull == reasoningID
@@ -333,91 +337,58 @@ class EventReplayer {
                         val obj = mutableContent[idx].jsonObject.toMutableMap()
                         obj["text"] = JsonPrimitive(props["text"]?.jsonPrimitive?.contentOrNull ?: "")
                         mutableContent[idx] = JsonObject(obj)
-                        assistant["content"] = JsonArray(mutableContent)
+                        val updated = cached.toMutableMap()
+                        updated["content"] = JsonArray(mutableContent)
+                        updateCache(JsonObject(updated))
                     }
                 }
 
                 "session.next.compaction.started" -> {
-                    val msg = buildJsonObject {
-                        put("type", "compaction")
-                        put("id", event.id)
+                    val data = buildJsonObject {
                         put("reason", props["reason"]?.jsonPrimitive?.contentOrNull ?: "auto")
                         put("summary", "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    incrementAllIndices(state)
-                    state.messages.add(0, msg)
-                    state.currentCompactionIndex = 0
-                    changes += ReplayChange.Insert(msgToEntity(event.id, eventSessionId, "compaction", msg, timestamp))
+                    setCache(event.id, "compaction", data, timestamp)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "compaction", data, timestamp))
                 }
 
                 "session.next.compaction.ended" -> {
-                    val idx = state.currentCompactionIndex
-                    if (idx < 0 || idx >= state.messages.size) continue
-                    val updated = updateMessage(state, idx) { existing ->
-                        existing["summary"] = JsonPrimitive(props["text"]?.jsonPrimitive?.contentOrNull ?: "")
-                        props["include"]?.jsonPrimitive?.contentOrNull?.let { existing["include"] = JsonPrimitive(it) }
-                    }
-                    val id = updated["id"]?.jsonPrimitive?.contentOrNull ?: continue
-                    changes += ReplayChange.Update(id, updated, timestamp)
+                    if (cachedType != "compaction") return
+                    val cached = cachedData ?: return
+                    val updated = cached.toMutableMap()
+                    updated["summary"] = JsonPrimitive(props["text"]?.jsonPrimitive?.contentOrNull ?: "")
+                    props["include"]?.jsonPrimitive?.contentOrNull?.let { updated["include"] = JsonPrimitive(it) }
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "compaction", merged, timestamp)
                 }
             }
+    }
+
+    private fun setCache(id: String, type: String, data: JsonObject, timeCreated: Long) {
+        cachedId = id
+        cachedType = type
+        cachedData = data
+        cachedTimeCreated = timeCreated
+    }
+
+    private fun updateCache(data: JsonObject) {
+        cachedData = data
+    }
+
+    private fun cachedAssistant(): JsonObject? {
+        if (cachedType == "assistant") return cachedData
+        return null
+    }
+
+    private data class CachedAssistant(val first: String, val second: JsonObject, val third: Long)
+
+    private fun getCachedAssistant(): CachedAssistant? {
+        if (cachedType == "assistant" && cachedId != null && cachedData != null) {
+            return CachedAssistant(cachedId!!, cachedData!!, cachedTimeCreated)
         }
-
-        return changes
-    }
-
-    private fun incrementAllIndices(state: ReplayState) {
-        if (state.currentAssistantIndex >= 0) state.currentAssistantIndex++
-        if (state.currentCompactionIndex >= 0) state.currentCompactionIndex++
-        val keys = state.activeShells.keys.toList()
-        for (key in keys) {
-            val current = state.activeShells[key] ?: continue
-            state.activeShells[key] = current + 1
-        }
-    }
-
-    private fun updateMessage(
-        state: ReplayState,
-        idx: Int,
-        block: (MutableMap<String, JsonElement>) -> Unit,
-    ): JsonObject {
-        val existing = state.messages[idx].toMutableMap()
-        block(existing)
-        val updated = JsonObject(existing)
-        state.messages[idx] = updated
-        return updated
-    }
-
-    private fun closeCurrentAssistant(state: ReplayState, changes: MutableList<ReplayChange>, timestamp: Long) {
-        val idx = state.currentAssistantIndex
-        if (idx < 0 || idx >= state.messages.size) return
-        val msg = state.messages[idx]
-        if (msg["time"]?.jsonObject?.containsKey("completed") == false) {
-            val updated = updateMessage(state, idx) { existing ->
-                val time = (existing["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
-                time["completed"] = JsonPrimitive(timestamp)
-                existing["time"] = JsonObject(time)
-            }
-            val id = updated["id"]?.jsonPrimitive?.contentOrNull ?: return
-            changes += ReplayChange.Update(id, updated, timestamp)
-        }
-    }
-
-    private fun getMutableAssistant(state: ReplayState): MutableMap<String, JsonElement>? {
-        val idx = state.currentAssistantIndex
-        if (idx < 0 || idx >= state.messages.size) return null
-        val existing = state.messages[idx].toMutableMap()
-        state.messages[idx] = JsonObject(existing)
-        return existing
-    }
-
-    private fun emitAssistantUpdate(state: ReplayState, changes: MutableList<ReplayChange>, timestamp: Long) {
-        val idx = state.currentAssistantIndex
-        if (idx < 0 || idx >= state.messages.size) return
-        val msg = state.messages[idx]
-        val id = msg["id"]?.jsonPrimitive?.contentOrNull ?: return
-        changes += ReplayChange.Update(id, msg as JsonObject, timestamp)
+        return null
     }
 
     private fun findToolIndex(content: JsonArray, callID: String): Int? {
@@ -427,7 +398,13 @@ class EventReplayer {
         }.takeIf { it >= 0 }
     }
 
-    private fun msgToEntity(id: String, sessionId: String, type: String, data: JsonObject, timeCreated: Long): SessionMessageEntity {
+    private fun parseTimestamp(props: JsonObject): Long {
+        return props["timestamp"]?.jsonPrimitive?.let { prim ->
+            prim.longOrNull ?: runCatching { java.time.Instant.parse(prim.content).toEpochMilli() }.getOrNull()
+        } ?: System.currentTimeMillis()
+    }
+
+    private fun entity(id: String, sessionId: String, type: String, data: JsonObject, timeCreated: Long): SessionMessageEntity {
         return SessionMessageEntity(
             id = id,
             sessionId = sessionId,
