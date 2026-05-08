@@ -68,8 +68,11 @@ class SessionMessageRepositoryImpl @Inject constructor(
             when (action) {
                 is EventReplayer.DbLoader.Action.LoadById ->
                     db.sessionMessageDao().getById(action.id)
-                is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
-                    db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
+                is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant -> {
+                    db.sessionMessageDao().getLatestAssistant(action.sessionId)?.takeIf {
+                        !it.data.contains("\"completed\"")
+                    }
+                }
             }
         }
 

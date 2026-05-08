@@ -36,8 +36,7 @@ interface SessionMessageDao {
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' ORDER BY timeCreated DESC LIMIT 1")
     suspend fun getLatestAssistant(sessionId: String): SessionMessageEntity?
 
-    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' AND json_extract(data, '$.time.completed') IS NULL ORDER BY timeCreated DESC LIMIT 1")
-    suspend fun getLatestIncompleteAssistant(sessionId: String): SessionMessageEntity?
+
 
     @Transaction
     suspend fun replaceAllForSession(sessionId: String, messages: List<SessionMessageEntity>) {

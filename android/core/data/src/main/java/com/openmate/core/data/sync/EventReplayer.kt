@@ -31,7 +31,7 @@ class EventReplayer {
     private data class ShellEntry(val id: String, val data: JsonObject, val timeCreated: Long)
 
     fun interface DbLoader {
-        suspend fun invoke(action: Action): SessionMessageEntity?
+        suspend operator fun invoke(action: Action): SessionMessageEntity?
 
         sealed class Action {
             data class LoadById(val id: String) : Action()
@@ -46,17 +46,28 @@ class EventReplayer {
     ): List<ReplayChange> {
         val changes = mutableListOf<ReplayChange>()
 
+        ensureAssistantCache(sessionId, loader)
+
         for (event in events) {
-            processEvent(event, sessionId, loader, changes)
+            processEvent(event, sessionId, changes)
         }
 
         return changes
     }
 
+    private suspend fun ensureAssistantCache(sessionId: String, loader: DbLoader) {
+        if (cachedType == "assistant") return
+        val entity = loader(DbLoader.Action.LoadLatestIncompleteAssistant(sessionId)) ?: return
+        val data = runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull() ?: return
+        cachedId = entity.id
+        cachedType = entity.type
+        cachedData = data
+        cachedTimeCreated = entity.timeCreated
+    }
+
     private fun processEvent(
         event: ReplayEvent,
         sessionId: String,
-        loader: DbLoader,
         changes: MutableList<ReplayChange>,
     ) {
         val props = event.data

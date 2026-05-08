@@ -116,7 +116,9 @@ class SessionRepositoryImpl @Inject constructor(
             val db = dbProvider.getActive()
             val sessions = db.sessionDao().getAll()
             for (session in sessions) {
-                val incomplete = db.sessionMessageDao().getLatestIncompleteAssistant(session.id)
+                val incomplete = db.sessionMessageDao().getLatestAssistant(session.id)?.takeIf {
+                    !it.data.contains("\"completed\"")
+                }
                 val newStatus = if (incomplete != null) SessionStatus.BUSY.name else SessionStatus.IDLE.name
                 if (session.status != newStatus) {
                     db.sessionDao().updateStatus(session.id, newStatus)

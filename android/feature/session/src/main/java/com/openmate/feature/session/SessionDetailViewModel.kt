@@ -93,10 +93,13 @@ class SessionDetailViewModel @Inject constructor(
     private val _recentModels = MutableStateFlow<List<ModelRef>>(loadRecentModels())
     val recentModels: StateFlow<List<ModelRef>> = _recentModels.asStateFlow()
 
+    private var pollJob: Job? = null
+
     companion object {
         private const val TAG = "SessionDetailVM"
         private const val KEY_RECENT_MODELS = "recent_models"
         private const val KEY_DRAFTS = "draft_messages"
+        private const val POLL_INTERVAL_MS = 15_000L
     }
 
     private var currentSessionID: String? = null
@@ -184,6 +187,7 @@ class SessionDetailViewModel @Inject constructor(
 
         observeMessages(sessionID)
         observeTodos(sessionID)
+        startPolling(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -223,10 +227,26 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    private fun startPolling(sessionId: String) {
+        pollJob?.cancel()
+        pollJob = viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(POLL_INTERVAL_MS)
+                try {
+                    sessionMessageRepository.incrementalSync(sessionId)
+                    sessionRepository.refreshSessionStatusesFromMessages()
+                } catch (e: Exception) {
+                    Log.e(TAG, "poll sync failed", e)
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
+        pollJob?.cancel()
     }
 
     fun sendMessage(sessionID: String) {
