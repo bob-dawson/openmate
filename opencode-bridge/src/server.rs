@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::files;
 use crate::fs;
 use crate::proxy;
-use crate::state::create_app_state;
+use crate::state::{create_app_state, OpencodeStatus};
 use crate::sync;
 
 pub async fn run_server(
@@ -35,7 +35,14 @@ pub async fn run_server(
         tracing::warn!("Failed to create sync indexes: {}", e);
     }
 
-    if config.opencode.auto_start {
+    if app_state.opencode_manager.check_health().await {
+        tracing::info!("opencode is already running, restarting with OPENCODE_EXPERIMENTAL=true");
+        app_state.opencode_manager.stop().await.ok();
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        if let Err(e) = app_state.opencode_manager.start().await {
+            tracing::warn!("Restart failed: {}", e);
+        }
+    } else if config.opencode.auto_start {
         tracing::info!("Auto-starting opencode...");
         if let Err(e) = app_state.opencode_manager.start().await {
             tracing::warn!("Auto-start failed: {}", e);

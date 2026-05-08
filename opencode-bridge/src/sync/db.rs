@@ -155,6 +155,7 @@ impl SyncDb {
     }
 
     pub fn get_sessions(&self) -> Result<Vec<Value>, String> {
+        tracing::info!("get_sessions: db_path={}", self.db_path.display());
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
             "SELECT s.id, s.title, s.agent, s.model, s.time_created, s.time_updated,
@@ -187,7 +188,7 @@ impl SyncDb {
                 "maxSeq": max_seq,
             }))
         }).map_err(|e| format!("Query failed: {}", e))?
-          .filter_map(|r| r.ok())
+          .filter_map(|r| r.map_err(|e| { tracing::error!("session row error: {}", e); e }).ok())
           .collect();
 
         Ok(sessions)

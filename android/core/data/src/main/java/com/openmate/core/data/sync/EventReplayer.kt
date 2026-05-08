@@ -351,7 +351,9 @@ class EventReplayer {
                         mutableContent[idx] = JsonObject(obj)
                         val updated = cached.toMutableMap()
                         updated["content"] = JsonArray(mutableContent)
-                        updateCache(JsonObject(updated))
+                        val merged = JsonObject(updated)
+                        updateCache(merged)
+                        changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                     }
                 }
 

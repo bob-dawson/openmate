@@ -18,7 +18,7 @@ import com.openmate.core.database.entity.SyncStateEntity
         SessionMessageFullContentEntity::class,
         SyncStateEntity::class,
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
