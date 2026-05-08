@@ -17,6 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.ui.component.MessageBubble
 import com.openmate.feature.session.R
+import com.openmate.core.common.formatDurationMillis
+import com.openmate.core.common.toTimeString
 import kotlinx.serialization.json.*
 
 @Composable
@@ -35,14 +37,57 @@ fun SessionMessageRenderer(
         "user" -> {
             Column(modifier = Modifier.fillMaxWidth()) {
                 UserMessageItem(dataJson)
-                if (isQueued) {
-                    QueuedBadge()
-                }
+                MessageMetadata(
+                    timeCreated = entity.timeCreated,
+                    completedAt = null,
+                    modelName = null,
+                    isQueued = isQueued,
+                )
             }
         }
-        "assistant" -> AssistantMessageItem(dataJson, showReasoning, onNavigateToSubtask)
+        "assistant" -> {
+            val modelName = dataJson["model"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+            AssistantMessageItem(dataJson, showReasoning, onNavigateToSubtask)
+            MessageMetadata(
+                timeCreated = entity.timeCreated,
+                completedAt = entity.completedAt,
+                modelName = modelName,
+                isQueued = false,
+            )
+        }
         "synthetic" -> { }
         else -> { }
+    }
+}
+
+@Composable
+private fun MessageMetadata(
+    timeCreated: Long,
+    completedAt: Long?,
+    modelName: String?,
+    isQueued: Boolean,
+) {
+    if (timeCreated <= 0) return
+    val timeText = timeCreated.toTimeString()
+    val durationText = if (completedAt != null && completedAt > timeCreated) {
+        " · ${formatDurationMillis(completedAt - timeCreated)}"
+    } else ""
+    val modelText = modelName?.let { " · $it" } ?: ""
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isQueued) {
+            QueuedBadge()
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+        Text(
+            text = timeText + durationText + modelText,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

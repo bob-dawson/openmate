@@ -48,8 +48,8 @@ class SessionDetailViewModel @Inject constructor(
     private val _isStreaming = MutableStateFlow(false)
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
-    private val _pendingAssistantId = MutableStateFlow<String?>(null)
-    val pendingAssistantId: StateFlow<String?> = _pendingAssistantId.asStateFlow()
+    private val _queuedMessageId = MutableStateFlow<String?>(null)
+    val queuedMessageId: StateFlow<String?> = _queuedMessageId.asStateFlow()
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -168,12 +168,22 @@ class SessionDetailViewModel @Inject constructor(
         observeTodoJob?.cancel()
 
         viewModelScope.launch(Dispatchers.IO) {
+            sessionRepository.observeSession(sessionID).collect { session ->
+                if (session != null && session.title.isNotBlank()) {
+                    _sessionTitle.value = session.title
+                }
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val session = sessionRepository.getSession(sessionID)
-                _sessionTitle.value = session?.title ?: ""
+                if (session?.title?.isNotBlank() == true) {
+                    _sessionTitle.value = session.title
+                }
                 currentDirectory = session?.directory ?: ""
             } catch (e: Exception) {
-                Log.e(TAG, "loadSession title failed", e)
+                Log.e(TAG, "loadSession title API failed", e)
             }
         }
 
@@ -460,7 +470,8 @@ class SessionDetailViewModel @Inject constructor(
                     val lastAssistant = list.lastOrNull { it.type == "assistant" }
                     val isStillStreaming = lastAssistant?.completedAt == null
                     _isStreaming.value = isStillStreaming
-                    _pendingAssistantId.value = if (isStillStreaming) lastAssistant?.id else null
+                    val lastMessage = list.lastOrNull()
+                    _queuedMessageId.value = if (lastMessage?.type == "user") lastMessage.id else null
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeMessages failed", e)

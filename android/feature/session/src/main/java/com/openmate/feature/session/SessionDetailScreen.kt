@@ -57,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.TopBar
 import com.openmate.core.ui.component.SmartAutoScroll
@@ -81,7 +83,7 @@ fun SessionDetailScreen(
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
-    val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
+    val queuedMessageId by viewModel.queuedMessageId.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -286,19 +288,7 @@ fun SessionDetailScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                if (showSearch) {
-                    SessionMessageSearchPanel(
-                        messages = messages,
-                        onNavigateToMessage = { index ->
-                            showSearch = false
-                            coroutineScope.launch {
-                                listState.animateScrollToItem(index)
-                            }
-                        },
-                        onClose = { showSearch = false },
-                        modifier = Modifier.weight(1f),
-                    )
-                } else if (todos.isNotEmpty()) {
+                if (todos.isNotEmpty()) {
                     TodoListCard(todos = todos)
                 }
                 LazyColumn(
@@ -312,7 +302,7 @@ fun SessionDetailScreen(
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning,
-                            isQueued = entity.type == "user" && pendingAssistantId != null && entity.id > pendingAssistantId!!,
+                            isQueued = entity.type == "user" && entity.id == queuedMessageId,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },
@@ -484,6 +474,27 @@ fun SessionDetailScreen(
                 }
             },
         )
+    }
+
+    if (showSearch) {
+        Dialog(
+            onDismissRequest = { showSearch = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            SessionMessageSearchPanel(
+                messages = messages,
+                onNavigateToMessage = { index ->
+                    showSearch = false
+                    userNavigating = true
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(index)
+                        userNavigating = false
+                    }
+                },
+                onClose = { showSearch = false },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 
     if (showModelPicker) {
