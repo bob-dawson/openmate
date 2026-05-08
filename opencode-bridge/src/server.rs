@@ -12,7 +12,7 @@ use crate::config::Config;
 use crate::files;
 use crate::fs;
 use crate::proxy;
-use crate::state::{create_app_state, OpencodeStatus};
+use crate::state::create_app_state;
 use crate::sync;
 
 pub async fn run_server(

@@ -256,6 +256,7 @@ fn build_state(
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 enum ContentMode {
     Keep,
     Skip,
