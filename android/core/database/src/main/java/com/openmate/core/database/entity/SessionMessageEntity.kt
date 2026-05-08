@@ -19,4 +19,5 @@ data class SessionMessageEntity(
     val data: String,
     val timeCreated: Long,
     val timeUpdated: Long,
+    val completedAt: Long? = null,
 )

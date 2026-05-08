@@ -16,6 +16,7 @@ sealed class ReplayChange {
         val type: String,
         val data: JsonObject,
         val timeUpdated: Long,
+        val completedAt: Long? = null,
     ) : ReplayChange()
 }
 
@@ -149,7 +150,7 @@ class EventReplayer {
                         }
                         val merged = JsonObject(cached.second.toMutableMap().apply { put("time", JsonObject(time)) })
                         setCache(cached.first, "assistant", merged, cached.third)
-                        changes += ReplayChange.Update(cached.first, "assistant", merged, timestamp)
+                        changes += ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = timestamp)
                     }
 
                     val data = buildJsonObject {
@@ -183,7 +184,7 @@ class EventReplayer {
                     updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp)
                 }
 
                 "session.next.step.failed" -> {
@@ -196,7 +197,7 @@ class EventReplayer {
                     updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp)
                 }
 
                 "session.next.text.started" -> {

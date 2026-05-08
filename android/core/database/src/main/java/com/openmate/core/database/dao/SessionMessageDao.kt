@@ -33,8 +33,8 @@ interface SessionMessageDao {
     @Query("SELECT COUNT(*) FROM session_message WHERE sessionId = :sessionId")
     suspend fun countBySession(sessionId: String): Int
 
-    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' ORDER BY timeCreated DESC LIMIT 1")
-    suspend fun getLatestAssistant(sessionId: String): SessionMessageEntity?
+    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' AND completedAt IS NULL ORDER BY timeCreated DESC LIMIT 1")
+    suspend fun getLatestIncompleteAssistant(sessionId: String): SessionMessageEntity?
 
 
 

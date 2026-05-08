@@ -15,7 +15,6 @@ import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.network.SyncApiClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import kotlinx.serialization.json.jsonObject
 import androidx.room.withTransaction
 import javax.inject.Inject
 
@@ -68,11 +67,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
             when (action) {
                 is EventReplayer.DbLoader.Action.LoadById ->
                     db.sessionMessageDao().getById(action.id)
-                is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant -> {
-                    db.sessionMessageDao().getLatestAssistant(action.sessionId)?.takeIf {
-                        !it.data.contains("\"completed\"")
-                    }
-                }
+                is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
+                    db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
             }
         }
 
@@ -93,6 +89,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                 coalesced[key] = ReplayChange.Insert(prev.entity.copy(
                     data = change.data.toString(),
                     timeUpdated = change.timeUpdated,
+                    completedAt = change.completedAt ?: prev.entity.completedAt,
                 ))
             } else {
                 coalesced[key] = change
@@ -114,6 +111,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             data = change.data.toString(),
                             timeCreated = existing.timeCreated,
                             timeUpdated = change.timeUpdated,
+                            completedAt = change.completedAt ?: existing.completedAt,
                         ))
                     }
                 }
@@ -148,4 +146,5 @@ private fun SessionMessageEntity.toDomain() = SessionMessage(
     data = data,
     timeCreated = timeCreated,
     timeUpdated = timeUpdated,
+    completedAt = completedAt,
 )

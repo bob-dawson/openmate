@@ -16,9 +16,6 @@ import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.common.guessMimeForAttachment
 import com.openmate.core.network.dto.SkillInfoDto
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -461,13 +458,7 @@ class SessionDetailViewModel @Inject constructor(
                     Log.d(TAG, "observeMessages: ${list.size} messages for $sessionID")
                     _messages.value = list
                     val lastAssistant = list.lastOrNull { it.type == "assistant" }
-                    val isStillStreaming = if (lastAssistant != null) {
-                        try {
-                            val jsonObj = kotlinx.serialization.json.Json.parseToJsonElement(lastAssistant.data).jsonObject
-                            val time = jsonObj["time"]?.jsonObject
-                            time?.containsKey("completed") != true
-                        } catch (_: Exception) { false }
-                    } else false
+                    val isStillStreaming = lastAssistant?.completedAt == null
                     _isStreaming.value = isStillStreaming
                     _pendingAssistantId.value = if (isStillStreaming) lastAssistant?.id else null
                 }
