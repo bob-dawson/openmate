@@ -20,8 +20,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -61,6 +62,7 @@ import com.openmate.core.ui.component.TopBar
 import com.openmate.core.ui.component.SmartAutoScroll
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.SessionMessageRenderer
+import com.openmate.feature.session.component.SessionMessageSearchPanel
 import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
@@ -79,6 +81,7 @@ fun SessionDetailScreen(
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
+    val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -104,6 +107,7 @@ fun SessionDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     var userNavigating by remember { mutableStateOf(false) }
 
@@ -158,6 +162,13 @@ fun SessionDetailScreen(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
                 actions = {
+                    IconButton(onClick = { showSearch = true }) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = stringResource(R.string.search_messages),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(
@@ -275,7 +286,19 @@ fun SessionDetailScreen(
                     CircularProgressIndicator()
                 }
             } else {
-                if (todos.isNotEmpty()) {
+                if (showSearch) {
+                    SessionMessageSearchPanel(
+                        messages = messages,
+                        onNavigateToMessage = { index ->
+                            showSearch = false
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(index)
+                            }
+                        },
+                        onClose = { showSearch = false },
+                        modifier = Modifier.weight(1f),
+                    )
+                } else if (todos.isNotEmpty()) {
                     TodoListCard(todos = todos)
                 }
                 LazyColumn(
@@ -289,9 +312,11 @@ fun SessionDetailScreen(
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning,
+                            isQueued = entity.type == "user" && pendingAssistantId != null && entity.id > pendingAssistantId!!,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },
+                            onNavigateToSubtask = onNavigateToSubtask,
                         )
                     }
                     if (messages.isEmpty()) {

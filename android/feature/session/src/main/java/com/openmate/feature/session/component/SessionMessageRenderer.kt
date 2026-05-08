@@ -12,23 +12,35 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.ui.component.MessageBubble
+import com.openmate.feature.session.R
 import kotlinx.serialization.json.*
 
 @Composable
 fun SessionMessageRenderer(
     entity: SessionMessage,
     showReasoning: Boolean = true,
+    isQueued: Boolean = false,
     onFullContentRequest: (messageId: String) -> Unit,
+    onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
 ) {
     val dataJson = remember(entity.data) {
         runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull()
     } ?: return
 
     when (entity.type) {
-        "user" -> UserMessageItem(dataJson)
-        "assistant" -> AssistantMessageItem(dataJson, showReasoning)
+        "user" -> {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                UserMessageItem(dataJson)
+                if (isQueued) {
+                    QueuedBadge()
+                }
+            }
+        }
+        "assistant" -> AssistantMessageItem(dataJson, showReasoning, onNavigateToSubtask)
         "synthetic" -> { }
         else -> { }
     }
@@ -40,10 +52,34 @@ fun UserMessageItem(data: JsonObject) {
     if (text.isNotBlank()) {
         MessageBubble(text = text, isUser = true, modifier = Modifier.fillMaxWidth())
     }
+    val files = data["files"]?.jsonArray
+    if (files != null) {
+        for (file in files) {
+            val obj = file.jsonObject
+            val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: "file"
+            val filename = obj["filename"]?.jsonPrimitive?.contentOrNull
+            if (filename != null) {
+                FileAttachmentTag(mime = mime, filename = filename)
+            }
+        }
+    }
+    val content = data["content"]?.jsonArray
+    if (content != null) {
+        for (item in content) {
+            val obj = item.jsonObject
+            if (obj["type"]?.jsonPrimitive?.contentOrNull == "file") {
+                val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: "file"
+                val filename = obj["filename"]?.jsonPrimitive?.contentOrNull
+                if (filename != null) {
+                    FileAttachmentTag(mime = mime, filename = filename)
+                }
+            }
+        }
+    }
 }
 
 @Composable
-fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true) {
+fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true, onNavigateToSubtask: (String, String) -> Unit = { _, _ -> }) {
     val content = data["content"]?.jsonArray ?: return
     val reasoningExpanded = remember { mutableStateOf(true) }
 
@@ -102,7 +138,7 @@ fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true) {
                                 TaskToolLine(
                                     item = displayItem,
                                     summary = summary,
-                                    onNavigate = { _, _ -> },
+                                    onNavigate = onNavigateToSubtask,
                                 )
                             } else if (summary.isBlock) {
                                 BlockToolLine(displayItem, summary)
@@ -159,6 +195,67 @@ fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun QueuedBadge() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.primary)
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.queued),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FileAttachmentTag(mime: String, filename: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .background(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(4.dp),
+                )
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = mime.ifBlank { "file" },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Spacer(modifier = Modifier.width(6.dp))
+        Box(
+            modifier = Modifier
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(4.dp),
+                )
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = filename,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

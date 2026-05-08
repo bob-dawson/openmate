@@ -36,10 +36,13 @@ class SyncSseClient @Inject constructor(
     private var currentBaseUrl: String? = null
 
     suspend fun connect(baseUrl: String) {
-        if (currentBaseUrl == baseUrl) return
+        if (currentBaseUrl == baseUrl) {
+            Log.d("SyncSseClient", "connect skipped: already connected to $baseUrl")
+            return
+        }
+        Log.d("SyncSseClient", "connect: new=$baseUrl old=$currentBaseUrl")
         disconnect()
         currentBaseUrl = baseUrl
-        Log.d("SyncSseClient", "connect: baseUrl=$baseUrl")
         try {
             withContext(Dispatchers.IO) {
                 while (currentBaseUrl == baseUrl) {
@@ -75,8 +78,7 @@ class SyncSseClient @Inject constructor(
                                         val jsonObj = json.parseToJsonElement(data).jsonObject
                                         val sessionId = jsonObj["sessionID"]?.jsonPrimitive?.contentOrNull ?: continue
                                         val seq = jsonObj["seq"]?.jsonPrimitive?.longOrNull ?: continue
-                                        Log.d("SyncSseClient", "notification: session=$sessionId seq=$seq")
-                                        _notifications.tryEmit(SyncNotification(sessionId, seq))
+                                        Log.d("SyncSseClient", "notification: session=$sessionId seq=$seq emitted=${_notifications.tryEmit(SyncNotification(sessionId, seq))}")
                                     } catch (e: Exception) {
                                         Log.w("SyncSseClient", "parse error: $data")
                                     }

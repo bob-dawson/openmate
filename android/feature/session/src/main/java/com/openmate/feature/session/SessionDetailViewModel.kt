@@ -51,6 +51,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _isStreaming = MutableStateFlow(false)
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
+    private val _pendingAssistantId = MutableStateFlow<String?>(null)
+    val pendingAssistantId: StateFlow<String?> = _pendingAssistantId.asStateFlow()
+
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
 
@@ -446,6 +449,7 @@ class SessionDetailViewModel @Inject constructor(
                         } catch (_: Exception) { false }
                     } else false
                     _isStreaming.value = isStillStreaming
+                    _pendingAssistantId.value = if (isStillStreaming) lastAssistant?.id else null
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeMessages failed", e)
