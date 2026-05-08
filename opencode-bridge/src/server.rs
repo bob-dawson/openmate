@@ -12,7 +12,8 @@ use crate::config::Config;
 use crate::files;
 use crate::fs;
 use crate::proxy;
-use crate::state::create_app_state;
+use crate::state::{create_app_state, OpencodeStatus};
+use crate::sync;
 
 pub async fn run_server(
     config: Config,
@@ -30,7 +31,18 @@ pub async fn run_server(
 
     let app_state = create_app_state(config.clone());
 
-    if config.opencode.auto_start {
+    if let Err(e) = app_state.sync_db.ensure_indexes() {
+        tracing::warn!("Failed to create sync indexes: {}", e);
+    }
+
+    if app_state.opencode_manager.check_health().await {
+        tracing::info!("opencode is already running, restarting with OPENCODE_EXPERIMENTAL=true");
+        app_state.opencode_manager.stop().await.ok();
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        if let Err(e) = app_state.opencode_manager.start().await {
+            tracing::warn!("Restart failed: {}", e);
+        }
+    } else if config.opencode.auto_start {
         tracing::info!("Auto-starting opencode...");
         if let Err(e) = app_state.opencode_manager.start().await {
             tracing::warn!("Auto-start failed: {}", e);
@@ -38,6 +50,11 @@ pub async fn run_server(
     }
 
     let app = Router::new()
+        .route("/api/bridge/sync/sessions", get(sync::router::sessions))
+        .route("/api/bridge/sync/session/{sessionID}/init", get(sync::router::init))
+        .route("/api/bridge/sync/session/{sessionID}/events", get(sync::router::events))
+        .route("/api/bridge/sync/session/{sessionID}/message/{messageID}/full", get(sync::router::full))
+        .route("/api/bridge/sync/events", get(sync::sse::sync_sse))
         .route("/api/bridge/status", get(bridge::router::status))
         .route(
             "/api/bridge/opencode/start",

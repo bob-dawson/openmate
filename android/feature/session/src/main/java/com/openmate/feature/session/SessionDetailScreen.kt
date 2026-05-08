@@ -20,9 +20,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -57,18 +57,19 @@ import androidx.compose.ui.text.font.FontWeight
 import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.openmate.core.domain.model.PermissionReply
-import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.ui.component.TopBar
 import com.openmate.core.ui.component.SmartAutoScroll
 import com.openmate.feature.session.component.ChatInputBar
-import com.openmate.feature.session.component.MessageItem
+import com.openmate.feature.session.component.SessionMessageRenderer
+import com.openmate.feature.session.component.SessionMessageSearchPanel
 import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
-import com.openmate.feature.session.component.MessageSearchPanel
 import com.openmate.feature.session.component.TodoListCard
+import com.openmate.core.domain.model.PermissionReply
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,15 +84,12 @@ fun SessionDetailScreen(
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
+    val queuedMessageId by viewModel.queuedMessageId.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
-    val pendingPermissions by viewModel.pendingPermissions.collectAsState()
-    val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val todos by viewModel.todos.collectAsState()
-    val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
-    val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
     val providers by viewModel.providers.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
     val recentModels by viewModel.recentModels.collectAsState()
@@ -99,6 +97,8 @@ fun SessionDetailScreen(
     val isCompacting by viewModel.isCompacting.collectAsState()
     val skills by viewModel.skills.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
+    val pendingQuestions by viewModel.pendingQuestions.collectAsState()
+    val pendingPermissions by viewModel.pendingPermissions.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -112,7 +112,7 @@ fun SessionDetailScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
-    var showSearchPanel by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     var userNavigating by remember { mutableStateOf(false) }
 
@@ -120,10 +120,6 @@ fun SessionDetailScreen(
 
     val notAtBottom by remember {
         derivedStateOf { listState.canScrollForward }
-    }
-
-    val atTop by remember {
-        derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 10 }
     }
 
     var wasAtBottomBeforeIME by remember { mutableStateOf(true) }
@@ -141,12 +137,6 @@ fun SessionDetailScreen(
 
     LaunchedEffect(sessionID) {
         viewModel.loadSession(sessionID)
-    }
-
-    LaunchedEffect(atTop, hasOlderMessages) {
-        if (atTop && hasOlderMessages) {
-            viewModel.loadOlderMessages()
-        }
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -178,7 +168,7 @@ fun SessionDetailScreen(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
                 actions = {
-                    IconButton(onClick = { showSearchPanel = true }) {
+                    IconButton(onClick = { showSearch = true }) {
                         Icon(
                             Icons.Default.Search,
                             contentDescription = stringResource(R.string.search_messages),
@@ -312,17 +302,15 @@ fun SessionDetailScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    items(messages, key = { it.id }) { message ->
-                        MessageItem(
-                            message = message,
-                            pendingAssistantId = pendingAssistantId,
-                            pendingQuestions = pendingQuestions,
-                            pendingPermissions = pendingPermissions,
-                            onReplyQuestion = { id, answers -> viewModel.replyQuestion(id, answers) },
-                            onRejectQuestion = { id -> viewModel.rejectQuestion(id) },
-                            onReplyPermission = { id, reply, msg -> viewModel.replyPermission(id, reply, msg) },
-                            onNavigateToSubtask = onNavigateToSubtask,
+                    items(messages, key = { it.id }) { entity ->
+                        SessionMessageRenderer(
+                            entity = entity,
                             showReasoning = showReasoning,
+                            isQueued = entity.type == "user" && entity.id == queuedMessageId,
+                            onFullContentRequest = { messageId ->
+                                viewModel.fetchFullContent(sessionID, messageId)
+                            },
+                            onNavigateToSubtask = onNavigateToSubtask,
                         )
                     }
                     if (messages.isEmpty()) {
@@ -419,23 +407,7 @@ fun SessionDetailScreen(
             )
         }
 
-        if (showSearchPanel) {
-            MessageSearchPanel(
-                messages = messages,
-                onNavigateToMessage = { index ->
-                    coroutineScope.launch {
-                        userNavigating = true
-                        showSearchPanel = false
-                        if (index >= 0) listState.animateScrollToItem(index)
-                        userNavigating = false
-                    }
-                },
-                onClose = { showSearchPanel = false },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-
-        if (notAtBottom && !showSearchPanel) {
+        if (notAtBottom) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -508,6 +480,27 @@ fun SessionDetailScreen(
         )
     }
 
+    if (showSearch) {
+        Dialog(
+            onDismissRequest = { showSearch = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            SessionMessageSearchPanel(
+                messages = messages,
+                onNavigateToMessage = { index ->
+                    showSearch = false
+                    userNavigating = true
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(index)
+                        userNavigating = false
+                    }
+                },
+                onClose = { showSearch = false },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+
     if (showModelPicker) {
         ModelPickerSheet(
             providers = providers,
@@ -529,6 +522,24 @@ fun SessionDetailScreen(
                 showSkillPicker = false
             },
             onDismiss = { showSkillPicker = false },
+        )
+    }
+
+    pendingQuestions.firstOrNull()?.let { question ->
+        QuestionDialog(
+            request = question,
+            onSubmit = { answers -> viewModel.replyQuestion(question.id, answers) },
+            onReject = { viewModel.rejectQuestion(question.id) },
+            onDismiss = { viewModel.rejectQuestion(question.id) },
+        )
+    }
+
+    pendingPermissions.firstOrNull()?.let { permission ->
+        PermissionDialog(
+            request = permission,
+            onAllow = { viewModel.replyPermission(permission.id, PermissionReply.ONCE) },
+            onDeny = { viewModel.replyPermission(permission.id, PermissionReply.REJECT) },
+            onDismiss = { viewModel.replyPermission(permission.id, PermissionReply.REJECT) },
         )
     }
 }

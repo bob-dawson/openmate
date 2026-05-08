@@ -5,17 +5,14 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.openmate.core.domain.model.Message
-import com.openmate.core.domain.model.MessageRole
-import com.openmate.core.domain.model.PermissionReply
-import com.openmate.core.domain.model.PermissionRequest
+import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.QuestionRequest
-import com.openmate.core.domain.model.SessionStatus
-import com.openmate.core.domain.model.TodoInfo
-import com.openmate.core.domain.repository.MessageRepository
+import com.openmate.core.domain.model.PermissionRequest
+import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.repository.FileAttachment
-import com.openmate.core.domain.repository.PermissionRepository
+import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.domain.repository.QuestionRepository
+import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.TodoRepository
 import com.openmate.core.network.OpencodeApiClient
@@ -35,7 +32,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,29 +44,31 @@ object AttachmentBridge {
 class SessionDetailViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val sessionRepository: SessionRepository,
-    private val messageRepository: MessageRepository,
-    private val permissionRepository: PermissionRepository,
-    private val questionRepository: QuestionRepository,
+    private val sessionMessageRepository: SessionMessageRepository,
     private val todoRepository: TodoRepository,
+    private val questionRepository: QuestionRepository,
+    private val permissionRepository: PermissionRepository,
     internal val apiClient: OpencodeApiClient,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
 
-    private val _messages = MutableStateFlow<List<Message>>(emptyList())
-    val messages: StateFlow<List<Message>> = _messages.asStateFlow()
-    val userMessageIndices: StateFlow<List<Int>> = _messages.map { msgs -> msgs.indices.filter { i -> msgs[i].role == MessageRole.USER } }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
+    val messages: StateFlow<List<SessionMessage>> = _messages.asStateFlow()
 
-    private val _pendingPermissions = MutableStateFlow<List<PermissionRequest>>(emptyList())
-    val pendingPermissions: StateFlow<List<PermissionRequest>> = _pendingPermissions.asStateFlow()
+    private val _todos = MutableStateFlow<List<com.openmate.core.domain.model.TodoInfo>>(emptyList())
+    val todos: StateFlow<List<com.openmate.core.domain.model.TodoInfo>> = _todos.asStateFlow()
+
+    private val _isStreaming = MutableStateFlow(false)
+    val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
+
+    private val _queuedMessageId = MutableStateFlow<String?>(null)
+    val queuedMessageId: StateFlow<String?> = _queuedMessageId.asStateFlow()
 
     private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
     val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
 
-    private val _todos = MutableStateFlow<List<TodoInfo>>(emptyList())
-    val todos: StateFlow<List<TodoInfo>> = _todos.asStateFlow()
-
-    private val _isStreaming = MutableStateFlow(false)
-    val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
+    private val _pendingPermissions = MutableStateFlow<List<PermissionRequest>>(emptyList())
+    val pendingPermissions: StateFlow<List<PermissionRequest>> = _pendingPermissions.asStateFlow()
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -81,14 +79,8 @@ class SessionDetailViewModel @Inject constructor(
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
-    private val _hasOlderMessages = MutableStateFlow(false)
-    val hasOlderMessages: StateFlow<Boolean> = _hasOlderMessages.asStateFlow()
-
     private val _isUploading = MutableStateFlow(false)
     val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
-
-    private val _pendingAssistantId = MutableStateFlow<String?>(null)
-    val pendingAssistantId: StateFlow<String?> = _pendingAssistantId.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
@@ -117,23 +109,22 @@ class SessionDetailViewModel @Inject constructor(
     private val _recentModels = MutableStateFlow<List<ModelRef>>(loadRecentModels())
     val recentModels: StateFlow<List<ModelRef>> = _recentModels.asStateFlow()
 
-companion object {
+    private var pollJob: Job? = null
+
+    companion object {
         private const val TAG = "SessionDetailVM"
-        private const val POLL_INTERVAL_MS = 15_000L
         private const val KEY_RECENT_MODELS = "recent_models"
         private const val KEY_DRAFTS = "draft_messages"
+        private const val POLL_INTERVAL_MS = 15_000L
     }
 
     private var currentSessionID: String? = null
     private var currentDirectory: String = ""
     private var draftSessionID: String? = null
-    private var olderMessagesCursor: String? = null
-    private var isLoadingOlder = false
-    private var pollJob: Job? = null
-    private var observePermJob: Job? = null
-    private var observeQJob: Job? = null
     private var observeMsgJob: Job? = null
     private var observeTodoJob: Job? = null
+    private var observeQuestionJob: Job? = null
+    private var observePermissionJob: Job? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -146,20 +137,13 @@ companion object {
         _attachedFiles.value = savedDraft.files
     }
 
-    fun loadOlderMessages() {
-        if (isLoadingOlder) return
-        val sid = currentSessionID ?: return
-        val cursor = olderMessagesCursor ?: return
-        isLoadingOlder = true
+    fun fetchFullContent(sessionId: String, messageId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val nextCursor = messageRepository.loadOlderMessages(sid, cursor, 20)
-                olderMessagesCursor = nextCursor
-                _hasOlderMessages.value = nextCursor != null
+                sessionMessageRepository.fetchFullMessage(sessionId, messageId)
             } catch (e: Exception) {
-                Log.e(TAG, "loadOlderMessages failed", e)
+                Log.e(TAG, "fetchFullContent failed", e)
             }
-            isLoadingOlder = false
         }
     }
 
@@ -201,25 +185,50 @@ companion object {
 
     fun loadSession(sessionID: String) {
         currentSessionID = sessionID
-        observePermJob?.cancel()
-        observeQJob?.cancel()
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
+
         viewModelScope.launch(Dispatchers.IO) {
-            _isLoading.value = true
+            sessionRepository.observeSession(sessionID).collect { session ->
+                if (session != null && session.title.isNotBlank()) {
+                    _sessionTitle.value = session.title
+                }
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val session = sessionRepository.getSession(sessionID)
-                _sessionTitle.value = session?.title ?: ""
+                if (session?.title?.isNotBlank() == true) {
+                    _sessionTitle.value = session.title
+                }
                 currentDirectory = session?.directory ?: ""
             } catch (e: Exception) {
-                Log.e(TAG, "loadSession title failed", e)
+                Log.e(TAG, "loadSession title API failed", e)
             }
+        }
+
+        draftSessionID = sessionID
+        val savedDraft = loadDraft(sessionID)
+        _inputText.value = savedDraft.text
+        _attachedFiles.value = savedDraft.files
+
+        observeMessages(sessionID)
+        observeTodos(sessionID)
+        observeQuestions()
+        observePermissions()
+        startPolling(sessionID)
+
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                val cursor = messageRepository.syncMessages(sessionID, 10)
-                olderMessagesCursor = cursor
-                _hasOlderMessages.value = cursor != null
+                val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
+                if (lastSeq != null && lastSeq > 0) {
+                    sessionMessageRepository.incrementalSync(sessionID)
+                } else {
+                    sessionMessageRepository.initSync(sessionID, 30)
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "syncMessages failed", e)
+                Log.e(TAG, "sync failed", e)
             }
             try {
                 todoRepository.refreshTodos(sessionID)
@@ -231,41 +240,15 @@ companion object {
             } catch (e: Exception) {
                 Log.e(TAG, "refreshStatusFromMessages failed", e)
             }
-            try {
-                permissionRepository.refresh(currentDirectory)
-            } catch (e: Exception) {
-                Log.e(TAG, "refreshPermissions failed", e)
-            }
-            try {
-                questionRepository.refresh(currentDirectory)
-            } catch (e: Exception) {
-                Log.e(TAG, "refreshQuestions failed", e)
-            }
             resolveDefaultModel()
-            _isLoading.value = false
         }
-        draftSessionID = sessionID
-        val savedDraft = loadDraft(sessionID)
-        _inputText.value = savedDraft.text
-        _attachedFiles.value = savedDraft.files
-        observeMessages(sessionID)
-        observeSessionStatus(sessionID)
-        observePermissions()
-        observeQuestions()
-        observeTodos(sessionID)
-        startPolling()
     }
 
     fun refresh() {
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                sessionRepository.getSession(sid)
-                val cursor = messageRepository.syncMessages(sid, 10)
-                if (cursor != null && olderMessagesCursor == null) {
-                    olderMessagesCursor = cursor
-                    _hasOlderMessages.value = true
-                }
+                sessionMessageRepository.incrementalSync(sid)
                 sessionRepository.refreshSessionStatusesFromMessages()
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
@@ -274,45 +257,28 @@ companion object {
         }
     }
 
-    private fun startPolling() {
-        stopPolling()
+    private fun startPolling(sessionId: String) {
+        pollJob?.cancel()
         pollJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
-                val sid = currentSessionID ?: continue
                 try {
-                    val cursor = messageRepository.syncMessages(sid, 10)
-                    if (cursor != null && olderMessagesCursor == null) {
-                        olderMessagesCursor = cursor
-                        _hasOlderMessages.value = true
-                    }
+                    sessionMessageRepository.incrementalSync(sessionId)
                     sessionRepository.refreshSessionStatusesFromMessages()
-                    todoRepository.refreshTodos(sid)
                 } catch (e: Exception) {
                     Log.e(TAG, "poll sync failed", e)
-                }
-                try {
-                    permissionRepository.refresh(currentDirectory)
-                    questionRepository.refresh(currentDirectory)
-                } catch (e: Exception) {
-                    Log.e(TAG, "poll permission/question failed", e)
                 }
             }
         }
     }
 
-    private fun stopPolling() {
-        pollJob?.cancel()
-        pollJob = null
-    }
-
     override fun onCleared() {
         super.onCleared()
-        stopPolling()
-        observePermJob?.cancel()
-        observeQJob?.cancel()
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
+        observeQuestionJob?.cancel()
+        observePermissionJob?.cancel()
+        pollJob?.cancel()
     }
 
     fun sendMessage(sessionID: String) {
@@ -325,19 +291,13 @@ companion object {
         clearDraft(sessionID)
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                messageRepository.sendMessage(sessionID, text, model?.providerID, model?.modelID, agent, files, currentDirectory.ifBlank { null })
-                messageRepository.syncMessages(sessionID, 10)
-                permissionRepository.refresh(currentDirectory)
-                questionRepository.refresh(currentDirectory)
+                val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
+                apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null })
+                delay(500)
+                sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
-            }
-            try {
-                permissionRepository.refresh(currentDirectory)
-                questionRepository.refresh(currentDirectory)
-            } catch (e: Exception) {
-                Log.e(TAG, "sendMessage permission refresh failed", e)
             }
         }
     }
@@ -351,42 +311,8 @@ companion object {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
-                // Immediately refresh session after abort
                 refresh()
             } catch (_: Exception) {}
-        }
-    }
-
-    fun replyPermission(requestID: String, reply: PermissionReply, message: String?) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                permissionRepository.reply(requestID, reply, message, currentDirectory.ifBlank { null })
-            } catch (e: Exception) {
-                Log.e(TAG, "replyPermission failed", e)
-                _errorMessage.emit(e.message ?: "Permission reply failed")
-            }
-        }
-    }
-
-    fun replyQuestion(requestID: String, answers: List<List<String>>) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                questionRepository.reply(requestID, answers, currentDirectory.ifBlank { null })
-            } catch (e: Exception) {
-                Log.e(TAG, "replyQuestion failed", e)
-                _errorMessage.emit(e.message ?: "Question reply failed")
-            }
-        }
-    }
-
-    fun rejectQuestion(requestID: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                questionRepository.reject(requestID, currentDirectory.ifBlank { null })
-            } catch (e: Exception) {
-                Log.e(TAG, "rejectQuestion failed", e)
-                _errorMessage.emit(e.message ?: "Question reject failed")
-            }
         }
     }
 
@@ -416,17 +342,6 @@ companion object {
 
     private suspend fun resolveDefaultModel() {
         if (_selectedModel.value != null) return
-        val lastUserMsg = _messages.value.lastOrNull {
-            it.role == MessageRole.USER && it.providerID != null && it.modelID != null
-        }
-        if (lastUserMsg != null) {
-            _selectedModel.value = ModelRef(
-                lastUserMsg.providerID!!,
-                lastUserMsg.modelID!!,
-                lastUserMsg.modelID!!,
-            )
-            return
-        }
         val recent = _recentModels.value.firstOrNull()
         if (recent != null) {
             _selectedModel.value = recent
@@ -454,9 +369,6 @@ companion object {
             try {
                 val result = apiClient.getProviders()
                 Log.d(TAG, "loadProviders OK: ${result.all.size} providers, connected=${result.connected}")
-                result.all.forEach { p ->
-                    Log.d(TAG, "  provider: ${p.id} name=${p.name} models=${p.models.size}")
-                }
                 _providers.value = result
             } catch (e: Exception) {
                 Log.e(TAG, "loadProviders FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -497,7 +409,7 @@ companion object {
             try {
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
                 delay(2000)
-                messageRepository.syncMessages(sessionID, 10)
+                sessionMessageRepository.incrementalSync(sessionID)
                 sessionRepository.refreshSessionStatusesFromMessages()
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
@@ -588,50 +500,17 @@ companion object {
     private fun observeMessages(sessionID: String) {
         observeMsgJob = viewModelScope.launch {
             try {
-                messageRepository.observeMessages(sessionID).collect { list ->
+                sessionMessageRepository.observeMessages(sessionID).collect { list ->
+                    Log.d(TAG, "observeMessages: ${list.size} messages for $sessionID")
                     _messages.value = list
-                    val lastAssistant = list.lastOrNull { it.role == MessageRole.ASSISTANT }
-                    val hasIncompleteAssistant = lastAssistant != null && lastAssistant.completedAt == null
-                    _isStreaming.value = hasIncompleteAssistant
-                    _pendingAssistantId.value = if (hasIncompleteAssistant) lastAssistant?.id else null
-                    if (hasIncompleteAssistant) {
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                permissionRepository.refresh(currentDirectory)
-                                questionRepository.refresh(currentDirectory)
-                            } catch (_: Exception) {}
-                        }
-                    }
+                    val lastAssistant = list.lastOrNull { it.type == "assistant" }
+                    val isStillStreaming = lastAssistant?.completedAt == null
+                    _isStreaming.value = isStillStreaming
+                    val lastMessage = list.lastOrNull()
+                    _queuedMessageId.value = if (lastMessage?.type == "user") lastMessage.id else null
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeMessages failed", e)
-            }
-        }
-    }
-
-    private fun observeSessionStatus(sessionID: String) {
-    }
-
-    private fun observePermissions() {
-        observePermJob = viewModelScope.launch {
-            try {
-                permissionRepository.observePending().collect { list ->
-                    _pendingPermissions.value = list
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "observePermissions failed", e)
-            }
-        }
-    }
-
-    private fun observeQuestions() {
-        observeQJob = viewModelScope.launch {
-            try {
-                questionRepository.observePending().collect { list ->
-                    _pendingQuestions.value = list
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "observeQuestions failed", e)
             }
         }
     }
@@ -649,6 +528,60 @@ companion object {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeTodos failed", e)
+            }
+        }
+    }
+
+    private fun observeQuestions() {
+        observeQuestionJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                questionRepository.observePending().collect { list ->
+                    _pendingQuestions.value = list
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeQuestions failed", e)
+            }
+        }
+    }
+
+    private fun observePermissions() {
+        observePermissionJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                permissionRepository.observePending().collect { list ->
+                    _pendingPermissions.value = list
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observePermissions failed", e)
+            }
+        }
+    }
+
+    fun replyQuestion(requestID: String, answers: List<List<String>>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                questionRepository.reply(requestID, answers, currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "replyQuestion failed", e)
+            }
+        }
+    }
+
+    fun rejectQuestion(requestID: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                questionRepository.reject(requestID, currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "rejectQuestion failed", e)
+            }
+        }
+    }
+
+    fun replyPermission(requestID: String, reply: PermissionReply, message: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                permissionRepository.reply(requestID, reply, message, currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "replyPermission failed", e)
             }
         }
     }

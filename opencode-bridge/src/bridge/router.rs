@@ -7,7 +7,22 @@ use crate::error::AppError;
 use crate::state::{AppState, OpencodeStatus};
 
 pub async fn status(State(state): State<AppState>) -> impl IntoResponse {
-    let oc_status = *state.opencode_status.read().await;
+    let healthy = state.opencode_manager.check_health().await;
+    let oc_status = if healthy {
+        let mut s = state.opencode_status.write().await;
+        *s = OpencodeStatus::Running;
+        OpencodeStatus::Running
+    } else {
+        let cached = *state.opencode_status.read().await;
+        match cached {
+            OpencodeStatus::Starting | OpencodeStatus::Stopping => cached,
+            _ => {
+                let mut s = state.opencode_status.write().await;
+                *s = OpencodeStatus::Stopped;
+                OpencodeStatus::Stopped
+            }
+        }
+    };
     let status_str = match oc_status {
         OpencodeStatus::Stopped => "stopped",
         OpencodeStatus::Starting => "starting",

@@ -64,6 +64,15 @@ pub enum AppError {
 
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
+
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+
+    #[error("Session not found: {0}")]
+    SessionNotFound(String),
+
+    #[error("Message not found: {0}")]
+    MessageNotFound(String),
 }
 
 impl IntoResponse for AppError {
@@ -89,6 +98,9 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::Io(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            AppError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            AppError::SessionNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            AppError::MessageNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
         };
 
         let body = json!({ "error": message });

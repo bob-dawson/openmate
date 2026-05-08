@@ -5,6 +5,7 @@ use tokio::sync::RwLock;
 use crate::auth;
 use crate::config::Config;
 use crate::process::OpencodeManager;
+use crate::sync::db::SyncDb;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpencodeStatus {
@@ -21,6 +22,7 @@ pub struct AppStateInner {
     pub opencode_manager: OpencodeManager,
     pub secret_key: auth::key::SecretKey,
     pub pending_pairs: RwLock<auth::pair::PairState>,
+    pub sync_db: SyncDb,
 }
 
 pub type AppState = Arc<AppStateInner>;
@@ -41,6 +43,8 @@ pub fn create_app_state(config: Config) -> AppState {
     let directory = config.opencode.directory.clone();
     let auto_restart = config.opencode.auto_restart;
 
+    let sync_db = SyncDb::new(&config);
+
     Arc::new(AppStateInner {
         config,
         opencode_status: RwLock::new(OpencodeStatus::Stopped),
@@ -54,5 +58,6 @@ pub fn create_app_state(config: Config) -> AppState {
         ),
         secret_key,
         pending_pairs: RwLock::new(auth::pair::PairState::new()),
+        sync_db,
     })
 }

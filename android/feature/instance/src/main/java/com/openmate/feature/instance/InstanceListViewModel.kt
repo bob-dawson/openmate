@@ -9,7 +9,9 @@ import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
+import com.openmate.core.data.sync.SyncSseHandler
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.TokenStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +37,8 @@ class InstanceListViewModel @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
     private val tokenStore: TokenStore,
+    private val syncSseClient: SyncSseClient,
+    private val syncSseHandler: SyncSseHandler,
 ) : ViewModel() {
 
     private val _profiles = MutableStateFlow<List<ProfileWithStatus>>(emptyList())
@@ -72,6 +76,8 @@ class InstanceListViewModel @Inject constructor(
                 dbProvider.setActive(profile.id)
                 apiClient.baseUrl = "http://${profile.address}:${profile.port}"
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
+                syncSseHandler.start()
+                syncSseClient.connect(apiClient.baseUrl)
             } catch (_: Exception) {}
         }
     }
@@ -93,13 +99,19 @@ class InstanceListViewModel @Inject constructor(
 
     fun connect(profile: ServerProfile, onNavigate: () -> Unit = {}) {
         onNavigate()
-        if (sseEventRepository.isConnectedTo(profile.address, profile.port)) return
+        if (sseEventRepository.isConnectedTo(profile.address, profile.port)) {
+            syncSseHandler.start()
+            viewModelScope.launch(Dispatchers.IO) { syncSseClient.connect(apiClient.baseUrl) }
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 tokenStore.setActiveProfileId(profile.id)
                 dbProvider.setActive(profile.id)
                 apiClient.baseUrl = "http://${profile.address}:${profile.port}"
                 sseEventRepository.connect(profile.address, profile.port, profile.password)
+                syncSseHandler.start()
+                syncSseClient.connect(apiClient.baseUrl)
                 val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
                 profileRepository.save(updated)
             } catch (e: Exception) {

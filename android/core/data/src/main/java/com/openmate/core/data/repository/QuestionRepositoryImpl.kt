@@ -1,41 +1,57 @@
 package com.openmate.core.data.repository
 
-import com.openmate.core.database.ActiveDatabaseProvider
-import com.openmate.core.database.entity.toDomain
-import com.openmate.core.database.entity.toEntity
+import com.openmate.core.data.sse.QuestionEventHandler
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.network.OpencodeApiClient
-import com.openmate.core.network.dto.toDomain
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class QuestionRepositoryImpl @Inject constructor(
     private val api: OpencodeApiClient,
-    private val dbProvider: ActiveDatabaseProvider,
+    handler: QuestionEventHandler,
 ) : QuestionRepository {
 
-    override suspend fun refresh(directory: String) {
-        val dtos = api.listQuestions(directory)
-        val dao = dbProvider.getActive().questionDao()
-        dao.deleteAll()
-        dtos.forEach { dao.upsert(it.toDomain().toEntity()) }
+    private val _pending = MutableStateFlow<List<QuestionRequest>>(emptyList())
+    private val pendingMap = ConcurrentHashMap<String, QuestionRequest>()
+
+    init {
+        CoroutineScope(Dispatchers.IO).launch {
+            handler.questions.collect { question ->
+                pendingMap[question.id] = question
+                _pending.value = pendingMap.values.toList()
+            }
+        }
     }
 
+    override suspend fun refresh(directory: String) {}
+
     override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) {
-        api.replyQuestion(requestID, answers, directory)
-        dbProvider.getActive().questionDao().delete(requestID)
+        try {
+            api.replyQuestion(requestID, answers, directory)
+        } finally {
+            pendingMap.remove(requestID)
+            _pending.value = pendingMap.values.toList()
+        }
     }
 
     override suspend fun reject(requestID: String, directory: String?) {
-        api.rejectQuestion(requestID, directory)
-        dbProvider.getActive().questionDao().delete(requestID)
-    }
-
-    override fun observePending(): Flow<List<QuestionRequest>> {
-        return dbProvider.getActive().questionDao().observeAll().map { list ->
-            list.map { it.toDomain() }
+        try {
+            api.rejectQuestion(requestID, directory)
+        } finally {
+            pendingMap.remove(requestID)
+            _pending.value = pendingMap.values.toList()
         }
     }
+
+    override fun observePending(): Flow<List<QuestionRequest>> = _pending.asStateFlow()
 }

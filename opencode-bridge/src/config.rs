@@ -37,6 +37,9 @@ pub struct OpencodeConfig {
     pub auto_start: bool,
     #[serde(default = "default_true")]
     pub auto_restart: bool,
+
+    #[serde(default = "default_db_path")]
+    pub db_path: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -61,6 +64,7 @@ fn default_opencode() -> OpencodeConfig {
         directory: String::new(),
         auto_start: true,
         auto_restart: true,
+        db_path: default_db_path(),
     }
 }
 
@@ -88,6 +92,12 @@ fn default_true() -> bool {
     true
 }
 
+fn default_db_path() -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    let path = home.join(".local").join("share").join("opencode").join("opencode.db");
+    path.to_string_lossy().to_string()
+}
+
 impl Default for FsConfig {
     fn default() -> Self {
         FsConfig {
@@ -99,6 +109,10 @@ impl Default for FsConfig {
 impl Config {
     pub fn opencode_url(&self) -> String {
         format!("http://{}:{}", self.opencode.hostname, self.opencode.port)
+    }
+
+    pub fn db_path(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(&self.opencode.db_path)
     }
 
     pub fn bridge_listen_addr(&self) -> String {

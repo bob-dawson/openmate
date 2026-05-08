@@ -1,42 +1,56 @@
 package com.openmate.core.data.sse
 
-import android.util.Log
-import com.openmate.core.database.ActiveDatabaseProvider
-import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.domain.model.QuestionRequest
+import com.openmate.core.domain.model.QuestionInfo
+import com.openmate.core.domain.model.QuestionOption
+import com.openmate.core.domain.model.ToolRef
 import com.openmate.core.network.SseData
-import com.openmate.core.network.dto.toDomain
-import com.openmate.core.database.entity.toEntity
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
+import javax.inject.Singleton
 
-open class QuestionEventHandler @Inject constructor(
-    private val api: OpencodeApiClient,
-    private val dbProvider: ActiveDatabaseProvider,
-) {
+@Singleton
+open class QuestionEventHandler @Inject constructor() {
     var activeDirectory: String = ""
 
+    private val _questions = MutableSharedFlow<QuestionRequest>(extraBufferCapacity = 16)
+    val questions: SharedFlow<QuestionRequest> = _questions
+
     open suspend fun handle(type: String, event: SseData) {
-        when (type) {
-            "question.asked" -> {
-                try {
-                    if (activeDirectory.isBlank()) return
-                    val dtos = api.listQuestions(activeDirectory)
-                    val dao = dbProvider.getActive().questionDao()
-                    dao.deleteAll()
-                    dtos.forEach { dao.upsert(it.toDomain().toEntity()) }
-                } catch (e: Exception) {
-                    Log.w("QuestionEventHandler", "sync failed", e)
-                }
-            }
-            "question.replied", "question.rejected" -> {
-                try {
-                    val requestID = event.properties["requestID"]?.toString()?.trim('"')
-                    if (requestID != null) {
-                        dbProvider.getActive().questionDao().delete(requestID)
-                    }
-                } catch (e: Exception) {
-                    Log.w("QuestionEventHandler", "handle failed", e)
-                }
-            }
+        if (type != "question.asked") return
+        val props = event.properties
+        val id = props["id"]?.jsonPrimitive?.contentOrNull ?: return
+        val sessionID = props["sessionID"]?.jsonPrimitive?.contentOrNull ?: ""
+        val questionsArr = props["questions"]?.jsonArray ?: return
+        val toolObj = props["tool"]?.jsonObject
+        val tool = toolObj?.let {
+            ToolRef(
+                messageID = it["messageID"]?.jsonPrimitive?.contentOrNull ?: "",
+                callID = it["callID"]?.jsonPrimitive?.contentOrNull ?: "",
+            )
         }
+        val questionInfos = questionsArr.map { q ->
+            val obj = q.jsonObject
+            val options = obj["options"]?.jsonArray?.map { o ->
+                val oo = o.jsonObject
+                QuestionOption(
+                    label = oo["label"]?.jsonPrimitive?.contentOrNull ?: "",
+                    description = oo["description"]?.jsonPrimitive?.contentOrNull ?: "",
+                )
+            } ?: emptyList()
+            QuestionInfo(
+                question = obj["question"]?.jsonPrimitive?.contentOrNull ?: "",
+                header = obj["header"]?.jsonPrimitive?.contentOrNull ?: "",
+                options = options,
+                multiple = obj["multiple"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false,
+                custom = obj["custom"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true,
+            )
+        }
+        _questions.emit(QuestionRequest(id = id, sessionID = sessionID, questions = questionInfos, tool = tool))
     }
 }

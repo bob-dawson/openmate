@@ -65,4 +65,16 @@ object NetworkModule {
     ): OpencodeApiClient {
         return OpencodeApiClient(client, downloadClient)
     }
+
+    @Provides
+    @Singleton
+    fun provideSyncApiClient(@Named("api") client: OkHttpClient, opencodeApiClient: OpencodeApiClient): SyncApiClient {
+        return SyncApiClient(client, opencodeApiClient)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSyncSseClient(@Named("sse") client: OkHttpClient, tokenStore: TokenStore): SyncSseClient {
+        return SyncSseClient(client, tokenStore)
+    }
 }

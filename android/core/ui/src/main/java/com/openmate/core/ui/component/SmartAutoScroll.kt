@@ -39,11 +39,11 @@ fun SmartAutoScroll(
     suspend fun scrollToBottom() {
         autoScrolling = true
         if (messageCount > 0) {
-            listState.animateScrollToItem(messageCount)
+            listState.animateScrollToItem(messageCount - 1)
         }
         delay(100)
         if (messageCount > 0 && listState.canScrollForward) {
-            listState.animateScrollToItem(messageCount)
+            listState.animateScrollToItem(messageCount - 1)
         }
         followBottom = true
         autoScrolling = false

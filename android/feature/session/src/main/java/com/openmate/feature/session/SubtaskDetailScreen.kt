@@ -22,11 +22,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.openmate.feature.session.R
@@ -34,7 +32,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.SmartAutoScroll
 import com.openmate.core.ui.component.TopBar
 import com.openmate.feature.session.component.ChatInputBar
-import com.openmate.feature.session.component.MessageItem
+import com.openmate.feature.session.component.SessionMessageRenderer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,15 +46,9 @@ fun SubtaskDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
-    val pendingPermissions by viewModel.pendingPermissions.collectAsState()
-    val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
-    val pendingAssistantId by viewModel.pendingAssistantId.collectAsState()
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
-    val showReasoning by remember { mutableStateOf(prefs.getBoolean("show_reasoning", true)) }
 
     LaunchedEffect(subtaskSessionID) {
         viewModel.loadSession(subtaskSessionID)
@@ -107,16 +99,12 @@ fun SubtaskDetailScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    items(messages, key = { it.id }) { message ->
-                        MessageItem(
-                            message = message,
-                            pendingAssistantId = pendingAssistantId,
-                            pendingQuestions = pendingQuestions,
-                            pendingPermissions = pendingPermissions,
-                            onReplyQuestion = { id, answers -> viewModel.replyQuestion(id, answers) },
-                            onRejectQuestion = { id -> viewModel.rejectQuestion(id) },
-                            onReplyPermission = { id, reply, msg -> viewModel.replyPermission(id, reply, msg) },
-                            showReasoning = showReasoning,
+                    items(messages, key = { it.id }) { entity ->
+                        SessionMessageRenderer(
+                            entity = entity,
+                            onFullContentRequest = { messageId ->
+                                viewModel.fetchFullContent(subtaskSessionID, messageId)
+                            },
                         )
                     }
                     if (messages.isEmpty()) {

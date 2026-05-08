@@ -1,42 +1,55 @@
 package com.openmate.core.data.sse
 
-import android.util.Log
-import com.openmate.core.database.ActiveDatabaseProvider
-import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.domain.model.PermissionRequest
+import com.openmate.core.domain.model.ToolRef
 import com.openmate.core.network.SseData
-import com.openmate.core.network.dto.toDomain
-import com.openmate.core.database.entity.toEntity
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
+import javax.inject.Singleton
 
-open class PermissionEventHandler @Inject constructor(
-    private val api: OpencodeApiClient,
-    private val dbProvider: ActiveDatabaseProvider,
-) {
+@Singleton
+open class PermissionEventHandler @Inject constructor() {
     var activeDirectory: String = ""
 
+    private val _permissions = MutableSharedFlow<PermissionRequest>(extraBufferCapacity = 16)
+    val permissions: SharedFlow<PermissionRequest> = _permissions
+
     open suspend fun handle(type: String, event: SseData) {
-        when (type) {
-            "permission.asked" -> {
-                try {
-                    if (activeDirectory.isBlank()) return
-                    val dtos = api.listPermissions(activeDirectory)
-                    val dao = dbProvider.getActive().permissionDao()
-                    dao.deleteAll()
-                    dtos.forEach { dao.upsert(it.toDomain().toEntity()) }
-                } catch (e: Exception) {
-                    Log.w("PermissionEventHandler", "sync failed", e)
-                }
-            }
-            "permission.replied" -> {
-                try {
-                    val requestID = event.properties["requestID"]?.toString()?.trim('"')
-                    if (requestID != null) {
-                        dbProvider.getActive().permissionDao().delete(requestID)
-                    }
-                } catch (e: Exception) {
-                    Log.w("PermissionEventHandler", "replied failed", e)
-                }
-            }
+        if (type != "permission.asked") return
+        val props = event.properties
+        val id = props["id"]?.jsonPrimitive?.contentOrNull ?: return
+        val sessionID = props["sessionID"]?.jsonPrimitive?.contentOrNull ?: ""
+        val permission = props["permission"]?.jsonPrimitive?.contentOrNull ?: ""
+        val patterns = props["patterns"]?.jsonArray?.mapNotNull {
+            it.jsonPrimitive.contentOrNull
+        } ?: emptyList()
+        val always = props["always"]?.jsonArray?.mapNotNull {
+            it.jsonPrimitive.contentOrNull
+        } ?: emptyList()
+        val metadata = props["metadata"]?.jsonObject ?: buildJsonObject { }
+        val toolObj = props["tool"]?.jsonObject
+        val tool = toolObj?.let {
+            ToolRef(
+                messageID = it["messageID"]?.jsonPrimitive?.contentOrNull ?: "",
+                callID = it["callID"]?.jsonPrimitive?.contentOrNull ?: "",
+            )
         }
+        _permissions.emit(
+            PermissionRequest(
+                id = id,
+                sessionID = sessionID,
+                permission = permission,
+                patterns = patterns,
+                metadata = metadata,
+                always = always,
+                tool = tool,
+            )
+        )
     }
 }
