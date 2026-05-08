@@ -6,8 +6,13 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.SessionMessage
-import com.openmate.core.domain.repository.SessionMessageRepository
+import com.openmate.core.domain.model.QuestionRequest
+import com.openmate.core.domain.model.PermissionRequest
+import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.repository.FileAttachment
+import com.openmate.core.domain.repository.SessionMessageRepository
+import com.openmate.core.domain.repository.QuestionRepository
+import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.TodoRepository
 import com.openmate.core.network.OpencodeApiClient
@@ -35,6 +40,8 @@ class SessionDetailViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
     private val sessionMessageRepository: SessionMessageRepository,
     private val todoRepository: TodoRepository,
+    private val questionRepository: QuestionRepository,
+    private val permissionRepository: PermissionRepository,
     internal val apiClient: OpencodeApiClient,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
@@ -50,6 +57,12 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _queuedMessageId = MutableStateFlow<String?>(null)
     val queuedMessageId: StateFlow<String?> = _queuedMessageId.asStateFlow()
+
+    private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
+    val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
+
+    private val _pendingPermissions = MutableStateFlow<List<PermissionRequest>>(emptyList())
+    val pendingPermissions: StateFlow<List<PermissionRequest>> = _pendingPermissions.asStateFlow()
 
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -104,6 +117,8 @@ class SessionDetailViewModel @Inject constructor(
     private var draftSessionID: String? = null
     private var observeMsgJob: Job? = null
     private var observeTodoJob: Job? = null
+    private var observeQuestionJob: Job? = null
+    private var observePermissionJob: Job? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -194,6 +209,8 @@ class SessionDetailViewModel @Inject constructor(
 
         observeMessages(sessionID)
         observeTodos(sessionID)
+        observeQuestions()
+        observePermissions()
         startPolling(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -253,6 +270,8 @@ class SessionDetailViewModel @Inject constructor(
         super.onCleared()
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
+        observeQuestionJob?.cancel()
+        observePermissionJob?.cancel()
         pollJob?.cancel()
     }
 
@@ -492,6 +511,60 @@ class SessionDetailViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeTodos failed", e)
+            }
+        }
+    }
+
+    private fun observeQuestions() {
+        observeQuestionJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                questionRepository.observePending().collect { list ->
+                    _pendingQuestions.value = list
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeQuestions failed", e)
+            }
+        }
+    }
+
+    private fun observePermissions() {
+        observePermissionJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                permissionRepository.observePending().collect { list ->
+                    _pendingPermissions.value = list
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observePermissions failed", e)
+            }
+        }
+    }
+
+    fun replyQuestion(requestID: String, answers: List<List<String>>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                questionRepository.reply(requestID, answers, currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "replyQuestion failed", e)
+            }
+        }
+    }
+
+    fun rejectQuestion(requestID: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                questionRepository.reject(requestID, currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "rejectQuestion failed", e)
+            }
+        }
+    }
+
+    fun replyPermission(requestID: String, reply: PermissionReply, message: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                permissionRepository.reply(requestID, reply, message, currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "replyPermission failed", e)
             }
         }
     }

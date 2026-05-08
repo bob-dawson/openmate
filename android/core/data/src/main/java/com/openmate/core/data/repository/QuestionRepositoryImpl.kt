@@ -1,19 +1,57 @@
 package com.openmate.core.data.repository
 
+import com.openmate.core.data.sse.QuestionEventHandler
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.repository.QuestionRepository
+import com.openmate.core.network.OpencodeApiClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class QuestionRepositoryImpl @Inject constructor(
+    private val api: OpencodeApiClient,
+    handler: QuestionEventHandler,
 ) : QuestionRepository {
+
+    private val _pending = MutableStateFlow<List<QuestionRequest>>(emptyList())
+    private val pendingMap = ConcurrentHashMap<String, QuestionRequest>()
+
+    init {
+        CoroutineScope(Dispatchers.IO).launch {
+            handler.questions.collect { question ->
+                pendingMap[question.id] = question
+                _pending.value = pendingMap.values.toList()
+            }
+        }
+    }
 
     override suspend fun refresh(directory: String) {}
 
-    override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) {}
+    override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) {
+        try {
+            api.replyQuestion(requestID, answers, directory)
+        } finally {
+            pendingMap.remove(requestID)
+            _pending.value = pendingMap.values.toList()
+        }
+    }
 
-    override suspend fun reject(requestID: String, directory: String?) {}
+    override suspend fun reject(requestID: String, directory: String?) {
+        try {
+            api.rejectQuestion(requestID, directory)
+        } finally {
+            pendingMap.remove(requestID)
+            _pending.value = pendingMap.values.toList()
+        }
+    }
 
-    override fun observePending(): Flow<List<QuestionRequest>> = flowOf(emptyList())
+    override fun observePending(): Flow<List<QuestionRequest>> = _pending.asStateFlow()
 }

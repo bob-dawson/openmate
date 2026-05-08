@@ -69,6 +69,7 @@ import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
 import com.openmate.feature.session.component.TodoListCard
+import com.openmate.core.domain.model.PermissionReply
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,6 +97,8 @@ fun SessionDetailScreen(
     val isCompacting by viewModel.isCompacting.collectAsState()
     val skills by viewModel.skills.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
+    val pendingQuestions by viewModel.pendingQuestions.collectAsState()
+    val pendingPermissions by viewModel.pendingPermissions.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -518,6 +521,24 @@ fun SessionDetailScreen(
                 showSkillPicker = false
             },
             onDismiss = { showSkillPicker = false },
+        )
+    }
+
+    pendingQuestions.firstOrNull()?.let { question ->
+        QuestionDialog(
+            request = question,
+            onSubmit = { answers -> viewModel.replyQuestion(question.id, answers) },
+            onReject = { viewModel.rejectQuestion(question.id) },
+            onDismiss = { viewModel.rejectQuestion(question.id) },
+        )
+    }
+
+    pendingPermissions.firstOrNull()?.let { permission ->
+        PermissionDialog(
+            request = permission,
+            onAllow = { viewModel.replyPermission(permission.id, PermissionReply.ONCE) },
+            onDeny = { viewModel.replyPermission(permission.id, PermissionReply.REJECT) },
+            onDismiss = { viewModel.replyPermission(permission.id, PermissionReply.REJECT) },
         )
     }
 }
