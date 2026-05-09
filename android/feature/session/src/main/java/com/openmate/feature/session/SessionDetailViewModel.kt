@@ -61,8 +61,8 @@ class SessionDetailViewModel @Inject constructor(
     private val _isStreaming = MutableStateFlow(false)
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
-    private val _queuedMessageId = MutableStateFlow<String?>(null)
-    val queuedMessageId: StateFlow<String?> = _queuedMessageId.asStateFlow()
+    private val _streamingAssistantId = MutableStateFlow<String?>(null)
+    val streamingAssistantId: StateFlow<String?> = _streamingAssistantId.asStateFlow()
 
     private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
     val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
@@ -506,8 +506,9 @@ class SessionDetailViewModel @Inject constructor(
                     val lastAssistant = list.lastOrNull { it.type == "assistant" }
                     val isStillStreaming = lastAssistant?.completedAt == null
                     _isStreaming.value = isStillStreaming
-                    val lastMessage = list.lastOrNull()
-                    _queuedMessageId.value = if (lastMessage?.type == "user") lastMessage.id else null
+                    _streamingAssistantId.value = list
+                        .filter { it.type == "assistant" && it.completedAt == null }
+                        .maxByOrNull { it.id }?.id
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeMessages failed", e)

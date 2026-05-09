@@ -84,7 +84,7 @@ fun SessionDetailScreen(
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
-    val queuedMessageId by viewModel.queuedMessageId.collectAsState()
+    val streamingAssistantId by viewModel.streamingAssistantId.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -306,7 +306,7 @@ fun SessionDetailScreen(
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning,
-                            isQueued = entity.type == "user" && entity.id == queuedMessageId,
+                            isQueued = entity.type == "user" && streamingAssistantId != null && entity.id > streamingAssistantId!!,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },
