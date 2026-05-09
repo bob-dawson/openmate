@@ -317,7 +317,9 @@ impl SyncDb {
                         "tool" => {
                             let name = part.get("tool").and_then(|t| t.as_str()).unwrap_or("unknown");
                             let state = part.get("state").cloned().unwrap_or(json!({"status": "completed"}));
-                            let call_id = part.get("callID").and_then(|t| t.as_str()).unwrap_or("");
+                            let call_id = part.get("callID").and_then(|t| t.as_str())
+                                .or_else(|| part.get("id").and_then(|t| t.as_str()))
+                                .unwrap_or("");
                             let mut tool_item = json!({
                                 "type": "tool",
                                 "name": name,
@@ -338,6 +340,63 @@ impl SyncDb {
                                     "text": text,
                                 }));
                             }
+                        }
+                        "step-start" => {
+                            let mut item = json!({"type": "step-start"});
+                            if let Some(obj) = item.as_object_mut() {
+                                if let Some(snapshot) = part.get("snapshot") {
+                                    obj.insert("snapshot".to_string(), snapshot.clone());
+                                }
+                                if let Some(time) = part.get("time") {
+                                    obj.insert("time".to_string(), time.clone());
+                                }
+                            }
+                            content.push(item);
+                        }
+                        "step-finish" => {
+                            let mut item = json!({"type": "step-finish"});
+                            if let Some(obj) = item.as_object_mut() {
+                                if let Some(reason) = part.get("reason") {
+                                    obj.insert("reason".to_string(), reason.clone());
+                                }
+                                if let Some(finish) = part.get("finish") {
+                                    obj.insert("finish".to_string(), finish.clone());
+                                }
+                                if let Some(time) = part.get("time") {
+                                    obj.insert("time".to_string(), time.clone());
+                                }
+                                if let Some(tokens) = part.get("tokens") {
+                                    obj.insert("tokens".to_string(), tokens.clone());
+                                }
+                                if let Some(cost) = part.get("cost") {
+                                    obj.insert("cost".to_string(), cost.clone());
+                                }
+                            }
+                            content.push(item);
+                        }
+                        "agent" => {
+                            let name = part.get("name").and_then(|t| t.as_str()).unwrap_or("");
+                            content.push(json!({"type": "agent", "name": name}));
+                        }
+                        "subtask" => {
+                            let description = part.get("description").and_then(|t| t.as_str()).unwrap_or("");
+                            let prompt = part.get("prompt").and_then(|t| t.as_str()).unwrap_or("");
+                            content.push(json!({"type": "subtask", "description": description, "prompt": prompt}));
+                        }
+                        "compaction" => {
+                            content.push(json!({"type": "compaction"}));
+                        }
+                        "retry" => {
+                            let mut item = json!({"type": "retry"});
+                            if let Some(obj) = item.as_object_mut() {
+                                if let Some(attempt) = part.get("attempt") {
+                                    obj.insert("attempt".to_string(), attempt.clone());
+                                }
+                                if let Some(error) = part.get("error") {
+                                    obj.insert("error".to_string(), error.clone());
+                                }
+                            }
+                            content.push(item);
                         }
                         _ => {}
                     }

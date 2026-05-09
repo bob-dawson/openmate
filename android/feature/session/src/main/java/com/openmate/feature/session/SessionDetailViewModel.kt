@@ -240,6 +240,16 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "refreshTodos failed", e)
             }
             try {
+                questionRepository.refresh(currentDirectory.ifBlank { "/" })
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshQuestions failed", e)
+            }
+            try {
+                permissionRepository.refresh(currentDirectory.ifBlank { "/" })
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshPermissions failed", e)
+            }
+            try {
                 sessionRepository.refreshSessionStatusesFromMessages()
             } catch (e: Exception) {
                 Log.e(TAG, "refreshStatusFromMessages failed", e)
@@ -255,6 +265,8 @@ class SessionDetailViewModel @Inject constructor(
                 sessionMessageRepository.incrementalSync(sid)
                 sessionRepository.refreshSessionStatusesFromMessages()
                 todoRepository.refreshTodos(sid)
+                questionRepository.refresh(currentDirectory.ifBlank { "/" })
+                permissionRepository.refresh(currentDirectory.ifBlank { "/" })
             } catch (e: Exception) {
                 Log.e(TAG, "manual refresh failed", e)
             }

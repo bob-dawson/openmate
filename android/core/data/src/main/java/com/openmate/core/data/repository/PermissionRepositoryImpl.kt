@@ -5,6 +5,7 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.toDomain
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -33,7 +34,17 @@ class PermissionRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun refresh(directory: String) {}
+    override suspend fun refresh(directory: String) {
+        try {
+            val permissions = api.listPermissions(directory.ifBlank { null })
+            for (p in permissions) {
+                pendingMap[p.id] = p.toDomain()
+            }
+            _pending.value = pendingMap.values.toList()
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
 
     override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) {
         try {

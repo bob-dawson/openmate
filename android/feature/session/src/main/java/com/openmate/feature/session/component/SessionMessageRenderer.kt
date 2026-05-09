@@ -1,10 +1,12 @@
 package com.openmate.feature.session.component
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -15,11 +17,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import com.openmate.core.domain.model.SessionMessage
+import com.openmate.core.domain.model.PermissionReply
+import com.openmate.core.domain.model.PermissionRequest
+import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.ui.component.MessageBubble
 import com.openmate.feature.session.R
 import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
+
+private val AgentColor = androidx.compose.ui.graphics.Color(0xFF9D7CD8)
+private val TaskIdRegex = Regex("task_id:\\s*(ses_\\S+)")
+
+private fun JsonObject?.str(key: String): String? =
+    this?.get(key)?.let { if (it is JsonPrimitive) it.content else null }
 
 @Composable
 fun SessionMessageRenderer(
@@ -29,6 +41,11 @@ fun SessionMessageRenderer(
     userModelName: String? = null,
     onFullContentRequest: (messageId: String) -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
+    pendingQuestions: List<QuestionRequest> = emptyList(),
+    pendingPermissions: List<PermissionRequest> = emptyList(),
+    onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
+    onRejectQuestion: (String) -> Unit = {},
+    onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
 ) {
     val dataJson = remember(entity.data) {
         runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull()
@@ -59,17 +76,33 @@ fun SessionMessageRenderer(
                     "tool" -> true
                     "reasoning" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
                     "file" -> true
+                    "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> true
                     else -> false
                 }
             } == true
             if (!hasVisible) return
             val modelName = dataJson["model"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
-            AssistantMessageItem(dataJson, showReasoning, onNavigateToSubtask)
+            val finish = dataJson["finish"]?.jsonPrimitive?.contentOrNull
+            val isStepRunning = entity.completedAt == null && finish == null
+            val toolCount = content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0
+            AssistantMessageItem(
+                data = dataJson,
+                showReasoning = showReasoning,
+                onNavigateToSubtask = onNavigateToSubtask,
+                pendingQuestions = pendingQuestions,
+                pendingPermissions = pendingPermissions,
+                onReplyQuestion = onReplyQuestion,
+                onRejectQuestion = onRejectQuestion,
+                onReplyPermission = onReplyPermission,
+            )
             MessageMetadata(
                 timeCreated = entity.timeCreated,
                 completedAt = entity.completedAt,
                 modelName = modelName,
                 isQueued = false,
+                isStepRunning = isStepRunning,
+                toolCount = toolCount,
+                finish = finish,
             )
         }
         "synthetic" -> { }
@@ -83,25 +116,56 @@ private fun MessageMetadata(
     completedAt: Long?,
     modelName: String?,
     isQueued: Boolean,
+    isStepRunning: Boolean = false,
+    toolCount: Int = 0,
+    finish: String? = null,
 ) {
     if (timeCreated <= 0) return
     val timeText = timeCreated.toTimeString()
-    val durationText = if (completedAt != null && completedAt > timeCreated) {
-        " · ${formatDurationMillis(completedAt - timeCreated)}"
+
+    val durationText = if (isStepRunning) {
+        val phoneAnchor = remember { SystemClock.elapsedRealtime() }
+        var elapsed by remember { mutableStateOf(SystemClock.elapsedRealtime() - phoneAnchor) }
+        LaunchedEffect(Unit) {
+            while (true) {
+                delay(1000)
+                elapsed = SystemClock.elapsedRealtime() - phoneAnchor
+            }
+        }
+        formatDurationMillis(elapsed)
+    } else if (completedAt != null && completedAt > timeCreated) {
+        formatDurationMillis(completedAt - timeCreated)
     } else ""
+
     val modelText = modelName?.let { " · $it" } ?: ""
+    val toolText = if (toolCount > 0) " · $toolCount 工具" else ""
+    val finishText = when {
+        isStepRunning -> ""
+        finish == "tool-calls" -> " · 继续执行"
+        finish == "error" -> " · 出错"
+        finish == "stop" -> ""
+        else -> ""
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (isStepRunning) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(10.dp),
+                strokeWidth = 1.5.dp,
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
         if (isQueued) {
             QueuedBadge()
             Spacer(modifier = Modifier.width(6.dp))
         }
         Text(
-            text = timeText + durationText + modelText,
+            text = timeText + if (durationText.isNotBlank()) " · $durationText" else "" + toolText + finishText + modelText,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -141,7 +205,16 @@ fun UserMessageItem(data: JsonObject) {
 }
 
 @Composable
-fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true, onNavigateToSubtask: (String, String) -> Unit = { _, _ -> }) {
+fun AssistantMessageItem(
+    data: JsonObject,
+    showReasoning: Boolean = true,
+    onNavigateToSubtask: (String, String) -> Unit = { _, _ -> },
+    pendingQuestions: List<QuestionRequest> = emptyList(),
+    pendingPermissions: List<PermissionRequest> = emptyList(),
+    onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
+    onRejectQuestion: (String) -> Unit = {},
+    onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
+) {
     val content = data["content"]?.jsonArray ?: return
     val reasoningExpanded = remember { mutableStateOf(true) }
 
@@ -163,6 +236,10 @@ fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true, onNavi
                     val structuredResult = state?.get("structured")
                     val contentArr = state?.get("content")?.jsonArray
                     val errorObj = state?.get("error")
+                    val callID = obj["callID"]?.jsonPrimitive?.contentOrNull
+                        ?: state?.get("callID")?.jsonPrimitive?.contentOrNull
+                        ?: obj["id"]?.jsonPrimitive?.contentOrNull
+                    val metadata = state?.get("metadata")?.jsonObject
 
                     val resultText = when {
                         errorObj != null -> errorObj.toString()
@@ -188,25 +265,80 @@ fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true, onNavi
                         result = resultText,
                         files = emptyList(),
                         hash = null,
+                        callID = callID,
+                        metadata = metadata,
                     )
 
-                    when (status) {
-                        "pending" -> PendingToolLine(displayItem)
-                        "running" -> RunningToolLine(displayItem)
-                        "error" -> ErrorToolLine(displayItem)
-                        else -> {
+                    if (name == "question" && status == "running") {
+                        val parsedQuestions = remember(input) { parseQuestionArgs(input) }
+                        val matchedRequest = callID?.let { cid ->
+                            pendingQuestions.find { it.tool?.callID == cid }
+                        }
+                        if (parsedQuestions != null) {
+                            QuestionCard(
+                                questions = parsedQuestions,
+                                matchedRequest = matchedRequest,
+                                onReply = matchedRequest?.let { req ->
+                                    { answers -> onReplyQuestion(req.id, answers) }
+                                },
+                                onReject = matchedRequest?.let { req ->
+                                    { onRejectQuestion(req.id) }
+                                },
+                            )
+                        } else {
+                            InlineToolLine(displayItem)
+                        }
+                    } else if (status == "pending" || status == "running") {
+                        val matchedPerm = callID?.let { cid ->
+                            pendingPermissions.find { it.tool?.callID == cid }
+                        }
+                        if (matchedPerm != null) {
+                            PermissionCard(
+                                request = matchedPerm,
+                                onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
+                            )
+                        } else if (name == "task") {
                             val summary = toolSummary(name, input, resultText)
-                            if (name == "task") {
-                                TaskToolLine(
-                                    item = displayItem,
-                                    summary = summary,
-                                    onNavigate = onNavigateToSubtask,
-                                )
-                            } else if (summary.isBlock) {
-                                BlockToolLine(displayItem, summary)
-                            } else {
-                                InlineToolLine(displayItem)
+                            val subtaskSessionID = remember(metadata, resultText) {
+                                metadata?.str("sessionId")
+                                    ?: resultText?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
                             }
+                            val subtaskPerms = subtaskSessionID?.let { sid ->
+                                pendingPermissions.filter { it.sessionID == sid }
+                            } ?: emptyList()
+                            val subtaskQs = subtaskSessionID?.let { sid ->
+                                pendingQuestions.filter { it.sessionID == sid }
+                            } ?: emptyList()
+                            TaskToolLine(
+                                item = displayItem,
+                                summary = summary,
+                                onNavigate = onNavigateToSubtask,
+                                subtaskPermissions = subtaskPerms,
+                                subtaskQuestions = subtaskQs,
+                                onReplyPermission = onReplyPermission,
+                                onReplyQuestion = onReplyQuestion,
+                                onRejectQuestion = onRejectQuestion,
+                            )
+                        } else if (status == "pending") {
+                            PendingToolLine(displayItem)
+                        } else {
+                            RunningToolLine(displayItem)
+                        }
+                    } else if (name == "task") {
+                        val summary = toolSummary(name, input, resultText)
+                        TaskToolLine(
+                            item = displayItem,
+                            summary = summary,
+                            onNavigate = onNavigateToSubtask,
+                        )
+                    } else if (status == "error") {
+                        ErrorToolLine(displayItem)
+                    } else {
+                        val summary = toolSummary(name, input, resultText)
+                        if (summary.isBlock) {
+                            BlockToolLine(displayItem, summary)
+                        } else {
+                            InlineToolLine(displayItem)
                         }
                     }
                 }
@@ -255,6 +387,46 @@ fun AssistantMessageItem(data: JsonObject, showReasoning: Boolean = true, onNavi
                             }
                         }
                     }
+                }
+                "step-start" -> {}
+                "step-finish" -> {}
+                "agent" -> {
+                    val agentName = obj["name"]?.jsonPrimitive?.contentOrNull ?: ""
+                    Text(
+                        text = "▸ agent: $agentName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AgentColor,
+                        modifier = Modifier.padding(vertical = 1.dp),
+                    )
+                }
+                "subtask" -> {
+                    val desc = obj["description"]?.jsonPrimitive?.contentOrNull
+                        ?: obj["prompt"]?.jsonPrimitive?.contentOrNull ?: ""
+                    Text(
+                        text = "▸ subtask: $desc",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AgentColor,
+                        modifier = Modifier.padding(vertical = 1.dp),
+                    )
+                }
+                "compaction" -> {
+                    Text(
+                        text = "▸ compaction",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 1.dp),
+                    )
+                }
+                "retry" -> {
+                    val attempt = obj["attempt"]?.jsonPrimitive?.intOrNull
+                    val error = obj["error"]?.jsonPrimitive?.contentOrNull
+                    val retryText = "▸ retry" + (attempt?.let { " #$it" } ?: "") + (error?.let { ": $it" } ?: "")
+                    Text(
+                        text = retryText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 1.dp),
+                    )
                 }
             }
         }

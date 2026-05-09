@@ -222,7 +222,7 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
     }
 }
 
-private fun parseQuestionArgs(args: String?): List<QuestionInfo>? {
+internal fun parseQuestionArgs(args: String?): List<QuestionInfo>? {
     if (args == null) return null
     try {
         val root = questionJson.parseToJsonElement(args).jsonObject

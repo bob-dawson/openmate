@@ -4,6 +4,7 @@ import com.openmate.core.data.sse.QuestionEventHandler
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.toDomain
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -33,7 +34,17 @@ class QuestionRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun refresh(directory: String) {}
+    override suspend fun refresh(directory: String) {
+        try {
+            val questions = api.listQuestions(directory.ifBlank { null })
+            for (q in questions) {
+                pendingMap[q.id] = q.toDomain()
+            }
+            _pending.value = pendingMap.values.toList()
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
 
     override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) {
         try {
