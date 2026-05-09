@@ -35,6 +35,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 object AttachmentBridge {
     var pendingPath: String? = null
@@ -504,7 +508,13 @@ class SessionDetailViewModel @Inject constructor(
                     Log.d(TAG, "observeMessages: ${list.size} messages for $sessionID")
                     _messages.value = list
                     val lastAssistant = list.lastOrNull { it.type == "assistant" }
-                    val isStillStreaming = lastAssistant?.completedAt == null
+                    val lastAssistantFinish = lastAssistant?.let {
+                        runCatching {
+                            val data = Json.parseToJsonElement(it.data).jsonObject
+                            data["finish"]?.jsonPrimitive?.contentOrNull
+                        }.getOrNull()
+                    }
+                    val isStillStreaming = lastAssistant?.completedAt == null || lastAssistantFinish != "stop"
                     _isStreaming.value = isStillStreaming
                     _streamingAssistantId.value = list
                         .filter { it.type == "assistant" && it.completedAt == null }
