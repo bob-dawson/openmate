@@ -206,7 +206,9 @@ class EventReplayer {
                     content.add(buildJsonObject { put("type", "text"); put("text", "") })
                     val updated = cached.toMutableMap()
                     updated["content"] = JsonArray(content)
-                    updateCache(JsonObject(updated))
+                    val merged = JsonObject(updated)
+                    setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.text.ended" -> {
@@ -242,7 +244,9 @@ class EventReplayer {
                     })
                     val updated = cached.toMutableMap()
                     updated["content"] = JsonArray(content)
-                    updateCache(JsonObject(updated))
+                    val merged = JsonObject(updated)
+                    setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.tool.called" -> {
@@ -265,7 +269,9 @@ class EventReplayer {
                     mutableContent[toolIdx] = JsonObject(toolObj)
                     val updated = cached.toMutableMap()
                     updated["content"] = JsonArray(mutableContent)
-                    updateCache(JsonObject(updated))
+                    val merged = JsonObject(updated)
+                    setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.tool.success" -> {
@@ -333,7 +339,9 @@ class EventReplayer {
                     })
                     val updated = cached.toMutableMap()
                     updated["content"] = JsonArray(content)
-                    updateCache(JsonObject(updated))
+                    val merged = JsonObject(updated)
+                    setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
                 "session.next.reasoning.ended" -> {
