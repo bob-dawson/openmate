@@ -35,6 +35,9 @@ fun SessionMessageRenderer(
 
     when (entity.type) {
         "user" -> {
+            val hasText = dataJson["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+            val hasFiles = dataJson["files"]?.jsonArray?.isNotEmpty() == true || dataJson["content"]?.jsonArray?.any { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "file" } == true
+            if (!hasText && !hasFiles) return
             Column(modifier = Modifier.fillMaxWidth()) {
                 UserMessageItem(dataJson)
                 MessageMetadata(
@@ -46,6 +49,19 @@ fun SessionMessageRenderer(
             }
         }
         "assistant" -> {
+            val content = dataJson["content"]?.jsonArray
+            val hasVisible = content?.any { item ->
+                val obj = item.jsonObject
+                val type = obj["type"]?.jsonPrimitive?.contentOrNull
+                when (type) {
+                    "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                    "tool" -> true
+                    "reasoning" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                    "file" -> true
+                    else -> false
+                }
+            } == true
+            if (!hasVisible) return
             val modelName = dataJson["model"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
             AssistantMessageItem(dataJson, showReasoning, onNavigateToSubtask)
             MessageMetadata(
