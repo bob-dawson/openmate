@@ -26,6 +26,7 @@ fun SessionMessageRenderer(
     entity: SessionMessage,
     showReasoning: Boolean = true,
     isQueued: Boolean = false,
+    userModelName: String? = null,
     onFullContentRequest: (messageId: String) -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
 ) {
@@ -43,7 +44,7 @@ fun SessionMessageRenderer(
                 MessageMetadata(
                     timeCreated = entity.timeCreated,
                     completedAt = null,
-                    modelName = null,
+                    modelName = userModelName,
                     isQueued = isQueued,
                 )
             }

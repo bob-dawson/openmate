@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
@@ -303,10 +307,26 @@ fun SessionDetailScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
                     items(messages, key = { it.id }) { entity ->
+                        val userModelName = if (entity.type == "user") {
+                            val idx = messages.indexOf(entity)
+                            if (idx > 0) {
+                                val prev = messages[idx - 1]
+                                if (prev.type == "model-switched") {
+                                    runCatching {
+                                        val data = Json.parseToJsonElement(prev.data).jsonObject
+                                        val model = data["model"]?.jsonObject
+                                        val provider = model?.get("providerID")?.jsonPrimitive?.contentOrNull ?: ""
+                                        val modelId = model?.get("id")?.jsonPrimitive?.contentOrNull ?: ""
+                                        if (provider.isNotBlank()) "$provider/$modelId" else modelId
+                                    }.getOrNull()
+                                } else null
+                            } else null
+                        } else null
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning,
                             isQueued = entity.type == "user" && streamingAssistantId != null && entity.id > streamingAssistantId!!,
+                            userModelName = userModelName,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },

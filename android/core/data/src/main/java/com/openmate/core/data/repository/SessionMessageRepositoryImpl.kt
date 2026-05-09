@@ -15,6 +15,9 @@ import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.network.SyncApiClient
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import androidx.room.withTransaction
 import javax.inject.Inject
 
@@ -86,10 +89,11 @@ class SessionMessageRepositoryImpl @Inject constructor(
             }
             val prev = coalesced[key]
             if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
+                val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
                 coalesced[key] = ReplayChange.Insert(prev.entity.copy(
                     data = change.data.toString(),
                     timeUpdated = change.timeUpdated,
-                    completedAt = change.completedAt ?: prev.entity.completedAt,
+                    completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
                 ))
             } else {
                 coalesced[key] = change
@@ -104,6 +108,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     }
                     is ReplayChange.Update -> {
                         val existing = db.sessionMessageDao().getById(change.id) ?: continue
+                        val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
                         db.sessionMessageDao().upsert(SessionMessageEntity(
                             id = change.id,
                             sessionId = existing.sessionId,
@@ -111,7 +116,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             data = change.data.toString(),
                             timeCreated = existing.timeCreated,
                             timeUpdated = change.timeUpdated,
-                            completedAt = change.completedAt ?: existing.completedAt,
+                            completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
                         ))
                     }
                 }
