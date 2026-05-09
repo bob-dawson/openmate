@@ -331,6 +331,11 @@ fun SessionDetailScreen(
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },
                             onNavigateToSubtask = onNavigateToSubtask,
+                            pendingQuestions = pendingQuestions,
+                            pendingPermissions = pendingPermissions,
+                            onReplyQuestion = { requestID, answers -> viewModel.replyQuestion(requestID, answers) },
+                            onRejectQuestion = { requestID -> viewModel.rejectQuestion(requestID) },
+                            onReplyPermission = { requestID, reply, msg -> viewModel.replyPermission(requestID, reply, msg) },
                         )
                     }
                     if (messages.isEmpty()) {
@@ -545,21 +550,4 @@ fun SessionDetailScreen(
         )
     }
 
-    pendingQuestions.firstOrNull()?.let { question ->
-        QuestionDialog(
-            request = question,
-            onSubmit = { answers -> viewModel.replyQuestion(question.id, answers) },
-            onReject = { viewModel.rejectQuestion(question.id) },
-            onDismiss = { viewModel.rejectQuestion(question.id) },
-        )
-    }
-
-    pendingPermissions.firstOrNull()?.let { permission ->
-        PermissionDialog(
-            request = permission,
-            onAllow = { viewModel.replyPermission(permission.id, PermissionReply.ONCE) },
-            onDeny = { viewModel.replyPermission(permission.id, PermissionReply.REJECT) },
-            onDismiss = { viewModel.replyPermission(permission.id, PermissionReply.REJECT) },
-        )
-    }
 }
