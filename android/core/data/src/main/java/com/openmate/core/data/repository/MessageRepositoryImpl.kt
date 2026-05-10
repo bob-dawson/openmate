@@ -23,8 +23,7 @@ class MessageRepositoryImpl @Inject constructor(
         files: List<FileAttachment>,
         directory: String?,
     ) {
-        // TODO: reimplement using sync API
-    }
+        }
 
     override fun observeMessages(sessionID: String): Flow<List<Message>> = flowOf(emptyList())
 }
