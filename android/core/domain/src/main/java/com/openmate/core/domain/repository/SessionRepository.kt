@@ -17,4 +17,5 @@ interface SessionRepository {
     fun observeSessions(directory: String?): Flow<List<Session>>
     fun observeSession(id: String): Flow<Session?>
     fun observeWorkspaces(): Flow<List<Workspace>>
+    suspend fun updateSessionDuration(id: String, startedAt: Long?, phoneStartedAt: Long?, totalDuration: Long?)
 }

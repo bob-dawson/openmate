@@ -37,9 +37,11 @@ class QuestionRepositoryImpl @Inject constructor(
     override suspend fun refresh(directory: String) {
         try {
             val questions = api.listQuestions(directory.ifBlank { null })
+            val apiIds = questions.map { it.id }.toSet()
             for (q in questions) {
                 pendingMap[q.id] = q.toDomain()
             }
+            pendingMap.keys.retainAll { it in apiIds }
             _pending.value = pendingMap.values.toList()
         } catch (e: Exception) {
             // ignore
@@ -49,8 +51,9 @@ class QuestionRepositoryImpl @Inject constructor(
     override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) {
         try {
             api.replyQuestion(requestID, answers, directory)
-        } finally {
+        } catch (e: Exception) {
             pendingMap.remove(requestID)
+        } finally {
             _pending.value = pendingMap.values.toList()
         }
     }
@@ -58,8 +61,9 @@ class QuestionRepositoryImpl @Inject constructor(
     override suspend fun reject(requestID: String, directory: String?) {
         try {
             api.rejectQuestion(requestID, directory)
-        } finally {
+        } catch (e: Exception) {
             pendingMap.remove(requestID)
+        } finally {
             _pending.value = pendingMap.values.toList()
         }
     }

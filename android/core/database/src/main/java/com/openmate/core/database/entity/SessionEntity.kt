@@ -26,6 +26,9 @@ data class SessionEntity(
     val isArchived: Boolean = false,
     val status: String? = null,
     val syncAnchor: String? = null,
+    val startedAt: Long? = null,
+    val phoneStartedAt: Long? = null,
+    val totalDuration: Long? = null,
 )
 
 fun SessionEntity.toDomain(): Session {
@@ -41,6 +44,9 @@ fun SessionEntity.toDomain(): Session {
         isCompacting = isCompacting,
         isArchived = isArchived,
         status = status?.let { runCatching { SessionStatus.valueOf(it) }.getOrNull() },
+        startedAt = startedAt,
+        phoneStartedAt = phoneStartedAt,
+        totalDuration = totalDuration,
     )
 }
 
@@ -58,5 +64,8 @@ fun Session.toEntity(): SessionEntity {
         isArchived = isArchived,
         status = status?.name,
         syncAnchor = null,
+        startedAt = startedAt,
+        phoneStartedAt = phoneStartedAt,
+        totalDuration = totalDuration,
     )
 }

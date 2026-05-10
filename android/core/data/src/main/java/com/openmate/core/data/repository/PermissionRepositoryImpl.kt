@@ -37,9 +37,11 @@ class PermissionRepositoryImpl @Inject constructor(
     override suspend fun refresh(directory: String) {
         try {
             val permissions = api.listPermissions(directory.ifBlank { null })
+            val apiIds = permissions.map { it.id }.toSet()
             for (p in permissions) {
                 pendingMap[p.id] = p.toDomain()
             }
+            pendingMap.keys.retainAll { it in apiIds }
             _pending.value = pendingMap.values.toList()
         } catch (e: Exception) {
             // ignore
@@ -49,8 +51,9 @@ class PermissionRepositoryImpl @Inject constructor(
     override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) {
         try {
             api.replyPermission(requestID, reply.value, message, directory)
-        } finally {
+        } catch (e: Exception) {
             pendingMap.remove(requestID)
+        } finally {
             _pending.value = pendingMap.values.toList()
         }
     }

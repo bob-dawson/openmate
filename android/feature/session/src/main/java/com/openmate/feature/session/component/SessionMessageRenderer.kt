@@ -46,6 +46,7 @@ fun SessionMessageRenderer(
     onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
     onRejectQuestion: (String) -> Unit = {},
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
+    runningAnchors: Map<String, Long> = emptyMap(),
 ) {
     val dataJson = remember(entity.data) {
         runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull()
@@ -59,10 +60,12 @@ fun SessionMessageRenderer(
             Column(modifier = Modifier.fillMaxWidth()) {
                 UserMessageItem(dataJson)
                 MessageMetadata(
+                    messageId = entity.id,
                     timeCreated = entity.timeCreated,
                     completedAt = null,
                     modelName = userModelName,
                     isQueued = isQueued,
+                    runningAnchors = runningAnchors,
                 )
             }
         }
@@ -96,6 +99,7 @@ fun SessionMessageRenderer(
                 onReplyPermission = onReplyPermission,
             )
             MessageMetadata(
+                messageId = entity.id,
                 timeCreated = entity.timeCreated,
                 completedAt = entity.completedAt,
                 modelName = modelName,
@@ -103,6 +107,7 @@ fun SessionMessageRenderer(
                 isStepRunning = isStepRunning,
                 toolCount = toolCount,
                 finish = finish,
+                runningAnchors = runningAnchors,
             )
         }
         "synthetic" -> { }
@@ -112,6 +117,7 @@ fun SessionMessageRenderer(
 
 @Composable
 private fun MessageMetadata(
+    messageId: String,
     timeCreated: Long,
     completedAt: Long?,
     modelName: String?,
@@ -119,14 +125,15 @@ private fun MessageMetadata(
     isStepRunning: Boolean = false,
     toolCount: Int = 0,
     finish: String? = null,
+    runningAnchors: Map<String, Long> = emptyMap(),
 ) {
     if (timeCreated <= 0) return
     val timeText = timeCreated.toTimeString()
 
     val durationText = if (isStepRunning) {
-        val phoneAnchor = remember { SystemClock.elapsedRealtime() }
+        val phoneAnchor = runningAnchors[messageId] ?: SystemClock.elapsedRealtime()
         var elapsed by remember { mutableStateOf(SystemClock.elapsedRealtime() - phoneAnchor) }
-        LaunchedEffect(Unit) {
+        LaunchedEffect(phoneAnchor) {
             while (true) {
                 delay(1000)
                 elapsed = SystemClock.elapsedRealtime() - phoneAnchor
@@ -216,7 +223,7 @@ fun AssistantMessageItem(
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
 ) {
     val content = data["content"]?.jsonArray ?: return
-    val reasoningExpanded = remember { mutableStateOf(true) }
+    val reasoningExpanded = remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
         for (item in content) {

@@ -12,4 +12,7 @@ data class Session(
     val isCompacting: Boolean = false,
     val isArchived: Boolean = false,
     val status: SessionStatus? = null,
+    val startedAt: Long? = null,
+    val phoneStartedAt: Long? = null,
+    val totalDuration: Long? = null,
 )

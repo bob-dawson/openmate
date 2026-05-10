@@ -265,6 +265,8 @@ class EventReplayer {
                         put("input", props["input"] ?: JsonObject(emptyMap()))
                         put("structured", JsonObject(emptyMap()))
                         put("content", JsonArray(emptyList()))
+                        props["title"]?.jsonPrimitive?.contentOrNull?.let { put("title", it) }
+                        props["metadata"]?.jsonObject?.let { put("metadata", it) }
                     }
                     mutableContent[toolIdx] = JsonObject(toolObj)
                     val updated = cached.toMutableMap()
@@ -283,11 +285,17 @@ class EventReplayer {
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
                     val prevState = toolObj["state"]?.jsonObject ?: return
                     val prevInput = prevState["input"] ?: JsonObject(emptyMap())
+                    val prevTitle = prevState["title"]?.jsonPrimitive?.contentOrNull
+                    val prevMetadata = prevState["metadata"]?.jsonObject
                     toolObj["state"] = buildJsonObject {
                         put("status", "completed")
                         put("input", prevInput)
                         put("structured", props["structured"] ?: JsonObject(emptyMap()))
                         put("content", props["content"] ?: JsonArray(emptyList()))
+                        prevTitle?.let { put("title", it) }
+                        prevMetadata?.let { put("metadata", it) }
+                        props["title"]?.jsonPrimitive?.contentOrNull?.let { put("title", it) }
+                        props["metadata"]?.jsonObject?.let { put("metadata", it) }
                     }
                     toolObj["provider"] = (props["provider"]?.jsonObject ?: buildJsonObject {})
                     val timeObj = toolObj["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
@@ -309,12 +317,16 @@ class EventReplayer {
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
                     val prevState = toolObj["state"]?.jsonObject ?: return
+                    val prevTitle = prevState["title"]?.jsonPrimitive?.contentOrNull
+                    val prevMetadata = prevState["metadata"]?.jsonObject
                     toolObj["state"] = buildJsonObject {
                         put("status", "error")
                         put("error", props["error"] ?: buildJsonObject {})
                         put("input", prevState["input"] ?: JsonObject(emptyMap()))
                         put("structured", prevState["structured"] ?: JsonObject(emptyMap()))
                         put("content", prevState["content"] ?: JsonArray(emptyList()))
+                        prevTitle?.let { put("title", it) }
+                        prevMetadata?.let { put("metadata", it) }
                     }
                     toolObj["provider"] = (props["provider"]?.jsonObject ?: buildJsonObject {})
                     val timeObj = toolObj["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()

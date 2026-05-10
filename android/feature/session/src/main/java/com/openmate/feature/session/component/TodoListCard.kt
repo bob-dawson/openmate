@@ -28,8 +28,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.openmate.feature.session.R
 import com.openmate.core.domain.model.TodoInfo
+import com.openmate.feature.session.R
 
 @Composable
 fun TodoListCard(
@@ -71,24 +71,25 @@ fun TodoListCard(
             if (pending > 0) {
                 StatusBadge(count = pending, label = stringResource(R.string.todo_pending), color = Muted)
             }
-            if (completed > 0) {
+            if (completed > 0 && expanded.value) {
                 StatusBadge(count = completed, label = stringResource(R.string.todo_completed), color = Success)
             }
             Spacer(modifier = Modifier.weight(1f))
-            if (todos.size > activeTodos.size) {
-                Text(
-                    text = if (expanded.value) stringResource(R.string.todo_collapse) else stringResource(R.string.todo_expand),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (expanded.value) Primary else Muted,
-                    fontWeight = if (expanded.value) FontWeight.Medium else FontWeight.Normal,
-                )
-            }
+            Text(
+                text = if (expanded.value) stringResource(R.string.todo_collapse) else stringResource(R.string.todo_expand),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (expanded.value) Primary else Muted,
+                fontWeight = if (expanded.value) FontWeight.Medium else FontWeight.Normal,
+            )
         }
 
-        val displayTodos = if (expanded.value) {
+        val sortedTodos = if (expanded.value) {
             todos
         } else {
-            activeTodos.take(3)
+            val inProgressItems = todos.filter { it.status == "in_progress" }
+            val pendingItems = todos.filter { it.status == "pending" }
+            val rest = todos.filter { it.status != "in_progress" && it.status != "pending" }
+            (inProgressItems + pendingItems + rest).take(3)
         }
 
         Column(
@@ -97,7 +98,7 @@ fun TodoListCard(
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            displayTodos.forEach { todo ->
+            sortedTodos.forEach { todo ->
                 TodoItemRow(todo, expanded.value)
             }
         }
@@ -201,7 +202,7 @@ private fun TodoItemRow(todo: TodoInfo, expanded: Boolean = false) {
                 "completed", "cancelled" -> Muted
                 else -> MaterialTheme.colorScheme.onSurface
             },
-            maxLines = if (expanded) Int.MAX_VALUE else 2,
+            maxLines = if (expanded) Int.MAX_VALUE else 1,
             overflow = TextOverflow.Ellipsis,
             textDecoration = if (todo.status == "completed" || todo.status == "cancelled") {
                 TextDecoration.LineThrough

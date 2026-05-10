@@ -68,6 +68,20 @@ class SessionDetailViewModel @Inject constructor(
     private val _streamingAssistantId = MutableStateFlow<String?>(null)
     val streamingAssistantId: StateFlow<String?> = _streamingAssistantId.asStateFlow()
 
+    private val _runningAnchors = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val runningAnchors: StateFlow<Map<String, Long>> = _runningAnchors.asStateFlow()
+
+    private val _sessionStartedAt = MutableStateFlow<Long?>(null)
+    val sessionStartedAt: StateFlow<Long?> = _sessionStartedAt.asStateFlow()
+
+    private val _phoneStartedAt = MutableStateFlow<Long?>(null)
+    val phoneStartedAt: StateFlow<Long?> = _phoneStartedAt.asStateFlow()
+
+    private val _sessionTotalDuration = MutableStateFlow<Long?>(null)
+    val sessionTotalDuration: StateFlow<Long?> = _sessionTotalDuration.asStateFlow()
+
+    private var wasBusy = false
+
     private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
     val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
 
@@ -207,6 +221,13 @@ class SessionDetailViewModel @Inject constructor(
                     _sessionTitle.value = session.title
                 }
                 currentDirectory = session?.directory ?: ""
+                if (session?.startedAt != null && _sessionStartedAt.value == null) {
+                    _sessionStartedAt.value = session.startedAt
+                    _phoneStartedAt.value = session.phoneStartedAt
+                }
+                if (session?.totalDuration != null && _sessionTotalDuration.value == null) {
+                    _sessionTotalDuration.value = session.totalDuration
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "loadSession title API failed", e)
             }
@@ -284,6 +305,12 @@ class SessionDetailViewModel @Inject constructor(
                 } catch (e: Exception) {
                     Log.e(TAG, "poll sync failed", e)
                 }
+                try {
+                    questionRepository.refresh(currentDirectory.ifBlank { "/" })
+                    permissionRepository.refresh(currentDirectory.ifBlank { "/" })
+                } catch (e: Exception) {
+                    Log.e(TAG, "poll question/permission refresh failed", e)
+                }
             }
         }
     }
@@ -305,11 +332,20 @@ class SessionDetailViewModel @Inject constructor(
         val files = _attachedFiles.value
         _attachedFiles.value = emptyList()
         clearDraft(sessionID)
+        if (_phoneStartedAt.value == null) {
+            val phoneStarted = System.currentTimeMillis()
+            _phoneStartedAt.value = phoneStarted
+            _sessionStartedAt.value = _sessionStartedAt.value ?: phoneStarted
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    sessionRepository.updateSessionDuration(currentSessionID!!, _sessionStartedAt.value, phoneStarted, null)
+                } catch (_: Exception) {}
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
                 apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null })
-                delay(500)
                 sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -531,6 +567,53 @@ class SessionDetailViewModel @Inject constructor(
                     _streamingAssistantId.value = list
                         .filter { it.type == "assistant" && it.completedAt == null }
                         .maxByOrNull { it.id }?.id
+
+                    val isNowBusy = isStillStreaming
+                    if (isNowBusy && !wasBusy) {
+                        if (_phoneStartedAt.value == null) {
+                            val firstRunning = list.lastOrNull { it.type == "assistant" && it.completedAt == null }
+                            if (firstRunning != null) {
+                                val pcStarted = firstRunning.timeCreated
+                                val phoneStarted = System.currentTimeMillis()
+                                _sessionStartedAt.value = pcStarted
+                                _phoneStartedAt.value = phoneStarted
+                                viewModelScope.launch(Dispatchers.IO) {
+                                    try {
+                                        sessionRepository.updateSessionDuration(currentSessionID!!, pcStarted, phoneStarted, null)
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                        }
+                    } else if (!isNowBusy && wasBusy) {
+                        val started = _sessionStartedAt.value
+                        val phoneStarted = _phoneStartedAt.value
+                        if (started != null && phoneStarted != null) {
+                            val duration = System.currentTimeMillis() - phoneStarted
+                            _sessionTotalDuration.value = duration
+                            viewModelScope.launch(Dispatchers.IO) {
+                                try {
+                                    sessionRepository.updateSessionDuration(currentSessionID!!, started, phoneStarted, duration)
+                                } catch (_: Exception) {}
+                            }
+                            _sessionStartedAt.value = null
+                            _phoneStartedAt.value = null
+                        }
+                    }
+                    wasBusy = isNowBusy
+
+                    val anchors = _runningAnchors.value.toMutableMap()
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    for (msg in list) {
+                        if (msg.type == "assistant" && msg.completedAt == null) {
+                            val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
+                            val finish = data?.get("finish")?.jsonPrimitive?.contentOrNull
+                            if (finish == null && !anchors.containsKey(msg.id)) {
+                                anchors[msg.id] = now
+                            }
+                        }
+                    }
+                    anchors.keys.retainAll { id -> list.any { it.id == id && it.completedAt == null } }
+                    _runningAnchors.value = anchors
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeMessages failed", e)

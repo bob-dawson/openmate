@@ -340,7 +340,7 @@ fun PartColumn(
     modifier: Modifier = Modifier,
     showReasoning: Boolean = true,
 ) {
-    val reasoningExpanded = remember { mutableStateOf(true) }
+    val reasoningExpanded = remember { mutableStateOf(false) }
     val displayItems = parts.toDisplayItems(isUser, showReasoning)
 
     Column(modifier = modifier) {

@@ -48,6 +48,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -74,6 +76,8 @@ import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
 import com.openmate.feature.session.component.TodoListCard
 import com.openmate.core.domain.model.PermissionReply
+import com.openmate.core.common.formatDurationMillis
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +93,10 @@ fun SessionDetailScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     val streamingAssistantId by viewModel.streamingAssistantId.collectAsState()
+    val runningAnchors by viewModel.runningAnchors.collectAsState()
+    val sessionStartedAt by viewModel.sessionStartedAt.collectAsState()
+    val phoneStartedAt by viewModel.phoneStartedAt.collectAsState()
+    val sessionTotalDuration by viewModel.sessionTotalDuration.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -119,24 +127,23 @@ fun SessionDetailScreen(
     var showSearch by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     var userNavigating by remember { mutableStateOf(false) }
-
-    SmartAutoScroll(listState, messages.size, isLoading, userNavigating)
-
-    val notAtBottom by remember {
-        derivedStateOf { listState.canScrollForward }
-    }
-
-    var wasAtBottomBeforeIME by remember { mutableStateOf(true) }
-
-    LaunchedEffect(notAtBottom) {
-        if (!notAtBottom) wasAtBottomBeforeIME = true
-    }
+    var imeAnimating by remember { mutableStateOf(false) }
+    var prevImeBottom by remember { mutableIntStateOf(0) }
 
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottom) {
-        if (imeBottom > 100 && wasAtBottomBeforeIME && messages.size > 0) {
-            listState.animateScrollToItem(messages.size)
+        if (imeBottom != prevImeBottom) {
+            prevImeBottom = imeBottom
+            imeAnimating = true
+            delay(350)
+            imeAnimating = false
         }
+    }
+
+    SmartAutoScroll(listState, messages.size, isLoading, userNavigating, imeAnimating)
+
+    val notAtBottom by remember {
+        derivedStateOf { listState.canScrollForward }
     }
 
     LaunchedEffect(sessionID) {
@@ -280,9 +287,6 @@ fun SessionDetailScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            if (isStreaming) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
             if (isUploading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
@@ -336,6 +340,7 @@ fun SessionDetailScreen(
                             onReplyQuestion = { requestID, answers -> viewModel.replyQuestion(requestID, answers) },
                             onRejectQuestion = { requestID -> viewModel.rejectQuestion(requestID) },
                             onReplyPermission = { requestID, reply, msg -> viewModel.replyPermission(requestID, reply, msg) },
+                            runningAnchors = runningAnchors,
                         )
                     }
                     if (messages.isEmpty()) {
@@ -357,12 +362,13 @@ fun SessionDetailScreen(
                 }
             }
 
-            if (selectedAgent != "build" || selectedModel != null) {
+            if (selectedAgent != "build" || selectedModel != null || phoneStartedAt != null || sessionTotalDuration != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (selectedAgent != "build") {
                         Box(
@@ -393,6 +399,36 @@ fun SessionDetailScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                    }
+                    if (phoneStartedAt != null) {
+                        var elapsed by remember(phoneStartedAt) { mutableStateOf(System.currentTimeMillis() - phoneStartedAt!!) }
+                        LaunchedEffect(phoneStartedAt) {
+                            while (true) {
+                                delay(1000)
+                                elapsed = System.currentTimeMillis() - phoneStartedAt!!
+                            }
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                text = formatDurationMillis(elapsed),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    } else if (sessionTotalDuration != null) {
+                        Text(
+                            text = formatDurationMillis(sessionTotalDuration!!),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

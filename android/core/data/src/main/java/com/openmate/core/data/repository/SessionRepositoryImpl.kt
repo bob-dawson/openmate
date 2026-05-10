@@ -26,13 +26,17 @@ class SessionRepositoryImpl @Inject constructor(
         val entities = dtos.map { dto ->
             val domain = dto.toDomain()
             val existing = existingMap[domain.id]
-            val existingStatus = existing?.status
-            if (existingStatus != null) {
-                val dbStatus = runCatching { SessionStatus.valueOf(existingStatus) }.getOrNull()
-                domain.copy(status = dbStatus)
+            if (existing != null) {
+                val dbStatus = runCatching { SessionStatus.valueOf(existing.status ?: "") }.getOrNull()
+                domain.copy(
+                    status = dbStatus ?: domain.status,
+                    phoneStartedAt = existing.phoneStartedAt,
+                    startedAt = existing.startedAt,
+                    totalDuration = existing.totalDuration,
+                ).toEntity()
             } else {
-                domain
-            }.toEntity()
+                domain.toEntity()
+            }
         }
         dao.upsertAll(entities)
         return dao.getAll().map { it.toDomain() }
@@ -44,10 +48,14 @@ class SessionRepositoryImpl @Inject constructor(
             val domain = dto.toDomain()
             val dao = dbProvider.getActive().sessionDao()
             val existing = dao.getById(id)
-            val existingStatus = existing?.status
-            val merged = if (existingStatus != null) {
-                val dbStatus = runCatching { SessionStatus.valueOf(existingStatus) }.getOrNull()
-                domain.copy(status = dbStatus)
+            val merged = if (existing != null) {
+                val dbStatus = runCatching { SessionStatus.valueOf(existing.status ?: "") }.getOrNull()
+                domain.copy(
+                    status = dbStatus ?: domain.status,
+                    phoneStartedAt = existing.phoneStartedAt,
+                    startedAt = existing.startedAt,
+                    totalDuration = existing.totalDuration,
+                )
             } else {
                 domain
             }
@@ -169,5 +177,9 @@ class SessionRepositoryImpl @Inject constructor(
                 }
                 .sortedByDescending { it.latestUpdatedAt }
         }
+    }
+
+    override suspend fun updateSessionDuration(id: String, startedAt: Long?, phoneStartedAt: Long?, totalDuration: Long?) {
+        dbProvider.getActive().sessionDao().updateDuration(id, startedAt, phoneStartedAt, totalDuration)
     }
 }

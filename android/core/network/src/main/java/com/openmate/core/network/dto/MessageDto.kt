@@ -9,9 +9,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 
 @Serializable
 data class MessageWithPartsDto(
@@ -113,6 +115,7 @@ data class ToolStateDto(
     val output: String? = null,
     val title: String? = null,
     val metadata: JsonElement? = null,
+    val structured: JsonElement? = null,
     val time: JsonElement? = null,
     val error: String? = null,
     val raw: String? = null,
@@ -144,21 +147,31 @@ fun PartDto.toDomain(): Part {
             synthetic = synthetic ?: false,
             ignored = ignored ?: false,
         )
-        "tool" -> Part.ToolInvocationPart(
-            id = id,
-            toolCallID = callID ?: "",
-            toolName = tool ?: "",
-            state = when (state?.status) {
-                "pending" -> ToolCallState.PENDING
-                "running" -> ToolCallState.RUNNING
-                "completed" -> ToolCallState.COMPLETED
-                "error" -> ToolCallState.ERROR
-                else -> ToolCallState.PENDING
-            },
-            args = state?.input?.toString(),
-            result = state?.output,
-            metadata = (state?.metadata as? JsonObject),
-        )
+        "tool" -> {
+            val metaObj = (state?.metadata as? JsonObject)
+            val structSessionId = (state?.structured as? JsonObject)?.get("sessionId")?.jsonPrimitive?.content
+            Part.ToolInvocationPart(
+                id = id,
+                toolCallID = callID ?: "",
+                toolName = tool ?: "",
+                state = when (state?.status) {
+                    "pending" -> ToolCallState.PENDING
+                    "running" -> ToolCallState.RUNNING
+                    "completed" -> ToolCallState.COMPLETED
+                    "error" -> ToolCallState.ERROR
+                    else -> ToolCallState.PENDING
+                },
+                args = state?.input?.toString(),
+                result = state?.output,
+                metadata = if (metaObj != null) {
+                    metaObj
+                } else if (structSessionId != null) {
+                    buildJsonObject { put("sessionId", structSessionId) }
+                } else {
+                    null
+                },
+            )
+        }
         "reasoning" -> Part.ReasoningPart(id = id, text = text ?: "")
         "step-start" -> Part.StepStartPart(id = id, snapshot = snapshot)
         "step-finish" -> Part.StepFinishPart(

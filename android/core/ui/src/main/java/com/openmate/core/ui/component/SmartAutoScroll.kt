@@ -17,20 +17,28 @@ fun SmartAutoScroll(
     messageCount: Int,
     isLoading: Boolean,
     userNavigating: Boolean = false,
+    imeAnimating: Boolean = false,
 ) {
     var followBottom by remember { mutableStateOf(true) }
     var autoScrolling by remember { mutableStateOf(false) }
     var prevCount by remember { mutableIntStateOf(0) }
-
-    if (!listState.canScrollForward && !autoScrolling) followBottom = true
+    var imeWasFollowing by remember { mutableStateOf(true) }
 
     LaunchedEffect(userNavigating) {
         if (userNavigating) followBottom = false
     }
 
     LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress && listState.canScrollForward && !autoScrolling) {
-            followBottom = false
+        if (!autoScrolling && !imeAnimating) {
+            if (listState.isScrollInProgress) {
+                if (listState.canScrollForward) {
+                    followBottom = false
+                }
+            } else {
+                if (!listState.canScrollForward) {
+                    followBottom = true
+                }
+            }
         }
     }
 
@@ -52,11 +60,13 @@ fun SmartAutoScroll(
     }
 
     LaunchedEffect(messageCount) {
-        if (messageCount > 0 && !isLoading) {
+        if (messageCount > 0) {
             val isInitialLoad = prevCount == 0
             prevCount = messageCount
-            if (isInitialLoad || followBottom) {
-                if (isInitialLoad) delay(150)
+            if (isInitialLoad) {
+                delay(150)
+                scrollToBottom()
+            } else if (!isLoading && followBottom && !userNavigating) {
                 scrollToBottom()
             }
         } else {
@@ -65,7 +75,15 @@ fun SmartAutoScroll(
     }
 
     LaunchedEffect(needScroll) {
-        if (messageCount > 0 && !isLoading && needScroll) {
+        if (messageCount > 0 && !isLoading && needScroll && !userNavigating) {
+            scrollToBottom()
+        }
+    }
+
+    LaunchedEffect(imeAnimating) {
+        if (imeAnimating) {
+            imeWasFollowing = followBottom
+        } else if (imeWasFollowing && messageCount > 0) {
             scrollToBottom()
         }
     }

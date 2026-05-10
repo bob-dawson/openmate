@@ -1,12 +1,12 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 12,
-    "identityHash": "e1777ffc1dea596cc3ffd1c6fb1625b6",
+    "version": 15,
+    "identityHash": "70da94c1f31f87cc71fffdde87311545",
     "entities": [
       {
         "tableName": "SessionEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `directory` TEXT NOT NULL, `projectID` TEXT NOT NULL, `workspaceID` TEXT, `parentID` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isCompacting` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `status` TEXT, `syncAnchor` TEXT, `startedAt` INTEGER, `totalDuration` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `directory` TEXT NOT NULL, `projectID` TEXT NOT NULL, `workspaceID` TEXT, `parentID` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isCompacting` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `status` TEXT, `syncAnchor` TEXT, `startedAt` INTEGER, `phoneStartedAt` INTEGER, `totalDuration` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -79,6 +79,11 @@
           {
             "fieldPath": "startedAt",
             "columnName": "startedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "phoneStartedAt",
+            "columnName": "phoneStartedAt",
             "affinity": "INTEGER"
           },
           {
@@ -250,11 +255,35 @@
             "sessionId"
           ]
         }
+      },
+      {
+        "tableName": "TodoEntity",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionID` TEXT NOT NULL, `todos` TEXT NOT NULL, PRIMARY KEY(`sessionID`))",
+        "fields": [
+          {
+            "fieldPath": "sessionID",
+            "columnName": "sessionID",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "todos",
+            "columnName": "todos",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionID"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e1777ffc1dea596cc3ffd1c6fb1625b6')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '70da94c1f31f87cc71fffdde87311545')"
     ]
   }
 }
