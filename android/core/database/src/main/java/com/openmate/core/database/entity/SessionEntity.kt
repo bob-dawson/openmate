@@ -29,6 +29,9 @@ data class SessionEntity(
     val startedAt: Long? = null,
     val phoneStartedAt: Long? = null,
     val totalDuration: Long? = null,
+    val modelProviderID: String? = null,
+    val modelID: String? = null,
+    val modelName: String? = null,
 )
 
 fun SessionEntity.toDomain(): Session {
@@ -47,6 +50,9 @@ fun SessionEntity.toDomain(): Session {
         startedAt = startedAt,
         phoneStartedAt = phoneStartedAt,
         totalDuration = totalDuration,
+        modelProviderID = modelProviderID,
+        modelID = modelID,
+        modelName = modelName,
     )
 }
 
@@ -67,5 +73,8 @@ fun Session.toEntity(): SessionEntity {
         startedAt = startedAt,
         phoneStartedAt = phoneStartedAt,
         totalDuration = totalDuration,
+        modelProviderID = modelProviderID,
+        modelID = modelID,
+        modelName = modelName,
     )
 }

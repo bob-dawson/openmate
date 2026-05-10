@@ -5,10 +5,12 @@ import com.openmate.core.network.dto.SyncMessageDto
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.contentOrNull
 
 object SessionMessageMapper {
 
     fun dtoToEntity(dto: SyncMessageDto): SessionMessageEntity {
+        val roundMark = computeRoundMark(dto.type, dto.data)
         return SessionMessageEntity(
             id = dto.id,
             sessionId = dto.sessionId,
@@ -17,7 +19,15 @@ object SessionMessageMapper {
             timeCreated = dto.timeCreated,
             timeUpdated = dto.timeUpdated,
             completedAt = extractCompletedAt(dto.data),
+            roundMark = roundMark,
         )
+    }
+
+    fun computeRoundMark(type: String, data: kotlinx.serialization.json.JsonObject): Boolean {
+        if (type != "assistant") return true
+        val finish = data["finish"]?.jsonPrimitive?.contentOrNull
+        val error = data["error"]
+        return (finish == "stop" || finish == "length") || error != null
     }
 
     private fun extractCompletedAt(data: kotlinx.serialization.json.JsonObject): Long? {

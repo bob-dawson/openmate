@@ -15,4 +15,7 @@ data class Session(
     val startedAt: Long? = null,
     val phoneStartedAt: Long? = null,
     val totalDuration: Long? = null,
+    val modelProviderID: String? = null,
+    val modelID: String? = null,
+    val modelName: String? = null,
 )

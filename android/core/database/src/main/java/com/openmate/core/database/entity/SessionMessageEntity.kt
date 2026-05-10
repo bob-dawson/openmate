@@ -20,4 +20,5 @@ data class SessionMessageEntity(
     val timeCreated: Long,
     val timeUpdated: Long,
     val completedAt: Long? = null,
+    val roundMark: Boolean = true,
 )

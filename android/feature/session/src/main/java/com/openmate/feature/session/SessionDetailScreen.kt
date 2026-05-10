@@ -92,11 +92,10 @@ fun SessionDetailScreen(
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
-    val streamingAssistantId by viewModel.streamingAssistantId.collectAsState()
+    val queuedMessageIds by viewModel.queuedMessageIds.collectAsState()
     val runningAnchors by viewModel.runningAnchors.collectAsState()
-    val sessionStartedAt by viewModel.sessionStartedAt.collectAsState()
-    val phoneStartedAt by viewModel.phoneStartedAt.collectAsState()
     val sessionTotalDuration by viewModel.sessionTotalDuration.collectAsState()
+    val currentBusyStart by viewModel.currentBusyStart.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -329,7 +328,7 @@ fun SessionDetailScreen(
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning,
-                            isQueued = entity.type == "user" && streamingAssistantId != null && entity.id > streamingAssistantId!!,
+                            isQueued = entity.id in queuedMessageIds,
                             userModelName = userModelName,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
@@ -362,7 +361,7 @@ fun SessionDetailScreen(
                 }
             }
 
-            if (selectedAgent != "build" || selectedModel != null || phoneStartedAt != null || sessionTotalDuration != null) {
+            if (selectedAgent != "build" || selectedModel != null || currentBusyStart != null || sessionTotalDuration != null) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -400,12 +399,13 @@ fun SessionDetailScreen(
                             )
                         }
                     }
-                    if (phoneStartedAt != null) {
-                        var elapsed by remember(phoneStartedAt) { mutableStateOf(System.currentTimeMillis() - phoneStartedAt!!) }
-                        LaunchedEffect(phoneStartedAt) {
+                    if (currentBusyStart != null) {
+                        val totalBase = sessionTotalDuration ?: 0L
+                        var elapsed by remember(currentBusyStart) { mutableStateOf(System.currentTimeMillis() - currentBusyStart!!) }
+                        LaunchedEffect(currentBusyStart) {
                             while (true) {
                                 delay(1000)
-                                elapsed = System.currentTimeMillis() - phoneStartedAt!!
+                                elapsed = System.currentTimeMillis() - currentBusyStart!!
                             }
                         }
                         Row(
@@ -418,7 +418,7 @@ fun SessionDetailScreen(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             Text(
-                                text = formatDurationMillis(elapsed),
+                                text = formatDurationMillis(totalBase + maxOf(0L, elapsed)),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )
