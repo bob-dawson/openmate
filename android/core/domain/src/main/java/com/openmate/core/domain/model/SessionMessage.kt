@@ -8,4 +8,5 @@ data class SessionMessage(
     val timeCreated: Long,
     val timeUpdated: Long,
     val completedAt: Long? = null,
+    val roundMark: Boolean = true,
 )

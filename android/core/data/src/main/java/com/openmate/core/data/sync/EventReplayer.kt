@@ -17,6 +17,7 @@ sealed class ReplayChange {
         val data: JsonObject,
         val timeUpdated: Long,
         val completedAt: Long? = null,
+        val roundMark: Boolean? = null,
     ) : ReplayChange()
 }
 
@@ -164,7 +165,7 @@ class EventReplayer {
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
                     setCache(event.id, "assistant", data, timestamp)
-                    changes += ReplayChange.Insert(entity(event.id, sessionId, "assistant", data, timestamp))
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "assistant", data, timestamp, roundMark = false))
                 }
 
                 "session.next.step.ended" -> {
@@ -184,7 +185,9 @@ class EventReplayer {
                     updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp)
+                    val finish = props["finish"]?.jsonPrimitive?.contentOrNull
+                    val roundMark = finish == "stop" || finish == "length"
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = roundMark)
                 }
 
                 "session.next.step.failed" -> {
@@ -197,7 +200,7 @@ class EventReplayer {
                     updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = true)
                 }
 
                 "session.next.text.started" -> {
@@ -438,7 +441,7 @@ class EventReplayer {
         } ?: System.currentTimeMillis()
     }
 
-    private fun entity(id: String, sessionId: String, type: String, data: JsonObject, timeCreated: Long): SessionMessageEntity {
+    private fun entity(id: String, sessionId: String, type: String, data: JsonObject, timeCreated: Long, roundMark: Boolean = true): SessionMessageEntity {
         return SessionMessageEntity(
             id = id,
             sessionId = sessionId,
@@ -446,6 +449,7 @@ class EventReplayer {
             data = data.toString(),
             timeCreated = timeCreated,
             timeUpdated = timeCreated,
+            roundMark = roundMark,
         )
     }
 }

@@ -51,6 +51,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     override suspend fun incrementalSync(sessionId: String) {
         val db = dbProvider.getActive()
+        db.sessionMessageDao().fixRunningAssistantRoundMark()
         val syncState = db.syncStateDao().get(sessionId) ?: run {
             Log.w("SyncRepo", "incrementalSync skip: no sync state for $sessionId")
             return
@@ -94,6 +95,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     data = change.data.toString(),
                     timeUpdated = change.timeUpdated,
                     completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
+                    roundMark = change.roundMark ?: prev.entity.roundMark,
                 ))
             } else {
                 coalesced[key] = change
@@ -117,6 +119,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             timeCreated = existing.timeCreated,
                             timeUpdated = change.timeUpdated,
                             completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
+                            roundMark = change.roundMark ?: existing.roundMark,
                         ))
                     }
                 }
@@ -152,4 +155,5 @@ private fun SessionMessageEntity.toDomain() = SessionMessage(
     timeCreated = timeCreated,
     timeUpdated = timeUpdated,
     completedAt = completedAt,
+    roundMark = roundMark,
 )

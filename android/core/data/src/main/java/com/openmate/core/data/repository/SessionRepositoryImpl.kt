@@ -33,6 +33,9 @@ class SessionRepositoryImpl @Inject constructor(
                     phoneStartedAt = existing.phoneStartedAt,
                     startedAt = existing.startedAt,
                     totalDuration = existing.totalDuration,
+                    modelProviderID = existing.modelProviderID,
+                    modelID = existing.modelID,
+                    modelName = existing.modelName,
                 ).toEntity()
             } else {
                 domain.toEntity()
@@ -55,6 +58,9 @@ class SessionRepositoryImpl @Inject constructor(
                     phoneStartedAt = existing.phoneStartedAt,
                     startedAt = existing.startedAt,
                     totalDuration = existing.totalDuration,
+                    modelProviderID = existing.modelProviderID,
+                    modelID = existing.modelID,
+                    modelName = existing.modelName,
                 )
             } else {
                 domain
@@ -179,7 +185,15 @@ class SessionRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun updateSessionDuration(id: String, startedAt: Long?, phoneStartedAt: Long?, totalDuration: Long?) {
-        dbProvider.getActive().sessionDao().updateDuration(id, startedAt, phoneStartedAt, totalDuration)
+    override suspend fun addSessionDuration(id: String, increment: Long) {
+        dbProvider.getActive().sessionDao().addDuration(id, increment)
+    }
+
+    override suspend fun updateSessionModel(id: String, providerID: String?, modelID: String?, modelName: String?) {
+        dbProvider.getActive().sessionDao().updateModel(id, providerID, modelID, modelName)
+    }
+
+    override suspend fun updateSessionStatus(id: String, status: String) {
+        dbProvider.getActive().sessionDao().updateStatus(id, status)
     }
 }
