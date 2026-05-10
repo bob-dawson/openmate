@@ -79,6 +79,7 @@ class SessionDetailViewModel @Inject constructor(
     val currentBusyStart: StateFlow<Long?> = _currentBusyStart.asStateFlow()
 
     private var wasBusy = false
+    private val _sessionStatus = MutableStateFlow("")
 
     private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
     val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
@@ -206,6 +207,7 @@ class SessionDetailViewModel @Inject constructor(
         _selectedModel.value = null
         _sessionTotalDuration.value = null
         _currentBusyStart.value = null
+        _sessionStatus.value = ""
         wasBusy = false
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -313,6 +315,11 @@ class SessionDetailViewModel @Inject constructor(
                     permissionRepository.refresh(currentDirectory.ifBlank { "/" })
                 } catch (e: Exception) {
                     Log.e(TAG, "poll question/permission refresh failed", e)
+                }
+                try {
+                    todoRepository.refreshTodos(sessionId)
+                } catch (e: Exception) {
+                    Log.e(TAG, "poll todo refresh failed", e)
                 }
             }
         }
@@ -617,10 +624,12 @@ class SessionDetailViewModel @Inject constructor(
                             } catch (_: Exception) {}
                         }
                     }
-                    if (hasBusyAssistant && !wasBusy) {
+                    val newStatus = if (hasBusyAssistant) SessionStatus.BUSY.name else SessionStatus.IDLE.name
+                    if (newStatus != _sessionStatus.value) {
+                        _sessionStatus.value = newStatus
                         viewModelScope.launch(Dispatchers.IO) {
                             try {
-                                sessionRepository.updateSessionStatus(currentSessionID!!, SessionStatus.BUSY.name)
+                                sessionRepository.updateSessionStatus(currentSessionID!!, newStatus)
                             } catch (_: Exception) {}
                         }
                     }

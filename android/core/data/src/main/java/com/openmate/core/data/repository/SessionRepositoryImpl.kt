@@ -127,17 +127,17 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun refreshSessionStatusesFromMessages() {
         try {
+            val statuses = api.getSessionStatuses()
             val db = dbProvider.getActive()
-            val sessions = db.sessionDao().getAll()
-            for (session in sessions) {
-                val incomplete = db.sessionMessageDao().getLatestIncompleteAssistant(session.id)
-                val newStatus = if (incomplete != null) SessionStatus.BUSY.name else SessionStatus.IDLE.name
-                if (session.status != newStatus) {
-                    db.sessionDao().updateStatus(session.id, newStatus)
+            for ((sessionID, statusDto) in statuses) {
+                val newStatus = statusDto.toDomain().name
+                val existing = db.sessionDao().getById(sessionID)
+                if (existing != null && existing.status != newStatus) {
+                    db.sessionDao().updateStatus(sessionID, newStatus)
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.e("SessionRepository", "refreshSessionStatusesFromMessages failed", e)
+            android.util.Log.e("SessionRepository", "refreshSessionStatusesFromAPI failed", e)
         }
     }
 
