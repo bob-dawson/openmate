@@ -67,7 +67,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.TopBar
-import com.openmate.core.ui.component.SmartAutoScroll
+import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.SessionMessageRenderer
 import com.openmate.feature.session.component.SessionMessageSearchPanel
@@ -126,24 +126,65 @@ fun SessionDetailScreen(
     var showSkillPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
-    var userNavigating by remember { mutableStateOf(false) }
-    var imeAnimating by remember { mutableStateOf(false) }
+    val autoFollowTracker = remember { AutoFollowTracker() }
     var prevImeBottom by remember { mutableIntStateOf(0) }
 
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottom) {
         if (imeBottom != prevImeBottom) {
             prevImeBottom = imeBottom
-            imeAnimating = true
+            autoFollowTracker.onKeyboardAnimationStarted()
             delay(350)
-            imeAnimating = false
+            autoFollowTracker.onKeyboardAnimationEnded()
         }
     }
 
-    SmartAutoScroll(listState, messages.size, isLoading, userNavigating, imeAnimating)
+    val prevMessageCount = remember { mutableIntStateOf(0) }
+    LaunchedEffect(messages.size) {
+        autoFollowTracker.onMessagesChanged(messages.size, isLoading)
+        if (messages.size > 0 && prevMessageCount.intValue == 0) {
+            delay(150)
+        }
+        prevMessageCount.intValue = messages.size
+    }
 
-    val notAtBottom by remember {
-        derivedStateOf { listState.canScrollForward }
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            autoFollowTracker.onScrollStarted(listState.canScrollForward)
+        } else {
+            autoFollowTracker.onScrollStopped(listState.canScrollForward)
+        }
+    }
+
+    suspend fun scrollToBottom() {
+        autoFollowTracker.onAutoScrollStarted()
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size)
+        }
+        delay(100)
+        if (messages.isNotEmpty() && listState.canScrollForward) {
+            listState.animateScrollToItem(messages.size)
+        }
+        autoFollowTracker.onAutoScrollEnded()
+    }
+
+    LaunchedEffect(autoFollowTracker.scrollVersion) {
+        if (autoFollowTracker.consumeShouldScrollToBottom()) {
+            scrollToBottom()
+        }
+    }
+
+    val needFollowScroll by remember {
+        derivedStateOf { autoFollowTracker.shouldFollow && listState.canScrollForward }
+    }
+    LaunchedEffect(needFollowScroll) {
+        if (needFollowScroll && !autoFollowTracker.consumeShouldScrollToBottom()) {
+            scrollToBottom()
+        }
+    }
+
+    val showScrollToBottom by remember {
+        derivedStateOf { !autoFollowTracker.shouldFollow && listState.canScrollForward }
     }
 
     LaunchedEffect(sessionID) {
@@ -468,7 +509,7 @@ fun SessionDetailScreen(
             )
         }
 
-        if (notAtBottom) {
+        if (showScrollToBottom) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -477,8 +518,8 @@ fun SessionDetailScreen(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable {
                         coroutineScope.launch {
-                            userNavigating = false
-                            if (messages.size > 0) listState.animateScrollToItem(messages.size)
+                            autoFollowTracker.onRequestFollow()
+                            scrollToBottom()
                         }
                     }
                     .padding(8.dp),
@@ -550,10 +591,10 @@ fun SessionDetailScreen(
                 messages = messages,
                 onNavigateToMessage = { index ->
                     showSearch = false
-                    userNavigating = true
+                    autoFollowTracker.onNavigateToMessage()
                     coroutineScope.launch {
                         listState.animateScrollToItem(index)
-                        userNavigating = false
+                        autoFollowTracker.onNavigateComplete()
                     }
                 },
                 onClose = { showSearch = false },

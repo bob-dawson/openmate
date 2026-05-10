@@ -275,6 +275,16 @@ class AutoFollowTrackerTest {
     }
 
     @Test
+    fun scrollVersion_incrementsOnRequestScroll() {
+        val tracker = AutoFollowTracker()
+        assertThat(tracker.scrollVersion).isEqualTo(0)
+        tracker.onMessagesChanged(5, false)
+        assertThat(tracker.scrollVersion).isEqualTo(1)
+        tracker.onContentUpdated()
+        assertThat(tracker.scrollVersion).isEqualTo(2)
+    }
+
+    @Test
     fun nested_autoScrollAndKeyboard_stateUnchanged() {
         val tracker = AutoFollowTracker()
         tracker.onMessagesChanged(5, false)

@@ -5,6 +5,9 @@ class AutoFollowTracker {
     var shouldFollow: Boolean = true
         private set
 
+    var scrollVersion: Int = 0
+        private set
+
     private var prevMessageCount: Int = 0
     private var pendingScrollRequest: Boolean = false
     private var isAutoScrolling: Boolean = false
@@ -92,5 +95,6 @@ class AutoFollowTracker {
 
     private fun requestScroll() {
         pendingScrollRequest = true
+        scrollVersion++
     }
 }

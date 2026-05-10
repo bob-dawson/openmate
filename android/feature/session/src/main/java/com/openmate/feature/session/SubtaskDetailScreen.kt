@@ -28,8 +28,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.openmate.feature.session.R
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.openmate.core.ui.component.SmartAutoScroll
+import com.openmate.core.common.AutoFollowTracker
 import com.openmate.core.ui.component.TopBar
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.SessionMessageRenderer
@@ -49,12 +52,55 @@ fun SubtaskDetailScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val autoFollowTracker = remember { AutoFollowTracker() }
 
     LaunchedEffect(subtaskSessionID) {
         viewModel.loadSession(subtaskSessionID)
     }
 
-    SmartAutoScroll(listState, messages.size, isLoading)
+    val prevMessageCount = remember { mutableIntStateOf(0) }
+    LaunchedEffect(messages.size) {
+        autoFollowTracker.onMessagesChanged(messages.size, isLoading)
+        if (messages.size > 0 && prevMessageCount.intValue == 0) {
+            kotlinx.coroutines.delay(150)
+        }
+        prevMessageCount.intValue = messages.size
+    }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            autoFollowTracker.onScrollStarted(listState.canScrollForward)
+        } else {
+            autoFollowTracker.onScrollStopped(listState.canScrollForward)
+        }
+    }
+
+    suspend fun scrollToBottom() {
+        autoFollowTracker.onAutoScrollStarted()
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size)
+        }
+        kotlinx.coroutines.delay(100)
+        if (messages.isNotEmpty() && listState.canScrollForward) {
+            listState.animateScrollToItem(messages.size)
+        }
+        autoFollowTracker.onAutoScrollEnded()
+    }
+
+    LaunchedEffect(autoFollowTracker.scrollVersion) {
+        if (autoFollowTracker.consumeShouldScrollToBottom()) {
+            scrollToBottom()
+        }
+    }
+
+    val needFollowScroll by remember {
+        derivedStateOf { autoFollowTracker.shouldFollow && listState.canScrollForward }
+    }
+    LaunchedEffect(needFollowScroll) {
+        if (needFollowScroll && !autoFollowTracker.consumeShouldScrollToBottom()) {
+            scrollToBottom()
+        }
+    }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
