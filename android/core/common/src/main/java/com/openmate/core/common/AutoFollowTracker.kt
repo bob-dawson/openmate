@@ -1,11 +1,16 @@
 package com.openmate.core.common
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 class AutoFollowTracker {
 
-    var shouldFollow: Boolean = true
+    var shouldFollow by mutableStateOf(true)
         private set
 
-    var scrollVersion: Int = 0
+    var scrollVersion by mutableIntStateOf(0)
         private set
 
     private var prevMessageCount: Int = 0
@@ -46,6 +51,13 @@ class AutoFollowTracker {
         }
     }
 
+    fun onScrollPositionChanged(canScrollForward: Boolean) {
+        if (isAutoScrolling || isKeyboardAnimating || isUserNavigating) return
+        if (canScrollForward) {
+            shouldFollow = false
+        }
+    }
+
     fun onKeyboardAnimationStarted() {
         isKeyboardAnimating = true
     }
@@ -83,6 +95,10 @@ class AutoFollowTracker {
         if (shouldFollow && !isUserNavigating) {
             requestScroll()
         }
+    }
+
+    fun shouldAutoFollow(canScrollForward: Boolean, isScrollInProgress: Boolean): Boolean {
+        return shouldFollow && canScrollForward && !isScrollInProgress
     }
 
     fun consumeShouldScrollToBottom(): Boolean {

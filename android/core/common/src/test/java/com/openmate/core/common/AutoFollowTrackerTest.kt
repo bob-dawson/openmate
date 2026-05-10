@@ -84,6 +84,21 @@ class AutoFollowTrackerTest {
     }
 
     @Test
+    fun scrollPositionChanged_whileDraggingAwayFromBottom_stopsFollowing() {
+        val tracker = AutoFollowTracker()
+        tracker.onScrollStarted(false)
+        assertThat(tracker.shouldFollow).isTrue()
+        tracker.onScrollPositionChanged(true)
+        assertThat(tracker.shouldFollow).isFalse()
+    }
+
+    @Test
+    fun shouldAutoFollow_whileUserIsDragging_isFalse() {
+        val tracker = AutoFollowTracker()
+        assertThat(tracker.shouldAutoFollow(canScrollForward = true, isScrollInProgress = true)).isFalse()
+    }
+
+    @Test
     fun userScrollBackToBottom_resumesFollowing() {
         val tracker = AutoFollowTracker()
         tracker.onScrollStarted(true)

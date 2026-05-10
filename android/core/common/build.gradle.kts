@@ -25,6 +25,8 @@ android {
 
 dependencies {
     implementation(libs.core.ktx)
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.runtime)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
 

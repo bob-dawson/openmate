@@ -75,6 +75,12 @@ fun SubtaskDetailScreen(
         }
     }
 
+    LaunchedEffect(listState.canScrollForward, listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            autoFollowTracker.onScrollPositionChanged(listState.canScrollForward)
+        }
+    }
+
     suspend fun scrollToBottom() {
         autoFollowTracker.onAutoScrollStarted()
         if (messages.isNotEmpty()) {
@@ -94,7 +100,12 @@ fun SubtaskDetailScreen(
     }
 
     val needFollowScroll by remember {
-        derivedStateOf { autoFollowTracker.shouldFollow && listState.canScrollForward }
+        derivedStateOf {
+            autoFollowTracker.shouldAutoFollow(
+                canScrollForward = listState.canScrollForward,
+                isScrollInProgress = listState.isScrollInProgress,
+            )
+        }
     }
     LaunchedEffect(needFollowScroll) {
         if (needFollowScroll && !autoFollowTracker.consumeShouldScrollToBottom()) {
