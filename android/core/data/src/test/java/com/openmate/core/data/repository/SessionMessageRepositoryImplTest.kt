@@ -254,6 +254,73 @@ class SessionMessageRepositoryImplTest {
         assertThat(stored.data).contains("Tool execution aborted")
     }
 
+    @Test
+    fun incrementalSync_completesExistingCompactionWhenEndedArrivesLater() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {"events":[],"maxSeq":1}
+                """.trimIndent(),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "messages": [
+                    {
+                      "id": "compaction-1",
+                      "sessionId": "session-1",
+                      "type": "compaction",
+                      "timeCreated": 1,
+                      "timeUpdated": 1,
+                      "data": {
+                        "reason": "manual",
+                        "summary": "",
+                        "time": {
+                          "created": 1
+                        }
+                      }
+                    }
+                  ],
+                  "maxSeq": 1
+                }
+                """.trimIndent(),
+            ),
+        )
+        repository.initSync(SESSION_ID, limit = 30)
+        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 1L))
+
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "events": [
+                    {
+                      "id": "evt-ended",
+                      "aggregateId": "session-1",
+                      "seq": 2,
+                      "type": "session.next.compaction.ended.event",
+                      "data": {
+                        "timestamp": 4,
+                        "text": "condensed prior context"
+                      }
+                    }
+                  ],
+                  "maxSeq": 2
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        repository.incrementalSync(SESSION_ID)
+
+        val stored = dbProvider.getActive().sessionMessageDao().getById("compaction-1")!!
+        assertThat(stored.completedAt).isEqualTo(4L)
+        assertThat(stored.data).contains("condensed prior context")
+        assertThat(stored.data).contains("\"completed\":4")
+    }
+
     private companion object {
         const val PROFILE_ID = "profile-1"
         const val SESSION_ID = "session-1"

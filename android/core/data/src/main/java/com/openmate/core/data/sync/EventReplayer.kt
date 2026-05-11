@@ -39,6 +39,7 @@ class EventReplayer {
         sealed class Action {
             data class LoadById(val id: String) : Action()
             data class LoadLatestIncompleteAssistant(val sessionId: String) : Action()
+            data class LoadLatestIncompleteCompaction(val sessionId: String) : Action()
         }
     }
 
@@ -52,7 +53,7 @@ class EventReplayer {
         ensureAssistantCache(sessionId, loader)
 
         for (event in events) {
-            processEvent(event, sessionId, changes)
+            processEvent(event, sessionId, changes, loader)
         }
 
         return changes
@@ -68,10 +69,11 @@ class EventReplayer {
         cachedTimeCreated = entity.timeCreated
     }
 
-    private fun processEvent(
+    private suspend fun processEvent(
         event: ReplayEvent,
         sessionId: String,
         changes: MutableList<ReplayChange>,
+        loader: DbLoader,
     ) {
         val props = event.data
         val timestamp = parseTimestamp(props)
@@ -424,14 +426,21 @@ class EventReplayer {
                 }
 
                 "session.next.compaction.ended" -> {
-                    if (cachedType != "compaction") return
+                    if (cachedType != "compaction") {
+                        val existing = loader(DbLoader.Action.LoadLatestIncompleteCompaction(sessionId)) ?: return
+                        val data = runCatching { Json.parseToJsonElement(existing.data).jsonObject }.getOrNull() ?: return
+                        setCache(existing.id, "compaction", data, existing.timeCreated)
+                    }
                     val cached = cachedData ?: return
                     val updated = cached.toMutableMap()
                     updated["summary"] = JsonPrimitive(props["text"]?.jsonPrimitive?.contentOrNull ?: "")
                     props["include"]?.jsonPrimitive?.contentOrNull?.let { updated["include"] = JsonPrimitive(it) }
+                    val time = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                    time["completed"] = JsonPrimitive(timestamp)
+                    updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    changes += ReplayChange.Update(cachedId!!, "compaction", merged, timestamp)
+                    changes += ReplayChange.Update(cachedId!!, "compaction", merged, timestamp, completedAt = timestamp)
                 }
             }
     }

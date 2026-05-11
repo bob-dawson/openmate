@@ -77,6 +77,7 @@ import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
 import com.openmate.feature.session.component.TodoListCard
 import com.openmate.core.domain.model.SessionRetryStatus
+import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.common.formatDurationMillis
 import kotlinx.coroutines.delay
@@ -108,7 +109,7 @@ fun SessionDetailScreen(
     val selectedModel by viewModel.selectedModel.collectAsState()
     val recentModels by viewModel.recentModels.collectAsState()
     val selectedAgent by viewModel.selectedAgent.collectAsState()
-    val isCompacting by viewModel.isCompacting.collectAsState()
+    val sessionStatus by viewModel.sessionStatus.collectAsState()
     val skills by viewModel.skills.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
@@ -134,6 +135,12 @@ fun SessionDetailScreen(
     var prevImeBottom by remember { mutableIntStateOf(0) }
     var pagingTriggerState by remember(sessionID) { mutableStateOf(SessionPagingTrigger.State(lastTriggeredFirstMessageId = null)) }
     var pendingRestoreAnchor by remember(sessionID) { mutableStateOf<String?>(null) }
+    val compactActionEnabled = sessionStatus == SessionStatus.IDLE.name
+    val compactActionLabel = if (sessionStatus == SessionStatus.COMPACTING.name) {
+        stringResource(R.string.compacting)
+    } else {
+        stringResource(R.string.compact)
+    }
 
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottom) {
@@ -327,14 +334,12 @@ fun SessionDetailScreen(
                             )
                             if (selectedModel != null) {
                                 DropdownMenuItem(
-                                    text = {
-                                        if (isCompacting) Text(stringResource(R.string.compacting)) else Text(stringResource(R.string.compact))
-                                    },
+                                    text = { Text(compactActionLabel) },
                                     onClick = {
                                         menuExpanded = false
                                         viewModel.compact(sessionID)
                                     },
-                                    enabled = !isCompacting,
+                                    enabled = compactActionEnabled,
                                 )
                             }
                             DropdownMenuItem(

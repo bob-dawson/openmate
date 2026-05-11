@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import org.junit.Test
 
@@ -70,6 +71,90 @@ class EventReplayerTest {
         assertThat(tool["state"]!!.jsonObject["status"]!!.jsonPrimitive.content).isEqualTo("error")
         assertThat(tool["state"]!!.jsonObject["error"]!!.jsonPrimitive.content).isEqualTo("Tool execution aborted")
         assertThat(assistantUpdate.completedAt).isEqualTo(1_200L)
+    }
+
+    @Test
+    fun replay_compactionEnded_marksCompactionCompleted() = runTest {
+        val replayer = EventReplayer()
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "compaction-1",
+                    type = "session.next.compaction.started.1",
+                    timestamp = 1_000L,
+                    extra = buildJsonObject {
+                        put("reason", JsonPrimitive("auto"))
+                    },
+                ),
+                replayEvent(
+                    id = "compaction-1",
+                    type = "session.next.compaction.ended.1",
+                    timestamp = 2_000L,
+                    extra = buildJsonObject {
+                        put("text", JsonPrimitive("condensed prior context"))
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { null },
+        )
+
+        val update = changes.last() as ReplayChange.Update
+
+        assertThat(update.completedAt).isEqualTo(2_000L)
+        assertThat(update.data["summary"]!!.jsonPrimitive.content).isEqualTo("condensed prior context")
+        assertThat(update.data["time"]!!.jsonObject["completed"]!!.jsonPrimitive.longOrNull).isEqualTo(2_000L)
+    }
+
+    @Test
+    fun replay_compactionEnded_updatesExistingIncompleteCompactionFromDb() = runTest {
+        val replayer = EventReplayer()
+        val existing = SessionMessageEntity(
+            id = "compaction-1",
+            sessionId = "session-1",
+            type = "compaction",
+            data = """
+                {
+                  "reason": "manual",
+                  "summary": "",
+                  "time": {
+                    "created": 1000
+                  }
+                }
+            """.trimIndent(),
+            timeCreated = 1_000L,
+            timeUpdated = 1_000L,
+            completedAt = null,
+        )
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "evt-ended",
+                    type = "session.next.compaction.ended.1",
+                    timestamp = 2_000L,
+                    extra = buildJsonObject {
+                        put("text", JsonPrimitive("condensed prior context"))
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { action ->
+                when (action) {
+                    is EventReplayer.DbLoader.Action.LoadById -> null
+                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant -> null
+                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction -> existing
+                }
+            },
+        )
+
+        val update = changes.single() as ReplayChange.Update
+
+        assertThat(update.id).isEqualTo("compaction-1")
+        assertThat(update.completedAt).isEqualTo(2_000L)
+        assertThat(update.data["summary"]!!.jsonPrimitive.content).isEqualTo("condensed prior context")
+        assertThat(update.data["time"]!!.jsonObject["completed"]!!.jsonPrimitive.longOrNull).isEqualTo(2_000L)
     }
 
     private fun replayEvent(

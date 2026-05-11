@@ -107,6 +107,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     db.sessionMessageDao().getById(action.id)
                 is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
                     db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
+                is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
+                    db.sessionMessageDao().getLatestIncompleteCompaction(action.sessionId)
             }
         }
 

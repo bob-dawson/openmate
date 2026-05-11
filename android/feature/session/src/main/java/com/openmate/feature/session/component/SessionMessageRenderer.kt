@@ -25,10 +25,13 @@ import com.openmate.core.ui.component.MessageBubble
 import com.openmate.feature.session.R
 import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
 
 private val AgentColor = androidx.compose.ui.graphics.Color(0xFF9D7CD8)
+private val CompactionCodeBlockBackground = androidx.compose.ui.graphics.Color(0xFF2a2a3a)
+private val CompactionCodeBlockText = androidx.compose.ui.graphics.Color(0xFFe0e0f0)
 private val TaskIdRegex = Regex("task_id:\\s*(ses_\\S+)")
 
 private fun JsonObject?.str(key: String): String? =
@@ -118,15 +121,65 @@ fun SessionMessageRenderer(
             }
         }
         "compaction" -> {
-            Text(
-                text = "▸ compaction",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+            CompactionMessageItem(
+                entity = entity,
+                data = dataJson,
+                runningAnchors = runningAnchors,
             )
         }
         "synthetic" -> { }
         else -> { }
+    }
+}
+
+@Composable
+private fun CompactionMessageItem(
+    entity: SessionMessage,
+    data: JsonObject,
+    runningAnchors: Map<String, Long>,
+) {
+    val summary = data["summary"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val isRunning = entity.completedAt == null
+    var expanded by remember(entity.id) { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = if (expanded) "▾ compaction" else "▸ compaction",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .padding(horizontal = 4.dp, vertical = 3.dp)
+                .clickable(enabled = summary.isNotBlank()) { expanded = !expanded },
+        )
+        MessageMetadata(
+            messageId = entity.id,
+            timeCreated = entity.timeCreated,
+            completedAt = entity.completedAt,
+            modelName = null,
+            isQueued = false,
+            isStepRunning = isRunning,
+            runningAnchors = runningAnchors,
+        )
+        AnimatedVisibility(visible = expanded && summary.isNotBlank()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+            ) {
+                MarkdownText(
+                    markdown = summary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    syntaxHighlightColor = CompactionCodeBlockBackground,
+                    syntaxHighlightTextColor = CompactionCodeBlockText,
+                    isTextSelectable = true,
+                )
+            }
+        }
     }
 }
 

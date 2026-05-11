@@ -35,8 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.common.AutoFollowTracker
 import com.openmate.core.ui.component.TopBar
-import com.openmate.feature.session.component.ChatInputBar
-import com.openmate.feature.session.component.SessionMessageRenderer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +47,7 @@ fun SubtaskDetailScreen(
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
+    val runningAnchors by viewModel.runningAnchors.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
@@ -97,12 +96,12 @@ fun SubtaskDetailScreen(
     }
 
     suspend fun scrollToBottom() {
-        runAutoScroll(
+        com.openmate.feature.session.runAutoScroll(
             messageCount = messages.size,
             canScrollForward = { listState.canScrollForward },
             onStarted = autoFollowTracker::onAutoScrollStarted,
             onEnded = autoFollowTracker::onAutoScrollEnded,
-            scroll = { index -> listState.animateScrollToItem(index) },
+            scroll = { index: Int -> listState.animateScrollToItem(index) },
         )
     }
 
@@ -207,11 +206,12 @@ fun SubtaskDetailScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
                     items(messages, key = { it.id }) { entity ->
-                        SessionMessageRenderer(
+                        com.openmate.feature.session.component.SessionMessageRenderer(
                             entity = entity,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(subtaskSessionID, messageId)
                             },
+                            runningAnchors = runningAnchors,
                         )
                     }
                     if (messages.isEmpty()) {
@@ -233,7 +233,7 @@ fun SubtaskDetailScreen(
                 }
             }
 
-            ChatInputBar(
+            com.openmate.feature.session.component.ChatInputBar(
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
                 onSend = {

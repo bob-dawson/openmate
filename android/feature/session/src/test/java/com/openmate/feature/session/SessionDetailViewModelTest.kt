@@ -1,6 +1,7 @@
 package com.openmate.feature.session
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.google.common.truth.Truth.assertThat
 import com.openmate.core.domain.model.PermissionReply
@@ -23,13 +24,18 @@ import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.TodoRepository
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.ProviderListDto
+import java.util.ArrayDeque
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -37,7 +43,14 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
@@ -218,6 +231,45 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun loadSession_restoresRunningAnchorFromIncompleteMessageAge() = runTest(dispatcher) {
+        val messageStartedAt = System.currentTimeMillis() - 125_000L
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                SessionMessage(
+                    id = "m-running",
+                    sessionId = SESSION_ID,
+                    type = "assistant",
+                    data = """
+                        {
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "Working"
+                            }
+                          ]
+                        }
+                    """.trimIndent(),
+                    timeCreated = messageStartedAt,
+                    timeUpdated = messageStartedAt,
+                    completedAt = null,
+                ),
+            ),
+            lastSeq = null,
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.runningAnchors.value.containsKey("m-running") }
+
+        val anchor = viewModel.runningAnchors.value.getValue("m-running")
+        val restoredElapsed = SystemClock.elapsedRealtime() - anchor
+
+        assertThat(viewModel.messages.value.single().completedAt).isNull()
+        assertThat(viewModel.runningAnchors.value).containsKey("m-running")
+        assertThat(restoredElapsed).isAtLeast(120_000L)
+    }
+
+    @Test
     fun backgroundSyncEvent_updatesCurrentWindowMessages() = runTest(dispatcher) {
         val repository = FakeSessionMessageRepository(
             recentWindow = listOf(
@@ -330,6 +382,58 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun compact_startsSummarizeWithoutWaitingForCompletionSync() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient()
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(message("m1", timeCreated = 1)),
+            lastSeq = null,
+        )
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+        viewModel.selectModel("openai", "gpt-5", "gpt-5")
+
+        viewModel.compact(SESSION_ID)
+        waitUntil { apiClient.summarizeCalls.isNotEmpty() }
+
+        assertThat(apiClient.summarizeCalls).hasSize(1)
+        val summarizeCall = apiClient.summarizeCalls.single()
+        assertThat(summarizeCall.sessionId).isEqualTo(SESSION_ID)
+        assertThat(summarizeCall.providerId).isEqualTo("openai")
+        assertThat(summarizeCall.modelId).isEqualTo("gpt-5")
+        assertThat(repository.incrementalSyncCalls).isEmpty()
+        assertThat(repository.incrementalSyncAndNotifyCalls).isEmpty()
+    }
+
+    @Test
+    fun compact_surfacesStartupFailure() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient().apply {
+            summarizeErrors += IllegalStateException("network down")
+        }
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(message("m1", timeCreated = 1)),
+            lastSeq = null,
+        )
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+        viewModel.selectModel("openai", "gpt-5", "gpt-5")
+
+        viewModel.compact(SESSION_ID)
+        waitUntil { viewModel.errorMessage.value != null }
+
+        assertThat(viewModel.errorMessage.value).contains("network down")
+    }
+
+    @Test
     fun concurrentSyncEventAndLoadOlder_keepsBothUpdates() = runTest(dispatcher) {
         val recentWindow = (3L..32L).map { timeCreated ->
             message("m$timeCreated", timeCreated = timeCreated)
@@ -380,6 +484,7 @@ class SessionDetailViewModelTest {
         questionRepository: QuestionRepository = FakeQuestionRepository(),
         permissionRepository: PermissionRepository = FakePermissionRepository(),
         sseEventRepository: SseEventRepository = FakeSseEventRepository(),
+        apiClient: OpencodeApiClient = FakeOpencodeApiClient().client,
     ): SessionDetailViewModel {
         appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
             .edit()
@@ -394,11 +499,7 @@ class SessionDetailViewModelTest {
             questionRepository = questionRepository,
             permissionRepository = permissionRepository,
             sseEventRepository = sseEventRepository,
-            apiClient = OpencodeApiClient(
-                client = OkHttpClient.Builder()
-                    .callTimeout(10, TimeUnit.MILLISECONDS)
-                    .build(),
-            ),
+            apiClient = apiClient,
         )
     }
 
@@ -435,6 +536,8 @@ class SessionDetailViewModelTest {
         var observeMessagesCalls = 0
         val getRecentWindowCalls = mutableListOf<Pair<String, Int>>()
         val getOlderPageCalls = mutableListOf<OlderPageCall>()
+        val incrementalSyncCalls = mutableListOf<String>()
+        val incrementalSyncAndNotifyCalls = mutableListOf<String>()
 
         override fun observeMessages(sessionId: String): Flow<List<SessionMessage>> {
             observeMessagesCalls += 1
@@ -456,18 +559,24 @@ class SessionDetailViewModelTest {
         ): List<SessionMessage> {
             getOlderPageCalls += OlderPageCall(sessionId, beforeTimeCreated, beforeId, limit)
             if (olderPageDelayMillis > 0) {
-                kotlinx.coroutines.delay(olderPageDelayMillis)
+                delay(olderPageDelayMillis)
             }
-            return olderPages.removeFirstOrNull().orEmpty()
+            return if (olderPages.isEmpty()) emptyList() else olderPages.removeFirst()
         }
 
         override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult = initSyncResult
 
         override suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult {
-            return incrementalSyncResults.removeFirstOrNull() ?: SessionMessageSyncResult(lastSeq ?: 0L, emptyList())
+            incrementalSyncCalls += sessionId
+            return if (incrementalSyncResults.isEmpty()) {
+                SessionMessageSyncResult(lastSeq ?: 0L, emptyList())
+            } else {
+                incrementalSyncResults.removeFirst()
+            }
         }
 
         override suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult {
+            incrementalSyncAndNotifyCalls += sessionId
             val result = incrementalSync(sessionId)
             syncEvents.emit(SessionMessageSyncEvent(sessionId = sessionId, result = result))
             return result
@@ -480,6 +589,52 @@ class SessionDetailViewModelTest {
         fun emitSyncEvent(event: SessionMessageSyncEvent) {
             syncEvents.tryEmit(event)
         }
+    }
+
+    private class FakeOpencodeApiClient {
+        data class SummarizeCall(
+            val sessionId: String,
+            val providerId: String,
+            val modelId: String,
+            val directory: String?,
+        )
+
+        val summarizeErrors = ArrayDeque<Exception>()
+        val summarizeCalls = mutableListOf<SummarizeCall>()
+
+        val client: OpencodeApiClient = OpencodeApiClient(
+            client = OkHttpClient.Builder()
+                .callTimeout(10, TimeUnit.MILLISECONDS)
+                .addInterceptor { chain ->
+                    val request = chain.request()
+                    if (request.url.encodedPath.contains("/summarize")) {
+                        if (summarizeErrors.isNotEmpty()) {
+                            throw summarizeErrors.removeFirst()
+                        }
+                        val sessionId = request.url.pathSegments.getOrNull(1).orEmpty()
+                        val bodyText = Buffer().also { buffer ->
+                            request.body?.writeTo(buffer)
+                        }.readUtf8()
+                        val body = Json.parseToJsonElement(bodyText).jsonObject
+                        summarizeCalls += SummarizeCall(
+                            sessionId = sessionId,
+                            providerId = body["providerID"]!!.jsonPrimitive.content,
+                            modelId = body["modelID"]!!.jsonPrimitive.content,
+                            directory = request.url.queryParameter("directory"),
+                        )
+                    }
+
+                    Response.Builder()
+                        .request(request)
+                        .protocol(Protocol.HTTP_1_1)
+                        .code(204)
+                        .message("No Content")
+                        .body("".toResponseBody())
+                        .build()
+                }
+                .build(),
+            baseUrl = "http://test",
+        )
     }
 
     private class FakeSessionRepository(

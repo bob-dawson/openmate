@@ -91,6 +91,7 @@ class SessionDetailViewModel @Inject constructor(
 
     private var wasBusy = false
     private val _sessionStatus = MutableStateFlow("")
+    val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
 
     private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
     val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
@@ -517,27 +518,17 @@ class SessionDetailViewModel @Inject constructor(
         _selectedAgent.value = agent
     }
 
-    private val _isCompacting = MutableStateFlow(false)
-    val isCompacting: StateFlow<Boolean> = _isCompacting.asStateFlow()
-
     private val _skills = MutableStateFlow<List<SkillInfoDto>>(emptyList())
     val skills: StateFlow<List<SkillInfoDto>> = _skills.asStateFlow()
 
     fun compact(sessionID: String) {
         val model = _selectedModel.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            _isCompacting.value = true
             try {
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
-                delay(2000)
-                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
-                sessionRepository.refreshSessionStatusesFromMessages()
-                refreshRetryStatus(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
                 _errorMessage.value = "Compact failed: ${e.message}"
-            } finally {
-                _isCompacting.value = false
             }
         }
     }
@@ -745,12 +736,14 @@ class SessionDetailViewModel @Inject constructor(
 
         val anchors = _runningAnchors.value.toMutableMap()
         val now = android.os.SystemClock.elapsedRealtime()
+        val wallNow = System.currentTimeMillis()
         for (msg in list) {
             if (msg.type == "assistant" && msg.completedAt == null) {
                 val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
                 val finish = data?.get("finish")?.jsonPrimitive?.contentOrNull
                 if (finish == null && !anchors.containsKey(msg.id)) {
-                    anchors[msg.id] = now
+                    val elapsed = (wallNow - msg.timeCreated).coerceAtLeast(0L)
+                    anchors[msg.id] = now - elapsed
                 }
             }
         }
