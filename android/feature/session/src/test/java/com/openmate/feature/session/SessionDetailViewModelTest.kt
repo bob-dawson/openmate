@@ -434,6 +434,68 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun abort_stopsBusyTimerImmediatelyBeforeSyncCatchesUp() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                SessionMessage(
+                    id = "u1",
+                    sessionId = SESSION_ID,
+                    type = "user",
+                    data = "{}",
+                    timeCreated = 500L,
+                    timeUpdated = 500L,
+                    roundMark = true,
+                ),
+                SessionMessage(
+                    id = "m-running",
+                    sessionId = SESSION_ID,
+                    type = "assistant",
+                    data = """
+                        {
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "Working"
+                            }
+                          ]
+                        }
+                    """.trimIndent(),
+                    timeCreated = 1_000L,
+                    timeUpdated = 1_000L,
+                    completedAt = null,
+                    roundMark = false,
+                ),
+            ),
+            lastSeq = null,
+            incrementalSyncResults = ArrayDeque(
+                listOf(
+                    SessionMessageSyncResult(lastSeq = 1, changes = emptyList()),
+                    SessionMessageSyncResult(lastSeq = 1, changes = emptyList()),
+                ),
+            ),
+        )
+        val sessionRepository = FakeSessionRepository()
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            sessionRepository = sessionRepository,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        advanceUntilIdle()
+        waitUntil { viewModel.currentBusyStart.value != null }
+
+        viewModel.abort(SESSION_ID)
+        waitUntil { sessionRepository.abortCalls == 1 }
+        waitUntil { viewModel.currentBusyStart.value == null }
+
+        assertThat(sessionRepository.abortCalls).isEqualTo(1)
+        assertThat(viewModel.currentBusyStart.value).isNull()
+        assertThat(viewModel.runningAnchors.value).isEmpty()
+        assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.IDLE.name)
+        assertThat(viewModel.messages.value.first { it.id == "m-running" }.completedAt).isNotNull()
+    }
+
+    @Test
     fun concurrentSyncEventAndLoadOlder_keepsBothUpdates() = runTest(dispatcher) {
         val recentWindow = (3L..32L).map { timeCreated ->
             message("m$timeCreated", timeCreated = timeCreated)
@@ -641,6 +703,7 @@ class SessionDetailViewModelTest {
         private val retryStatus: SessionRetryStatus? = null,
     ) : SessionRepository {
         private val retryStatusFlow = MutableStateFlow(retryStatus)
+        var abortCalls = 0
 
         private val session = Session(
             id = SESSION_ID,
@@ -662,7 +725,9 @@ class SessionDetailViewModelTest {
 
         override suspend fun updateSession(id: String, title: String?) = Unit
 
-        override suspend fun abortSession(id: String, directory: String?) = Unit
+        override suspend fun abortSession(id: String, directory: String?) {
+            abortCalls += 1
+        }
 
         override suspend fun refreshSessionStatuses() = Unit
 

@@ -38,7 +38,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
@@ -422,9 +426,63 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
+                markAbortLocally(sessionID)
                 refresh()
             } catch (_: Exception) {}
         }
+    }
+
+    private fun markAbortLocally(sessionID: String) {
+        val now = System.currentTimeMillis()
+        val updatedMessages = messageWindowState.messages.map { message ->
+            if (message.sessionId != sessionID || message.type != "assistant" || message.completedAt != null) {
+                return@map message
+            }
+            message.copy(
+                data = abortAssistantData(message.data, now),
+                timeUpdated = now,
+                completedAt = now,
+                roundMark = true,
+            )
+        }
+        messageWindowState = messageWindowState.copy(messages = updatedMessages)
+        _messages.value = updatedMessages
+        _sessionStatus.value = SessionStatus.IDLE.name
+        _currentBusyStart.value = null
+        _runningAnchors.value = emptyMap()
+        wasBusy = false
+        recalculateMessageDerivedState(updatedMessages)
+    }
+
+    private fun abortAssistantData(raw: String, timestamp: Long): String {
+        val data = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return raw
+        val updated = data.toMutableMap()
+        updated["finish"] = JsonPrimitive("error")
+        val time = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+        time["completed"] = JsonPrimitive(timestamp)
+        updated["time"] = JsonObject(time)
+
+        val content = data["content"]?.let { runCatching { it.jsonArray }.getOrNull() }
+        if (content != null) {
+            updated["content"] = JsonArray(content.map { item ->
+                val obj = item.jsonObject
+                if (obj["type"]?.jsonPrimitive?.contentOrNull != "tool") return@map item
+                val state = obj["state"]?.jsonObject ?: return@map item
+                val status = state["status"]?.jsonPrimitive?.contentOrNull ?: return@map item
+                if (status != "pending" && status != "running") return@map item
+                JsonObject(obj.toMutableMap().apply {
+                    put("state", JsonObject(state.toMutableMap().apply {
+                        put("status", JsonPrimitive("error"))
+                        put("error", JsonPrimitive("Tool execution aborted"))
+                    }))
+                    val itemTime = (obj["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                    itemTime["completed"] = JsonPrimitive(timestamp)
+                    put("time", JsonObject(itemTime))
+                })
+            })
+        }
+
+        return JsonObject(updated).toString()
     }
 
     fun renameSession(newTitle: String) {
