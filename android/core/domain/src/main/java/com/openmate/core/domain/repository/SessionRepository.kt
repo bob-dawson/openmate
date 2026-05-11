@@ -1,6 +1,7 @@
 package com.openmate.core.domain.repository
 
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.Workspace
 import kotlinx.coroutines.flow.Flow
 
@@ -16,8 +17,10 @@ interface SessionRepository {
     suspend fun syncSessionStatusFromRemote(sessionID: String)
     fun observeSessions(directory: String?): Flow<List<Session>>
     fun observeSession(id: String): Flow<Session?>
+    fun observeSessionRetryStatus(id: String): Flow<SessionRetryStatus?>
     fun observeWorkspaces(): Flow<List<Workspace>>
     suspend fun addSessionDuration(id: String, increment: Long)
     suspend fun updateSessionModel(id: String, providerID: String?, modelID: String?, modelName: String?)
     suspend fun updateSessionStatus(id: String, status: String)
+    suspend fun getSessionRetryStatus(id: String): SessionRetryStatus?
 }

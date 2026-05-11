@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -71,6 +72,7 @@ fun SessionMessageRenderer(
         }
         "assistant" -> {
             val content = dataJson["content"]?.jsonArray
+            val errorMessage = extractAssistantErrorMessage(dataJson)
             val hasVisible = content?.any { item ->
                 val obj = item.jsonObject
                 val type = obj["type"]?.jsonPrimitive?.contentOrNull
@@ -82,37 +84,54 @@ fun SessionMessageRenderer(
                     "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> true
                     else -> false
                 }
-            } == true
+            } == true || errorMessage != null
             if (!hasVisible) return
             val modelName = dataJson["model"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
             val finish = dataJson["finish"]?.jsonPrimitive?.contentOrNull
             val isStepRunning = entity.completedAt == null && finish == null
             val toolCount = content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0
-            AssistantMessageItem(
-                data = dataJson,
-                showReasoning = showReasoning,
-                onNavigateToSubtask = onNavigateToSubtask,
-                pendingQuestions = pendingQuestions,
-                pendingPermissions = pendingPermissions,
-                onReplyQuestion = onReplyQuestion,
-                onRejectQuestion = onRejectQuestion,
-                onReplyPermission = onReplyPermission,
-            )
-            MessageMetadata(
-                messageId = entity.id,
-                timeCreated = entity.timeCreated,
-                completedAt = entity.completedAt,
-                modelName = modelName,
-                isQueued = false,
-                isStepRunning = isStepRunning,
-                toolCount = toolCount,
-                finish = finish,
-                runningAnchors = runningAnchors,
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                AssistantMessageItem(
+                    data = dataJson,
+                    showReasoning = showReasoning,
+                    onNavigateToSubtask = onNavigateToSubtask,
+                    pendingQuestions = pendingQuestions,
+                    pendingPermissions = pendingPermissions,
+                    onReplyQuestion = onReplyQuestion,
+                    onRejectQuestion = onRejectQuestion,
+                    onReplyPermission = onReplyPermission,
+                )
+                if (errorMessage != null) {
+                    AssistantErrorCard(errorMessage)
+                }
+                MessageMetadata(
+                    messageId = entity.id,
+                    timeCreated = entity.timeCreated,
+                    completedAt = entity.completedAt,
+                    modelName = modelName,
+                    isQueued = false,
+                    isStepRunning = isStepRunning,
+                    toolCount = toolCount,
+                    finish = finish,
+                    runningAnchors = runningAnchors,
+                )
+            }
         }
         "synthetic" -> { }
         else -> { }
     }
+}
+
+internal fun extractAssistantErrorMessage(data: JsonObject): String? {
+    val error = data["error"] ?: return null
+    if (error is JsonPrimitive && error.isString) {
+        return error.content.takeIf { it.isNotBlank() }
+    }
+    val errorObject = error.jsonObject
+    val direct = errorObject["message"]?.jsonPrimitive?.contentOrNull
+    if (!direct.isNullOrBlank()) return direct
+    val nested = errorObject["data"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
+    return nested?.takeIf { it.isNotBlank() }
 }
 
 @Composable
@@ -175,6 +194,22 @@ private fun MessageMetadata(
             text = timeText + if (durationText.isNotBlank()) " · $durationText" else "" + toolText + finishText + modelText,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun AssistantErrorCard(message: String) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
         )
     }
 }

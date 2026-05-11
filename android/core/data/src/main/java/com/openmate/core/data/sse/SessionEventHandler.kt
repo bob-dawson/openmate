@@ -2,6 +2,7 @@ package com.openmate.core.data.sse
 
 import android.util.Log
 import com.openmate.core.database.ActiveDatabaseProvider
+import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.network.SseData
 import kotlinx.serialization.json.jsonObject
@@ -10,6 +11,7 @@ import javax.inject.Inject
 
 open class SessionEventHandler @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
+    private val retryStateStore: SessionRetryStateStore,
 ) {
     suspend fun handle(type: String, event: SseData) {
         val props = event.properties
@@ -74,8 +76,28 @@ open class SessionEventHandler @Inject constructor(
                     val db = dbProvider.getActive()
                     val status = when (statusType) {
                         "busy" -> SessionStatus.BUSY.name
-                        "retry" -> SessionStatus.BUSY.name
-                        else -> SessionStatus.IDLE.name
+                        "retry" -> {
+                            val message = statusObj["message"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                            retryStateStore.update(
+                                sessionID,
+                                message?.let {
+                                    SessionRetryStatus(
+                                        sessionId = sessionID,
+                                        attempt = statusObj["attempt"]?.jsonPrimitive?.content?.toIntOrNull(),
+                                        message = it,
+                                        next = statusObj["next"]?.jsonPrimitive?.content?.toLongOrNull(),
+                                    )
+                                },
+                            )
+                            SessionStatus.BUSY.name
+                        }
+                        else -> {
+                            retryStateStore.update(sessionID, null)
+                            SessionStatus.IDLE.name
+                        }
+                    }
+                    if (statusType == "busy") {
+                        retryStateStore.update(sessionID, null)
                     }
                     val existing = db.sessionDao().getById(sessionID)
                     if (existing != null) {

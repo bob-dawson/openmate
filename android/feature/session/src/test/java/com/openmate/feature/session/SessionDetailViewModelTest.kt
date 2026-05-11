@@ -11,6 +11,7 @@ import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionMessageSyncEvent
 import com.openmate.core.domain.model.SessionMessageSyncChange
 import com.openmate.core.domain.model.SessionMessageSyncResult
+import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.model.Workspace
@@ -275,6 +276,60 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun loadSession_exposesRetryStatusFromSessionRepository() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(message("m1", timeCreated = 1)),
+            lastSeq = null,
+        )
+        val sessionRepository = FakeSessionRepository(
+            retryStatus = SessionRetryStatus(
+                sessionId = SESSION_ID,
+                attempt = 2,
+                message = "Provider overloaded",
+                next = System.currentTimeMillis() + 30_000,
+            ),
+        )
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            sessionRepository = sessionRepository,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.sessionRetryStatus.value?.message == "Provider overloaded" }
+
+        assertThat(viewModel.sessionRetryStatus.value?.attempt).isEqualTo(2)
+    }
+
+    @Test
+    fun loadSession_updatesRetryStatusImmediatelyFromObservedRetryFlow() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(message("m1", timeCreated = 1)),
+            lastSeq = null,
+        )
+        val sessionRepository = FakeSessionRepository()
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            sessionRepository = sessionRepository,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+
+        sessionRepository.emitRetryStatus(
+            SessionRetryStatus(
+                sessionId = SESSION_ID,
+                attempt = 3,
+                message = "Provider overloaded",
+                next = System.currentTimeMillis() + 15_000,
+            )
+        )
+
+        waitUntil { viewModel.sessionRetryStatus.value?.attempt == 3 }
+
+        assertThat(viewModel.sessionRetryStatus.value?.message).isEqualTo("Provider overloaded")
+    }
+
+    @Test
     fun concurrentSyncEventAndLoadOlder_keepsBothUpdates() = runTest(dispatcher) {
         val recentWindow = (3L..32L).map { timeCreated ->
             message("m$timeCreated", timeCreated = timeCreated)
@@ -427,7 +482,11 @@ class SessionDetailViewModelTest {
         }
     }
 
-    private class FakeSessionRepository : SessionRepository {
+    private class FakeSessionRepository(
+        private val retryStatus: SessionRetryStatus? = null,
+    ) : SessionRepository {
+        private val retryStatusFlow = MutableStateFlow(retryStatus)
+
         private val session = Session(
             id = SESSION_ID,
             title = "Session",
@@ -460,6 +519,8 @@ class SessionDetailViewModelTest {
 
         override fun observeSession(id: String): Flow<Session?> = flowOf(session)
 
+        override fun observeSessionRetryStatus(id: String): Flow<SessionRetryStatus?> = retryStatusFlow
+
         override fun observeWorkspaces(): Flow<List<Workspace>> = flowOf(emptyList())
 
         override suspend fun addSessionDuration(id: String, increment: Long) = Unit
@@ -467,6 +528,12 @@ class SessionDetailViewModelTest {
         override suspend fun updateSessionModel(id: String, providerID: String?, modelID: String?, modelName: String?) = Unit
 
         override suspend fun updateSessionStatus(id: String, status: String) = Unit
+
+        override suspend fun getSessionRetryStatus(id: String): SessionRetryStatus? = retryStatusFlow.value
+
+        fun emitRetryStatus(status: SessionRetryStatus?) {
+            retryStatusFlow.value = status
+        }
     }
 
     private class FakeTodoRepository : TodoRepository {

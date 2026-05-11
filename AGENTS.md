@@ -4,7 +4,18 @@
 
 - **Android 客户端**: `D:\openmate\android` — 详见 [`android/AGENTS.md`](android/AGENTS.md)（架构、构建、约定、API 等）
 - **Bridge Agent**: `D:\openmate\opencode-bridge` — 详见 [`opencode-bridge/AGENTS.md`](opencode-bridge/AGENTS.md)（Rust 代理/进程管理/文件服务，端口 4097）
+- **opencode 源码**: `D:\github\opencode` — 排查服务端事件流、`prompt_async`、`session.next.*` 相关逻辑时优先查看该仓库及其 `AGENTS.md`
 - **调试脚本**: `D:\openmate\scripts\`
+
+## Communication
+
+- 默认使用中文与用户交流，除非用户明确要求使用其他语言。
+
+## Sync Constraints
+
+- 移动端因网络与系统调度特性，无法假设 SSE 连接始终稳定。
+- 任何状态同步或数据展示都不能只依赖 SSE 获取数据，否则在断连、后台切换或重连期间可能丢失信息。
+- 需要实时性时，可使用 SSE 提升更新速度，但必须配合轮询与增量同步等现有补偿机制保证最终一致性与信息完整性。
 
 ## Debug & Analysis Tools
 

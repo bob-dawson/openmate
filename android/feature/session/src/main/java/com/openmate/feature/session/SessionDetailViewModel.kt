@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.SessionMessage
+import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionMessageSyncResult
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.QuestionRequest
@@ -85,6 +86,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _currentBusyStart = MutableStateFlow<Long?>(null)
     val currentBusyStart: StateFlow<Long?> = _currentBusyStart.asStateFlow()
 
+    private val _sessionRetryStatus = MutableStateFlow<SessionRetryStatus?>(null)
+    val sessionRetryStatus: StateFlow<SessionRetryStatus?> = _sessionRetryStatus.asStateFlow()
+
     private var wasBusy = false
     private val _sessionStatus = MutableStateFlow("")
 
@@ -157,6 +161,7 @@ class SessionDetailViewModel @Inject constructor(
     private var observeQuestionJob: Job? = null
     private var observePermissionJob: Job? = null
     private var observeSyncEventJob: Job? = null
+    private var observeRetryStatusJob: Job? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -220,6 +225,7 @@ class SessionDetailViewModel @Inject constructor(
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
         observeSyncEventJob?.cancel()
+        observeRetryStatusJob?.cancel()
         _selectedModel.value = null
         messageWindowState = SessionMessageWindowManager.State(
             messages = emptyList(),
@@ -229,6 +235,7 @@ class SessionDetailViewModel @Inject constructor(
         _messages.value = emptyList()
         _sessionTotalDuration.value = null
         _currentBusyStart.value = null
+        _sessionRetryStatus.value = null
         _sessionStatus.value = ""
         _isStreaming.value = false
         _queuedMessageIds.value = emptySet()
@@ -275,6 +282,7 @@ class SessionDetailViewModel @Inject constructor(
         observeQuestions()
         observePermissions()
         observeSyncEvents(sessionID)
+        observeRetryStatus(sessionID)
         startPolling(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -310,6 +318,11 @@ class SessionDetailViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "refreshStatusFromMessages failed", e)
             }
+            try {
+                refreshRetryStatus(sessionID)
+            } catch (e: Exception) {
+                Log.e(TAG, "refreshRetryStatus failed", e)
+            }
             resolveDefaultModel()
         }
     }
@@ -320,6 +333,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 applySyncResult(sessionMessageRepository.incrementalSync(sid))
                 sessionRepository.refreshSessionStatusesFromMessages()
+                refreshRetryStatus(sid)
                 todoRepository.refreshTodos(sid)
                 questionRepository.refresh(currentDirectory.ifBlank { "/" })
                 permissionRepository.refresh(currentDirectory.ifBlank { "/" })
@@ -337,6 +351,7 @@ class SessionDetailViewModel @Inject constructor(
                 try {
                     applySyncResult(sessionMessageRepository.incrementalSync(sessionId))
                     sessionRepository.refreshSessionStatusesFromMessages()
+                    refreshRetryStatus(sessionId)
                 } catch (e: Exception) {
                     Log.e(TAG, "poll sync failed", e)
                 }
@@ -362,6 +377,7 @@ class SessionDetailViewModel @Inject constructor(
         observeQuestionJob?.cancel()
         observePermissionJob?.cancel()
         observeSyncEventJob?.cancel()
+        observeRetryStatusJob?.cancel()
         pollJob?.cancel()
         sseEventRepository.setActiveSessionScope(null, enabled = false)
         val sid = currentSessionID
@@ -516,6 +532,7 @@ class SessionDetailViewModel @Inject constructor(
                 delay(2000)
                 applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
                 sessionRepository.refreshSessionStatusesFromMessages()
+                refreshRetryStatus(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
                 _errorMessage.value = "Compact failed: ${e.message}"
@@ -669,6 +686,13 @@ class SessionDetailViewModel @Inject constructor(
         _isStreaming.value = lastAssistant?.completedAt == null || (lastAssistantFinish != "stop" && lastAssistantFinish != "length")
         _queuedMessageIds.value = buildQueuedMessageIds(list)
 
+        if (_sessionRetryStatus.value != null) {
+            _currentBusyStart.value = null
+            _sessionStatus.value = SessionStatus.BUSY.name
+            wasBusy = false
+            return
+        }
+
         if (hasBusyAssistant) {
             if (_currentBusyStart.value == null) {
                 _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list)
@@ -732,6 +756,24 @@ class SessionDetailViewModel @Inject constructor(
         }
         anchors.keys.retainAll { id -> list.any { it.id == id && it.completedAt == null } }
         _runningAnchors.value = anchors
+    }
+
+    private suspend fun refreshRetryStatus(sessionId: String) {
+        val latest = sessionRepository.getSessionRetryStatus(sessionId)
+        if (latest != null || _sessionRetryStatus.value != null) {
+            _sessionRetryStatus.value = latest
+            recalculateMessageDerivedState(messageWindowState.messages)
+        }
+    }
+
+    private fun observeRetryStatus(sessionId: String) {
+        observeRetryStatusJob?.cancel()
+        observeRetryStatusJob = viewModelScope.launch(Dispatchers.IO) {
+            sessionRepository.observeSessionRetryStatus(sessionId).collect { status ->
+                _sessionRetryStatus.value = status
+                recalculateMessageDerivedState(messageWindowState.messages)
+            }
+        }
     }
 
     private fun buildQueuedMessageIds(list: List<SessionMessage>): Set<String> {

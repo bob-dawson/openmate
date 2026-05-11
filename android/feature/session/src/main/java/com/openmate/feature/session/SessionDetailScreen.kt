@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,6 +76,7 @@ import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
 import com.openmate.feature.session.component.TodoListCard
+import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.common.formatDurationMillis
 import kotlinx.coroutines.delay
@@ -96,6 +98,7 @@ fun SessionDetailScreen(
     val runningAnchors by viewModel.runningAnchors.collectAsState()
     val sessionTotalDuration by viewModel.sessionTotalDuration.collectAsState()
     val currentBusyStart by viewModel.currentBusyStart.collectAsState()
+    val sessionRetryStatus by viewModel.sessionRetryStatus.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -458,8 +461,8 @@ fun SessionDetailScreen(
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-}
-}
+                            }
+                        }
                     }
                 }
             }
@@ -502,42 +505,47 @@ fun SessionDetailScreen(
                             )
                         }
                     }
-                    val busyStart = currentBusyStart
-                    if (busyStart != null) {
-                        var elapsed by remember(busyStart) { mutableStateOf(System.currentTimeMillis() - busyStart) }
-                        LaunchedEffect(busyStart) {
-                            while (true) {
-                                delay(1000)
-                                elapsed = System.currentTimeMillis() - busyStart
+                    val retryStatus = sessionRetryStatus
+                    if (retryStatus != null) {
+                        SessionRetryCard(retryStatus)
+                    } else {
+                        val busyStart = currentBusyStart
+                        if (busyStart != null) {
+                            var elapsed by remember(busyStart) { mutableStateOf(System.currentTimeMillis() - busyStart) }
+                            LaunchedEffect(busyStart) {
+                                while (true) {
+                                    delay(1000)
+                                    elapsed = System.currentTimeMillis() - busyStart
+                                }
                             }
-                        }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(12.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                                Text(
+                                    text = formatDurationMillis(
+                                        SessionBusyTimerCalculator.displayDuration(
+                                            totalDuration = sessionTotalDuration,
+                                            currentBusyStart = busyStart,
+                                            now = busyStart + maxOf(0L, elapsed),
+                                        ) ?: 0L,
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        } else if (sessionTotalDuration != null) {
                             Text(
-                                text = formatDurationMillis(
-                                    SessionBusyTimerCalculator.displayDuration(
-                                        totalDuration = sessionTotalDuration,
-                                        currentBusyStart = busyStart,
-                                        now = busyStart + maxOf(0L, elapsed),
-                                    ) ?: 0L,
-                                ),
+                                text = formatDurationMillis(sessionTotalDuration!!),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    } else if (sessionTotalDuration != null) {
-                        Text(
-                            text = formatDurationMillis(sessionTotalDuration!!),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             }
@@ -698,4 +706,55 @@ fun SessionDetailScreen(
         )
     }
 
+}
+
+@Composable
+private fun SessionRetryCard(status: SessionRetryStatus) {
+    var remainingSeconds by remember(status.next) {
+        mutableStateOf(status.next?.let { ((it - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L) })
+    }
+
+    LaunchedEffect(status.next) {
+        val next = status.next ?: run {
+            remainingSeconds = null
+            return@LaunchedEffect
+        }
+        while (true) {
+            remainingSeconds = ((next - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+            delay(1000)
+        }
+    }
+
+    Card {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(12.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Column {
+                Text(
+                    text = status.message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val detail = buildString {
+                    append("自动重试中")
+                    status.attempt?.let { append(" · 第 ${it} 次") }
+                    remainingSeconds?.let { append(" · ${it} 秒后重试") }
+                }
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }

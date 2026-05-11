@@ -1,9 +1,11 @@
 package com.openmate.core.data.repository
 
+import com.openmate.core.data.sse.SessionRetryStateStore
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.toDomain
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.SessionRepository
@@ -17,6 +19,7 @@ import javax.inject.Inject
 class SessionRepositoryImpl @Inject constructor(
     private val api: OpencodeApiClient,
     private val dbProvider: ActiveDatabaseProvider,
+    private val retryStateStore: SessionRetryStateStore,
 ) : SessionRepository {
 
     override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> {
@@ -168,6 +171,10 @@ class SessionRepositoryImpl @Inject constructor(
         return dbProvider.getActive().sessionDao().observeById(id).map { it?.toDomain() }
     }
 
+    override fun observeSessionRetryStatus(id: String): Flow<SessionRetryStatus?> {
+        return retryStateStore.observe(id)
+    }
+
     override fun observeWorkspaces(): Flow<List<Workspace>> {
         return dbProvider.getActive().sessionDao().observeAll().map { sessions ->
             sessions
@@ -195,5 +202,21 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun updateSessionStatus(id: String, status: String) {
         dbProvider.getActive().sessionDao().updateStatus(id, status)
+    }
+
+    override suspend fun getSessionRetryStatus(id: String): SessionRetryStatus? {
+        val status = api.getSessionStatuses()[id] ?: return null
+        if (status.type != "retry") return null
+        val message = status.message?.takeIf { it.isNotBlank() } ?: return null
+        return SessionRetryStatus(
+            sessionId = id,
+            attempt = status.attempt,
+            message = message,
+            next = status.next,
+        )
+    }
+
+    fun updateObservedRetryStatus(id: String, status: SessionRetryStatus?) {
+        retryStateStore.update(id, status)
     }
 }
