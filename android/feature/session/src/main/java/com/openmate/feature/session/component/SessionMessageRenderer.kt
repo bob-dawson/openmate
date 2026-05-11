@@ -37,6 +37,18 @@ private val TaskIdRegex = Regex("task_id:\\s*(ses_\\S+)")
 private fun JsonObject?.str(key: String): String? =
     this?.get(key)?.let { if (it is JsonPrimitive) it.content else null }
 
+internal fun extractSubtaskSessionId(
+    metadata: JsonObject?,
+    structured: JsonObject?,
+    resultText: String?,
+): String? {
+    return metadata.str("sessionId")
+        ?: metadata.str("sessionID")
+        ?: structured.str("sessionId")
+        ?: structured.str("sessionID")
+        ?: resultText?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+}
+
 @Composable
 fun SessionMessageRenderer(
     entity: SessionMessage,
@@ -402,9 +414,12 @@ fun AssistantMessageItem(
                             )
                         } else if (name == "task") {
                             val summary = toolSummary(name, input, resultText)
-                            val subtaskSessionID = remember(metadata, resultText) {
-                                metadata?.str("sessionId")
-                                    ?: resultText?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+                            val subtaskSessionID = remember(metadata, structuredResult, resultText) {
+                                extractSubtaskSessionId(
+                                    metadata = metadata,
+                                    structured = structuredResult?.jsonObject,
+                                    resultText = resultText,
+                                )
                             }
                             val subtaskPerms = subtaskSessionID?.let { sid ->
                                 pendingPermissions.filter { it.sessionID == sid }

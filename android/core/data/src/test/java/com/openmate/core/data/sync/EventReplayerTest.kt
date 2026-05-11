@@ -157,6 +157,55 @@ class EventReplayerTest {
         assertThat(update.data["time"]!!.jsonObject["completed"]!!.jsonPrimitive.longOrNull).isEqualTo(2_000L)
     }
 
+    @Test
+    fun replay_runningTaskTool_keepsSessionIdForNavigation() = runTest {
+        val replayer = EventReplayer()
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "assistant-1",
+                    type = "session.next.step.started.1",
+                    timestamp = 1_000L,
+                    extra = buildJsonObject {
+                        put("agent", JsonPrimitive("build"))
+                        put("model", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-input-started",
+                    type = "session.next.tool.input.started.1",
+                    timestamp = 1_050L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-task-1"))
+                        put("name", JsonPrimitive("task"))
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-called",
+                    type = "session.next.tool.called.1",
+                    timestamp = 1_100L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-task-1"))
+                        put("input", buildJsonObject { put("description", JsonPrimitive("Subtask")) })
+                        put("provider", buildJsonObject {})
+                        put("metadata", buildJsonObject { put("sessionId", JsonPrimitive("ses_subtask_1")) })
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { null },
+        )
+
+        val assistantUpdate = changes.last() as ReplayChange.Update
+        val tool = assistantUpdate.data["content"]!!.jsonArray.single().jsonObject
+        val metadata = tool["state"]!!.jsonObject["metadata"]!!.jsonObject
+
+        assertThat(tool["name"]!!.jsonPrimitive.content).isEqualTo("task")
+        assertThat(tool["state"]!!.jsonObject["status"]!!.jsonPrimitive.content).isEqualTo("running")
+        assertThat(metadata["sessionId"]!!.jsonPrimitive.content).isEqualTo("ses_subtask_1")
+    }
+
     private fun replayEvent(
         id: String,
         type: String,
