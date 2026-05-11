@@ -1,0 +1,522 @@
+package com.openmate.feature.session
+
+import android.content.Context
+import androidx.arch.core.executor.testing.InstantTaskExecutorRule
+import com.google.common.truth.Truth.assertThat
+import com.openmate.core.domain.model.PermissionReply
+import com.openmate.core.domain.model.PermissionRequest
+import com.openmate.core.domain.model.QuestionRequest
+import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionMessage
+import com.openmate.core.domain.model.SessionMessageSyncEvent
+import com.openmate.core.domain.model.SessionMessageSyncChange
+import com.openmate.core.domain.model.SessionMessageSyncResult
+import com.openmate.core.domain.model.SessionStatus
+import com.openmate.core.domain.model.TodoInfo
+import com.openmate.core.domain.model.Workspace
+import com.openmate.core.domain.repository.PermissionRepository
+import com.openmate.core.domain.repository.QuestionRepository
+import com.openmate.core.domain.repository.SessionMessageRepository
+import com.openmate.core.domain.repository.SessionRepository
+import com.openmate.core.domain.repository.SseEventRepository
+import com.openmate.core.domain.repository.TodoRepository
+import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.ProviderListDto
+import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import okhttp3.OkHttpClient
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TestRule
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.RobolectricTestRunner
+import org.junit.runner.RunWith
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+class SessionDetailViewModelTest {
+
+    @get:Rule
+    val instantTaskExecutorRule: TestRule = InstantTaskExecutorRule()
+
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(dispatcher)
+        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+            .edit()
+            .clear()
+            .apply()
+    }
+
+    @Test
+    fun loadSession_initializesMessagesFromRecentWindow() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                message("m1", timeCreated = 1),
+                message("m2", timeCreated = 2),
+            ),
+            lastSeq = null,
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == listOf("m1", "m2") }
+
+        assertThat(viewModel.messages.value.map { it.id }).containsExactly("m1", "m2").inOrder()
+        assertThat(repository.observeMessagesCalls).isEqualTo(0)
+        assertThat(repository.getRecentWindowCalls).containsExactly(SESSION_ID to 30)
+    }
+
+    @Test
+    fun refresh_appliesSyncChangesWithoutReobservingDatabase() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                message("m1", timeCreated = 1, data = "old"),
+                message("m2", timeCreated = 2),
+            ),
+            lastSeq = null,
+            incrementalSyncResults = ArrayDeque(
+                listOf(
+                    SessionMessageSyncResult(
+                        lastSeq = 2,
+                        changes = listOf(
+                            SessionMessageSyncChange.Update(message("m1", timeCreated = 1, data = "new")),
+                            SessionMessageSyncChange.Insert(message("m3", timeCreated = 3)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == listOf("m1", "m2") }
+        repository.getRecentWindowCalls.clear()
+
+        viewModel.refresh()
+        waitUntil { viewModel.messages.value.map { it.id } == listOf("m1", "m2", "m3") }
+
+        assertThat(viewModel.messages.value.map { it.id }).containsExactly("m1", "m2", "m3").inOrder()
+        assertThat(viewModel.messages.value.first { it.id == "m1" }.data).isEqualTo("new")
+        assertThat(repository.observeMessagesCalls).isEqualTo(0)
+        assertThat(repository.getRecentWindowCalls).isEmpty()
+    }
+
+    @Test
+    fun loadOlderMessages_prependsOlderPage() = runTest(dispatcher) {
+        val recentWindow = (3L..32L).map { timeCreated ->
+            message("m$timeCreated", timeCreated = timeCreated)
+        }
+        val repository = FakeSessionMessageRepository(
+            recentWindow = recentWindow,
+            lastSeq = null,
+            olderPages = ArrayDeque(
+                listOf(
+                    listOf(
+                        message("m1", timeCreated = 1),
+                        message("m2", timeCreated = 2),
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == recentWindow.map { it.id } }
+
+        viewModel.loadOlderMessages()
+        waitUntil { viewModel.messages.value.map { it.id } == listOf("m1", "m2") + recentWindow.map { it.id } }
+
+        assertThat(viewModel.messages.value.map { it.id }).containsExactlyElementsIn(listOf("m1", "m2") + recentWindow.map { it.id }).inOrder()
+        assertThat(repository.getOlderPageCalls).containsExactly(OlderPageCall(SESSION_ID, 3, "m3", 30))
+    }
+
+    @Test
+    fun loadOlderMessages_stopsAfterShortOlderPage() = runTest(dispatcher) {
+        val recentWindow = (3L..32L).map { timeCreated ->
+            message("m$timeCreated", timeCreated = timeCreated)
+        }
+        val repository = FakeSessionMessageRepository(
+            recentWindow = recentWindow,
+            lastSeq = null,
+            olderPages = ArrayDeque(
+                listOf(
+                    listOf(
+                        message("m1", timeCreated = 1),
+                        message("m2", timeCreated = 2),
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == recentWindow.map { it.id } }
+
+        viewModel.loadOlderMessages()
+        waitUntil { viewModel.messages.value.map { it.id } == listOf("m1", "m2") + recentWindow.map { it.id } }
+        viewModel.loadOlderMessages()
+        advanceUntilIdle()
+
+        assertThat(repository.getOlderPageCalls).containsExactly(OlderPageCall(SESSION_ID, 3, "m3", 30))
+    }
+
+    @Test
+    fun loadOlderMessages_ignoresConcurrentRequests() = runTest(dispatcher) {
+        val recentWindow = (3L..32L).map { timeCreated ->
+            message("m$timeCreated", timeCreated = timeCreated)
+        }
+        val repository = FakeSessionMessageRepository(
+            recentWindow = recentWindow,
+            lastSeq = null,
+            olderPageDelayMillis = 1_000,
+            olderPages = ArrayDeque(
+                listOf(
+                    listOf(
+                        message("m1", timeCreated = 1),
+                        message("m2", timeCreated = 2),
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == recentWindow.map { it.id } }
+
+        viewModel.loadOlderMessages()
+        viewModel.loadOlderMessages()
+        waitUntil { repository.getOlderPageCalls.size == 1 }
+
+        assertThat(repository.getOlderPageCalls).containsExactly(OlderPageCall(SESSION_ID, 3, "m3", 30))
+    }
+
+    @Test
+    fun backgroundSyncEvent_updatesCurrentWindowMessages() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                message("m1", timeCreated = 1),
+                message("m2", timeCreated = 2),
+            ),
+            lastSeq = null,
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == listOf("m1", "m2") }
+
+        repository.emitSyncEvent(
+            SessionMessageSyncEvent(
+                sessionId = SESSION_ID,
+                result = SessionMessageSyncResult(
+                    lastSeq = 3,
+                    changes = listOf(
+                        SessionMessageSyncChange.Insert(message("m3", timeCreated = 3)),
+                    ),
+                ),
+            ),
+        )
+
+        waitUntil { viewModel.messages.value.map { it.id } == listOf("m1", "m2", "m3") }
+    }
+
+    @Test
+    fun loadSession_initSyncFullPage_keepsOlderPagingEnabled() = runTest(dispatcher) {
+        val syncedWindow = (1L..30L).map { timeCreated ->
+            message("m$timeCreated", timeCreated = timeCreated)
+        }
+        val repository = FakeSessionMessageRepository(
+            recentWindow = emptyList(),
+            lastSeq = null,
+            initSyncResult = SessionMessageSyncResult(
+                lastSeq = 30,
+                changes = syncedWindow.map { SessionMessageSyncChange.Insert(it) },
+            ),
+            olderPages = ArrayDeque(
+                listOf(
+                    listOf(message("m-1", timeCreated = 0)),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == syncedWindow.map { it.id } }
+
+        viewModel.loadOlderMessages()
+        waitUntil { viewModel.messages.value.firstOrNull()?.id == "m-1" }
+
+        assertThat(repository.getOlderPageCalls).containsExactly(OlderPageCall(SESSION_ID, 1, "m1", 30))
+    }
+
+    @Test
+    fun concurrentSyncEventAndLoadOlder_keepsBothUpdates() = runTest(dispatcher) {
+        val recentWindow = (3L..32L).map { timeCreated ->
+            message("m$timeCreated", timeCreated = timeCreated)
+        }
+        val repository = FakeSessionMessageRepository(
+            recentWindow = recentWindow,
+            lastSeq = null,
+            olderPageDelayMillis = 100,
+            olderPages = ArrayDeque(
+                listOf(
+                    listOf(
+                        message("m1", timeCreated = 1),
+                        message("m2", timeCreated = 2),
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.map { it.id } == recentWindow.map { it.id } }
+
+        viewModel.loadOlderMessages()
+        repository.emitSyncEvent(
+            SessionMessageSyncEvent(
+                sessionId = SESSION_ID,
+                result = SessionMessageSyncResult(
+                    lastSeq = 33,
+                    changes = listOf(SessionMessageSyncChange.Insert(message("m33", timeCreated = 33))),
+                ),
+            ),
+        )
+
+        waitUntil {
+            val ids = viewModel.messages.value.map { it.id }
+            ids.containsAll(listOf("m1", "m2", "m33"))
+        }
+
+        assertThat(viewModel.messages.value.map { it.id })
+            .containsExactlyElementsIn(listOf("m1", "m2") + recentWindow.map { it.id } + listOf("m33"))
+            .inOrder()
+    }
+
+    private fun createViewModel(
+        sessionMessageRepository: FakeSessionMessageRepository,
+        sessionRepository: SessionRepository = FakeSessionRepository(),
+        todoRepository: TodoRepository = FakeTodoRepository(),
+        questionRepository: QuestionRepository = FakeQuestionRepository(),
+        permissionRepository: PermissionRepository = FakePermissionRepository(),
+        sseEventRepository: SseEventRepository = FakeSseEventRepository(),
+    ): SessionDetailViewModel {
+        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+            .edit()
+            .putString("recent_models", "provider::model::Model")
+            .apply()
+
+        return SessionDetailViewModel(
+            appContext = appContext(),
+            sessionRepository = sessionRepository,
+            sessionMessageRepository = sessionMessageRepository,
+            todoRepository = todoRepository,
+            questionRepository = questionRepository,
+            permissionRepository = permissionRepository,
+            sseEventRepository = sseEventRepository,
+            apiClient = OpencodeApiClient(
+                client = OkHttpClient.Builder()
+                    .callTimeout(10, TimeUnit.MILLISECONDS)
+                    .build(),
+            ),
+        )
+    }
+
+    private fun appContext() = RuntimeEnvironment.getApplication()
+
+    private fun waitUntil(timeoutMillis: Long = 2.seconds.inWholeMilliseconds, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return
+            Thread.sleep(10)
+        }
+        assertThat(condition()).isTrue()
+    }
+
+    private data class OlderPageCall(
+        val sessionId: String,
+        val beforeTimeCreated: Long,
+        val beforeId: String,
+        val limit: Int,
+    )
+
+    private class FakeSessionMessageRepository(
+        recentWindow: List<SessionMessage> = emptyList(),
+        private val lastSeq: Long? = null,
+        private val initSyncResult: SessionMessageSyncResult = SessionMessageSyncResult(0, emptyList()),
+        private val incrementalSyncResults: ArrayDeque<SessionMessageSyncResult> = ArrayDeque(),
+        private val olderPageDelayMillis: Long = 0,
+        private val olderPages: ArrayDeque<List<SessionMessage>> = ArrayDeque(),
+    ) : SessionMessageRepository {
+        private val observedMessages = MutableStateFlow(emptyList<SessionMessage>())
+        private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 16)
+        private var recentWindowMessages = recentWindow
+
+        var observeMessagesCalls = 0
+        val getRecentWindowCalls = mutableListOf<Pair<String, Int>>()
+        val getOlderPageCalls = mutableListOf<OlderPageCall>()
+
+        override fun observeMessages(sessionId: String): Flow<List<SessionMessage>> {
+            observeMessagesCalls += 1
+            return observedMessages
+        }
+
+        override fun observeSyncEvents(): Flow<SessionMessageSyncEvent> = syncEvents
+
+        override suspend fun getRecentWindow(sessionId: String, limit: Int): List<SessionMessage> {
+            getRecentWindowCalls += sessionId to limit
+            return recentWindowMessages
+        }
+
+        override suspend fun getOlderPage(
+            sessionId: String,
+            beforeTimeCreated: Long,
+            beforeId: String,
+            limit: Int,
+        ): List<SessionMessage> {
+            getOlderPageCalls += OlderPageCall(sessionId, beforeTimeCreated, beforeId, limit)
+            if (olderPageDelayMillis > 0) {
+                kotlinx.coroutines.delay(olderPageDelayMillis)
+            }
+            return olderPages.removeFirstOrNull().orEmpty()
+        }
+
+        override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult = initSyncResult
+
+        override suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult {
+            return incrementalSyncResults.removeFirstOrNull() ?: SessionMessageSyncResult(lastSeq ?: 0L, emptyList())
+        }
+
+        override suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult {
+            val result = incrementalSync(sessionId)
+            syncEvents.emit(SessionMessageSyncEvent(sessionId = sessionId, result = result))
+            return result
+        }
+
+        override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
+
+        override suspend fun getLastSeq(sessionId: String): Long? = lastSeq
+
+        fun emitSyncEvent(event: SessionMessageSyncEvent) {
+            syncEvents.tryEmit(event)
+        }
+    }
+
+    private class FakeSessionRepository : SessionRepository {
+        private val session = Session(
+            id = SESSION_ID,
+            title = "Session",
+            directory = "/workspace",
+            projectID = "project",
+            createdAt = 1,
+            updatedAt = 1,
+            status = SessionStatus.IDLE,
+        )
+
+        override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> = listOf(session)
+
+        override suspend fun getSession(id: String): Session? = session
+
+        override suspend fun createSession(title: String?, directory: String?): Session = session
+
+        override suspend fun deleteSession(id: String) = Unit
+
+        override suspend fun updateSession(id: String, title: String?) = Unit
+
+        override suspend fun abortSession(id: String, directory: String?) = Unit
+
+        override suspend fun refreshSessionStatuses() = Unit
+
+        override suspend fun refreshSessionStatusesFromMessages() = Unit
+
+        override suspend fun syncSessionStatusFromRemote(sessionID: String) = Unit
+
+        override fun observeSessions(directory: String?): Flow<List<Session>> = flowOf(listOf(session))
+
+        override fun observeSession(id: String): Flow<Session?> = flowOf(session)
+
+        override fun observeWorkspaces(): Flow<List<Workspace>> = flowOf(emptyList())
+
+        override suspend fun addSessionDuration(id: String, increment: Long) = Unit
+
+        override suspend fun updateSessionModel(id: String, providerID: String?, modelID: String?, modelName: String?) = Unit
+
+        override suspend fun updateSessionStatus(id: String, status: String) = Unit
+    }
+
+    private class FakeTodoRepository : TodoRepository {
+        override fun observeTodos(sessionID: String): Flow<List<TodoInfo>> = flowOf(emptyList())
+
+        override suspend fun refreshTodos(sessionID: String) = Unit
+    }
+
+    private class FakeQuestionRepository : QuestionRepository {
+        override suspend fun refresh(directory: String) = Unit
+
+        override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) = Unit
+
+        override suspend fun reject(requestID: String, directory: String?) = Unit
+
+        override fun observePending(): Flow<List<QuestionRequest>> = flowOf(emptyList())
+    }
+
+    private class FakePermissionRepository : PermissionRepository {
+        override suspend fun refresh(directory: String) = Unit
+
+        override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) = Unit
+
+        override fun observePending(): Flow<List<PermissionRequest>> = flowOf(emptyList())
+    }
+
+    private class FakeSseEventRepository : SseEventRepository {
+        override fun connect(address: String, port: Int, password: String?) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
+
+        override fun disconnect() = Unit
+
+        override fun observeConnectionStatus() = flowOf<com.openmate.core.domain.model.ConnectionStatus>()
+
+        override fun isConnectedTo(address: String, port: Int): Boolean = false
+
+        override fun setActiveSessionScope(directory: String?, enabled: Boolean) = Unit
+    }
+
+    private fun message(id: String, timeCreated: Long, data: String = "{}") =
+        SessionMessage(
+            id = id,
+            sessionId = SESSION_ID,
+            type = "assistant",
+            data = data,
+            timeCreated = timeCreated,
+            timeUpdated = timeCreated,
+            completedAt = timeCreated,
+        )
+
+    private companion object {
+        const val SESSION_ID = "session-1"
+    }
+}

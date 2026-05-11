@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,9 +51,13 @@ fun SubtaskDetailScreen(
     val isStreaming by viewModel.isStreaming.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
+    val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
     val autoFollowTracker = remember { AutoFollowTracker() }
+    var pagingTriggerState by remember(subtaskSessionID) { mutableStateOf(SessionPagingTrigger.State(lastTriggeredFirstMessageId = null)) }
+    var pendingRestoreAnchor by remember(subtaskSessionID) { mutableStateOf<String?>(null) }
 
     LaunchedEffect(subtaskSessionID) {
         viewModel.loadSession(subtaskSessionID)
@@ -65,6 +70,16 @@ fun SubtaskDetailScreen(
             kotlinx.coroutines.delay(150)
         }
         prevMessageCount.intValue = messages.size
+    }
+
+    val contentUpdateKey = remember(messages) {
+        val last = messages.lastOrNull()
+        if (last == null) "" else listOf(last.id, last.timeUpdated, last.completedAt, last.data).joinToString("|")
+    }
+    LaunchedEffect(contentUpdateKey) {
+        if (messages.isNotEmpty() && prevMessageCount.intValue == messages.size) {
+            autoFollowTracker.onContentUpdated()
+        }
     }
 
     LaunchedEffect(listState.isScrollInProgress) {
@@ -111,6 +126,43 @@ fun SubtaskDetailScreen(
         if (needFollowScroll && !autoFollowTracker.consumeShouldScrollToBottom()) {
             scrollToBottom()
         }
+    }
+
+    val firstMessageId = messages.firstOrNull()?.id
+    LaunchedEffect(
+        listState.firstVisibleItemIndex,
+        listState.firstVisibleItemScrollOffset,
+        firstMessageId,
+        hasOlderMessages,
+        isLoadingOlder,
+        pendingRestoreAnchor,
+    ) {
+        if (pendingRestoreAnchor != null) return@LaunchedEffect
+        if (
+            SessionPagingTrigger.shouldLoadOlder(
+                state = pagingTriggerState,
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                firstMessageId = firstMessageId,
+                hasOlderMessages = hasOlderMessages,
+                isLoadingOlder = isLoadingOlder,
+                shouldFollow = autoFollowTracker.shouldFollow,
+            )
+        ) {
+            pendingRestoreAnchor = firstMessageId
+            pagingTriggerState = SessionPagingTrigger.onTriggered(pagingTriggerState, firstMessageId)
+            viewModel.loadOlderMessages()
+        }
+    }
+
+    LaunchedEffect(isLoadingOlder, pendingRestoreAnchor, messages) {
+        val anchor = pendingRestoreAnchor ?: return@LaunchedEffect
+        if (isLoadingOlder) return@LaunchedEffect
+        val newIndex = messages.indexOfFirst { it.id == anchor }
+        if (newIndex > 0) {
+            listState.scrollToItem(newIndex)
+        }
+        pendingRestoreAnchor = null
     }
 
     LaunchedEffect(errorMessage) {
@@ -186,7 +238,10 @@ fun SubtaskDetailScreen(
             ChatInputBar(
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
-                onSend = { viewModel.sendMessage(subtaskSessionID) },
+                onSend = {
+                    autoFollowTracker.onLocalMessageSent()
+                    viewModel.sendMessage(subtaskSessionID)
+                },
             )
         }
     }

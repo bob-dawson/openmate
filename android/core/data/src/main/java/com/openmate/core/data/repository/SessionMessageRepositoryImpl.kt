@@ -11,8 +11,12 @@ import com.openmate.core.database.entity.SessionMessageEntity
 import com.openmate.core.database.entity.SessionMessageFullContentEntity
 import com.openmate.core.database.entity.SyncStateEntity
 import com.openmate.core.domain.model.SessionMessage
+import com.openmate.core.domain.model.SessionMessageSyncEvent
+import com.openmate.core.domain.model.SessionMessageSyncChange
+import com.openmate.core.domain.model.SessionMessageSyncResult
 import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.network.SyncApiClient
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.jsonObject
@@ -26,12 +30,31 @@ class SessionMessageRepositoryImpl @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
 ) : SessionMessageRepository {
 
+    private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 64)
+
     override fun observeMessages(sessionId: String): Flow<List<SessionMessage>> {
         return dbProvider.getActive().sessionMessageDao().observeBySession(sessionId)
             .map { entities -> entities.map { it.toDomain() } }
     }
 
-    override suspend fun initSync(sessionId: String, limit: Int) {
+    override fun observeSyncEvents(): Flow<SessionMessageSyncEvent> = syncEvents
+
+    override suspend fun getRecentWindow(sessionId: String, limit: Int): List<SessionMessage> {
+        return dbProvider.getActive().sessionMessageDao().getRecentWindow(sessionId, limit).map { it.toDomain() }
+    }
+
+    override suspend fun getOlderPage(
+        sessionId: String,
+        beforeTimeCreated: Long,
+        beforeId: String,
+        limit: Int,
+    ): List<SessionMessage> {
+        return dbProvider.getActive().sessionMessageDao()
+            .getOlderPage(sessionId, beforeTimeCreated, beforeId, limit)
+            .map { it.toDomain() }
+    }
+
+    override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult {
         val db = dbProvider.getActive()
         Log.d("SyncRepo", "initSync start: sessionId=$sessionId")
 
@@ -47,14 +70,21 @@ class SessionMessageRepositoryImpl @Inject constructor(
             dto.copy(data = truncatedData).let { SessionMessageMapper.dtoToEntity(it) }
         }
         db.sessionMessageDao().replaceAllForSession(sessionId, entities)
+
+        return SessionMessageSyncResult(
+            lastSeq = currentSeq,
+            changes = entities.map { entity ->
+                SessionMessageSyncChange.Insert(entity.toDomain())
+            },
+        )
     }
 
-    override suspend fun incrementalSync(sessionId: String) {
+    override suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult {
         val db = dbProvider.getActive()
         db.sessionMessageDao().fixRunningAssistantRoundMark()
         val syncState = db.syncStateDao().get(sessionId) ?: run {
             Log.w("SyncRepo", "incrementalSync skip: no sync state for $sessionId")
-            return
+            return SessionMessageSyncResult(lastSeq = 0L, changes = emptyList())
         }
         val t0 = System.currentTimeMillis()
         Log.d("SyncRepo", ">> incrementalSync START: sessionId=$sessionId afterSeq=${syncState.lastSeq}")
@@ -63,7 +93,11 @@ class SessionMessageRepositoryImpl @Inject constructor(
         val t1 = System.currentTimeMillis()
         if (response.events.isEmpty()) {
             Log.d("SyncRepo", "<< incrementalSync END: no new events (${t1 - t0}ms)")
-            return
+            val lastSeq = response.maxSeq ?: syncState.lastSeq
+            if (lastSeq != syncState.lastSeq) {
+                db.syncStateDao().upsert(SyncStateEntity(sessionId, lastSeq))
+            }
+            return SessionMessageSyncResult(lastSeq = lastSeq, changes = emptyList())
         }
         Log.d("SyncRepo", "  fetch events: ${response.events.size} events in ${t1 - t0}ms, maxSeq=${response.maxSeq}")
 
@@ -102,16 +136,18 @@ class SessionMessageRepositoryImpl @Inject constructor(
             }
         }
 
+        val appliedChanges = mutableListOf<SessionMessageSyncChange>()
         db.withTransaction {
             for (change in coalesced.values) {
                 when (change) {
                     is ReplayChange.Insert -> {
                         db.sessionMessageDao().upsert(change.entity)
+                        appliedChanges += SessionMessageSyncChange.Insert(change.entity.toDomain())
                     }
                     is ReplayChange.Update -> {
                         val existing = db.sessionMessageDao().getById(change.id) ?: continue
                         val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-                        db.sessionMessageDao().upsert(SessionMessageEntity(
+                        val updated = SessionMessageEntity(
                             id = change.id,
                             sessionId = existing.sessionId,
                             type = existing.type,
@@ -120,7 +156,9 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             timeUpdated = change.timeUpdated,
                             completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
                             roundMark = change.roundMark ?: existing.roundMark,
-                        ))
+                        )
+                        db.sessionMessageDao().upsert(updated)
+                        appliedChanges += SessionMessageSyncChange.Update(updated.toDomain())
                     }
                 }
             }
@@ -130,6 +168,17 @@ class SessionMessageRepositoryImpl @Inject constructor(
             val t3 = System.currentTimeMillis()
             Log.d("SyncRepo", "<< incrementalSync END: ${events.size} evts -> ${changes.size} chgs -> ${coalesced.size} writes, lastSeq=$seq, db=${t3 - t2}ms, total=${t3 - t0}ms")
         }
+
+        return SessionMessageSyncResult(
+            lastSeq = response.maxSeq ?: syncState.lastSeq,
+            changes = appliedChanges,
+        )
+    }
+
+    override suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult {
+        val result = incrementalSync(sessionId)
+        syncEvents.emit(SessionMessageSyncEvent(sessionId = sessionId, result = result))
+        return result
     }
 
     override suspend fun fetchFullMessage(sessionId: String, messageId: String) {

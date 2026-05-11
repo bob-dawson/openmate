@@ -110,6 +110,8 @@ fun SessionDetailScreen(
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
+    val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
+    val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -127,6 +129,8 @@ fun SessionDetailScreen(
     var renameText by remember { mutableStateOf("") }
     val autoFollowTracker = remember { AutoFollowTracker() }
     var prevImeBottom by remember { mutableIntStateOf(0) }
+    var pagingTriggerState by remember(sessionID) { mutableStateOf(SessionPagingTrigger.State(lastTriggeredFirstMessageId = null)) }
+    var pendingRestoreAnchor by remember(sessionID) { mutableStateOf<String?>(null) }
 
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(imeBottom) {
@@ -145,6 +149,16 @@ fun SessionDetailScreen(
             delay(150)
         }
         prevMessageCount.intValue = messages.size
+    }
+
+    val contentUpdateKey = remember(messages) {
+        val last = messages.lastOrNull()
+        if (last == null) "" else listOf(last.id, last.timeUpdated, last.completedAt, last.data).joinToString("|")
+    }
+    LaunchedEffect(contentUpdateKey) {
+        if (messages.isNotEmpty() && prevMessageCount.intValue == messages.size) {
+            autoFollowTracker.onContentUpdated()
+        }
     }
 
     LaunchedEffect(listState.isScrollInProgress) {
@@ -191,6 +205,43 @@ fun SessionDetailScreen(
         if (needFollowScroll && !autoFollowTracker.consumeShouldScrollToBottom()) {
             scrollToBottom()
         }
+    }
+
+    val firstMessageId = messages.firstOrNull()?.id
+    LaunchedEffect(
+        listState.firstVisibleItemIndex,
+        listState.firstVisibleItemScrollOffset,
+        firstMessageId,
+        hasOlderMessages,
+        isLoadingOlder,
+        pendingRestoreAnchor,
+    ) {
+        if (pendingRestoreAnchor != null) return@LaunchedEffect
+        if (
+            SessionPagingTrigger.shouldLoadOlder(
+                state = pagingTriggerState,
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                firstMessageId = firstMessageId,
+                hasOlderMessages = hasOlderMessages,
+                isLoadingOlder = isLoadingOlder,
+                shouldFollow = autoFollowTracker.shouldFollow,
+            )
+        ) {
+            pendingRestoreAnchor = firstMessageId
+            pagingTriggerState = SessionPagingTrigger.onTriggered(pagingTriggerState, firstMessageId)
+            viewModel.loadOlderMessages()
+        }
+    }
+
+    LaunchedEffect(isLoadingOlder, pendingRestoreAnchor, messages) {
+        val anchor = pendingRestoreAnchor ?: return@LaunchedEffect
+        if (isLoadingOlder) return@LaunchedEffect
+        val newIndex = messages.indexOfFirst { it.id == anchor }
+        if (newIndex > 0) {
+            listState.scrollToItem(newIndex)
+        }
+        pendingRestoreAnchor = null
     }
 
     val showScrollToBottom by remember {
@@ -521,7 +572,10 @@ fun SessionDetailScreen(
             ChatInputBar(
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
-                onSend = { viewModel.sendMessage(sessionID) },
+                onSend = {
+                    autoFollowTracker.onLocalMessageSent()
+                    viewModel.sendMessage(sessionID)
+                },
                 isUploading = isUploading,
             )
         }

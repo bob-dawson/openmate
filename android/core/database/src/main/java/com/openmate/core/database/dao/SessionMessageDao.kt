@@ -12,6 +12,36 @@ interface SessionMessageDao {
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId ORDER BY timeCreated DESC LIMIT :limit")
     suspend fun getBySessionDesc(sessionId: String, limit: Int): List<SessionMessageEntity>
 
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM session_message
+            WHERE sessionId = :sessionId
+            ORDER BY timeCreated DESC, id DESC
+            LIMIT :limit
+        ) ORDER BY timeCreated ASC, id ASC
+        """,
+    )
+    suspend fun getRecentWindow(sessionId: String, limit: Int): List<SessionMessageEntity>
+
+    @Query(
+        """
+        SELECT * FROM (
+            SELECT * FROM session_message
+            WHERE sessionId = :sessionId
+              AND (timeCreated < :beforeTimeCreated OR (timeCreated = :beforeTimeCreated AND id < :beforeId))
+            ORDER BY timeCreated DESC, id DESC
+            LIMIT :limit
+        ) ORDER BY timeCreated ASC, id ASC
+        """,
+    )
+    suspend fun getOlderPage(
+        sessionId: String,
+        beforeTimeCreated: Long,
+        beforeId: String,
+        limit: Int,
+    ): List<SessionMessageEntity>
+
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId ORDER BY timeCreated ASC")
     suspend fun getAllBySession(sessionId: String): List<SessionMessageEntity>
 

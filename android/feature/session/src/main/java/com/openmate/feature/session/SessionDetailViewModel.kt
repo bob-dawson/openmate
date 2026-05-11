@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.SessionMessage
+import com.openmate.core.domain.model.SessionMessageSyncResult
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.PermissionRequest
@@ -30,8 +31,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
@@ -61,6 +60,12 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
     val messages: StateFlow<List<SessionMessage>> = _messages.asStateFlow()
+
+    private var messageWindowState = SessionMessageWindowManager.State(
+        messages = emptyList(),
+        loadedCount = 30,
+        hasOlderMessages = false,
+    )
 
     private val _todos = MutableStateFlow<List<com.openmate.core.domain.model.TodoInfo>>(emptyList())
     val todos: StateFlow<List<com.openmate.core.domain.model.TodoInfo>> = _todos.asStateFlow()
@@ -97,6 +102,12 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val _isLoadingOlder = MutableStateFlow(false)
+    val isLoadingOlder: StateFlow<Boolean> = _isLoadingOlder.asStateFlow()
+
+    private val _hasOlderMessages = MutableStateFlow(false)
+    val hasOlderMessages: StateFlow<Boolean> = _hasOlderMessages.asStateFlow()
 
     private val _isUploading = MutableStateFlow(false)
     val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
@@ -135,6 +146,7 @@ class SessionDetailViewModel @Inject constructor(
         private const val KEY_RECENT_MODELS = "recent_models"
         private const val KEY_DRAFTS = "draft_messages"
         private const val POLL_INTERVAL_MS = 15_000L
+        private const val MESSAGE_WINDOW_PAGE_SIZE = 30
     }
 
     private var currentSessionID: String? = null
@@ -144,6 +156,7 @@ class SessionDetailViewModel @Inject constructor(
     private var observeTodoJob: Job? = null
     private var observeQuestionJob: Job? = null
     private var observePermissionJob: Job? = null
+    private var observeSyncEventJob: Job? = null
 
     fun clearError() {
         _errorMessage.value = null
@@ -206,10 +219,22 @@ class SessionDetailViewModel @Inject constructor(
         currentSessionID = sessionID
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
+        observeSyncEventJob?.cancel()
         _selectedModel.value = null
+        messageWindowState = SessionMessageWindowManager.State(
+            messages = emptyList(),
+            loadedCount = MESSAGE_WINDOW_PAGE_SIZE,
+            hasOlderMessages = false,
+        )
+        _messages.value = emptyList()
         _sessionTotalDuration.value = null
         _currentBusyStart.value = null
         _sessionStatus.value = ""
+        _isStreaming.value = false
+        _queuedMessageIds.value = emptySet()
+        _runningAnchors.value = emptyMap()
+        _isLoadingOlder.value = false
+        _hasOlderMessages.value = false
         wasBusy = false
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -246,20 +271,22 @@ class SessionDetailViewModel @Inject constructor(
         _inputText.value = savedDraft.text
         _attachedFiles.value = savedDraft.files
 
-        observeMessages(sessionID)
         observeTodos(sessionID)
         observeQuestions()
         observePermissions()
+        observeSyncEvents(sessionID)
         startPolling(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                rebuildInitialWindow(sessionID)
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
-                if (lastSeq != null && lastSeq > 0) {
+                val syncResult = if (lastSeq != null && lastSeq > 0) {
                     sessionMessageRepository.incrementalSync(sessionID)
                 } else {
-                    sessionMessageRepository.initSync(sessionID, 30)
+                    sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE)
                 }
+                applySyncResult(syncResult)
             } catch (e: Exception) {
                 Log.e(TAG, "sync failed", e)
             }
@@ -291,7 +318,7 @@ class SessionDetailViewModel @Inject constructor(
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                sessionMessageRepository.incrementalSync(sid)
+                applySyncResult(sessionMessageRepository.incrementalSync(sid))
                 sessionRepository.refreshSessionStatusesFromMessages()
                 todoRepository.refreshTodos(sid)
                 questionRepository.refresh(currentDirectory.ifBlank { "/" })
@@ -308,7 +335,7 @@ class SessionDetailViewModel @Inject constructor(
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
                 try {
-                    sessionMessageRepository.incrementalSync(sessionId)
+                    applySyncResult(sessionMessageRepository.incrementalSync(sessionId))
                     sessionRepository.refreshSessionStatusesFromMessages()
                 } catch (e: Exception) {
                     Log.e(TAG, "poll sync failed", e)
@@ -334,6 +361,7 @@ class SessionDetailViewModel @Inject constructor(
         observeTodoJob?.cancel()
         observeQuestionJob?.cancel()
         observePermissionJob?.cancel()
+        observeSyncEventJob?.cancel()
         pollJob?.cancel()
         sseEventRepository.setActiveSessionScope(null, enabled = false)
         val sid = currentSessionID
@@ -360,7 +388,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
                 apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null })
-                sessionMessageRepository.incrementalSync(sessionID)
+                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
@@ -486,7 +514,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
                 delay(2000)
-                sessionMessageRepository.incrementalSync(sessionID)
+                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
                 sessionRepository.refreshSessionStatusesFromMessages()
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
@@ -574,104 +602,151 @@ class SessionDetailViewModel @Inject constructor(
         prefs.edit().putString(KEY_RECENT_MODELS, raw).apply()
     }
 
-    private fun observeMessages(sessionID: String) {
-        observeMsgJob = viewModelScope.launch {
+    fun loadOlderMessages() {
+        val sessionId = currentSessionID ?: return
+        if (_isLoadingOlder.value) return
+        if (!messageWindowState.hasOlderMessages) return
+        val first = messageWindowState.messages.firstOrNull() ?: return
+
+        _isLoadingOlder.value = true
+
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                sessionMessageRepository.observeMessages(sessionID).collect { list ->
-                    Log.d(TAG, "observeMessages: ${list.size} messages for $sessionID")
-                    _messages.value = list
-
-                    val lastMsg = list.lastOrNull()
-                    val hasBusyAssistant = lastMsg != null && !(lastMsg.type == "assistant" && lastMsg.roundMark)
-                    val lastAssistant = list.lastOrNull { it.type == "assistant" }
-                    val lastAssistantFinish = lastAssistant?.let {
-                        runCatching {
-                            val data = Json.parseToJsonElement(it.data).jsonObject
-                            data["finish"]?.jsonPrimitive?.contentOrNull
-                        }.getOrNull()
-                    }
-                    val isStillStreaming = lastAssistant?.completedAt == null || lastAssistantFinish != "stop" && lastAssistantFinish != "length"
-                    _isStreaming.value = isStillStreaming
-                    val lastAssistantIdx = list.indexOfLast { it.type == "assistant" }
-                    val lastAssistantRoundMark = list.getOrNull(lastAssistantIdx)?.roundMark ?: true
-                    val firstUserAfterLastAssistant = if (lastAssistantIdx >= 0) {
-                        list.drop(lastAssistantIdx + 1).indexOfFirst { it.type == "user" }
-                            .let { if (it >= 0) lastAssistantIdx + 1 + it else -1 }
-                    } else -1
-                    _queuedMessageIds.value = buildSet {
-                        for ((idx, msg) in list.withIndex()) {
-                            if (idx > lastAssistantIdx && msg.type == "user") {
-                                if (!lastAssistantRoundMark) add(msg.id)
-                                else if (idx != firstUserAfterLastAssistant) add(msg.id)
-                            }
-                        }
-                    }
-
-                    if (hasBusyAssistant) {
-                        if (_currentBusyStart.value == null) {
-                            _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list)
-                        }
-                    } else if (wasBusy) {
-                        val start = _currentBusyStart.value ?: System.currentTimeMillis()
-                        val increment = maxOf(0L, System.currentTimeMillis() - start)
-                        val newTotal = (_sessionTotalDuration.value ?: 0L) + increment
-                        _sessionTotalDuration.value = newTotal
-                        _currentBusyStart.value = null
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                sessionRepository.addSessionDuration(currentSessionID!!, increment)
-                            } catch (_: Exception) {}
-                        }
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                sessionRepository.updateSessionStatus(currentSessionID!!, SessionStatus.IDLE.name)
-                            } catch (_: Exception) {}
-                        }
-                    }
-                    val newStatus = if (hasBusyAssistant) SessionStatus.BUSY.name else SessionStatus.IDLE.name
-                    if (newStatus != _sessionStatus.value) {
-                        _sessionStatus.value = newStatus
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                sessionRepository.updateSessionStatus(currentSessionID!!, newStatus)
-                            } catch (_: Exception) {}
-                        }
-                    }
-                    wasBusy = hasBusyAssistant
-
-                    val lastFinalizedAssistant = list.lastOrNull { it.type == "assistant" && it.roundMark }
-                    if (lastFinalizedAssistant != null && _selectedModel.value == null) {
-                        val data = runCatching { Json.parseToJsonElement(lastFinalizedAssistant.data).jsonObject }.getOrNull()
-                        val modelObj = data?.get("model")?.jsonObject
-                        val pId = modelObj?.get("providerID")?.jsonPrimitive?.contentOrNull
-                        val mId = modelObj?.get("modelID")?.jsonPrimitive?.contentOrNull
-                        if (pId != null && mId != null) {
-                            val ref = ModelRef(pId, mId, mId)
-                            _selectedModel.value = ref
-                            viewModelScope.launch(Dispatchers.IO) {
-                                try {
-                                    sessionRepository.updateSessionModel(currentSessionID!!, pId, mId, mId)
-                                } catch (_: Exception) {}
-                            }
-                        }
-                    }
-
-                    val anchors = _runningAnchors.value.toMutableMap()
-                    val now = android.os.SystemClock.elapsedRealtime()
-                    for (msg in list) {
-                        if (msg.type == "assistant" && msg.completedAt == null) {
-                            val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
-                            val finish = data?.get("finish")?.jsonPrimitive?.contentOrNull
-                            if (finish == null && !anchors.containsKey(msg.id)) {
-                                anchors[msg.id] = now
-                            }
-                        }
-                    }
-                    anchors.keys.retainAll { id -> list.any { it.id == id && it.completedAt == null } }
-                    _runningAnchors.value = anchors
-                }
+                val older = sessionMessageRepository.getOlderPage(
+                    sessionId = sessionId,
+                    beforeTimeCreated = first.timeCreated,
+                    beforeId = first.id,
+                    limit = MESSAGE_WINDOW_PAGE_SIZE,
+                )
+                messageWindowState = SessionMessageWindowManager.prependOlderPage(
+                    state = messageWindowState,
+                    olderPage = older,
+                    hasOlderMessages = older.size == MESSAGE_WINDOW_PAGE_SIZE,
+                )
+                _messages.value = messageWindowState.messages
+                _hasOlderMessages.value = messageWindowState.hasOlderMessages
+                recalculateMessageDerivedState(messageWindowState.messages)
             } catch (e: Exception) {
-                Log.e(TAG, "observeMessages failed", e)
+                Log.e(TAG, "loadOlderMessages failed", e)
+            } finally {
+                _isLoadingOlder.value = false
+            }
+        }
+    }
+
+    private suspend fun rebuildInitialWindow(sessionId: String) {
+        val recent = sessionMessageRepository.getRecentWindow(sessionId, MESSAGE_WINDOW_PAGE_SIZE)
+        messageWindowState = SessionMessageWindowManager.State(
+            messages = recent,
+            loadedCount = recent.size,
+            hasOlderMessages = recent.size == MESSAGE_WINDOW_PAGE_SIZE,
+        )
+        _messages.value = recent
+        _hasOlderMessages.value = messageWindowState.hasOlderMessages
+        recalculateMessageDerivedState(recent)
+    }
+
+    private fun applySyncResult(result: SessionMessageSyncResult) {
+        val hadNoMessages = messageWindowState.messages.isEmpty()
+        messageWindowState = SessionMessageWindowManager.apply(messageWindowState, result.changes)
+        if (hadNoMessages && result.changes.size >= MESSAGE_WINDOW_PAGE_SIZE) {
+            messageWindowState = messageWindowState.copy(hasOlderMessages = true)
+        }
+        _messages.value = messageWindowState.messages
+        _hasOlderMessages.value = messageWindowState.hasOlderMessages
+        recalculateMessageDerivedState(messageWindowState.messages)
+    }
+
+    private fun recalculateMessageDerivedState(list: List<SessionMessage>) {
+        val lastMsg = list.lastOrNull()
+        val hasBusyAssistant = lastMsg != null && !(lastMsg.type == "assistant" && lastMsg.roundMark)
+        val lastAssistant = list.lastOrNull { it.type == "assistant" }
+        val lastAssistantFinish = lastAssistant?.let {
+            runCatching {
+                Json.parseToJsonElement(it.data).jsonObject["finish"]?.jsonPrimitive?.contentOrNull
+            }.getOrNull()
+        }
+        _isStreaming.value = lastAssistant?.completedAt == null || (lastAssistantFinish != "stop" && lastAssistantFinish != "length")
+        _queuedMessageIds.value = buildQueuedMessageIds(list)
+
+        if (hasBusyAssistant) {
+            if (_currentBusyStart.value == null) {
+                _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list)
+            }
+        } else if (wasBusy) {
+            val start = _currentBusyStart.value ?: System.currentTimeMillis()
+            val increment = maxOf(0L, System.currentTimeMillis() - start)
+            val newTotal = (_sessionTotalDuration.value ?: 0L) + increment
+            _sessionTotalDuration.value = newTotal
+            _currentBusyStart.value = null
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    sessionRepository.addSessionDuration(currentSessionID!!, increment)
+                } catch (_: Exception) {}
+            }
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    sessionRepository.updateSessionStatus(currentSessionID!!, SessionStatus.IDLE.name)
+                } catch (_: Exception) {}
+            }
+        }
+
+        val newStatus = if (hasBusyAssistant) SessionStatus.BUSY.name else SessionStatus.IDLE.name
+        if (newStatus != _sessionStatus.value) {
+            _sessionStatus.value = newStatus
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    sessionRepository.updateSessionStatus(currentSessionID!!, newStatus)
+                } catch (_: Exception) {}
+            }
+        }
+        wasBusy = hasBusyAssistant
+
+        val lastFinalizedAssistant = list.lastOrNull { it.type == "assistant" && it.roundMark }
+        if (lastFinalizedAssistant != null && _selectedModel.value == null) {
+            val data = runCatching { Json.parseToJsonElement(lastFinalizedAssistant.data).jsonObject }.getOrNull()
+            val modelObj = data?.get("model")?.jsonObject
+            val pId = modelObj?.get("providerID")?.jsonPrimitive?.contentOrNull
+            val mId = modelObj?.get("modelID")?.jsonPrimitive?.contentOrNull
+            if (pId != null && mId != null) {
+                val ref = ModelRef(pId, mId, mId)
+                _selectedModel.value = ref
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        sessionRepository.updateSessionModel(currentSessionID!!, pId, mId, mId)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+
+        val anchors = _runningAnchors.value.toMutableMap()
+        val now = android.os.SystemClock.elapsedRealtime()
+        for (msg in list) {
+            if (msg.type == "assistant" && msg.completedAt == null) {
+                val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
+                val finish = data?.get("finish")?.jsonPrimitive?.contentOrNull
+                if (finish == null && !anchors.containsKey(msg.id)) {
+                    anchors[msg.id] = now
+                }
+            }
+        }
+        anchors.keys.retainAll { id -> list.any { it.id == id && it.completedAt == null } }
+        _runningAnchors.value = anchors
+    }
+
+    private fun buildQueuedMessageIds(list: List<SessionMessage>): Set<String> {
+        val lastAssistantIdx = list.indexOfLast { it.type == "assistant" }
+        val lastAssistantRoundMark = list.getOrNull(lastAssistantIdx)?.roundMark ?: true
+        val firstUserAfterLastAssistant = if (lastAssistantIdx >= 0) {
+            list.drop(lastAssistantIdx + 1).indexOfFirst { it.type == "user" }
+                .let { if (it >= 0) lastAssistantIdx + 1 + it else -1 }
+        } else -1
+        return buildSet {
+            for ((idx, msg) in list.withIndex()) {
+                if (idx > lastAssistantIdx && msg.type == "user") {
+                    if (!lastAssistantRoundMark) add(msg.id)
+                    else if (idx != firstUserAfterLastAssistant) add(msg.id)
+                }
             }
         }
     }
@@ -713,6 +788,20 @@ class SessionDetailViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observePermissions failed", e)
+            }
+        }
+    }
+
+    private fun observeSyncEvents(sessionId: String) {
+        observeSyncEventJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sessionMessageRepository.observeSyncEvents().collect { event ->
+                    if (event.sessionId == sessionId) {
+                        applySyncResult(event.result)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeSyncEvents failed", e)
             }
         }
     }

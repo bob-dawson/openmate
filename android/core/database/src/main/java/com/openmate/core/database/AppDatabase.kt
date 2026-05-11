@@ -24,6 +24,14 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
+val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_session_message_sessionId_timeCreated ON session_message(sessionId, timeCreated)",
+        )
+    }
+}
+
 @Database(
     entities = [
         SessionEntity::class,
@@ -32,7 +40,7 @@ val MIGRATION_15_16 = object : Migration(15, 16) {
         SyncStateEntity::class,
         TodoEntity::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

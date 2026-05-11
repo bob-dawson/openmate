@@ -50,7 +50,7 @@ class SyncSseHandler @Inject constructor(
         }
         try {
             val t0 = System.currentTimeMillis()
-            repository.incrementalSync(sessionId)
+            repository.incrementalSyncAndNotify(sessionId)
             Log.d("SyncSseHandler", "sync done: ${System.currentTimeMillis() - t0}ms")
         } catch (e: Exception) {
             Log.w("SyncSseHandler", "sync failed: ${e.message}", e)

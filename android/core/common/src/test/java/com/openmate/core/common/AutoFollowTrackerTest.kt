@@ -228,9 +228,40 @@ class AutoFollowTrackerTest {
     }
 
     @Test
+    fun localMessageSent_resumesFollowingAndTriggersScroll() {
+        val tracker = AutoFollowTracker()
+        tracker.onLocalMessageSent()
+
+        assertThat(tracker.shouldFollow).isTrue()
+        assertThat(tracker.consumeShouldScrollToBottom()).isTrue()
+    }
+
+    @Test
+    fun localMessageSent_notFollowing_doesNotForceFollow() {
+        val tracker = AutoFollowTracker()
+        tracker.onScrollStarted(true)
+
+        tracker.onLocalMessageSent()
+
+        assertThat(tracker.shouldFollow).isFalse()
+        assertThat(tracker.consumeShouldScrollToBottom()).isFalse()
+    }
+
+    @Test
     fun contentUpdated_following_triggersScroll() {
         val tracker = AutoFollowTracker()
         tracker.onContentUpdated()
+        assertThat(tracker.consumeShouldScrollToBottom()).isTrue()
+    }
+
+    @Test
+    fun contentUpdated_afterInitialLoadStillTriggersScrollWithoutCountChange() {
+        val tracker = AutoFollowTracker()
+        tracker.onMessagesChanged(5, false)
+        tracker.consumeShouldScrollToBottom()
+
+        tracker.onContentUpdated()
+
         assertThat(tracker.consumeShouldScrollToBottom()).isTrue()
     }
 

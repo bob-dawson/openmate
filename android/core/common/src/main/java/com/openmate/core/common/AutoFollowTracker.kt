@@ -83,6 +83,12 @@ class AutoFollowTracker {
         requestScroll()
     }
 
+    fun onLocalMessageSent() {
+        if (shouldFollow) {
+            requestScroll()
+        }
+    }
+
     fun onAutoScrollStarted() {
         isAutoScrolling = true
     }
