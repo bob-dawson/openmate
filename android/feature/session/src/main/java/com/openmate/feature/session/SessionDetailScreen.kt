@@ -158,7 +158,10 @@ fun SessionDetailScreen(
     LaunchedEffect(messages.size) {
         autoFollowTracker.onMessagesChanged(messages.size, isLoading)
         if (messages.size > 0 && prevMessageCount.intValue == 0) {
-            delay(150)
+            delay(300)
+            if (listState.layoutInfo.totalItemsCount > 0) {
+                listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1)
+            }
         }
         prevMessageCount.intValue = messages.size
     }
