@@ -90,11 +90,7 @@ fun SessionMessageSearchPanel(
             else -> messages
         }
         if (searchQuery.value.isBlank()) {
-            when (currentTabIndex) {
-                0 -> roleFiltered.reversed()
-                1 -> emptyList()
-                else -> emptyList()
-            }
+            roleFiltered.reversed()
         } else {
             val query = searchQuery.value.lowercase()
             roleFiltered.filter { msg ->
@@ -145,10 +141,7 @@ fun SessionMessageSearchPanel(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = if (searchQuery.value.isBlank() && currentTabIndex != 0)
-                        stringResource(R.string.enter_search_query)
-                    else
-                        stringResource(R.string.no_search_results),
+                    text = stringResource(R.string.no_search_results),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
