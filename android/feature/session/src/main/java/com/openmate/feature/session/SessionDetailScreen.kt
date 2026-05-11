@@ -71,6 +71,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.TopBar
 import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
+import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
 import com.openmate.feature.session.component.SessionMessageSearchPanel
 import com.openmate.feature.session.component.ModelPickerSheet
@@ -412,6 +413,19 @@ fun SessionDetailScreen(
                 if (todos.isNotEmpty()) {
                     TodoListCard(todos = todos)
                 }
+                val isBusy = currentBusyStart != null
+                val displayMessages = remember(messages, queuedMessageIds, isBusy) {
+                    if (!isBusy || queuedMessageIds.isEmpty()) messages
+                    else {
+                        val queued = mutableListOf<SessionMessage>()
+                        val rest = mutableListOf<SessionMessage>()
+                        for (msg in messages) {
+                            if (msg.id in queuedMessageIds) queued.add(msg)
+                            else rest.add(msg)
+                        }
+                        rest + queued
+                    }
+                }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
@@ -419,7 +433,7 @@ fun SessionDetailScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    items(messages, key = { it.id }) { entity ->
+                    items(displayMessages, key = { it.id }) { entity ->
                         val userModelName = if (entity.type == "user") {
                             val idx = messages.indexOf(entity)
                             if (idx > 0) {
@@ -460,7 +474,7 @@ fun SessionDetailScreen(
                             },
                         )
                     }
-                    if (messages.isEmpty()) {
+                    if (displayMessages.isEmpty()) {
                         item {
                             Box(
                                 modifier = Modifier
