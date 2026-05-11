@@ -117,6 +117,14 @@ fun SessionMessageRenderer(
                 )
             }
         }
+        "compaction" -> {
+            Text(
+                text = "▸ compaction",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+            )
+        }
         "synthetic" -> { }
         else -> { }
     }
