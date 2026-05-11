@@ -596,6 +596,8 @@ fun SessionDetailScreen(
                     autoFollowTracker.onLocalMessageSent()
                     viewModel.sendMessage(sessionID)
                 },
+                onAbort = { viewModel.abort(sessionID) },
+                isBusy = currentBusyStart != null,
                 isUploading = isUploading,
             )
         }

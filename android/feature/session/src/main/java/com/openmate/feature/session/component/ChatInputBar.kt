@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -28,6 +29,8 @@ fun ChatInputBar(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
+    onAbort: () -> Unit = {},
+    isBusy: Boolean = false,
     isUploading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -57,23 +60,39 @@ fun ChatInputBar(
             ),
             shape = RoundedCornerShape(4.dp),
         )
-        IconButton(
-            onClick = onSend,
-            enabled = text.isNotBlank() && !isUploading,
-            modifier = Modifier.height(40.dp),
-            colors = IconButtonDefaults.iconButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.Send,
-                contentDescription = stringResource(R.string.content_desc_send),
-                tint = if (text.isNotBlank()) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
+        if (text.isBlank() && isBusy) {
+            IconButton(
+                onClick = onAbort,
+                modifier = Modifier.height(40.dp),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+            ) {
+                Icon(
+                    Icons.Filled.Stop,
+                    contentDescription = stringResource(R.string.abort),
+                    tint = MaterialTheme.colorScheme.error,
+                )
+            }
+        } else {
+            IconButton(
+                onClick = onSend,
+                enabled = text.isNotBlank() && !isUploading,
+                modifier = Modifier.height(40.dp),
+                colors = IconButtonDefaults.iconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                ),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Send,
+                    contentDescription = stringResource(R.string.content_desc_send),
+                    tint = if (text.isNotBlank()) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
         }
     }
 }
