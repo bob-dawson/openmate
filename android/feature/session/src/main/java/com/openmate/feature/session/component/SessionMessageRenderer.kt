@@ -63,6 +63,7 @@ fun SessionMessageRenderer(
     onRejectQuestion: (String) -> Unit = {},
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
     runningAnchors: Map<String, Long> = emptyMap(),
+    onViewFile: ((filePath: String) -> Unit)? = null,
 ) {
     val dataJson = remember(entity.data) {
         runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull()
@@ -115,6 +116,7 @@ fun SessionMessageRenderer(
                     onReplyQuestion = onReplyQuestion,
                     onRejectQuestion = onRejectQuestion,
                     onReplyPermission = onReplyPermission,
+                    onViewFile = onViewFile,
                 )
                 if (errorMessage != null) {
                     AssistantErrorCard(errorMessage)
@@ -329,6 +331,7 @@ fun AssistantMessageItem(
     onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
     onRejectQuestion: (String) -> Unit = {},
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
+    onViewFile: ((filePath: String) -> Unit)? = null,
 ) {
     val content = data["content"]?.jsonArray ?: return
     val reasoningExpanded = remember { mutableStateOf(false) }
@@ -442,7 +445,7 @@ fun AssistantMessageItem(
                         } else {
                             val summary = toolSummary(name, input, resultText)
                             if (shouldExpandRunningTool(displayItem)) {
-                                BlockToolLine(displayItem, summary)
+                                BlockToolLine(displayItem, summary, onViewFile)
                             } else {
                                 RunningToolLine(displayItem)
                             }
@@ -470,7 +473,7 @@ fun AssistantMessageItem(
                                 answers = questionAnswers,
                             )
                         } else if (summary.isBlock) {
-                            BlockToolLine(displayItem, summary)
+                            BlockToolLine(displayItem, summary, onViewFile)
                         } else {
                             InlineToolLine(displayItem)
                         }

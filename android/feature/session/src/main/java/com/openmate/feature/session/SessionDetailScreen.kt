@@ -449,6 +449,14 @@ fun SessionDetailScreen(
                             onRejectQuestion = { requestID -> viewModel.rejectQuestion(requestID) },
                             onReplyPermission = { requestID, reply, msg -> viewModel.replyPermission(requestID, reply, msg) },
                             runningAnchors = runningAnchors,
+                            onViewFile = { filePath ->
+                                val dir = filePath.substringBeforeLast('/', filePath.substringBeforeLast('\\'))
+                                if (dir.isNotBlank() && dir != filePath) {
+                                    onNavigateToBrowser(dir)
+                                } else {
+                                    onNavigateToBrowser(viewModel.getWorkingDirectory())
+                                }
+                            },
                         )
                     }
                     if (messages.isEmpty()) {

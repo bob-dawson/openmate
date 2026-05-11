@@ -424,6 +424,7 @@ fun PartColumn(
     onRejectQuestion: (String) -> Unit,
     onReplyPermission: (String, PermissionReply, String?) -> Unit,
     onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
+    onViewFile: ((filePath: String) -> Unit)? = null,
     modifier: Modifier = Modifier,
     showReasoning: Boolean = true,
 ) {
@@ -494,7 +495,7 @@ fun PartColumn(
                                     onRejectQuestion = onRejectQuestion,
                                 )
                             } else if (shouldExpandRunningTool(item)) {
-                                BlockToolLine(item, summary)
+                                BlockToolLine(item, summary, onViewFile)
                             } else {
                                 RunningToolLine(item)
                             }
@@ -517,7 +518,7 @@ fun PartColumn(
                         } else if (item.toolName == "task" && onNavigateToSubtask != null) {
                             TaskToolLine(item, summary, onNavigateToSubtask)
                         } else if (summary.isBlock) {
-                            BlockToolLine(item, summary)
+                            BlockToolLine(item, summary, onViewFile)
                         } else {
                             InlineToolLine(item)
                         }
@@ -895,7 +896,7 @@ internal fun TaskToolLine(
 }
 
 @Composable
-internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
+internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onViewFile: ((filePath: String) -> Unit)? = null) {
     val expanded = remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.padding(vertical = 2.dp)) {
@@ -986,8 +987,9 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
                             Text(
                                 text = filePath,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = if (onViewFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 softWrap = true,
+                                modifier = if (onViewFile != null) Modifier.clickable { onViewFile.invoke(filePath) } else Modifier,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -1031,8 +1033,9 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
                             Text(
                                 text = filePath,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = if (onViewFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 softWrap = true,
+                                modifier = if (onViewFile != null) Modifier.clickable { onViewFile.invoke(filePath) } else Modifier,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -1111,9 +1114,10 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary) {
                             Text(
                                 text = file,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (onViewFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = if (onViewFile != null) Modifier.clickable { onViewFile.invoke(file) } else Modifier,
                             )
                         }
                     }
