@@ -25,6 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -296,6 +297,13 @@ fun SessionDetailScreen(
                             tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
+                    IconButton(onClick = { onNavigateToBrowser(viewModel.getWorkingDirectory()) }) {
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            contentDescription = stringResource(R.string.browse_files),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(
@@ -351,13 +359,6 @@ fun SessionDetailScreen(
                                 },
                              )
                              DropdownMenuItem(
-                                 text = { Text(stringResource(R.string.browse_files)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    onNavigateToBrowser(viewModel.getWorkingDirectory())
-                                },
-                            )
-                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.refresh)) },
                                 onClick = {
                                     menuExpanded = false
