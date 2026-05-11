@@ -179,15 +179,13 @@ fun SessionDetailScreen(
     }
 
     suspend fun scrollToBottom() {
-        autoFollowTracker.onAutoScrollStarted()
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size)
-        }
-        delay(100)
-        if (messages.isNotEmpty() && listState.canScrollForward) {
-            listState.animateScrollToItem(messages.size)
-        }
-        autoFollowTracker.onAutoScrollEnded()
+        runAutoScroll(
+            messageCount = messages.size,
+            canScrollForward = { listState.canScrollForward },
+            onStarted = autoFollowTracker::onAutoScrollStarted,
+            onEnded = autoFollowTracker::onAutoScrollEnded,
+            scroll = { index -> listState.animateScrollToItem(index) },
+        )
     }
 
     LaunchedEffect(autoFollowTracker.scrollVersion) {
