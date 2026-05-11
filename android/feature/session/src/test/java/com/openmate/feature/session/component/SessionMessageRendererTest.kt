@@ -145,4 +145,44 @@ class SessionMessageRendererTest {
         assertThat(rows[1].question).isEqualTo("Anything else?")
         assertThat(rows[1].answers).isEmpty()
     }
+
+    @Test
+    fun toolSummary_usesShellLabelForBashTool() {
+        val summary = toolSummary(
+            toolName = "bash",
+            args = """{"command":"echo hello","description":"Runs hello"}""",
+            result = null,
+        )
+
+        assertThat(summary.icon).isEqualTo("shell")
+        assertThat(summary.text).isEqualTo("echo hello")
+    }
+
+    @Test
+    fun shouldExpandRunningTool_expandsBashWhenCommandAvailable() {
+        val item = DisplayItem.ToolItem(
+            toolName = "bash",
+            state = com.openmate.core.domain.model.ToolCallState.RUNNING,
+            args = """{"command":"npm install","description":"Install deps"}""",
+            result = null,
+            files = emptyList(),
+            hash = null,
+        )
+
+        assertThat(shouldExpandRunningTool(item)).isTrue()
+    }
+
+    @Test
+    fun shouldExpandRunningTool_keepsOtherRunningToolsCollapsed() {
+        val item = DisplayItem.ToolItem(
+            toolName = "grep",
+            state = com.openmate.core.domain.model.ToolCallState.RUNNING,
+            args = """{"pattern":"foo"}""",
+            result = null,
+            files = emptyList(),
+            hash = null,
+        )
+
+        assertThat(shouldExpandRunningTool(item)).isFalse()
+    }
 }

@@ -440,7 +440,12 @@ fun AssistantMessageItem(
                         } else if (status == "pending") {
                             PendingToolLine(displayItem)
                         } else {
-                            RunningToolLine(displayItem)
+                            val summary = toolSummary(name, input, resultText)
+                            if (shouldExpandRunningTool(displayItem)) {
+                                BlockToolLine(displayItem, summary)
+                            } else {
+                                RunningToolLine(displayItem)
+                            }
                         }
                     } else if (name == "task") {
                         val summary = toolSummary(name, input, resultText)

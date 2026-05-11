@@ -163,7 +163,7 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
         "bash" -> {
             val command = jsonArgs.str("command") ?: args?.take(80) ?: ""
             val hasOutput = result != null && result.isNotBlank()
-            return ToolSummary("bash", command.ifBlank { "bash" }, hasOutput)
+            return ToolSummary("shell", command.ifBlank { "shell" }, hasOutput)
         }
         "glob" -> {
             val pattern = jsonArgs.str("pattern") ?: ""
@@ -281,6 +281,10 @@ internal fun buildQuestionAnswerRows(
 internal fun isDismissedQuestionError(error: String?): Boolean {
     val cleaned = error?.removePrefix("Error: ")?.trim().orEmpty()
     return cleaned.contains("dismissed this question", ignoreCase = true)
+}
+
+internal fun shouldExpandRunningTool(item: DisplayItem.ToolItem): Boolean {
+    return item.toolName == "bash" && !toolSummary(item.toolName, item.args, item.result).text.isBlank()
 }
 
 private fun formatQuestionAnswers(answers: List<String>): String {
@@ -489,6 +493,8 @@ fun PartColumn(
                                     onReplyQuestion = onReplyQuestion,
                                     onRejectQuestion = onRejectQuestion,
                                 )
+                            } else if (shouldExpandRunningTool(item)) {
+                                BlockToolLine(item, summary)
                             } else {
                                 RunningToolLine(item)
                             }
