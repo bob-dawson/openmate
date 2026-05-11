@@ -239,6 +239,19 @@ fun WorkspaceBrowserScreen(
         return sortedDirs + sortedFiles
     }
 
+    fun sortSearchResults(list: List<BridgeSearchResultDto>): List<BridgeSearchResultDto> {
+        val dirs = list.filter { it.isDirectory }
+        val files = list.filter { !it.isDirectory }
+        val comparator = when (sortColumn) {
+            SortColumn.NAME -> compareBy<BridgeSearchResultDto> { it.path.substringAfterLast("/").substringAfterLast("\\").lowercase() }
+            SortColumn.SIZE -> compareBy { it.size }
+            SortColumn.MODIFIED -> compareBy { it.modified }
+        }
+        val sortedDirs = if (sortOrder == SortOrder.ASC) dirs.sortedWith(comparator) else dirs.sortedWith(comparator.reversed())
+        val sortedFiles = if (sortOrder == SortOrder.ASC) files.sortedWith(comparator) else files.sortedWith(comparator.reversed())
+        return sortedDirs + sortedFiles
+    }
+
     fun toggleSort(column: SortColumn) {
         if (sortColumn == column) {
             sortOrder = if (sortOrder == SortOrder.ASC) SortOrder.DESC else SortOrder.ASC
@@ -791,7 +804,7 @@ fun WorkspaceBrowserScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                     LazyColumn {
-                        items(contentResults, key = { it.path }) { result ->
+                        items(sortSearchResults(contentResults), key = { it.path }) { result ->
                             val name = result.path.substringAfterLast("/").substringAfterLast("\\")
                             val resultPath = result.path
                             Box(
@@ -828,7 +841,7 @@ fun WorkspaceBrowserScreen(
             } else if (filenameQuery.length >= 2) {
                 if (filenameResults.isNotEmpty()) {
                     LazyColumn {
-                        items(filenameResults, key = { it.path }) { result ->
+                        items(sortSearchResults(filenameResults), key = { it.path }) { result ->
                             val name = result.path.substringAfterLast("/").substringAfterLast("\\")
                             val resultPath = result.path
                             Box(
