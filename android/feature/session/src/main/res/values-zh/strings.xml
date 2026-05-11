@@ -123,7 +123,7 @@
     <string name="tab_all_messages">全部</string>
     <string name="enter_search_query">输入搜索词</string>
     <string name="no_search_results">无结果</string>
-    <string name="label_you">你</string>
+    <string name="label_you">我</string>
     <string name="label_agent">助手</string>
     <string name="scroll_to_bottom">回到底部</string>
 
