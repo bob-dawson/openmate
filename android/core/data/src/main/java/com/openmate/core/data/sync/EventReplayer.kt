@@ -198,6 +198,35 @@ class EventReplayer {
                     val updated = cached.toMutableMap()
                     updated["finish"] = JsonPrimitive("error")
                     props["error"]?.jsonObject?.let { updated["error"] = it }
+                    val content = updated["content"]?.jsonArray
+                    if (content != null) {
+                        val mutableContent = content.map { item ->
+                            val obj = item.jsonObject
+                            if (obj["type"]?.jsonPrimitive?.contentOrNull != "tool") return@map item
+                            val state = obj["state"]?.jsonObject ?: return@map item
+                            val status = state["status"]?.jsonPrimitive?.contentOrNull ?: return@map item
+                            if (status != "pending" && status != "running") return@map item
+                            JsonObject(obj.toMutableMap().apply {
+                                put("state", buildJsonObject {
+                                    put("status", "error")
+                                    put("error", "Tool execution aborted")
+                                    put("input", state["input"] ?: JsonObject(emptyMap()))
+                                    put("structured", state["structured"] ?: JsonObject(emptyMap()))
+                                    put("content", state["content"] ?: JsonArray(emptyList()))
+                                    state["title"]?.jsonPrimitive?.contentOrNull?.let { put("title", it) }
+                                    state["metadata"]?.jsonObject?.let {
+                                        put("metadata", JsonObject(it.toMutableMap().apply {
+                                            put("interrupted", JsonPrimitive(true))
+                                        }))
+                                    } ?: put("metadata", buildJsonObject { put("interrupted", true) })
+                                })
+                                val timeObj = (obj["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                                timeObj["completed"] = JsonPrimitive(timestamp)
+                                put("time", JsonObject(timeObj))
+                            })
+                        }
+                        updated["content"] = JsonArray(mutableContent)
+                    }
                     val time = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
                     time["completed"] = JsonPrimitive(timestamp)
                     updated["time"] = JsonObject(time)

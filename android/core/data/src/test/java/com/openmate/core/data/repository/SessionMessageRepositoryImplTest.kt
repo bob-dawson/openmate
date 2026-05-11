@@ -163,6 +163,97 @@ class SessionMessageRepositoryImplTest {
         assertThat(older.map { it.id }).containsExactly("m1", "m2").inOrder()
     }
 
+    @Test
+    fun incrementalSync_marksRunningToolAbortedWhenStepFails() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {"events":[],"maxSeq":1}
+                """.trimIndent(),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "messages": [
+                    {
+                      "id": "assistant-1",
+                      "sessionId": "session-1",
+                      "type": "assistant",
+                      "timeCreated": 1,
+                      "timeUpdated": 1,
+                      "data": {
+                        "agent": "openmate",
+                        "model": {},
+                        "content": [],
+                        "time": {
+                          "created": 1
+                        }
+                      }
+                    }
+                  ],
+                  "maxSeq": 1
+                }
+                """.trimIndent(),
+            ),
+        )
+        repository.initSync(SESSION_ID, limit = 30)
+        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 1L))
+
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "events": [
+                    {
+                      "id": "evt-tool-input-started",
+                      "aggregateId": "session-1",
+                      "seq": 2,
+                      "type": "session.next.tool.input.started.event",
+                      "data": {
+                        "timestamp": 2,
+                        "callID": "call-1",
+                        "name": "bash"
+                      }
+                    },
+                    {
+                      "id": "evt-tool-called",
+                      "aggregateId": "session-1",
+                      "seq": 3,
+                      "type": "session.next.tool.called.event",
+                      "data": {
+                        "timestamp": 3,
+                        "callID": "call-1",
+                        "input": {"cmd":"pwd"},
+                        "provider": {}
+                      }
+                    },
+                    {
+                      "id": "evt-step-failed",
+                      "aggregateId": "session-1",
+                      "seq": 4,
+                      "type": "session.next.step.failed.event",
+                      "data": {
+                        "timestamp": 4,
+                        "error": {"message":"MessageAbortedError"}
+                      }
+                    }
+                  ],
+                  "maxSeq": 4
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        repository.incrementalSync(SESSION_ID)
+
+        val stored = dbProvider.getActive().sessionMessageDao().getById("assistant-1")!!
+        assertThat(stored.completedAt).isEqualTo(4L)
+        assertThat(stored.data).contains("\"status\":\"error\"")
+        assertThat(stored.data).contains("Tool execution aborted")
+    }
+
     private companion object {
         const val PROFILE_ID = "profile-1"
         const val SESSION_ID = "session-1"
