@@ -450,10 +450,21 @@ fun AssistantMessageItem(
                             onNavigate = onNavigateToSubtask,
                         )
                     } else if (status == "error") {
-                        ErrorToolLine(displayItem)
+                        if (name == "question" && isDismissedQuestionError(resultText)) {
+                            DismissedQuestionToolLine()
+                        } else {
+                            ErrorToolLine(displayItem)
+                        }
                     } else {
                         val summary = toolSummary(name, input, resultText)
-                        if (summary.isBlock) {
+                        val questionAnswers = if (name == "question") extractQuestionAnswers(metadata) else null
+                        val parsedQuestions = if (name == "question") parseQuestionArgs(input) else null
+                        if (name == "question" && parsedQuestions != null && questionAnswers != null) {
+                            CompletedQuestionToolCard(
+                                questions = parsedQuestions,
+                                answers = questionAnswers,
+                            )
+                        } else if (summary.isBlock) {
                             BlockToolLine(displayItem, summary)
                         } else {
                             InlineToolLine(displayItem)

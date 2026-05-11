@@ -24,6 +24,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,8 +59,10 @@ import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.model.ToolCallState
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 
@@ -96,6 +99,11 @@ internal data class ToolSummary(
     val icon: String,
     val text: String,
     val isBlock: Boolean,
+)
+
+internal data class QuestionAnswerRow(
+    val question: String,
+    val answers: List<String>,
 )
 
 private fun JsonObject?.str(key: String): String? =
@@ -241,11 +249,86 @@ internal fun parseQuestionArgs(args: String?): List<QuestionInfo>? {
                 question = obj.str("question") ?: "",
                 options = opts,
                 multiple = obj.bool("multiple"),
+                custom = !obj.containsKey("custom") || obj.bool("custom"),
             )
         }
     } catch (_: Exception) {
         return null
     }
+}
+
+internal fun extractQuestionAnswers(metadata: JsonObject?): List<List<String>>? {
+    val answers = metadata?.get("answers")?.jsonArray ?: return null
+    return answers.map { answer ->
+        answer.jsonArray.mapNotNull { item ->
+            (item as? JsonPrimitive)?.contentOrNull
+        }
+    }
+}
+
+internal fun buildQuestionAnswerRows(
+    questions: List<QuestionInfo>,
+    answers: List<List<String>>,
+): List<QuestionAnswerRow> {
+    return questions.mapIndexed { index, info ->
+        QuestionAnswerRow(
+            question = info.question,
+            answers = answers.getOrNull(index).orEmpty(),
+        )
+    }
+}
+
+internal fun isDismissedQuestionError(error: String?): Boolean {
+    val cleaned = error?.removePrefix("Error: ")?.trim().orEmpty()
+    return cleaned.contains("dismissed this question", ignoreCase = true)
+}
+
+private fun formatQuestionAnswers(answers: List<String>): String {
+    return if (answers.isEmpty()) "Unanswered" else answers.joinToString(", ")
+}
+
+private fun updateQuestionAnswers(
+    current: Map<Int, List<String>>,
+    questionIndex: Int,
+    questionInfo: QuestionInfo,
+    optionLabel: String,
+): Map<Int, List<String>> {
+    val next = current.toMutableMap()
+    val existing = next[questionIndex].orEmpty().toMutableList()
+    if (questionInfo.multiple) {
+        if (existing.contains(optionLabel)) existing.remove(optionLabel) else existing.add(optionLabel)
+        if (existing.isEmpty()) next.remove(questionIndex) else next[questionIndex] = existing
+    } else {
+        next[questionIndex] = listOf(optionLabel)
+    }
+    return next
+}
+
+private fun updateQuestionCustomAnswer(
+    current: Map<Int, List<String>>,
+    questionIndex: Int,
+    questionInfo: QuestionInfo,
+    previousCustom: String,
+    customText: String,
+): Map<Int, List<String>> {
+    val trimmed = customText.trim()
+    val next = current.toMutableMap()
+    val existing = next[questionIndex].orEmpty().toMutableList().apply {
+        if (previousCustom.isNotBlank()) remove(previousCustom)
+    }
+    if (trimmed.isNotBlank()) {
+        if (questionInfo.multiple) {
+            existing.add(trimmed)
+            next[questionIndex] = existing.distinct()
+        } else {
+            next[questionIndex] = listOf(trimmed)
+        }
+    } else if (existing.isNotEmpty()) {
+        next[questionIndex] = existing
+    } else {
+        next.remove(questionIndex)
+    }
+    return next
 }
 
 private fun parseTodoArgs(args: String?): List<TodoInfo>? {
@@ -411,10 +494,21 @@ fun PartColumn(
                             }
                         }
                     } else if (item.state == ToolCallState.ERROR) {
-                        ErrorToolLine(item)
+                        if (item.toolName == "question" && isDismissedQuestionError(item.result)) {
+                            DismissedQuestionToolLine()
+                        } else {
+                            ErrorToolLine(item)
+                        }
                     } else {
                         val summary = toolSummary(item.toolName, item.args, item.result)
-                        if (item.toolName == "task" && onNavigateToSubtask != null) {
+                        val questionAnswers = if (item.toolName == "question") extractQuestionAnswers(item.metadata) else null
+                        val parsedQuestions = if (item.toolName == "question") parseQuestionArgs(item.args) else null
+                        if (item.toolName == "question" && parsedQuestions != null && questionAnswers != null) {
+                            CompletedQuestionToolCard(
+                                questions = parsedQuestions,
+                                answers = questionAnswers,
+                            )
+                        } else if (item.toolName == "task" && onNavigateToSubtask != null) {
                             TaskToolLine(item, summary, onNavigateToSubtask)
                         } else if (summary.isBlock) {
                             BlockToolLine(item, summary)
@@ -662,6 +756,58 @@ internal fun ErrorToolLine(item: DisplayItem.ToolItem) {
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun CompletedQuestionToolCard(
+    questions: List<QuestionInfo>,
+    answers: List<List<String>>,
+    modifier: Modifier = Modifier,
+) {
+    val rows = remember(questions, answers) { buildQuestionAnswerRows(questions, answers) }
+    Card(
+        modifier = modifier.padding(vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.question),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            rows.forEachIndexed { index, row ->
+                Text(
+                    text = row.question,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = formatQuestionAnswers(row.answers),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (index != rows.lastIndex) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DismissedQuestionToolLine() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+    ) {
+        Text(
+            text = stringResource(R.string.question_dismissed),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -980,6 +1126,7 @@ fun QuestionCard(
     modifier: Modifier = Modifier,
 ) {
     val selectedAnswers = remember { mutableStateOf(emptyMap<Int, List<String>>()) }
+    val customAnswers = remember { mutableStateOf(emptyMap<Int, String>()) }
     val canInteract = matchedRequest != null && onReply != null
 
     Card(
@@ -1017,10 +1164,12 @@ fun QuestionCard(
                         OutlinedButton(
                             onClick = {
                                 if (canInteract) {
-                                    selectedAnswers.value = selectedAnswers.value.toMutableMap().apply {
-                                        val current = this[qIndex] ?: emptyList()
-                                        this[qIndex] = if (option.label in current) current - option.label else current + option.label
-                                    }
+                                    selectedAnswers.value = updateQuestionAnswers(
+                                        current = selectedAnswers.value,
+                                        questionIndex = qIndex,
+                                        questionInfo = questionInfo,
+                                        optionLabel = option.label,
+                                    )
                                 }
                             },
                             modifier = Modifier
@@ -1042,6 +1191,34 @@ fun QuestionCard(
                             )
                         }
                     }
+                    if (questionInfo.custom) {
+                        val customValue = customAnswers.value[qIndex].orEmpty()
+                        OutlinedTextField(
+                            value = customValue,
+                            onValueChange = { value ->
+                                if (canInteract) {
+                                    val previous = customAnswers.value[qIndex].orEmpty()
+                                    customAnswers.value = customAnswers.value.toMutableMap().apply {
+                                        this[qIndex] = value
+                                    }
+                                    selectedAnswers.value = updateQuestionCustomAnswer(
+                                        current = selectedAnswers.value,
+                                        questionIndex = qIndex,
+                                        questionInfo = questionInfo,
+                                        previousCustom = previous,
+                                        customText = value,
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 6.dp),
+                            enabled = canInteract,
+                            singleLine = !questionInfo.multiple,
+                            label = { Text(stringResource(R.string.question_custom_answer)) },
+                            placeholder = { Text(stringResource(R.string.question_custom_answer_placeholder)) },
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
             }
@@ -1055,7 +1232,11 @@ fun QuestionCard(
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = { onReply?.invoke(selectedAnswers.value.values.toList()) },
+                        onClick = {
+                            onReply?.invoke(
+                                questions.indices.map { index -> selectedAnswers.value[index].orEmpty() },
+                            )
+                        },
                         enabled = selectedAnswers.value.isNotEmpty(),
                     ) {
                         Text(stringResource(R.string.submit))

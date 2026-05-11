@@ -2,6 +2,7 @@ package com.openmate.feature.session.component
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -50,5 +51,98 @@ class SessionMessageRendererTest {
 
         assertThat(extractSubtaskSessionId(metadata = null, structured = structured, resultText = null))
             .isEqualTo("ses_subtask_structured")
+    }
+
+    @Test
+    fun parseQuestionArgs_keepsCustomFlag() {
+        val questions = parseQuestionArgs(
+            """
+            {
+              "questions": [
+                {
+                  "header": "Need info",
+                  "question": "Choose one",
+                  "multiple": false,
+                  "custom": false,
+                  "options": [
+                    {"label": "A", "description": ""}
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertThat(questions).hasSize(1)
+        assertThat(questions!!.single().custom).isFalse()
+    }
+
+    @Test
+    fun extractQuestionAnswers_returnsStructuredAnswers() {
+        val metadata = buildJsonObject {
+            put(
+                "answers",
+                JsonArray(
+                    listOf(
+                        JsonArray(listOf(JsonPrimitive("Usage"), JsonPrimitive("custom-note"))),
+                        JsonArray(emptyList()),
+                    ),
+                ),
+            )
+        }
+
+        assertThat(extractQuestionAnswers(metadata))
+            .isEqualTo(listOf(listOf("Usage", "custom-note"), emptyList()))
+    }
+
+    @Test
+    fun isDismissedQuestionError_matchesDismissedMessage() {
+        assertThat(isDismissedQuestionError("Error: user dismissed this question")).isTrue()
+    }
+
+    @Test
+    fun isDismissedQuestionError_ignoresOtherErrors() {
+        assertThat(isDismissedQuestionError("Error: provider overloaded")).isFalse()
+    }
+
+    @Test
+    fun buildQuestionAnswerRows_pairsQuestionsWithAnswers() {
+        val rows = buildQuestionAnswerRows(
+            questions = parseQuestionArgs(
+                """
+                {
+                  "questions": [
+                    {
+                      "question": "What do you need?",
+                      "header": "",
+                      "multiple": true,
+                      "custom": true,
+                      "options": [
+                        {"label": "Diff", "description": ""},
+                        {"label": "Usage", "description": ""}
+                      ]
+                    },
+                    {
+                      "question": "Anything else?",
+                      "header": "",
+                      "multiple": false,
+                      "custom": true,
+                      "options": []
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            )!!,
+            answers = listOf(
+                listOf("Usage", "custom-note"),
+                emptyList(),
+            ),
+        )
+
+        assertThat(rows).hasSize(2)
+        assertThat(rows[0].question).isEqualTo("What do you need?")
+        assertThat(rows[0].answers).containsExactly("Usage", "custom-note").inOrder()
+        assertThat(rows[1].question).isEqualTo("Anything else?")
+        assertThat(rows[1].answers).isEmpty()
     }
 }

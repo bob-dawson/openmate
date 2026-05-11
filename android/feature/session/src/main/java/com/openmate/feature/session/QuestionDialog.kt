@@ -12,6 +12,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +50,7 @@ fun QuestionDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 val selectedAnswers = remember { mutableStateOf<Map<Int, List<String>>>(emptyMap()) }
+                val customAnswers = remember { mutableStateOf<Map<Int, String>>(emptyMap()) }
 
                 request.questions.forEachIndexed { qIndex, questionInfo ->
                     Text(
@@ -71,7 +73,11 @@ fun QuestionDialog(
                                 onClick = {
                                     selectedAnswers.value = selectedAnswers.value.toMutableMap().apply {
                                         val current = this[qIndex] ?: emptyList()
-                                        this[qIndex] = if (option.label in current) current - option.label else current + option.label
+                                        this[qIndex] = if (questionInfo.multiple) {
+                                            if (option.label in current) current - option.label else current + option.label
+                                        } else {
+                                            listOf(option.label)
+                                        }
                                     }
                                 },
                                 modifier = Modifier
@@ -93,6 +99,36 @@ fun QuestionDialog(
                                 )
                             }
                         }
+                        if (questionInfo.custom) {
+                            val customValue = customAnswers.value[qIndex].orEmpty()
+                            OutlinedTextField(
+                                value = customValue,
+                                onValueChange = { value ->
+                                    val previous = customAnswers.value[qIndex].orEmpty()
+                                    customAnswers.value = customAnswers.value.toMutableMap().apply {
+                                        this[qIndex] = value
+                                    }
+                                    val trimmed = value.trim()
+                                    selectedAnswers.value = selectedAnswers.value.toMutableMap().apply {
+                                        val existing = (this[qIndex] ?: emptyList()).toMutableList().apply {
+                                            if (previous.isNotBlank()) remove(previous)
+                                        }
+                                        when {
+                                            trimmed.isBlank() && existing.isEmpty() -> remove(qIndex)
+                                            trimmed.isBlank() -> this[qIndex] = existing
+                                            questionInfo.multiple -> this[qIndex] = (existing + trimmed).distinct()
+                                            else -> this[qIndex] = listOf(trimmed)
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 6.dp),
+                                singleLine = !questionInfo.multiple,
+                                label = { Text(stringResource(R.string.question_custom_answer)) },
+                                placeholder = { Text(stringResource(R.string.question_custom_answer_placeholder)) },
+                            )
+                        }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                 }
@@ -105,7 +141,7 @@ fun QuestionDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            onSubmit(selectedAnswers.value.values.toList())
+                            onSubmit(request.questions.indices.map { index -> selectedAnswers.value[index].orEmpty() })
                         },
                         enabled = selectedAnswers.value.isNotEmpty(),
                     ) {

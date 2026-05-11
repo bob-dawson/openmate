@@ -52,6 +52,9 @@
     <string name="always">Always</string>
     <string name="deny">Deny</string>
     <string name="question">Question</string>
+    <string name="question_custom_answer">Your answer</string>
+    <string name="question_custom_answer_placeholder">Type your own answer</string>
+    <string name="question_dismissed">Question dismissed</string>
     <string name="reject">Reject</string>
     <string name="submit">Submit</string>
     <string name="waiting_response">Waiting for response…</string>
