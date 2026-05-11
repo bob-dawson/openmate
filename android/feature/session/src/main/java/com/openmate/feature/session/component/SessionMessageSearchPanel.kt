@@ -1,7 +1,8 @@
 package com.openmate.feature.session.component
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -23,13 +28,17 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,6 +76,7 @@ private fun sessionMessageSummary(message: SessionMessage, maxLen: Int = 60): St
     return "—"
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SessionMessageSearchPanel(
     messages: List<SessionMessage>,
@@ -147,39 +157,61 @@ fun SessionMessageSearchPanel(
                 )
             }
         } else {
+            val clipboardManager = LocalClipboardManager.current
+            var contextMenuMessage by remember { mutableStateOf<SessionMessage?>(null) }
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(filteredMessages, key = { it.id }) { message ->
                     val messageIndex = messages.indexOf(message)
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable {
-                                if (messageIndex >= 0) {
-                                    onNavigateToMessage(messageIndex)
-                                }
-                            }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            .clip(RoundedCornerShape(4.dp)),
                     ) {
-                        Text(
-                            text = message.timeCreated.toDateTimeString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        if (messageIndex >= 0) {
+                                            onNavigateToMessage(messageIndex)
+                                        }
+                                    },
+                                    onLongClick = { contextMenuMessage = message },
+                                )
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
                             Text(
-                                text = if (message.type == "user") stringResource(R.string.label_you) else stringResource(R.string.label_agent),
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = if (message.type == "user") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = message.timeCreated.toDateTimeString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp),
                             )
-                            Text(
-                                text = sessionMessageSummary(message),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (message.type == "user") stringResource(R.string.label_you) else stringResource(R.string.label_agent),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (message.type == "user") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text = sessionMessageSummary(message),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = contextMenuMessage == message,
+                            onDismissRequest = { if (contextMenuMessage == message) contextMenuMessage = null },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.copy)) },
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(sessionMessageSummary(message, 300)))
+                                    contextMenuMessage = null
+                                },
                             )
                         }
                     }
