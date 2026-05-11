@@ -27,6 +27,7 @@ class EventReplayer {
     private var cachedData: JsonObject? = null
     private var cachedType: String? = null
     private var cachedTimeCreated: Long = 0
+    private var cachedRoundMark: Boolean = true
 
     private val activeShells = mutableMapOf<String, ShellEntry>()
 
@@ -96,14 +97,15 @@ class EventReplayer {
                 }
 
                 "session.next.prompted" -> {
+                    val userRoundMark = cachedType != "assistant" || cachedRoundMark
                     val data = buildJsonObject {
                         put("text", props["prompt"]?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: "")
                         put("files", props["prompt"]?.jsonObject?.get("files") ?: JsonArray(emptyList()))
                         put("agents", props["prompt"]?.jsonObject?.get("agents") ?: JsonArray(emptyList()))
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    setCache(event.id, "user", data, timestamp)
-                    changes += ReplayChange.Insert(entity(event.id, sessionId, "user", data, timestamp))
+                    setCache(event.id, "user", data, timestamp, roundMark = userRoundMark)
+                    changes += ReplayChange.Insert(entity(event.id, sessionId, "user", data, timestamp, roundMark = userRoundMark))
                 }
 
                 "session.next.synthetic" -> {
@@ -164,7 +166,7 @@ class EventReplayer {
                         }
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    setCache(event.id, "assistant", data, timestamp)
+                    setCache(event.id, "assistant", data, timestamp, roundMark = false)
                     changes += ReplayChange.Insert(entity(event.id, sessionId, "assistant", data, timestamp, roundMark = false))
                 }
 
@@ -187,6 +189,7 @@ class EventReplayer {
                     updateCache(merged)
                     val finish = props["finish"]?.jsonPrimitive?.contentOrNull
                     val roundMark = finish == "stop" || finish == "length"
+                    cachedRoundMark = roundMark
                     changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = roundMark)
                 }
 
@@ -200,6 +203,7 @@ class EventReplayer {
                     updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     updateCache(merged)
+                    cachedRoundMark = true
                     changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = true)
                 }
 
@@ -403,11 +407,16 @@ class EventReplayer {
             }
     }
 
-    private fun setCache(id: String, type: String, data: JsonObject, timeCreated: Long) {
+    private fun setCache(id: String, type: String, data: JsonObject, timeCreated: Long, roundMark: Boolean = true) {
         cachedId = id
         cachedType = type
         cachedData = data
         cachedTimeCreated = timeCreated
+        cachedRoundMark = when (type) {
+            "assistant" -> roundMark
+            "user" -> roundMark
+            else -> true
+        }
     }
 
     private fun updateCache(data: JsonObject) {

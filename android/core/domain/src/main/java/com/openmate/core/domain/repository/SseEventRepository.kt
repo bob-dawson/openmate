@@ -9,4 +9,5 @@ interface SseEventRepository {
     fun disconnect()
     fun observeConnectionStatus(): Flow<ConnectionStatus>
     fun isConnectedTo(address: String, port: Int): Boolean
+    fun setActiveSessionScope(directory: String?, enabled: Boolean)
 }

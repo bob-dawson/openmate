@@ -17,19 +17,31 @@ class EventDispatcher @Inject constructor(
             permissionHandler.activeDirectory = value
             questionHandler.activeDirectory = value
         }
+    var messageSyncEnabled: Boolean = false
 
     suspend fun dispatch(event: SseData) {
         val type = event.type
         val dir = event.directory
-        Log.d("EventDispatcher", "dispatch: type=$type dir=$dir activeDir=$activeDirectory")
+        Log.d("EventDispatcher", "dispatch: type=$type dir=$dir activeDir=$activeDirectory enabled=$messageSyncEnabled")
 
         if (type == "server.connected" || type == "server.heartbeat" || type == "global.disposed") {
             return
         }
 
-        if (dir != null && activeDirectory != null && dir != activeDirectory) {
-            Log.d("EventDispatcher", "skipped: dir mismatch dir=$dir activeDir=$activeDirectory")
-            return
+        val isMessageScoped =
+            type.startsWith("message.") ||
+                type.startsWith("todo.") ||
+                type.startsWith("session.next.")
+
+        if (isMessageScoped) {
+            if (!messageSyncEnabled) {
+                Log.d("EventDispatcher", "skipped: message sync disabled type=$type")
+                return
+            }
+            if (dir != null && activeDirectory.isNotBlank() && dir != activeDirectory) {
+                Log.d("EventDispatcher", "skipped: dir mismatch dir=$dir activeDir=$activeDirectory")
+                return
+            }
         }
 
         when {

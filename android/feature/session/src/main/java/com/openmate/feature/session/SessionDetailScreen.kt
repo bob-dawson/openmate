@@ -451,13 +451,13 @@ fun SessionDetailScreen(
                             )
                         }
                     }
-                    if (currentBusyStart != null) {
-                        val totalBase = sessionTotalDuration ?: 0L
-                        var elapsed by remember(currentBusyStart) { mutableStateOf(System.currentTimeMillis() - currentBusyStart!!) }
-                        LaunchedEffect(currentBusyStart) {
+                    val busyStart = currentBusyStart
+                    if (busyStart != null) {
+                        var elapsed by remember(busyStart) { mutableStateOf(System.currentTimeMillis() - busyStart) }
+                        LaunchedEffect(busyStart) {
                             while (true) {
                                 delay(1000)
-                                elapsed = System.currentTimeMillis() - currentBusyStart!!
+                                elapsed = System.currentTimeMillis() - busyStart
                             }
                         }
                         Row(
@@ -470,7 +470,13 @@ fun SessionDetailScreen(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             Text(
-                                text = formatDurationMillis(totalBase + maxOf(0L, elapsed)),
+                                text = formatDurationMillis(
+                                    SessionBusyTimerCalculator.displayDuration(
+                                        totalDuration = sessionTotalDuration,
+                                        currentBusyStart = busyStart,
+                                        now = busyStart + maxOf(0L, elapsed),
+                                    ) ?: 0L,
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,
                             )

@@ -15,6 +15,7 @@ import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.SessionRepository
+import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.TodoRepository
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.dto.ModelInfoDto
@@ -53,6 +54,7 @@ class SessionDetailViewModel @Inject constructor(
     private val todoRepository: TodoRepository,
     private val questionRepository: QuestionRepository,
     private val permissionRepository: PermissionRepository,
+    private val sseEventRepository: SseEventRepository,
     internal val apiClient: OpencodeApiClient,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
@@ -225,6 +227,7 @@ class SessionDetailViewModel @Inject constructor(
                     _sessionTitle.value = session.title
                 }
                 currentDirectory = session?.directory ?: ""
+                sseEventRepository.setActiveSessionScope(currentDirectory.ifBlank { null }, enabled = true)
                 if (session?.totalDuration != null && _sessionTotalDuration.value == null) {
                     _sessionTotalDuration.value = session.totalDuration
                 }
@@ -332,6 +335,7 @@ class SessionDetailViewModel @Inject constructor(
         observeQuestionJob?.cancel()
         observePermissionJob?.cancel()
         pollJob?.cancel()
+        sseEventRepository.setActiveSessionScope(null, enabled = false)
         val sid = currentSessionID
         val start = _currentBusyStart.value
         if (sid != null && start != null) {
@@ -604,9 +608,9 @@ class SessionDetailViewModel @Inject constructor(
                     }
 
                     if (hasBusyAssistant) {
-                        val turnStart = list.lastOrNull { it.type == "user" && it.roundMark }
-                        val start = turnStart?.timeCreated ?: System.currentTimeMillis()
-                        _currentBusyStart.value = minOf(start, System.currentTimeMillis())
+                        if (_currentBusyStart.value == null) {
+                            _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list)
+                        }
                     } else if (wasBusy) {
                         val start = _currentBusyStart.value ?: System.currentTimeMillis()
                         val increment = maxOf(0L, System.currentTimeMillis() - start)
