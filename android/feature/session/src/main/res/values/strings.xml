@@ -188,4 +188,5 @@
     <string name="close_search">Close search</string>
     <string name="previous">Previous</string>
     <string name="next_result">Next</string>
+    <string name="content_desc_close">Close</string>
 </resources>

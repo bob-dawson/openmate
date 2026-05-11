@@ -1,6 +1,7 @@
 package com.openmate.feature.session.component
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -474,6 +475,14 @@ fun WorkspaceBrowserScreen(
 
     val canGoUp = currentPath.isNotBlank() && currentPath != "/" && currentPath.count { it == '/' } > 0
 
+    BackHandler(enabled = viewingFile != null) {
+        viewingFile = null
+    }
+
+    BackHandler(enabled = viewingFile == null && canGoUp) {
+        currentPath = currentPath.substringBeforeLast("/")
+    }
+
     if (isUploading) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -649,6 +658,13 @@ fun WorkspaceBrowserScreen(
                             imageVector = Icons.Filled.CreateNewFolder,
                             contentDescription = stringResource(R.string.create_directory),
                             tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.content_desc_close),
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 },

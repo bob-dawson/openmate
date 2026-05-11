@@ -185,4 +185,5 @@
     <string name="close_search">关闭搜索</string>
     <string name="previous">上一个</string>
     <string name="next_result">下一个</string>
+    <string name="content_desc_close">关闭</string>
 </resources>
