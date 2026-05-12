@@ -32,6 +32,12 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
     }
 }
 
+val MIGRATION_17_18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE SessionEntity DROP COLUMN syncAnchor")
+    }
+}
+
 @Database(
     entities = [
         SessionEntity::class,
@@ -40,7 +46,7 @@ val MIGRATION_16_17 = object : Migration(16, 17) {
         SyncStateEntity::class,
         TodoEntity::class,
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

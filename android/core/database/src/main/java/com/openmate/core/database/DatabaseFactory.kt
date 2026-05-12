@@ -14,7 +14,7 @@ class DatabaseFactory(private val context: Context) {
             context,
             AppDatabase::class.java,
             dbName,
-        ).addMigrations(MIGRATION_15_16, MIGRATION_16_17).build()
+        ).addMigrations(MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18).build()
     }
 
     fun delete(context: Context, profileId: String) {

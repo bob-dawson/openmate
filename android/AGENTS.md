@@ -6,7 +6,7 @@ OpenMate: opencode 的原生 Android 客户端，连接 `opencode serve` 实例 
 - **Android root**: `D:\openmate\android`
 - **opencode 源码**: `D:\github\opencode`
 - **设计文档**: `D:\openmate\OpenMate设计.md`
-- **同步设计**: `D:\openmate\会话同步设计.md`
+- **同步设计**: `D:\openmate\会话同步设计.md`（Bridge + seq-based 增量同步）
 
 ## Architecture
 Kotlin 2.2.0 / Jetpack Compose + Material 3 (dark theme) / MVVM + Hilt + Room + OkHttp
@@ -15,13 +15,13 @@ AGP 8.11.0 / KSP 2.2.0-2.0.2 / Compose BOM 2025.07.00 / minSdk 26 / targetSdk 36
 ```
 app/                    → OpenMateApp, MainActivity, NavHost, ConnectionManager
 core/common/            → Result<T>, Flow.asResult(), time extensions, AppDispatchers
-core/domain/            → 12 domain models (Part 有 12 子类型), 7 repository 接口
-core/data/              → 7 repository 实现 + EventDispatcher + 5 SSE event handlers
-core/database/          → Room DB v9, 6 entities, 6 DAOs, ActiveDatabaseProvider (per-instance DB)
+core/domain/            → SessionMessage/SessionMessagePart domain models, ToolCallState, 6 repository 接口
+core/data/              → 6 repository 实现 + EventDispatcher + 4 SSE event handlers
+core/database/          → Room DB v18, 5 entities, 5 DAOs, ActiveDatabaseProvider (per-instance DB)
 core/network/           → OpencodeApiClient, SseClient, SseParser, AuthInterceptor, DTOs
 core/ui/                → 暗色主题 (opencode palette), MessageBubble, StreamingText, TopBar 等
 feature/instance/       → 实例列表/添加 (2 ViewModel)
-feature/session/        → 工作区/会话列表/聊天详情 (3 ViewModel, PartRenderer 925行)
+feature/session/        → 工作区/会话列表/聊天详情 (3 ViewModel, SessionMessageRenderer + SessionMessagePartRenderer)
 feature/settings/       → 设置页 (1 ViewModel)
 ```
 
@@ -49,9 +49,9 @@ SSE:  SseClient → SseParser → SseData → EventDispatcher → *EventHandler 
 - **ActiveDatabaseProvider**: 每个 ServerProfile 一个独立 SQLite (`instance_{profileId}.db`)，切换实例时切换 DB
 - **ConnectionManager** (`@Singleton`): 管理 SSE 连接生命周期，connect 时设 `apiClient.baseUrl` + 切换 active DB
 - **SseClient**: OkHttp 长连接，30s 心跳超时，指数退避重连 (1s→30s)
-- **消息同步**: anchor-based 增量同步，详见 `会话同步设计.md`
+- **消息同步**: Bridge + seq-based 增量同步（冷启动快照 + Event 增量），详见 `会话同步设计.md`
 - **Session busy 状态**: 由 DB 查询 (`role=ASSISTANT && completedAt=null`) 判断，不依赖单独 API
-- **PartRenderer**: 将 12 种 Part 类型映射为 DisplayItem (TextItem/ToolItem/ReasoningItem)，tool 渲染分 Inline/Block 两种模式
+- **SessionMessageRenderer + SessionMessagePartRenderer**: 将 SessionMessagePart 类型映射为 DisplayItem (TextItem/ToolItem/ReasoningItem)，tool 渲染分 Inline/Block 两种模式
 
 ## OpenCode API Quick Reference
 Base URL: `http://{address}:{port}`
