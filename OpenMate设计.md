@@ -492,14 +492,10 @@ data/data/com.openmate/databases/
 | Room Entity | 对应 opencode | 说明 |
 |-------------|---------------|------|
 | `SessionEntity` | `Session.Info` | 会话元数据 |
-| `MessageEntity` | `Message` | 消息 |
-| `PartEntity` | `Message.Part` | 消息 Part（text/tool/reasoning/file/...） |
+| `session_message` | `MessageV2.WithParts` | 消息 Part（text/tool/reasoning/file/...），每条 part 一行，data 字段存 JSON |
+| `session_message_full_content` | 完整消息内容缓存 | 用于长消息的全文检索 |
+| `sync_state` | 同步游标 | 每个 session 的最新同步 seq |
 | `TodoEntity` | `Todo.Info` | TODO 项 |
-| `EventEntity` | `EventTable` | 事件溯源记录 |
-| `EventSequenceEntity` | `EventSequenceTable` | 每个 aggregate 的最新 seq |
-| `WorkspaceEntity` | workspace 信息 | 工作区 |
-| `PermissionEntity` | permission 请求 | 待处理的权限请求 |
-| `QuestionEntity` | question 请求 | 待处理的问题 |
 
 **事件 Replay 机制：**
 

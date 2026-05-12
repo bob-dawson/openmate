@@ -73,30 +73,30 @@ adb exec-out run-as com.openmate cat /data/user/0/com.openmate/databases/${dbFil
 #### 分析数据库
 
 ```powershell
-# 默认概览：表列表 + PartEntity 各类型计数 + file parts + synthetic text 残留
+# 默认概览：表列表 + session_message 各类型计数 + 同步状态
 python D:\openmate\scripts\analyze_android_db.py D:\openmate\temp_db_dir\instance.db
 
 # 自定义 SQL 查询
-python D:\openmate\scripts\analyze_android_db.py D:\openmate\temp_db_dir\instance.db --sql "SELECT * FROM PartEntity WHERE type='file'"
+python D:\openmate\scripts\analyze_android_db.py D:\openmate\temp_db_dir\instance.db --sql "SELECT * FROM session_message WHERE type='tool' LIMIT 5"
 ```
 
 #### 常用检查 SQL
 
 ```sql
 -- Part 类型分布
-SELECT type, count(*) FROM PartEntity GROUP BY type;
+SELECT type, count(*) FROM session_message GROUP BY type;
 
--- File parts 详情
-SELECT id, mime, filename, length(url) FROM PartEntity WHERE type='file';
+-- 特定会话的消息（按时间排序）
+SELECT id, type, timeCreated, substr(data,1,80) FROM session_message WHERE sessionId='ses_xxx' ORDER BY timeCreated;
 
--- 检查 synthetic text 是否被正确过滤（应返回 0 行）
-SELECT id, substr(text,1,60) FROM PartEntity WHERE type='text' AND text LIKE '%Called the%';
+-- 同步状态
+SELECT * FROM sync_state;
 
--- 特定会话的消息
-SELECT id, role, createdAt FROM MessageEntity WHERE sessionID='ses_xxx' ORDER BY createdAt;
+-- Tool 类型详情（data 是 JSON）
+SELECT id, substr(data,1,120) FROM session_message WHERE type='tool' AND sessionId='ses_xxx';
 
--- 特定消息的 parts
-SELECT type, sequence, substr(text,1,40), toolName, mime, filename FROM PartEntity WHERE messageID='msg_xxx' ORDER BY sequence;
+-- Session 列表
+SELECT id, title, status FROM SessionEntity ORDER BY updatedAt DESC;
 ```
 
 ### 典型调试流程
@@ -104,11 +104,11 @@ SELECT type, sequence, substr(text,1,40), toolName, mime, filename FROM PartEnti
 渲染问题时，按此顺序排查，定位数据丢失发生在哪一层：
 
 ```
-1. session_tool.py export  → API 原始数据对不对？
-2. analyze_android_db.py   → DB 里存的数据对不对？
-3. PartDto.toDomain()      → JSON→Domain 映射是否缺少 type 分支？
-4. Part.toEntity()         → Domain→Entity 字段是否完整？
-5. PartRenderer            → DisplayItem 渲染逻辑是否正确？
+1. session_tool.py export            → API 原始数据对不对？
+2. analyze_android_db.py             → DB 里存的数据对不对？
+3. SessionMessagePartDto.toDomain()  → JSON→Domain 映射是否缺少 type 分支？
+4. SessionMessageEntity (data JSON)  → Domain→Entity 字段是否完整？
+5. SessionMessagePartRenderer        → DisplayItem 渲染逻辑是否正确？
 ```
 
 **重要**: 每次 app 重新安装（DB version 变更 + fallbackToDestructiveMigration）后，需要重新进入会话触发同步才能看到数据。
@@ -154,4 +154,4 @@ SELECT type, sequence, substr(text,1,40), toolName, mime, filename FROM PartEnti
 
 ### 教训案例
 
-2026-05-10 SessionMessageRenderer 重构：替换 SessionMessageEntity+PartEntity 数据模型时，TodoRepositoryImpl、SmartAutoScroll 等周边组件的实现被重置为空壳/默认值，导致 TODO 列表消失、滚动行为回退。根本原因是没有在重构前记录功能基线，重构后未对照验收。
+2026-05-10 SessionMessageRenderer 重构：替换 MessageEntity+PartEntity 数据模型时，TodoRepositoryImpl、SmartAutoScroll 等周边组件的实现被重置为空壳/默认值，导致 TODO 列表消失、滚动行为回退。根本原因是没有在重构前记录功能基线，重构后未对照验收。
