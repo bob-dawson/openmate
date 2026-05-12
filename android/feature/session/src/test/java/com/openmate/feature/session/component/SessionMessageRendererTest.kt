@@ -195,4 +195,131 @@ class SessionMessageRendererTest {
 
         assertThat(shouldExpandRunningTool(item)).isFalse()
     }
+
+    @Test
+    fun extractToolItems_attachesFollowingPatchFilesToApplyPatchTool() {
+        val data = Json.parseToJsonElement(
+            """
+            {
+              "content": [
+                {
+                  "type": "tool",
+                  "name": "apply_patch",
+                  "id": "tool-1",
+                  "state": {
+                    "status": "completed",
+                    "input": "{\"patch\":\"*** Begin Patch\\n*** Update File: foo.txt\\n*** End Patch\"}",
+                    "content": [
+                      {"text": "Patch applied"}
+                    ]
+                  }
+                },
+                {
+                  "type": "patch",
+                  "id": "patch-1",
+                  "hash": "abc",
+                  "files": ["foo.txt", "bar/baz.kt"]
+                }
+              ]
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        val toolItems = extractToolItems(data)
+
+        assertThat(toolItems).hasSize(1)
+        assertThat(toolItems.single().toolName).isEqualTo("apply_patch")
+        assertThat(toolItems.single().files).containsExactly("foo.txt", "bar/baz.kt").inOrder()
+    }
+
+    @Test
+    fun extractToolItems_keepsAllFilesFromRealPatchPayload() {
+        val data = Json.parseToJsonElement(
+            """
+            {
+              "content": [
+                {
+                  "type": "tool",
+                  "name": "apply_patch",
+                  "id": "tool-1",
+                  "state": {
+                    "status": "error",
+                    "input": {
+                      "patch": "*** Begin Patch"
+                    },
+                    "error": "Tool execution aborted"
+                  }
+                },
+                {
+                  "type": "patch",
+                  "id": "patch-1",
+                  "hash": "abc",
+                  "files": [
+                    "D:/openmate/android/feature/session/src/main/java/com/openmate/feature/session/component/SessionMessageRenderer.kt",
+                    "D:/openmate/opencode-bridge/src/sync/db.rs"
+                  ]
+                }
+              ]
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        val toolItem = extractToolItems(data).single()
+
+        assertThat(toolItem.files).containsExactly(
+            "D:/openmate/android/feature/session/src/main/java/com/openmate/feature/session/component/SessionMessageRenderer.kt",
+            "D:/openmate/opencode-bridge/src/sync/db.rs",
+        ).inOrder()
+    }
+
+    @Test
+    fun extractToolItems_promotesStructuredSessionIdForRunningTaskTool() {
+        val data = Json.parseToJsonElement(
+            """
+            {
+              "content": [
+                {
+                  "type": "tool",
+                  "name": "task",
+                  "id": "tool-task-1",
+                  "state": {
+                    "status": "running",
+                    "input": "{\"description\":\"subtask\"}",
+                    "structured": {
+                      "sessionID": "ses_running_subtask"
+                    }
+                  }
+                }
+              ]
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        val toolItem = extractToolItems(data).single()
+
+        assertThat(toolItem.toolName).isEqualTo("task")
+        assertThat(extractSubtaskSessionId(toolItem.metadata, null, toolItem.result))
+            .isEqualTo("ses_running_subtask")
+    }
+
+    @Test
+    fun extractApplyPatchResultFiles_parsesUpdatedFilesFromToolOutput() {
+        val files = extractApplyPatchResultFiles(
+            """
+            Success. Updated the following files:
+            M 待跟踪问题.md
+            M android/feature/session/src/main/java/com/openmate/feature/session/SessionDetailViewModel.kt
+            A docs/new-file.md
+            D old/obsolete.txt
+            Note: 3 files changed
+            """.trimIndent(),
+        )
+
+        assertThat(files).containsExactly(
+            "待跟踪问题.md",
+            "android/feature/session/src/main/java/com/openmate/feature/session/SessionDetailViewModel.kt",
+            "docs/new-file.md",
+            "old/obsolete.txt",
+        ).inOrder()
+    }
 }

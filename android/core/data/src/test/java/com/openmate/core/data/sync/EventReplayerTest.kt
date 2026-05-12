@@ -206,6 +206,82 @@ class EventReplayerTest {
         assertThat(metadata["sessionId"]!!.jsonPrimitive.content).isEqualTo("ses_subtask_1")
     }
 
+    @Test
+    fun replay_messagePartUpdated_appendsPatchPartToAssistantContent() = runTest {
+        val replayer = EventReplayer()
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "assistant-1",
+                    type = "session.next.step.started.1",
+                    timestamp = 1_000L,
+                    extra = buildJsonObject {
+                        put("agent", JsonPrimitive("build"))
+                        put("model", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-input-started",
+                    type = "session.next.tool.input.started.1",
+                    timestamp = 1_050L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-patch-1"))
+                        put("name", JsonPrimitive("apply_patch"))
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-called",
+                    type = "session.next.tool.called.1",
+                    timestamp = 1_100L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-patch-1"))
+                        put("input", buildJsonObject { put("patch", JsonPrimitive("*** Begin Patch")) })
+                        put("provider", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-patch-updated",
+                    type = "message.part.updated.1",
+                    timestamp = 1_200L,
+                    extra = buildJsonObject {
+                        put(
+                            "part",
+                            buildJsonObject {
+                                put("id", JsonPrimitive("patch-1"))
+                                put("sessionID", JsonPrimitive("session-1"))
+                                put("messageID", JsonPrimitive("assistant-1"))
+                                put("type", JsonPrimitive("patch"))
+                                put("hash", JsonPrimitive("hash-1"))
+                                put(
+                                    "files",
+                                    kotlinx.serialization.json.JsonArray(
+                                        listOf(
+                                            JsonPrimitive("first.kt"),
+                                            JsonPrimitive("second.kt"),
+                                        ),
+                                    ),
+                                )
+                            },
+                        )
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { null },
+        )
+
+        val assistantUpdate = changes.last() as ReplayChange.Update
+        val content = assistantUpdate.data["content"]!!.jsonArray
+
+        assertThat(content).hasSize(2)
+        assertThat(content[0].jsonObject["type"]!!.jsonPrimitive.content).isEqualTo("tool")
+        assertThat(content[1].jsonObject["type"]!!.jsonPrimitive.content).isEqualTo("patch")
+        assertThat(content[1].jsonObject["files"]!!.jsonArray.map { it.jsonPrimitive.content })
+            .containsExactly("first.kt", "second.kt")
+            .inOrder()
+    }
+
     private fun replayEvent(
         id: String,
         type: String,

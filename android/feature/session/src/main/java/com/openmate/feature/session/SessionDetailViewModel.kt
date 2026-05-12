@@ -247,10 +247,21 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     private fun resolvePreviewPath(path: String): String {
-        if (path.isBlank()) return path
-        if (path.startsWith("/") || Regex("^[A-Za-z]:[\\/]").containsMatchIn(path)) return path
+        val normalizedPath = path
+            .trim()
+            .removeSurrounding("`")
+            .removeSurrounding("\"")
+            .replace('\\', '/')
+        if (normalizedPath.isBlank()) return normalizedPath
+        val isWindowsAbsolutePath = normalizedPath.length >= 3 &&
+            normalizedPath[1] == ':' &&
+            normalizedPath[0].isLetter() &&
+            normalizedPath[2] == '/'
+        if (normalizedPath.startsWith("/") || isWindowsAbsolutePath) {
+            return normalizedPath
+        }
         if (currentDirectory.isBlank()) return path
-        return File(currentDirectory, path).path.replace('\\', '/')
+        return File(currentDirectory, normalizedPath).path.replace('\\', '/')
     }
 
     fun openFilePreview(path: String) {
@@ -938,7 +949,7 @@ class SessionDetailViewModel @Inject constructor(
         val now = android.os.SystemClock.elapsedRealtime()
         val wallNow = System.currentTimeMillis()
         for (msg in list) {
-            if (msg.type == "assistant" && msg.completedAt == null) {
+            if ((msg.type == "assistant" || msg.type == "compaction") && msg.completedAt == null) {
                 val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
                 val finish = data?.get("finish")?.jsonPrimitive?.contentOrNull
                 if (finish == null && !anchors.containsKey(msg.id)) {

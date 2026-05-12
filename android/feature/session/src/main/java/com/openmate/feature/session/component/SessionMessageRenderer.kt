@@ -28,6 +28,7 @@ import com.openmate.core.common.toTimeString
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.*
+import kotlinx.serialization.json.put
 
 private val AgentColor = androidx.compose.ui.graphics.Color(0xFF9D7CD8)
 private val CompactionCodeBlockBackground = androidx.compose.ui.graphics.Color(0xFF2a2a3a)
@@ -47,6 +48,91 @@ internal fun extractSubtaskSessionId(
         ?: structured.str("sessionId")
         ?: structured.str("sessionID")
         ?: resultText?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+}
+
+internal fun extractToolItems(data: JsonObject): List<DisplayItem.ToolItem> {
+    val content = data["content"]?.jsonArray ?: return emptyList()
+    val items = mutableListOf<DisplayItem.ToolItem>()
+    val patches = mutableListOf<List<String>>()
+    var index = 0
+    while (index < content.size) {
+        val obj = content[index].jsonObject
+        when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+            "tool" -> {
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "tool"
+                val state = obj["state"]?.jsonObject
+                val status = state?.get("status")?.jsonPrimitive?.contentOrNull ?: ""
+                val input = state?.get("input")?.toString()
+                val structuredResult = state?.get("structured")
+                val contentArr = state?.get("content")?.jsonArray
+                val errorObj = state?.get("error")
+                val callID = obj["callID"]?.jsonPrimitive?.contentOrNull
+                    ?: state?.get("callID")?.jsonPrimitive?.contentOrNull
+                    ?: obj["id"]?.jsonPrimitive?.contentOrNull
+                val metadata = state?.get("metadata")?.jsonObject
+                val structuredSessionId = (structuredResult as? JsonObject)?.str("sessionId")
+                    ?: (structuredResult as? JsonObject)?.str("sessionID")
+                val mergedMetadata = if (metadata != null) {
+                    if (structuredSessionId != null && metadata.str("sessionId") == null && metadata.str("sessionID") == null) {
+                        buildJsonObject {
+                            metadata.forEach { (key, value) -> put(key, value) }
+                            put("sessionId", JsonPrimitive(structuredSessionId))
+                        }
+                    } else {
+                        metadata
+                    }
+                } else if (structuredSessionId != null) {
+                    buildJsonObject { put("sessionId", JsonPrimitive(structuredSessionId)) }
+                } else {
+                    null
+                }
+                val resultText = when {
+                    errorObj != null -> errorObj.toString()
+                    contentArr != null && contentArr.isNotEmpty() -> {
+                        contentArr.joinToString("\n") { elem ->
+                            elem.jsonObject["text"]?.jsonPrimitive?.contentOrNull ?: elem.toString()
+                        }
+                    }
+                    structuredResult != null -> structuredResult.toString()
+                    else -> null
+                }
+                val nextPatchFiles = if (index + 1 < content.size) {
+                    content[index + 1].jsonObject.takeIf {
+                        it["type"]?.jsonPrimitive?.contentOrNull == "patch"
+                    }?.get("files")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                } else {
+                    null
+                }
+                items.add(
+                    DisplayItem.ToolItem(
+                        toolName = name,
+                        state = when (status) {
+                            "pending" -> com.openmate.core.domain.model.ToolCallState.PENDING
+                            "running" -> com.openmate.core.domain.model.ToolCallState.RUNNING
+                            "completed" -> com.openmate.core.domain.model.ToolCallState.COMPLETED
+                            "error" -> com.openmate.core.domain.model.ToolCallState.ERROR
+                            else -> com.openmate.core.domain.model.ToolCallState.COMPLETED
+                        },
+                        args = input,
+                        result = resultText,
+                        files = nextPatchFiles ?: patches.removeFirstOrNull() ?: emptyList(),
+                        hash = null,
+                        callID = callID,
+                        metadata = mergedMetadata,
+                    ),
+                )
+                if (nextPatchFiles != null) {
+                    index++
+                }
+            }
+            "patch" -> {
+                val files = obj["files"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+                patches.add(files)
+            }
+        }
+        index++
+    }
+    return items
 }
 
 @Composable
@@ -335,6 +421,8 @@ fun AssistantMessageItem(
 ) {
     val content = data["content"]?.jsonArray ?: return
     val reasoningExpanded = remember { mutableStateOf(false) }
+    val toolItems = remember(data) { extractToolItems(data) }
+    var toolIndex = 0
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
         for (item in content) {
@@ -347,45 +435,21 @@ fun AssistantMessageItem(
                     }
                 }
                 "tool" -> {
-                    val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "tool"
-                    val state = obj["state"]?.jsonObject
-                    val status = state?.get("status")?.jsonPrimitive?.contentOrNull ?: ""
-                    val input = state?.get("input")?.toString()
-                    val structuredResult = state?.get("structured")
-                    val contentArr = state?.get("content")?.jsonArray
-                    val errorObj = state?.get("error")
-                    val callID = obj["callID"]?.jsonPrimitive?.contentOrNull
-                        ?: state?.get("callID")?.jsonPrimitive?.contentOrNull
-                        ?: obj["id"]?.jsonPrimitive?.contentOrNull
-                    val metadata = state?.get("metadata")?.jsonObject
-
-                    val resultText = when {
-                        errorObj != null -> errorObj.toString()
-                        contentArr != null && contentArr.isNotEmpty() -> {
-                            contentArr.joinToString("\n") { elem ->
-                                elem.jsonObject["text"]?.jsonPrimitive?.contentOrNull ?: elem.toString()
-                            }
-                        }
-                        structuredResult != null -> structuredResult.toString()
-                        else -> null
+                    val displayItem = toolItems.getOrNull(toolIndex++) ?: continue
+                    val name = displayItem.toolName
+                    val status = when (displayItem.state) {
+                        com.openmate.core.domain.model.ToolCallState.PENDING -> "pending"
+                        com.openmate.core.domain.model.ToolCallState.RUNNING -> "running"
+                        com.openmate.core.domain.model.ToolCallState.COMPLETED -> "completed"
+                        com.openmate.core.domain.model.ToolCallState.ERROR -> "error"
                     }
-
-                    val displayItem = DisplayItem.ToolItem(
-                        toolName = name,
-                        state = when (status) {
-                            "pending" -> com.openmate.core.domain.model.ToolCallState.PENDING
-                            "running" -> com.openmate.core.domain.model.ToolCallState.RUNNING
-                            "completed" -> com.openmate.core.domain.model.ToolCallState.COMPLETED
-                            "error" -> com.openmate.core.domain.model.ToolCallState.ERROR
-                            else -> com.openmate.core.domain.model.ToolCallState.COMPLETED
-                        },
-                        args = input,
-                        result = resultText,
-                        files = emptyList(),
-                        hash = null,
-                        callID = callID,
-                        metadata = metadata,
-                    )
+                    val input = displayItem.args
+                    val resultText = displayItem.result
+                    val metadata = displayItem.metadata
+                    val callID = displayItem.callID
+                    val structuredResult = runCatching {
+                        displayItem.result?.let { Json.parseToJsonElement(it).jsonObject }
+                    }.getOrNull()
 
                     if (name == "question" && status == "running") {
                         val parsedQuestions = remember(input) { parseQuestionArgs(input) }

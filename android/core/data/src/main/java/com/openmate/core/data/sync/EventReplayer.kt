@@ -378,6 +378,22 @@ class EventReplayer {
                     changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
+                "message.part.updated" -> {
+                    val cached = cachedAssistant() ?: return
+                    val part = props["part"]?.jsonObject ?: return
+                    val partType = part["type"]?.jsonPrimitive?.contentOrNull ?: return
+                    if (partType != "patch") return
+                    val messageId = part["messageID"]?.jsonPrimitive?.contentOrNull ?: return
+                    if (messageId != cachedId) return
+                    val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
+                    content.add(part)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(content)
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                }
+
                 "session.next.reasoning.started" -> {
                     val cached = cachedAssistant() ?: return
                     val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return

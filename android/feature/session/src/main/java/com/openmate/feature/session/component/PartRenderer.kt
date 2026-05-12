@@ -101,6 +101,16 @@ internal data class ToolSummary(
     val isBlock: Boolean,
 )
 
+private val ApplyPatchFileLineRegex = Regex("""(?m)^(?:[AMDCRTU?!]{1,2}|M)\s+(.+)$""")
+
+internal fun extractApplyPatchResultFiles(result: String?): List<String> {
+    if (result.isNullOrBlank()) return emptyList()
+    return ApplyPatchFileLineRegex
+        .findAll(result)
+        .mapNotNull { match -> match.groupValues.getOrNull(1)?.trim()?.ifBlank { null } }
+        .toList()
+}
+
 internal data class QuestionAnswerRow(
     val question: String,
     val answers: List<String>,
@@ -908,6 +918,11 @@ internal fun TaskToolLine(
 @Composable
 internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onViewFile: ((filePath: String) -> Unit)? = null) {
     val expanded = remember { mutableStateOf(false) }
+    val files = if (item.toolName == "apply_patch" && item.files.isEmpty()) {
+        extractApplyPatchResultFiles(item.result)
+    } else {
+        item.files
+    }
 
     Column(modifier = Modifier.padding(vertical = 2.dp)) {
         Row(
@@ -1118,9 +1133,9 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                             )
                         }
                     }
-                    if (item.files.isNotEmpty()) {
+                    if (files.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        item.files.forEach { file ->
+                        files.forEach { file ->
                             Text(
                                 text = file,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),

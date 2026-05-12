@@ -603,6 +603,46 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun openFilePreview_keepsWindowsAbsolutePathWithoutPrefixingCurrentDirectory() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient()
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(message("m1", timeCreated = 1)),
+                lastSeq = null,
+            ),
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+
+        viewModel.openFilePreview("D:/openmate/AGENTS.md")
+        waitUntil { apiClient.readFileCalls.isNotEmpty() }
+
+        assertThat(apiClient.readFileCalls.single()).isEqualTo("D:/openmate/AGENTS.md")
+    }
+
+    @Test
+    fun openFilePreview_trimsWindowsAbsolutePathBeforeCheckingWorkspacePrefix() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient()
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(message("m1", timeCreated = 1)),
+                lastSeq = null,
+            ),
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+
+        viewModel.openFilePreview("  D:\\openmate\\AGENTS.md  ")
+        waitUntil { apiClient.readFileCalls.isNotEmpty() }
+
+        assertThat(apiClient.readFileCalls.single()).isEqualTo("D:/openmate/AGENTS.md")
+    }
+
+    @Test
     fun abort_stopsBusyTimerImmediatelyBeforeSyncCatchesUp() = runTest(dispatcher) {
         val repository = FakeSessionMessageRepository(
             recentWindow = listOf(
@@ -662,6 +702,44 @@ class SessionDetailViewModelTest {
         assertThat(viewModel.runningAnchors.value).isEmpty()
         assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.IDLE.name)
         assertThat(viewModel.messages.value.first { it.id == "m-running" }.completedAt).isNotNull()
+    }
+
+    @Test
+    fun loadSession_restoresRunningAnchorFromIncompleteCompactionMessageAge() = runTest(dispatcher) {
+        val messageStartedAt = System.currentTimeMillis() - 125_000L
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                SessionMessage(
+                    id = "compaction-running",
+                    sessionId = SESSION_ID,
+                    type = "compaction",
+                    data = """
+                        {
+                          "summary": "",
+                          "time": {
+                            "created": $messageStartedAt
+                          }
+                        }
+                    """.trimIndent(),
+                    timeCreated = messageStartedAt,
+                    timeUpdated = messageStartedAt,
+                    completedAt = null,
+                    roundMark = true,
+                ),
+            ),
+            lastSeq = null,
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.runningAnchors.value.containsKey("compaction-running") }
+
+        val anchor = viewModel.runningAnchors.value.getValue("compaction-running")
+        val restoredElapsed = SystemClock.elapsedRealtime() - anchor
+
+        assertThat(viewModel.messages.value.single().completedAt).isNull()
+        assertThat(viewModel.runningAnchors.value).containsKey("compaction-running")
+        assertThat(restoredElapsed).isAtLeast(120_000L)
     }
 
     @Test

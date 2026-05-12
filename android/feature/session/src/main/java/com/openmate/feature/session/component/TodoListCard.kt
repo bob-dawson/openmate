@@ -83,14 +83,11 @@ fun TodoListCard(
             )
         }
 
-        val sortedTodos = if (expanded.value) {
-            todos
-        } else {
-            val inProgressItems = todos.filter { it.status == "in_progress" }
-            val pendingItems = todos.filter { it.status == "pending" }
-            val rest = todos.filter { it.status != "in_progress" && it.status != "pending" }
-            (inProgressItems + pendingItems + rest).take(3)
-        }
+    val sortedTodos = if (expanded.value) {
+        todos
+    } else {
+        collapsedTodos(todos)
+    }
 
         Column(
             modifier = Modifier
@@ -108,6 +105,12 @@ fun TodoListCard(
             thickness = 1.dp,
         )
     }
+}
+
+internal fun collapsedTodos(todos: List<TodoInfo>): List<TodoInfo> {
+    val inProgressItems = todos.filter { it.status == "in_progress" }
+    val pendingItems = todos.filter { it.status == "pending" }
+    return (inProgressItems + pendingItems).take(3)
 }
 
 private val Info = androidx.compose.ui.graphics.Color(0xFF56B6C2)
