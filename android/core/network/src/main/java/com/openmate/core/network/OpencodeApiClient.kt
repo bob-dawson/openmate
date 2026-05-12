@@ -13,6 +13,7 @@ import com.openmate.core.network.dto.BridgeStatusResponse
 import com.openmate.core.network.dto.BridgeWriteRequest
 import com.openmate.core.network.dto.FileNodeDto
 import com.openmate.core.network.dto.HealthDto
+import com.openmate.core.network.dto.MessageHeaderDto
 import com.openmate.core.network.dto.MessageWithPartsDto
 import com.openmate.core.network.dto.PairConfirmRequest
 import com.openmate.core.network.dto.PairConfirmResponse
@@ -51,6 +52,11 @@ class OpencodeApiClient(
 
     data class MessagesPage(
         val items: List<MessageWithPartsDto>,
+        val nextCursor: String?,
+    )
+
+    data class MessageHeadersPage(
+        val items: List<MessageHeaderDto>,
         val nextCursor: String?,
     )
 
@@ -100,6 +106,23 @@ class OpencodeApiClient(
         val items: List<MessageWithPartsDto> = json.decodeFromString(body)
         val nextCursor = response.header("X-Next-Cursor")
         return MessagesPage(items, nextCursor)
+    }
+
+    suspend fun getMessageHeaders(sessionID: String, limit: Int, before: String?, directory: String? = null): MessageHeadersPage {
+        val params = mutableMapOf<String, String>()
+        params["limit"] = limit.toString()
+        before?.let { params["before"] = it }
+        directory?.let { params["directory"] = it }
+        val url = buildUrl("/session/$sessionID/message", params)
+        val request = Request.Builder().url(url).get().build()
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: return MessageHeadersPage(emptyList(), null)
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $body")
+        }
+        val items: List<MessageHeaderDto> = json.decodeFromString(body)
+        val nextCursor = response.header("X-Next-Cursor")
+        return MessageHeadersPage(items, nextCursor)
     }
 
     data class FileAttachment(val path: String, val filename: String, val mime: String)

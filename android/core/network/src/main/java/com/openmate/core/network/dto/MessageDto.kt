@@ -1,24 +1,18 @@
 package com.openmate.core.network.dto
 
-import com.openmate.core.domain.model.Message
-import com.openmate.core.domain.model.MessageRole
-import com.openmate.core.domain.model.Part
-import com.openmate.core.domain.model.TokenUsage
-import com.openmate.core.domain.model.ToolCallState
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 @Serializable
 data class MessageWithPartsDto(
     val info: MessageInfoDto,
     val parts: List<PartDto> = emptyList(),
+)
+
+@Serializable
+data class MessageHeaderDto(
+    val info: MessageInfoDto,
 )
 
 @Serializable
@@ -120,99 +114,3 @@ data class ToolStateDto(
     val error: String? = null,
     val raw: String? = null,
 )
-
-fun MessageWithPartsDto.toDomain(): Message {
-    return Message(
-        id = info.id,
-        sessionID = info.sessionID,
-        role = when (info.role) {
-            "user" -> MessageRole.USER
-            "assistant" -> MessageRole.ASSISTANT
-            else -> MessageRole.USER
-        },
-        agent = info.agent,
-        modelID = info.modelID ?: info.model?.modelID,
-        providerID = info.providerID ?: info.model?.providerID,
-        createdAt = info.time.created,
-        completedAt = info.time.completed,
-        parts = parts.map { it.toDomain() },
-    )
-}
-
-fun PartDto.toDomain(): Part {
-    return when (type) {
-        "text" -> Part.TextPart(
-            id = id,
-            text = text ?: "",
-            synthetic = synthetic ?: false,
-            ignored = ignored ?: false,
-        )
-        "tool" -> {
-            val metaObj = (state?.metadata as? JsonObject)
-            val structSessionId = (state?.structured as? JsonObject)?.get("sessionId")?.jsonPrimitive?.content
-            Part.ToolInvocationPart(
-                id = id,
-                toolCallID = callID ?: "",
-                toolName = tool ?: "",
-                state = when (state?.status) {
-                    "pending" -> ToolCallState.PENDING
-                    "running" -> ToolCallState.RUNNING
-                    "completed" -> ToolCallState.COMPLETED
-                    "error" -> ToolCallState.ERROR
-                    else -> ToolCallState.PENDING
-                },
-                args = state?.input?.toString(),
-                result = state?.output,
-                metadata = if (metaObj != null) {
-                    metaObj
-                } else if (structSessionId != null) {
-                    buildJsonObject { put("sessionId", structSessionId) }
-                } else {
-                    null
-                },
-            )
-        }
-        "reasoning" -> Part.ReasoningPart(id = id, text = text ?: "")
-        "step-start" -> Part.StepStartPart(id = id, snapshot = snapshot)
-        "step-finish" -> Part.StepFinishPart(
-            id = id,
-            reason = reason ?: "",
-            snapshot = snapshot,
-            cost = cost ?: 0.0,
-            tokens = tokens?.toTokenUsage(),
-        )
-        "snapshot" -> Part.SnapshotPart(id = id, snapshot = snapshot ?: "")
-        "patch" -> Part.PatchPart(id = id, hash = hash ?: "", files = files ?: emptyList())
-        "agent" -> Part.AgentPart(id = id, name = name ?: "")
-        "file" -> Part.FilePart(id = id, mime = mime ?: "", url = url ?: "", filename = filename)
-        "compaction" -> Part.CompactionPart(
-            id = id,
-            auto = auto ?: false,
-            overflow = overflow ?: false,
-        )
-        "subtask" -> Part.SubtaskPart(
-            id = id,
-            prompt = prompt ?: "",
-            description = description ?: "",
-            agent = agent ?: "",
-        )
-        "retry" -> Part.RetryPart(
-            id = id,
-            attempt = attempt ?: 0,
-            error = error,
-        )
-        else -> Part.TextPart(id = id, text = text ?: "")
-    }
-}
-
-private fun JsonElement.toTokenUsage(): TokenUsage {
-    val obj = this.jsonObject
-    return TokenUsage(
-        total = obj["total"]?.jsonPrimitive?.content?.toLongOrNull(),
-        input = obj["input"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-        output = obj["output"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-        reasoning = obj["reasoning"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-        cacheRead = obj["cache"]?.jsonObject?.get("read")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-        cacheWrite = obj["cache"]?.jsonObject?.get("write")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L,
-    )
-}

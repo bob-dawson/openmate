@@ -27,10 +27,6 @@ abstract class DataModule {
 
     @Binds
     @Singleton
-    abstract fun bindMessageRepository(impl: MessageRepositoryImpl): MessageRepository
-
-    @Binds
-    @Singleton
     abstract fun bindPermissionRepository(impl: PermissionRepositoryImpl): PermissionRepository
 
     @Binds
