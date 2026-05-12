@@ -35,7 +35,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,10 +48,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -89,7 +84,6 @@ import com.openmate.feature.session.DownloadState
 import com.openmate.feature.session.WorkspaceBrowserViewModel
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -114,19 +108,6 @@ private const val LARGE_FILE_THRESHOLD = 10 * 1024 * 1024L
 private enum class SortColumn { NAME, SIZE, MODIFIED }
 private enum class SortOrder { ASC, DESC }
 
-internal fun shouldShowSearchSortHeader(
-    selectedTab: Int,
-    filenameQuery: String,
-    filenameResults: List<BridgeSearchResultDto>,
-    contentSearching: Boolean,
-    contentResults: List<BridgeSearchResultDto>,
-): Boolean {
-    return when {
-        selectedTab == 1 -> !contentSearching && contentResults.isNotEmpty()
-        else -> filenameQuery.length >= 2 && filenameResults.isNotEmpty()
-    }
-}
-
 data class FileContextMenuState(
     val entry: BridgeDirEntryDto? = null,
     val path: String = "",
@@ -146,14 +127,8 @@ fun WorkspaceBrowserScreen(
     val downloadState by viewModel.downloadState.collectAsState()
     var currentPath by remember { mutableStateOf(initialDirectory) }
     var entries by remember { mutableStateOf<List<BridgeDirEntryDto>>(emptyList()) }
-    var selectedTab by remember { mutableStateOf(0) }
     var filenameQuery by remember { mutableStateOf("") }
     var filenameResults by remember { mutableStateOf<List<BridgeSearchResultDto>>(emptyList()) }
-    var contentQuery by remember { mutableStateOf("") }
-    var contentResults by remember { mutableStateOf<List<BridgeSearchResultDto>>(emptyList()) }
-    var contentSearching by remember { mutableStateOf(false) }
-    var contentGlob by remember { mutableStateOf("") }
-    var searchJob by remember { mutableStateOf<Job?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf("") }
     var viewingFile by remember { mutableStateOf<FileViewState?>(null) }
@@ -422,9 +397,6 @@ fun WorkspaceBrowserScreen(
         viewingFile = null
         filenameQuery = ""
         filenameResults = emptyList()
-        contentQuery = ""
-        contentResults = emptyList()
-        contentGlob = ""
         loadDir(currentPath)
     }
 
@@ -442,7 +414,7 @@ fun WorkspaceBrowserScreen(
     }
 
     LaunchedEffect(filenameQuery) {
-        if (selectedTab == 0 && filenameQuery.length >= 2) {
+        if (filenameQuery.length >= 2) {
             scope.launch(Dispatchers.IO) {
                 try {
                     filenameResults = apiClient.bridgeSearch(
@@ -458,32 +430,6 @@ fun WorkspaceBrowserScreen(
         } else {
             filenameResults = emptyList()
         }
-    }
-
-    fun doContentSearch() {
-        if (contentQuery.isBlank()) return
-        searchJob?.cancel()
-        searchJob = scope.launch(Dispatchers.IO) {
-            contentSearching = true
-            try {
-                contentResults = apiClient.bridgeSearch(
-                    currentPath.ifBlank { "." },
-                    contentQuery,
-                    "content",
-                    100,
-                    glob = contentGlob.ifBlank { null },
-                )
-            } catch (_: Exception) {
-                contentResults = emptyList()
-            }
-            contentSearching = false
-        }
-    }
-
-    fun cancelSearch() {
-        searchJob?.cancel()
-        searchJob = null
-        contentSearching = false
     }
 
     val canGoUp = currentPath.isNotBlank() && currentPath != "/" && currentPath.count { it == '/' } > 0
@@ -693,86 +639,17 @@ fun WorkspaceBrowserScreen(
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                indicator = { tabPositions ->
-                    TabRowDefaults.Indicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                },
-                containerColor = Color.Transparent,
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text(stringResource(R.string.tab_files)) },
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text(stringResource(R.string.tab_content)) },
-                )
-            }
+            OutlinedTextField(
+                value = filenameQuery,
+                onValueChange = { filenameQuery = it },
+                label = { Text(stringResource(R.string.search_files)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                singleLine = true,
+            )
 
-            if (selectedTab == 0) {
-                OutlinedTextField(
-                    value = filenameQuery,
-                    onValueChange = { filenameQuery = it },
-                    label = { Text(stringResource(R.string.search_files)) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    singleLine = true,
-                )
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedTextField(
-                            value = contentQuery,
-                            onValueChange = { contentQuery = it },
-                            label = { Text(stringResource(R.string.search_in_content)) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                        )
-                        if (contentSearching) {
-                            IconButton(onClick = { cancelSearch() }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.cancel),
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        } else {
-                            Button(
-                                onClick = { doContentSearch() },
-                                enabled = contentQuery.isNotBlank(),
-                            ) {
-                                Text(stringResource(R.string.search_button))
-                            }
-                        }
-                    }
-                    OutlinedTextField(
-                        value = contentGlob,
-                        onValueChange = { contentGlob = it },
-                        label = { Text(stringResource(R.string.filename_filter)) },
-                        placeholder = { Text("*.kt, *.rs, *.md") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                    )
-                }
-            }
-
-            if (canGoUp && selectedTab == 0 && filenameQuery.isBlank()) {
+            if (canGoUp && filenameQuery.isBlank()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -808,70 +685,6 @@ fun WorkspaceBrowserScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                     )
-                }
-            } else if (selectedTab == 1) {
-                if (contentSearching) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = stringResource(R.string.searching),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                } else if (contentResults.isNotEmpty()) {
-                    Text(
-                        text = stringResource(R.string.content_search_results, contentResults.size),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                    BrowserHeaderRow(
-                        sortColumn = sortColumn,
-                        sortOrder = sortOrder,
-                        onSort = { toggleSort(it) },
-                    )
-                    HorizontalDivider()
-                    LazyColumn {
-                        items(sortSearchResults(contentResults), key = { it.path }) { result ->
-                            val name = result.path.substringAfterLast("/").substringAfterLast("\\")
-                            val resultPath = result.path
-                            Box(
-                                modifier = Modifier.onGloballyPositioned { coords ->
-                                    itemPositions[resultPath] = coords.positionInWindow()
-                                }
-                            ) {
-                                ContentSearchResultRow(
-                                    result = result,
-                                    onClick = { onFileClick(resultPath) },
-                                    onLongClick = {
-                                        contextMenu = FileContextMenuState(
-                                            entry = BridgeDirEntryDto(name = name, size = result.size, modified = result.modified, isDirectory = result.isDirectory),
-                                            path = resultPath,
-                                            expanded = true,
-                                        )
-                                    },
-                                )
-                            }
-                        }
-                    }
-                } else if (contentQuery.isNotBlank() && contentResults.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.no_results_found),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
             } else if (filenameQuery.length >= 2) {
                 if (filenameResults.isNotEmpty()) {
@@ -1079,71 +892,6 @@ fun WorkspaceBrowserScreen(
 
 data class FileViewState(val path: String, val name: String)
 private data class LargeFileConfirm(val path: String, val filename: String, val size: Long)
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ContentSearchResultRow(
-    result: BridgeSearchResultDto,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null,
-) {
-    val filename = result.path.substringAfterLast("/").substringAfterLast("\\")
-    val relativePath = result.path
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick,
-            )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "📄 ",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                text = filename,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            if (result.line != null) {
-                Text(
-                    text = stringResource(R.string.line_info, result.line!!),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (!result.snippet.isNullOrBlank()) {
-            Text(
-                text = result.snippet!!,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 24.dp, top = 2.dp),
-            )
-        }
-        Text(
-            text = relativePath,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(start = 24.dp, top = 2.dp),
-        )
-    }
-    HorizontalDivider()
-}
 
 @Composable
 private fun DownloadOverlay(state: DownloadState) {

@@ -314,6 +314,27 @@ class EventReplayer {
                     changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
                 }
 
+                "session.next.tool.progress" -> {
+                    val cached = cachedAssistant() ?: return
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
+                    val content = cached["content"]?.jsonArray ?: return
+                    val toolIdx = findToolIndex(content, callID) ?: return
+                    val mutableContent = content.toMutableList()
+                    val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
+                    val prevState = toolObj["state"]?.jsonObject ?: return
+                    if (prevState["status"]?.jsonPrimitive?.contentOrNull != "running") return
+                    val mergedState = prevState.toMutableMap()
+                    props["structured"]?.jsonObject?.let { mergedState["structured"] = it }
+                    props["content"]?.jsonArray?.let { mergedState["content"] = it }
+                    toolObj["state"] = JsonObject(mergedState)
+                    mutableContent[toolIdx] = JsonObject(toolObj)
+                    val updated = cached.toMutableMap()
+                    updated["content"] = JsonArray(mutableContent)
+                    val merged = JsonObject(updated)
+                    updateCache(merged)
+                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                }
+
                 "session.next.tool.success" -> {
                     val cached = cachedAssistant() ?: return
                     val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
@@ -382,16 +403,48 @@ class EventReplayer {
                     val cached = cachedAssistant() ?: return
                     val part = props["part"]?.jsonObject ?: return
                     val partType = part["type"]?.jsonPrimitive?.contentOrNull ?: return
-                    if (partType != "patch") return
                     val messageId = part["messageID"]?.jsonPrimitive?.contentOrNull ?: return
                     if (messageId != cachedId) return
-                    val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
-                    content.add(part)
-                    val updated = cached.toMutableMap()
-                    updated["content"] = JsonArray(content)
-                    val merged = JsonObject(updated)
-                    updateCache(merged)
-                    changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                    if (partType == "patch") {
+                        val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
+                        content.add(part)
+                        val updated = cached.toMutableMap()
+                        updated["content"] = JsonArray(content)
+                        val merged = JsonObject(updated)
+                        updateCache(merged)
+                        changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                    } else if (partType == "tool") {
+                        val partState = part["state"]?.jsonObject ?: return
+                        val callID = part["callID"]?.jsonPrimitive?.contentOrNull
+                            ?: part["id"]?.jsonPrimitive?.contentOrNull
+                            ?: return
+                        val content = cached["content"]?.jsonArray ?: return
+                        val toolIdx = content.indexOfLast {
+                            it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" &&
+                            (it.jsonObject["id"]?.jsonPrimitive?.contentOrNull == callID ||
+                             it.jsonObject["callID"]?.jsonPrimitive?.contentOrNull == callID)
+                        }
+                        if (toolIdx < 0) return
+                        val mutableContent = content.toMutableList()
+                        val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
+                        val prevState = toolObj["state"]?.jsonObject
+                        if (prevState != null) {
+                            val mergedState = prevState.toMutableMap()
+                            partState["metadata"]?.jsonObject?.let { mergedState["metadata"] = it }
+                            partState["title"]?.jsonPrimitive?.let { mergedState["title"] = it }
+                            partState["structured"]?.jsonObject?.let { mergedState["structured"] = it }
+                            partState["content"]?.jsonArray?.let { mergedState["content"] = it }
+                            toolObj["state"] = JsonObject(mergedState)
+                        } else {
+                            toolObj["state"] = partState
+                        }
+                        mutableContent[toolIdx] = JsonObject(toolObj)
+                        val updated = cached.toMutableMap()
+                        updated["content"] = JsonArray(mutableContent)
+                        val merged = JsonObject(updated)
+                        updateCache(merged)
+                        changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                    }
                 }
 
                 "session.next.reasoning.started" -> {

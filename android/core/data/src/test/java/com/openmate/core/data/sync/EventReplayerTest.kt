@@ -282,6 +282,169 @@ class EventReplayerTest {
             .inOrder()
     }
 
+    @Test
+    fun replay_messagePartUpdated_mergesToolMetadataForRunningTask() = runTest {
+        val replayer = EventReplayer()
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "assistant-1",
+                    type = "session.next.step.started.1",
+                    timestamp = 1_000L,
+                    extra = buildJsonObject {
+                        put("agent", JsonPrimitive("build"))
+                        put("model", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-input-started",
+                    type = "session.next.tool.input.started.1",
+                    timestamp = 1_050L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-task-1"))
+                        put("name", JsonPrimitive("task"))
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-called",
+                    type = "session.next.tool.called.1",
+                    timestamp = 1_100L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-task-1"))
+                        put("input", buildJsonObject {
+                            put("description", JsonPrimitive("Test task"))
+                            put("prompt", JsonPrimitive("do something"))
+                            put("subagent_type", JsonPrimitive("general"))
+                        })
+                        put("provider", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-part-updated",
+                    type = "message.part.updated.1",
+                    timestamp = 1_150L,
+                    extra = buildJsonObject {
+                        put(
+                            "part",
+                            buildJsonObject {
+                                put("id", JsonPrimitive("prt-1"))
+                                put("sessionID", JsonPrimitive("session-1"))
+                                put("messageID", JsonPrimitive("assistant-1"))
+                                put("type", JsonPrimitive("tool"))
+                                put("callID", JsonPrimitive("call-task-1"))
+                                put("state", buildJsonObject {
+                                    put("status", JsonPrimitive("running"))
+                                    put("metadata", buildJsonObject {
+                                        put("sessionId", JsonPrimitive("ses_subtask123"))
+                                    })
+                                    put("title", JsonPrimitive("Test task"))
+                                })
+                            },
+                        )
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { null },
+        )
+
+        val assistantUpdate = changes.last() as ReplayChange.Update
+        val content = assistantUpdate.data["content"]!!.jsonArray
+        val tool = content.single().jsonObject
+
+        val state = tool["state"]!!.jsonObject
+        assertThat(state["status"]!!.jsonPrimitive.content).isEqualTo("running")
+        assertThat(state["metadata"]!!.jsonObject["sessionId"]!!.jsonPrimitive.content)
+            .isEqualTo("ses_subtask123")
+        assertThat(state["title"]!!.jsonPrimitive.content).isEqualTo("Test task")
+    }
+
+    @Test
+    fun replay_messagePartUpdated_keepsExistingToolStateFieldsWhenMerging() = runTest {
+        val replayer = EventReplayer()
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "assistant-1",
+                    type = "session.next.step.started.1",
+                    timestamp = 1_000L,
+                    extra = buildJsonObject {
+                        put("agent", JsonPrimitive("build"))
+                        put("model", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-input-started",
+                    type = "session.next.tool.input.started.1",
+                    timestamp = 1_050L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-task-2"))
+                        put("name", JsonPrimitive("task"))
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-called",
+                    type = "session.next.tool.called.1",
+                    timestamp = 1_100L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-task-2"))
+                        put("input", buildJsonObject {
+                            put("description", JsonPrimitive("My task"))
+                            put("prompt", JsonPrimitive("do it"))
+                            put("subagent_type", JsonPrimitive("general"))
+                        })
+                        put("provider", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-part-updated",
+                    type = "message.part.updated.1",
+                    timestamp = 1_150L,
+                    extra = buildJsonObject {
+                        put(
+                            "part",
+                            buildJsonObject {
+                                put("id", JsonPrimitive("prt-2"))
+                                put("sessionID", JsonPrimitive("session-1"))
+                                put("messageID", JsonPrimitive("assistant-1"))
+                                put("type", JsonPrimitive("tool"))
+                                put("callID", JsonPrimitive("call-task-2"))
+                                put("state", buildJsonObject {
+                                    put("status", JsonPrimitive("running"))
+                                    put("metadata", buildJsonObject {
+                                        put("sessionId", JsonPrimitive("ses_child456"))
+                                        put("model", buildJsonObject {
+                                            put("modelID", JsonPrimitive("gpt-5.1"))
+                                        })
+                                    })
+                                    put("title", JsonPrimitive("My task"))
+                                })
+                            },
+                        )
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { null },
+        )
+
+        val assistantUpdate = changes.last() as ReplayChange.Update
+        val content = assistantUpdate.data["content"]!!.jsonArray
+        val tool = content.single().jsonObject
+        val state = tool["state"]!!.jsonObject
+
+        assertThat(state["status"]!!.jsonPrimitive.content).isEqualTo("running")
+        assertThat(state["input"]!!.jsonObject["description"]!!.jsonPrimitive.content)
+            .isEqualTo("My task")
+        assertThat(state["metadata"]!!.jsonObject["sessionId"]!!.jsonPrimitive.content)
+            .isEqualTo("ses_child456")
+        assertThat(state["metadata"]!!.jsonObject["model"]!!.jsonObject["modelID"]!!.jsonPrimitive.content)
+            .isEqualTo("gpt-5.1")
+        assertThat(state["title"]!!.jsonPrimitive.content).isEqualTo("My task")
+    }
+
     private fun replayEvent(
         id: String,
         type: String,
@@ -297,5 +460,154 @@ class EventReplayerTest {
             data["name"] = JsonPrimitive("bash")
         }
         return ReplayEvent(id = id, type = type, data = JsonObject(data))
+    }
+
+    @Test
+    fun replay_toolProgress_updatesStructuredForRunningTool() = runTest {
+        val replayer = EventReplayer()
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "assistant-1",
+                    type = "session.next.step.started.1",
+                    timestamp = 1_000L,
+                    extra = buildJsonObject {
+                        put("agent", JsonPrimitive("build"))
+                        put("model", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-input-started",
+                    type = "session.next.tool.input.started.1",
+                    timestamp = 1_050L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-prog-1"))
+                        put("name", JsonPrimitive("task"))
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-called",
+                    type = "session.next.tool.called.1",
+                    timestamp = 1_100L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-prog-1"))
+                        put("input", buildJsonObject {
+                            put("description", JsonPrimitive("My task"))
+                            put("prompt", JsonPrimitive("do it"))
+                            put("subagent_type", JsonPrimitive("general"))
+                        })
+                        put("provider", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-progress",
+                    type = "session.next.tool.progress.1",
+                    timestamp = 1_200L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-prog-1"))
+                        put("structured", buildJsonObject {
+                            put("sessionId", JsonPrimitive("ses_progress_child"))
+                            put("model", buildJsonObject {
+                                put("modelID", JsonPrimitive("gpt-5.1"))
+                            })
+                        })
+                        put("content", kotlinx.serialization.json.JsonArray(listOf(
+                            buildJsonObject {
+                                put("type", JsonPrimitive("text"))
+                                put("text", JsonPrimitive("partial output"))
+                            }
+                        )))
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { null },
+        )
+
+        val assistantUpdate = changes.last() as ReplayChange.Update
+        val content = assistantUpdate.data["content"]!!.jsonArray
+        val tool = content.single().jsonObject
+        val state = tool["state"]!!.jsonObject
+
+        assertThat(state["status"]!!.jsonPrimitive.content).isEqualTo("running")
+        assertThat(state["structured"]!!.jsonObject["sessionId"]!!.jsonPrimitive.content)
+            .isEqualTo("ses_progress_child")
+        assertThat(state["structured"]!!.jsonObject["model"]!!.jsonObject["modelID"]!!.jsonPrimitive.content)
+            .isEqualTo("gpt-5.1")
+        assertThat(state["content"]!!.jsonArray.first().jsonObject["text"]!!.jsonPrimitive.content)
+            .isEqualTo("partial output")
+    }
+
+    @Test
+    fun replay_toolProgress_ignoresCompletedTool() = runTest {
+        val replayer = EventReplayer()
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "assistant-1",
+                    type = "session.next.step.started.1",
+                    timestamp = 1_000L,
+                    extra = buildJsonObject {
+                        put("agent", JsonPrimitive("build"))
+                        put("model", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-input-started",
+                    type = "session.next.tool.input.started.1",
+                    timestamp = 1_050L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-prog-2"))
+                        put("name", JsonPrimitive("bash"))
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-called",
+                    type = "session.next.tool.called.1",
+                    timestamp = 1_100L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-prog-2"))
+                        put("input", buildJsonObject { put("cmd", "pwd") })
+                        put("provider", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-success",
+                    type = "session.next.tool.success.1",
+                    timestamp = 1_150L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-prog-2"))
+                        put("structured", buildJsonObject { put("exitCode", JsonPrimitive(0)) })
+                        put("content", kotlinx.serialization.json.JsonArray(emptyList()))
+                        put("provider", buildJsonObject {})
+                    },
+                ),
+                replayEvent(
+                    id = "evt-tool-progress-late",
+                    type = "session.next.tool.progress.1",
+                    timestamp = 1_200L,
+                    extra = buildJsonObject {
+                        put("callID", JsonPrimitive("call-prog-2"))
+                        put("structured", buildJsonObject {
+                            put("sessionId", JsonPrimitive("should_not_appear"))
+                        })
+                        put("content", kotlinx.serialization.json.JsonArray(emptyList()))
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { null },
+        )
+
+        val assistantUpdate = changes.last() as ReplayChange.Update
+        val content = assistantUpdate.data["content"]!!.jsonArray
+        val tool = content.single().jsonObject
+        val state = tool["state"]!!.jsonObject
+
+        assertThat(state["status"]!!.jsonPrimitive.content).isEqualTo("completed")
+        val sessionIdField = state["structured"]!!.jsonObject["sessionId"]
+        assertThat(sessionIdField).isNull()
     }
 }

@@ -2,7 +2,6 @@ package com.openmate.core.database
 
 import android.content.Context
 import androidx.room.Room
-import androidx.room.RoomDatabase
 import java.io.File
 
 class DatabaseFactory(private val context: Context) {
@@ -14,7 +13,8 @@ class DatabaseFactory(private val context: Context) {
             context,
             AppDatabase::class.java,
             dbName,
-        ).addMigrations(MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18).build()
+        ).fallbackToDestructiveMigration(dropAllTables = true)
+            .build()
     }
 
     fun delete(context: Context, profileId: String) {

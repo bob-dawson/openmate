@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "c14cf1282b1af22a8ef22fbcc6ffcf1f",
+    "identityHash": "0d2068c4937a2d5572fb7165d3e4a582",
     "entities": [
       {
         "tableName": "SessionEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `directory` TEXT NOT NULL, `projectID` TEXT NOT NULL, `workspaceID` TEXT, `parentID` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isCompacting` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `status` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `directory` TEXT NOT NULL, `projectID` TEXT NOT NULL, `workspaceID` TEXT, `parentID` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isCompacting` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `status` TEXT, `startedAt` INTEGER, `phoneStartedAt` INTEGER, `totalDuration` INTEGER, `modelProviderID` TEXT, `modelID` TEXT, `modelName` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -70,6 +70,36 @@
             "fieldPath": "status",
             "columnName": "status",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "phoneStartedAt",
+            "columnName": "phoneStartedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "totalDuration",
+            "columnName": "totalDuration",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "modelProviderID",
+            "columnName": "modelProviderID",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "modelID",
+            "columnName": "modelID",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "modelName",
+            "columnName": "modelName",
+            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
@@ -100,8 +130,8 @@
         ]
       },
       {
-        "tableName": "MessageEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionID` TEXT NOT NULL, `role` TEXT NOT NULL, `agent` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "tableName": "session_message",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `type` TEXT NOT NULL, `data` TEXT NOT NULL, `timeCreated` INTEGER NOT NULL, `timeUpdated` INTEGER NOT NULL, `completedAt` INTEGER, `roundMark` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -110,75 +140,8 @@
             "notNull": true
           },
           {
-            "fieldPath": "sessionID",
-            "columnName": "sessionID",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "role",
-            "columnName": "role",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "agent",
-            "columnName": "agent",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "createdAt",
-            "columnName": "createdAt",
-            "affinity": "INTEGER",
-            "notNull": true
-          }
-        ],
-        "primaryKey": {
-          "autoGenerate": false,
-          "columnNames": [
-            "id"
-          ]
-        },
-        "indices": [
-          {
-            "name": "index_MessageEntity_sessionID",
-            "unique": false,
-            "columnNames": [
-              "sessionID"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_MessageEntity_sessionID` ON `${TABLE_NAME}` (`sessionID`)"
-          },
-          {
-            "name": "index_MessageEntity_createdAt",
-            "unique": false,
-            "columnNames": [
-              "createdAt"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_MessageEntity_createdAt` ON `${TABLE_NAME}` (`createdAt`)"
-          }
-        ]
-      },
-      {
-        "tableName": "PartEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `messageID` TEXT NOT NULL, `sessionID` TEXT NOT NULL, `type` TEXT NOT NULL, `sequence` INTEGER NOT NULL, `text` TEXT, `toolCallID` TEXT, `toolName` TEXT, `toolState` TEXT, `toolArgs` TEXT, `toolResult` TEXT, `snapshot` TEXT, `hash` TEXT, `files` TEXT, `mime` TEXT, `url` TEXT, `filename` TEXT, `name` TEXT, `reason` TEXT, `cost` REAL, `agent` TEXT, `auto` INTEGER, `overflow` INTEGER, `prompt` TEXT, `description` TEXT, `attempt` INTEGER, `error` TEXT, PRIMARY KEY(`id`))",
-        "fields": [
-          {
-            "fieldPath": "id",
-            "columnName": "id",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "messageID",
-            "columnName": "messageID",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "sessionID",
-            "columnName": "sessionID",
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -189,120 +152,33 @@
             "notNull": true
           },
           {
-            "fieldPath": "sequence",
-            "columnName": "sequence",
+            "fieldPath": "data",
+            "columnName": "data",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeCreated",
+            "columnName": "timeCreated",
             "affinity": "INTEGER",
             "notNull": true
           },
           {
-            "fieldPath": "text",
-            "columnName": "text",
-            "affinity": "TEXT"
+            "fieldPath": "timeUpdated",
+            "columnName": "timeUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
           },
           {
-            "fieldPath": "toolCallID",
-            "columnName": "toolCallID",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "toolName",
-            "columnName": "toolName",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "toolState",
-            "columnName": "toolState",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "toolArgs",
-            "columnName": "toolArgs",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "toolResult",
-            "columnName": "toolResult",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "snapshot",
-            "columnName": "snapshot",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "hash",
-            "columnName": "hash",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "files",
-            "columnName": "files",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "mime",
-            "columnName": "mime",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "url",
-            "columnName": "url",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "filename",
-            "columnName": "filename",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "name",
-            "columnName": "name",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "reason",
-            "columnName": "reason",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "cost",
-            "columnName": "cost",
-            "affinity": "REAL"
-          },
-          {
-            "fieldPath": "agent",
-            "columnName": "agent",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "auto",
-            "columnName": "auto",
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
             "affinity": "INTEGER"
           },
           {
-            "fieldPath": "overflow",
-            "columnName": "overflow",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "prompt",
-            "columnName": "prompt",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "description",
-            "columnName": "description",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "attempt",
-            "columnName": "attempt",
-            "affinity": "INTEGER"
-          },
-          {
-            "fieldPath": "error",
-            "columnName": "error",
-            "affinity": "TEXT"
+            "fieldPath": "roundMark",
+            "columnName": "roundMark",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -313,93 +189,103 @@
         },
         "indices": [
           {
-            "name": "index_PartEntity_messageID",
+            "name": "index_session_message_sessionId",
             "unique": false,
             "columnNames": [
-              "messageID"
+              "sessionId"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_PartEntity_messageID` ON `${TABLE_NAME}` (`messageID`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_message_sessionId` ON `${TABLE_NAME}` (`sessionId`)"
           },
           {
-            "name": "index_PartEntity_sequence",
+            "name": "index_session_message_sessionId_type",
             "unique": false,
             "columnNames": [
-              "sequence"
+              "sessionId",
+              "type"
             ],
             "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_PartEntity_sequence` ON `${TABLE_NAME}` (`sequence`)"
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_message_sessionId_type` ON `${TABLE_NAME}` (`sessionId`, `type`)"
+          },
+          {
+            "name": "index_session_message_timeCreated",
+            "unique": false,
+            "columnNames": [
+              "timeCreated"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_message_timeCreated` ON `${TABLE_NAME}` (`timeCreated`)"
+          },
+          {
+            "name": "index_session_message_sessionId_timeCreated",
+            "unique": false,
+            "columnNames": [
+              "sessionId",
+              "timeCreated"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_message_sessionId_timeCreated` ON `${TABLE_NAME}` (`sessionId`, `timeCreated`)"
           }
         ]
       },
       {
-        "tableName": "PermissionEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionID` TEXT NOT NULL, `permission` TEXT NOT NULL, `patterns` TEXT NOT NULL, `metadata` TEXT NOT NULL, `always` TEXT NOT NULL, `toolMessageID` TEXT, `toolCallID` TEXT, PRIMARY KEY(`id`))",
+        "tableName": "session_message_full_content",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`messageId` TEXT NOT NULL, `content` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`messageId`))",
         "fields": [
           {
-            "fieldPath": "id",
-            "columnName": "id",
+            "fieldPath": "messageId",
+            "columnName": "messageId",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "sessionID",
-            "columnName": "sessionID",
+            "fieldPath": "content",
+            "columnName": "content",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "permission",
-            "columnName": "permission",
-            "affinity": "TEXT",
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
             "notNull": true
-          },
-          {
-            "fieldPath": "patterns",
-            "columnName": "patterns",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "metadata",
-            "columnName": "metadata",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "always",
-            "columnName": "always",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "toolMessageID",
-            "columnName": "toolMessageID",
-            "affinity": "TEXT"
-          },
-          {
-            "fieldPath": "toolCallID",
-            "columnName": "toolCallID",
-            "affinity": "TEXT"
           }
         ],
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "id"
+            "messageId"
           ]
         }
       },
       {
-        "tableName": "QuestionEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionID` TEXT NOT NULL, `questions` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `lastSeq` INTEGER NOT NULL, PRIMARY KEY(`sessionId`))",
         "fields": [
           {
-            "fieldPath": "id",
-            "columnName": "id",
+            "fieldPath": "sessionId",
+            "columnName": "sessionId",
             "affinity": "TEXT",
             "notNull": true
           },
+          {
+            "fieldPath": "lastSeq",
+            "columnName": "lastSeq",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "sessionId"
+          ]
+        }
+      },
+      {
+        "tableName": "TodoEntity",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionID` TEXT NOT NULL, `todos` TEXT NOT NULL, PRIMARY KEY(`sessionID`))",
+        "fields": [
           {
             "fieldPath": "sessionID",
             "columnName": "sessionID",
@@ -407,8 +293,8 @@
             "notNull": true
           },
           {
-            "fieldPath": "questions",
-            "columnName": "questions",
+            "fieldPath": "todos",
+            "columnName": "todos",
             "affinity": "TEXT",
             "notNull": true
           }
@@ -416,14 +302,14 @@
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "id"
+            "sessionID"
           ]
         }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c14cf1282b1af22a8ef22fbcc6ffcf1f')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0d2068c4937a2d5572fb7165d3e4a582')"
     ]
   }
 }

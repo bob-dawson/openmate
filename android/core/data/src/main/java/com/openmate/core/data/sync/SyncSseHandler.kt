@@ -7,8 +7,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import java.util.concurrent.ConcurrentHashMap
@@ -21,20 +19,11 @@ class SyncSseHandler @Inject constructor(
 ) : SyncSseStarter {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var collectJob: Job? = null
-    private var debounceJob: Job? = null
-    private val pendingNotifications = MutableSharedFlow<String>(extraBufferCapacity = 64)
     private val activeSyncs = ConcurrentHashMap<String, Boolean>()
 
     override fun start() {
         if (collectJob?.isActive == true) return
         Log.d("SyncSseHandler", "start: subscribing to notifications")
-
-        debounceJob = pendingNotifications
-            .debounce(500L)
-            .onEach { sessionId ->
-                performSync(sessionId)
-            }
-            .launchIn(scope)
 
         collectJob = syncSseClient.notifications
             .onEach { notification ->
@@ -44,12 +33,12 @@ class SyncSseHandler @Inject constructor(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sse,
                     sessionId = notification.sessionId,
-                    title = "同步通知入队",
-                    message = "queued for debounce window=500ms",
+                    title = "同步通知",
+                    message = "seq=${notification.seq}",
                     relatedSeq = notification.seq,
                     traceId = notifyTrace,
                 )
-                pendingNotifications.tryEmit(notification.sessionId)
+                performSync(notification.sessionId)
             }
             .launchIn(scope)
     }
@@ -57,15 +46,7 @@ class SyncSseHandler @Inject constructor(
     private suspend fun performSync(sessionId: String) {
         val syncTrace = "sync-${sessionId}-${System.currentTimeMillis()}"
         if (activeSyncs.putIfAbsent(sessionId, true) != null) {
-            logStore.log(
-                level = SyncLogLevel.Warn,
-                category = SyncLogCategory.Sync,
-                sessionId = sessionId,
-                title = "跳过增量同步",
-                message = "sync already active for session",
-                traceId = syncTrace,
-            )
-            Log.d("SyncSseHandler", "debounce skip: sync already active for $sessionId")
+            Log.d("SyncSseHandler", "skip: sync already active for $sessionId")
             return
         }
         try {
@@ -74,8 +55,8 @@ class SyncSseHandler @Inject constructor(
                 level = SyncLogLevel.Info,
                 category = SyncLogCategory.Sync,
                 sessionId = sessionId,
-                title = "准备发起增量同步",
-                message = "debounce elapsed starting incremental sync trigger=sse",
+                title = "发起增量同步",
+                message = "trigger=sse",
                 traceId = syncTrace,
             )
             repository.incrementalSyncAndNotify(sessionId)

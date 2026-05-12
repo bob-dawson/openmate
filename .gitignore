@@ -3,4 +3,4 @@ opencode-bridge/release/openmate.exe
 /android/.kotlin
 
 .worktrees/
-/.vs
+.vs
