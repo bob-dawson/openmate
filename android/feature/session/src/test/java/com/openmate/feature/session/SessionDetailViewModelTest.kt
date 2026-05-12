@@ -4,6 +4,14 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.google.common.truth.Truth.assertThat
+import com.openmate.core.common.AppDispatchers
+import com.openmate.core.data.sync.SyncDebugController
+import com.openmate.core.data.sync.SyncLogCategory
+import com.openmate.core.data.sync.SyncLogEntry
+import com.openmate.core.data.sync.SyncLogLevel
+import com.openmate.core.data.sync.SyncLogStore
+import com.openmate.core.data.sync.SyncSseStarter
+import com.openmate.core.network.SyncSseConnection
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
@@ -356,6 +364,65 @@ class SessionDetailViewModelTest {
         waitUntil { viewModel.sessionRetryStatus.value?.message == "Provider overloaded" }
 
         assertThat(viewModel.sessionRetryStatus.value?.attempt).isEqualTo(2)
+    }
+
+    @Test
+    fun syncLogActions_exposeLogsAndInvokeController() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(message("m1", timeCreated = 1)),
+            lastSeq = null,
+        )
+        val logStore = SyncLogStore()
+        val sessionMessageRepository = FakeSessionMessageRepository()
+        val controller = SyncDebugController(
+            syncSseConnection = FakeSyncSseConnection(),
+            syncSseStarter = FakeSyncSseStarter(),
+            apiClient = FakeOpencodeApiClient().client,
+            logStore = logStore,
+            sessionMessageRepository = sessionMessageRepository,
+            appDispatchers = AppDispatchers(io = dispatcher, main = dispatcher, default = dispatcher),
+        )
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            syncDebugController = controller,
+        )
+
+        logStore.append(fakeLog("12:00:00.000 INFO [Sse] SSE连接成功 trace=sse-1 message=connected", id = 1L))
+        logStore.append(fakeLog("12:00:01.000 INFO [Sync] 增量同步结束 session=$SESSION_ID trace=inc-1 message=done", id = 2L))
+        advanceUntilIdle()
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.syncLogLines.value.size == 2 }
+
+        assertThat(viewModel.syncLogLines.value.size).isEqualTo(2)
+
+        viewModel.reconnectSyncSse()
+        viewModel.triggerManualIncrementalSync()
+        advanceUntilIdle()
+        viewModel.clearSyncLogs()
+        advanceUntilIdle()
+
+        assertThat(sessionMessageRepository.incrementalSyncCalls).containsExactly(SESSION_ID)
+        assertThat(viewModel.syncLogLines.value.last()).contains("日志已清除")
+    }
+
+    @Test
+    fun copyVisibleSyncLogs_joinsOnlyFilteredVisibleRows() = runTest(dispatcher) {
+        val copied = mutableListOf<String>()
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(),
+            onCopyLogs = { copied += it },
+        )
+
+        viewModel.copyVisibleSyncLogsToClipboard(
+            listOf(
+                "12:00:01.000 ERROR [Sync] 增量同步失败 trace=inc-1 message=SocketTimeoutException",
+            )
+        )
+
+        assertThat(copied.single()).isEqualTo(
+            "12:00:01.000 ERROR [Sync] 增量同步失败 trace=inc-1 message=SocketTimeoutException"
+        )
     }
 
     @Test
@@ -793,6 +860,15 @@ class SessionDetailViewModelTest {
         questionRepository: QuestionRepository = FakeQuestionRepository(),
         permissionRepository: PermissionRepository = FakePermissionRepository(),
         sseEventRepository: SseEventRepository = FakeSseEventRepository(),
+        syncDebugController: SyncDebugController = SyncDebugController(
+            syncSseConnection = FakeSyncSseConnection(),
+            syncSseStarter = FakeSyncSseStarter(),
+            apiClient = FakeOpencodeApiClient().client,
+            logStore = SyncLogStore(),
+            sessionMessageRepository = FakeSessionMessageRepository(),
+            appDispatchers = AppDispatchers(io = dispatcher, main = dispatcher, default = dispatcher),
+        ),
+        onCopyLogs: ((String) -> Unit)? = null,
         apiClient: OpencodeApiClient = FakeOpencodeApiClient().client,
         dbProvider: ActiveDatabaseProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
             setActive("profile-default")
@@ -811,7 +887,9 @@ class SessionDetailViewModelTest {
             questionRepository = questionRepository,
             permissionRepository = permissionRepository,
             sseEventRepository = sseEventRepository,
+            syncDebugController = syncDebugController,
             dbProvider = dbProvider,
+            onCopyLogs = onCopyLogs,
             apiClient = apiClient,
         )
     }
@@ -1119,6 +1197,41 @@ class SessionDetailViewModelTest {
             timeUpdated = timeCreated,
             completedAt = timeCreated,
         )
+
+    private fun fakeLog(text: String, id: Long): SyncLogEntry =
+        SyncLogEntry(
+            id = id,
+            timestamp = id,
+            level = when {
+                text.contains("ERROR") -> SyncLogLevel.Error
+                text.contains("WARN") -> SyncLogLevel.Warn
+                else -> SyncLogLevel.Info
+            },
+            category = when {
+                text.contains("[Sse]") -> SyncLogCategory.Sse
+                text.contains("[Manual]") -> SyncLogCategory.Manual
+                text.contains("[Poll]") -> SyncLogCategory.Poll
+                else -> SyncLogCategory.Sync
+            },
+            sessionId = text.substringAfter("session=", "").substringBefore(' ').ifBlank { null },
+            title = text.substringAfter("] ").substringBefore(" trace=").substringBefore(" session=").substringBefore(" message="),
+            message = text.substringAfter("message=", ""),
+            bytes = null,
+            relatedSeq = null,
+            traceId = text.substringAfter("trace=", "").substringBefore(' ').ifBlank { null },
+        )
+
+    private class FakeSyncSseConnection : SyncSseConnection {
+        override val currentBaseUrl: String? = "http://test"
+
+        override suspend fun connect(baseUrl: String) = Unit
+
+        override fun disconnect(traceId: String?) = Unit
+    }
+
+    private class FakeSyncSseStarter : SyncSseStarter {
+        override fun start() = Unit
+    }
 
     private companion object {
         const val SESSION_ID = "session-1"

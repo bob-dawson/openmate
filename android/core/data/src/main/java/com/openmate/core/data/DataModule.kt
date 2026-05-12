@@ -2,7 +2,11 @@ package com.openmate.core.data
 
 import com.openmate.core.data.repository.*
 import com.openmate.core.data.sse.*
+import com.openmate.core.data.sync.SyncSseHandler
+import com.openmate.core.data.sync.SyncSseLoggerImpl
+import com.openmate.core.data.sync.SyncSseStarter
 import com.openmate.core.domain.repository.*
+import com.openmate.core.network.SyncSseLogger
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -44,5 +48,13 @@ abstract class DataModule {
     @Binds
     @Singleton
     abstract fun bindSessionMessageRepository(impl: SessionMessageRepositoryImpl): SessionMessageRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSyncSseLogger(impl: SyncSseLoggerImpl): SyncSseLogger
+
+    @Binds
+    @Singleton
+    abstract fun bindSyncSseStarter(impl: SyncSseHandler): SyncSseStarter
 
 }

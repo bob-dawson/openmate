@@ -100,6 +100,17 @@ internal fun shouldScrollToBottomOnInitialLoad(
     return messageCount > 0 && previousMessageCount == 0 && !hasSavedScrollPosition
 }
 
+internal fun sessionDetailMenuItems(): List<String> = listOf(
+    "Abort",
+    "Model",
+    "Mode",
+    "Skill",
+    "同步日志",
+    "Refresh",
+    "Rename",
+    "Delete",
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionDetailScreen(
@@ -134,6 +145,7 @@ fun SessionDetailScreen(
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
+    val syncLogEntries by viewModel.syncLogEntries.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val previewFileState by viewModel.previewFileState.collectAsState()
@@ -155,6 +167,7 @@ fun SessionDetailScreen(
     var showVariantPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showSyncLogs by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     val autoFollowTracker = remember { AutoFollowTracker() }
     var prevImeBottom by remember { mutableIntStateOf(0) }
@@ -327,6 +340,19 @@ fun SessionDetailScreen(
         return
     }
 
+    if (showSyncLogs) {
+        SyncLogScreen(
+            currentSessionId = sessionID,
+            logEntries = syncLogEntries,
+            onBack = { showSyncLogs = false },
+            onCopy = { visibleLines -> viewModel.copyVisibleSyncLogsToClipboard(visibleLines) },
+            onClear = viewModel::clearSyncLogs,
+            onReconnectSse = viewModel::reconnectSyncSse,
+            onManualIncrementalSync = viewModel::triggerManualIncrementalSync,
+        )
+        return
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.ime),
@@ -408,6 +434,13 @@ fun SessionDetailScreen(
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.refresh()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.sync_logs)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showSyncLogs = true
                                 },
                             )
                             DropdownMenuItem(
