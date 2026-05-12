@@ -26,6 +26,12 @@ data class EventsResponseDto(
     @SerialName("maxSeq") val maxSeq: Long? = null,
 )
 
+data class EventsPayloadDto(
+    val response: EventsResponseDto,
+    val rawBody: String,
+    val rawEventBodies: List<String>,
+)
+
 @Serializable
 data class SyncEventDto(
     val id: String = "",

@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.openmate.core.data.sync.SyncDebugController
+import com.openmate.core.data.sync.SyncLogEntry
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionMessageSyncResult
@@ -63,6 +65,8 @@ class SessionDetailViewModel @Inject constructor(
     private val permissionRepository: PermissionRepository,
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
+    private val syncDebugController: SyncDebugController,
+    private val onCopyLogs: ((String) -> Unit)? = null,
     internal val apiClient: OpencodeApiClient,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
@@ -147,6 +151,12 @@ class SessionDetailViewModel @Inject constructor(
     private val _sessionTitle = MutableStateFlow("")
     val sessionTitle: StateFlow<String> = _sessionTitle.asStateFlow()
 
+    private val _syncLogLines = MutableStateFlow<List<String>>(emptyList())
+    val syncLogLines: StateFlow<List<String>> = _syncLogLines.asStateFlow()
+
+    private val _syncLogEntries = MutableStateFlow<List<SyncLogEntry>>(emptyList())
+    val syncLogEntries: StateFlow<List<SyncLogEntry>> = _syncLogEntries.asStateFlow()
+
     data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
 
     private val _providers = MutableStateFlow<ProviderListDto?>(null)
@@ -189,9 +199,47 @@ class SessionDetailViewModel @Inject constructor(
     private var observePermissionJob: Job? = null
     private var observeSyncEventJob: Job? = null
     private var observeRetryStatusJob: Job? = null
+    private var observeSyncLogsJob: Job? = null
+
+    init {
+        observeSyncLogs()
+    }
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    private fun observeSyncLogs() {
+        observeSyncLogsJob?.cancel()
+        observeSyncLogsJob = viewModelScope.launch {
+            syncDebugController.logs.collect { entries ->
+                _syncLogEntries.value = entries
+                _syncLogLines.value = entries.map { it.renderedText }
+            }
+        }
+    }
+
+    fun reconnectSyncSse() {
+        syncDebugController.reconnectSse()
+    }
+
+    fun triggerManualIncrementalSync() {
+        val sid = currentSessionID ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            syncDebugController.triggerManualIncrementalSync(sid)
+        }
+    }
+
+    fun clearSyncLogs() {
+        syncDebugController.clearLogs()
+    }
+
+    fun copyVisibleSyncLogsToClipboard(lines: List<String>) {
+        val text = lines.joinToString("\n")
+        onCopyLogs?.invoke(text) ?: run {
+            val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("sync_logs", text))
+        }
     }
 
     private fun activeProfileKey(): String? = dbProvider.getActiveProfileId()?.ifBlank { null }
@@ -490,6 +538,7 @@ class SessionDetailViewModel @Inject constructor(
         observePermissionJob?.cancel()
         observeSyncEventJob?.cancel()
         observeRetryStatusJob?.cancel()
+        observeSyncLogsJob?.cancel()
         pollJob?.cancel()
         sseEventRepository.setActiveSessionScope(null, enabled = false)
         val sid = currentSessionID

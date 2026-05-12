@@ -1,11 +1,13 @@
 package com.openmate.core.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.DatabaseFactory
 import com.openmate.core.database.entity.SyncStateEntity
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncApiClient
+import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -23,6 +25,7 @@ class SessionMessageRepositoryImplTest {
     private lateinit var dbProvider: ActiveDatabaseProvider
     private lateinit var repository: SessionMessageRepositoryImpl
     private lateinit var server: MockWebServer
+    private lateinit var logStore: SyncLogStore
 
     @Before
     fun setUp() {
@@ -32,9 +35,11 @@ class SessionMessageRepositoryImplTest {
         dbProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
         val apiClient = OpencodeApiClient(OkHttpClient(), baseUrl = server.url("/").toString().removeSuffix("/"))
+        logStore = SyncLogStore()
         repository = SessionMessageRepositoryImpl(
             syncApiClient = SyncApiClient(OkHttpClient(), apiClient),
             dbProvider = dbProvider,
+            logStore = logStore,
         )
     }
 
@@ -319,6 +324,120 @@ class SessionMessageRepositoryImplTest {
         assertThat(stored.completedAt).isEqualTo(4L)
         assertThat(stored.data).contains("condensed prior context")
         assertThat(stored.data).contains("\"completed\":4")
+    }
+
+    @Test
+    fun incrementalSync_logsPackageBytesAndPerEventBytes() = runTest {
+        val responseBody =
+            """
+            {
+              "events": [
+                {
+                  "id": "evt-11",
+                  "aggregateId": "session-1",
+                  "seq": 11,
+                  "type": "session.next.prompted.event",
+                  "data": {
+                    "timestamp": 5,
+                    "prompt": {
+                      "text": "new prompt",
+                      "files": [],
+                      "agents": []
+                    }
+                  }
+                }
+              ],
+              "maxSeq": 11
+            }
+            """.trimIndent()
+        val rawEventJson =
+            """
+            {
+                  "id": "evt-11",
+                  "aggregateId": "session-1",
+                  "seq": 11,
+                  "type": "session.next.prompted.event",
+                  "data": {
+                    "timestamp": 5,
+                    "prompt": {
+                      "text": "new prompt",
+                      "files": [],
+                      "agents": []
+                    }
+                  }
+                }
+            """.trimIndent()
+        val expectedPackageBytes = responseBody.toByteArray(StandardCharsets.UTF_8).size
+        val expectedEventBytes = rawEventJson.toByteArray(StandardCharsets.UTF_8).size
+
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {"events":[],"maxSeq":10}
+                """.trimIndent(),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "messages": [],
+                  "maxSeq": 10
+                }
+                """.trimIndent(),
+            ),
+        )
+        repository.initSync(SESSION_ID, limit = 30)
+        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 10L))
+
+        server.enqueue(
+            MockResponse().setBody(responseBody),
+        )
+
+        repository.incrementalSync(SESSION_ID)
+
+        val rendered = logStore.entries.value.map { it.renderedText }
+        assertThat(rendered.any { it.contains("增量包返回") && it.contains("bytes=$expectedPackageBytes") }).isTrue()
+        assertThat(rendered.any { it.contains("增量消息处理") && it.contains("seq=11") && it.contains("bytes=$expectedEventBytes") }).isTrue()
+        assertThat(rendered.any { it.contains("增量同步结束") && it.contains("totalBytes=$expectedPackageBytes") && it.contains("bytes=$expectedPackageBytes") }).isTrue()
+    }
+
+    @Test
+    fun incrementalSync_logsFailureWhenEventsFetchFailsBeforeReplay() = runTest {
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {"events":[],"maxSeq":10}
+                """.trimIndent(),
+            ),
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "messages": [],
+                  "maxSeq": 10
+                }
+                """.trimIndent(),
+            ),
+        )
+        repository.initSync(SESSION_ID, limit = 30)
+        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 10L))
+
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(500)
+                .setBody("bridge exploded"),
+        )
+
+        val result = runCatching {
+            repository.incrementalSync(SESSION_ID)
+        }
+
+        assertThat(result.exceptionOrNull()).isNotNull()
+        val rendered = logStore.entries.value.map { it.renderedText }
+        assertThat(rendered.any { it.contains("增量同步失败") }).isTrue()
+        assertThat(rendered.any { it.contains("afterSeq=10") }).isTrue()
     }
 
     private companion object {
