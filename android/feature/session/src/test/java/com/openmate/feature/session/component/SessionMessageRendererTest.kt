@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import com.openmate.core.domain.model.ToolCallState
 import org.junit.Test
 
 class SessionMessageRendererTest {
@@ -172,7 +173,7 @@ class SessionMessageRendererTest {
     fun shouldExpandRunningTool_expandsBashWhenCommandAvailable() {
         val item = DisplayItem.ToolItem(
             toolName = "bash",
-            state = com.openmate.core.domain.model.ToolCallState.RUNNING,
+            state = ToolCallState.RUNNING,
             args = """{"command":"npm install","description":"Install deps"}""",
             result = null,
             files = emptyList(),
@@ -186,7 +187,7 @@ class SessionMessageRendererTest {
     fun shouldExpandRunningTool_keepsOtherRunningToolsCollapsed() {
         val item = DisplayItem.ToolItem(
             toolName = "grep",
-            state = com.openmate.core.domain.model.ToolCallState.RUNNING,
+            state = ToolCallState.RUNNING,
             args = """{"pattern":"foo"}""",
             result = null,
             files = emptyList(),

@@ -1,10 +1,14 @@
 package com.openmate.feature.session.component
 
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.text.TextUtils
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,22 +38,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import android.graphics.Typeface
-import android.text.TextUtils
-import android.text.TextPaint
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
-import com.openmate.feature.session.R
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.openmate.core.domain.model.Part
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionInfo
@@ -57,27 +55,18 @@ import com.openmate.core.domain.model.QuestionOption
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.model.ToolCallState
-import dev.jeziellago.compose.markdowntext.MarkdownText
+import com.openmate.feature.session.R
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 
-private val CodeBlockBackground = Color(0xFF1e1e2e)
-private val CodeBlockText = Color(0xFFcdd6f4)
 private val WarningColor = Color(0xFFFFA500)
 private val AgentColor = Color(0xFF9D7CD8)
 private val questionJson = Json { ignoreUnknownKeys = true }
-
-private val ansiRegex = Regex("\u001B\\[[0-9;]*[a-zA-Z]")
-
-private fun stripAnsi(s: String?): String? {
-    if (s == null) return null
-    return ansiRegex.replace(s, "")
-}
 
 sealed class DisplayItem {
     data class TextItem(val text: String, val isUser: Boolean) : DisplayItem()
@@ -117,10 +106,10 @@ internal data class QuestionAnswerRow(
 )
 
 private fun JsonObject?.str(key: String): String? =
-    this?.get(key)?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.content else null }
+    this?.get(key)?.let { if (it is JsonPrimitive) it.content else null }
 
 private fun JsonObject.bool(key: String): Boolean =
-    (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.boolean ?: false
+    (this[key] as? JsonPrimitive)?.boolean ?: false
 
 internal fun isFilePath(text: String): Boolean {
     return text.contains("/") || text.contains("\\") || text.contains(".")
@@ -360,278 +349,6 @@ private fun parseTodoArgs(args: String?): List<TodoInfo>? {
         }
     } catch (_: Exception) {
         return null
-    }
-}
-
-fun List<Part>.toDisplayItems(isUser: Boolean, showReasoning: Boolean = true): List<DisplayItem> {
-    val items = mutableListOf<DisplayItem>()
-    val patches = mutableListOf<Part.PatchPart>()
-    var i = 0
-    while (i < this.size) {
-        val part = this[i]
-        when (part) {
-            is Part.TextPart -> {
-                if (!part.synthetic) {
-                    items.add(DisplayItem.TextItem(part.text, isUser))
-                }
-            }
-            is Part.ReasoningPart -> {
-                if (showReasoning) {
-                    items.add(DisplayItem.ReasoningItem(part.text))
-                }
-            }
-            is Part.ToolInvocationPart -> {
-                val nextPatch = if (i + 1 < this.size && this[i + 1] is Part.PatchPart) {
-                    i++
-                    (this[i] as Part.PatchPart)
-                } else if (patches.isNotEmpty()) {
-                    patches.removeAt(0)
-                } else null
-                items.add(DisplayItem.ToolItem(
-                    toolName = part.toolName,
-                    state = part.state,
-                    args = stripAnsi(part.args),
-                    result = stripAnsi(part.result),
-                    files = nextPatch?.files ?: emptyList(),
-                    hash = nextPatch?.hash,
-                    callID = part.toolCallID,
-                    metadata = part.metadata,
-                ))
-            }
-            is Part.PatchPart -> {
-                patches.add(part)
-            }
-            is Part.StepStartPart, is Part.StepFinishPart,
-            is Part.SnapshotPart -> {}
-            is Part.CompactionPart -> {
-                items.add(DisplayItem.TextItem("▸ compaction", isUser = false))
-            }
-            is Part.RetryPart -> {
-                items.add(DisplayItem.TextItem("▸ retry #${part.attempt}${part.error?.let { ": $it" } ?: ""}", isUser = false))
-            }
-            is Part.AgentPart -> {
-                items.add(DisplayItem.TextItem("▸ agent: ${part.name}", isUser = false))
-            }
-            is Part.SubtaskPart -> {
-                items.add(DisplayItem.TextItem("▸ subtask: ${part.description.ifBlank { part.prompt }}", isUser = false))
-            }
-            is Part.FilePart -> {
-                items.add(DisplayItem.FileItem(part.filename, part.mime, part.url))
-            }
-        }
-        i++
-    }
-    return items
-}
-
-@Composable
-fun PartColumn(
-    parts: List<Part>,
-    isUser: Boolean,
-    pendingQuestions: List<QuestionRequest>,
-    pendingPermissions: List<PermissionRequest>,
-    onReplyQuestion: (String, List<List<String>>) -> Unit,
-    onRejectQuestion: (String) -> Unit,
-    onReplyPermission: (String, PermissionReply, String?) -> Unit,
-    onNavigateToSubtask: ((subtaskSessionID: String, title: String) -> Unit)? = null,
-    onViewFile: ((filePath: String) -> Unit)? = null,
-    modifier: Modifier = Modifier,
-    showReasoning: Boolean = true,
-) {
-    val reasoningExpanded = remember { mutableStateOf(false) }
-    val displayItems = parts.toDisplayItems(isUser, showReasoning)
-
-    Column(modifier = modifier) {
-        displayItems.forEach { item ->
-            when (item) {
-                is DisplayItem.TextItem -> {
-                    com.openmate.core.ui.component.MessageBubble(
-                        text = item.text,
-                        isUser = item.isUser,
-                    )
-                }
-                is DisplayItem.ToolItem -> {
-                    if (item.toolName == "question" && item.state == ToolCallState.RUNNING) {
-                        val parsedQuestions = remember(item.args) { parseQuestionArgs(item.args) }
-                        val matchedRequest = item.callID?.let { callID ->
-                            pendingQuestions.find { it.tool?.callID == callID }
-                        }
-                        if (parsedQuestions != null) {
-                            QuestionCard(
-                                questions = parsedQuestions,
-                                matchedRequest = matchedRequest,
-                                onReply = matchedRequest?.let { req ->
-                                    { answers -> onReplyQuestion(req.id, answers) }
-                                },
-                                onReject = matchedRequest?.let { req ->
-                                    { onRejectQuestion(req.id) }
-                                },
-                            )
-                        } else {
-                            InlineToolLine(item)
-                        }
-                    } else if (item.state == ToolCallState.PENDING || item.state == ToolCallState.RUNNING) {
-                        val matchedPerm = item.callID?.let { callID ->
-                            pendingPermissions.find { it.tool?.callID == callID }
-                        }
-                        if (matchedPerm != null) {
-                            PermissionCard(
-                                request = matchedPerm,
-                                onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
-                            )
-                        } else if (item.state == ToolCallState.PENDING) {
-                            PendingToolLine(item)
-                        } else {
-                            val summary = toolSummary(item.toolName, item.args, item.result)
-                            if (item.toolName == "task" && onNavigateToSubtask != null) {
-                                val subtaskSessionID = remember(item.metadata, item.result) {
-                                    extractSubtaskSessionId(
-                                        metadata = item.metadata,
-                                        structured = null,
-                                        resultText = item.result,
-                                    )
-                                }
-                                val subtaskPerms = subtaskSessionID?.let { sid ->
-                                    pendingPermissions.filter { it.sessionID == sid }
-                                } ?: emptyList()
-                                val subtaskQs = subtaskSessionID?.let { sid ->
-                                    pendingQuestions.filter { it.sessionID == sid }
-                                } ?: emptyList()
-                                TaskToolLine(
-                                    item = item,
-                                    summary = summary,
-                                    subtaskSessionID = subtaskSessionID,
-                                    onNavigate = onNavigateToSubtask,
-                                    subtaskPermissions = subtaskPerms,
-                                    subtaskQuestions = subtaskQs,
-                                    onReplyPermission = onReplyPermission,
-                                    onReplyQuestion = onReplyQuestion,
-                                    onRejectQuestion = onRejectQuestion,
-                                )
-                            } else if (shouldExpandRunningTool(item)) {
-                                BlockToolLine(item, summary, onViewFile)
-                            } else {
-                                RunningToolLine(item)
-                            }
-                        }
-                    } else if (item.state == ToolCallState.ERROR) {
-                        if (item.toolName == "question" && isDismissedQuestionError(item.result)) {
-                            DismissedQuestionToolLine()
-                        } else {
-                            ErrorToolLine(item)
-                        }
-                    } else {
-                        val summary = toolSummary(item.toolName, item.args, item.result)
-                        val questionAnswers = if (item.toolName == "question") extractQuestionAnswers(item.metadata) else null
-                        val parsedQuestions = if (item.toolName == "question") parseQuestionArgs(item.args) else null
-                        if (item.toolName == "question" && parsedQuestions != null && questionAnswers != null) {
-                            CompletedQuestionToolCard(
-                                questions = parsedQuestions,
-                                answers = questionAnswers,
-                            )
-                        } else if (item.toolName == "task" && onNavigateToSubtask != null) {
-                            TaskToolLine(
-                                item = item,
-                                summary = summary,
-                                onNavigate = onNavigateToSubtask,
-                            )
-                        } else if (summary.isBlock) {
-                            BlockToolLine(item, summary, onViewFile)
-                        } else {
-                            InlineToolLine(item)
-                        }
-                    }
-                }
-                is DisplayItem.ReasoningItem -> {
-                    val filtered = item.text.replace(Regex("\\[REDACTED\\][\\s\\S]*?\\[REDACTED\\]"), "[REDACTED]")
-                    if (filtered.isNotBlank()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 8.dp, top = 4.dp)
-                                .clickable { reasoningExpanded.value = !reasoningExpanded.value },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(2.dp)
-                                    .height(16.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (reasoningExpanded.value) "▼ Thinking" else "▶ Thinking",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            )
-                        }
-                        AnimatedVisibility(visible = reasoningExpanded.value) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .width(2.dp)
-                                        .fillMaxWidth()
-                                        .padding(start = 8.dp)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = stringResource(R.string.thinking_prefix, filtered),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-                is DisplayItem.FileItem -> {
-                    val displayMime = item.mime.ifBlank { "file" }
-                    val displayFilename = item.filename ?: item.url.substringAfterLast("/").substringBefore("?").ifBlank { null }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 8.dp, top = 2.dp, bottom = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(4.dp),
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = displayMime,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        if (displayFilename != null) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(4.dp),
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                            ) {
-                                Text(
-                                    text = displayFilename,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-        }
     }
 }
 
@@ -1288,8 +1005,8 @@ fun PermissionCard(
     onReply: (PermissionReply, String?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val description = (request.metadata["description"] as? kotlinx.serialization.json.JsonPrimitive)?.content
-        ?: (request.metadata["command"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+    val description = (request.metadata["description"] as? JsonPrimitive)?.content
+        ?: (request.metadata["command"] as? JsonPrimitive)?.content
 
     Card(
         modifier = modifier.padding(vertical = 4.dp),

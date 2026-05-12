@@ -27,6 +27,7 @@ import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.delay
+import com.openmate.core.domain.model.ToolCallState
 import kotlinx.serialization.json.*
 import kotlinx.serialization.json.put
 
@@ -107,11 +108,11 @@ internal fun extractToolItems(data: JsonObject): List<DisplayItem.ToolItem> {
                     DisplayItem.ToolItem(
                         toolName = name,
                         state = when (status) {
-                            "pending" -> com.openmate.core.domain.model.ToolCallState.PENDING
-                            "running" -> com.openmate.core.domain.model.ToolCallState.RUNNING
-                            "completed" -> com.openmate.core.domain.model.ToolCallState.COMPLETED
-                            "error" -> com.openmate.core.domain.model.ToolCallState.ERROR
-                            else -> com.openmate.core.domain.model.ToolCallState.COMPLETED
+                            "pending" -> ToolCallState.PENDING
+                            "running" -> ToolCallState.RUNNING
+                            "completed" -> ToolCallState.COMPLETED
+                            "error" -> ToolCallState.ERROR
+                            else -> ToolCallState.COMPLETED
                         },
                         args = input,
                         result = resultText,
@@ -438,10 +439,10 @@ fun AssistantMessageItem(
                     val displayItem = toolItems.getOrNull(toolIndex++) ?: continue
                     val name = displayItem.toolName
                     val status = when (displayItem.state) {
-                        com.openmate.core.domain.model.ToolCallState.PENDING -> "pending"
-                        com.openmate.core.domain.model.ToolCallState.RUNNING -> "running"
-                        com.openmate.core.domain.model.ToolCallState.COMPLETED -> "completed"
-                        com.openmate.core.domain.model.ToolCallState.ERROR -> "error"
+                        ToolCallState.PENDING -> "pending"
+                        ToolCallState.RUNNING -> "running"
+                        ToolCallState.COMPLETED -> "completed"
+                        ToolCallState.ERROR -> "error"
                     }
                     val input = displayItem.args
                     val resultText = displayItem.result
