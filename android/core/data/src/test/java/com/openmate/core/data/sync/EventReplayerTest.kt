@@ -330,7 +330,7 @@ class EventReplayerTest {
                             buildJsonObject {
                                 put("id", JsonPrimitive("prt-1"))
                                 put("sessionID", JsonPrimitive("session-1"))
-                                put("messageID", JsonPrimitive("assistant-1"))
+                                put("messageID", JsonPrimitive("msg-different-id"))
                                 put("type", JsonPrimitive("tool"))
                                 put("callID", JsonPrimitive("call-task-1"))
                                 put("state", buildJsonObject {
@@ -408,7 +408,7 @@ class EventReplayerTest {
                             buildJsonObject {
                                 put("id", JsonPrimitive("prt-2"))
                                 put("sessionID", JsonPrimitive("session-1"))
-                                put("messageID", JsonPrimitive("assistant-1"))
+                                put("messageID", JsonPrimitive("msg-also-different-id"))
                                 put("type", JsonPrimitive("tool"))
                                 put("callID", JsonPrimitive("call-task-2"))
                                 put("state", buildJsonObject {

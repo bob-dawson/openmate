@@ -403,9 +403,9 @@ class EventReplayer {
                     val cached = cachedAssistant() ?: return
                     val part = props["part"]?.jsonObject ?: return
                     val partType = part["type"]?.jsonPrimitive?.contentOrNull ?: return
-                    val messageId = part["messageID"]?.jsonPrimitive?.contentOrNull ?: return
-                    if (messageId != cachedId) return
                     if (partType == "patch") {
+                        val messageId = part["messageID"]?.jsonPrimitive?.contentOrNull ?: return
+                        if (messageId != cachedId) return
                         val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                         content.add(part)
                         val updated = cached.toMutableMap()
