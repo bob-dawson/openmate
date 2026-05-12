@@ -19,7 +19,9 @@ import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.TodoRepository
+import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
@@ -45,6 +47,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import java.io.File
 
 object AttachmentBridge {
     var pendingPath: String? = null
@@ -59,6 +62,7 @@ class SessionDetailViewModel @Inject constructor(
     private val questionRepository: QuestionRepository,
     private val permissionRepository: PermissionRepository,
     private val sseEventRepository: SseEventRepository,
+    private val dbProvider: ActiveDatabaseProvider,
     internal val apiClient: OpencodeApiClient,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
@@ -124,6 +128,15 @@ class SessionDetailViewModel @Inject constructor(
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
+    private val _previewFileState = MutableStateFlow<com.openmate.feature.session.component.FileViewState?>(null)
+    val previewFileState: StateFlow<com.openmate.feature.session.component.FileViewState?> = _previewFileState.asStateFlow()
+
+    private val _previewFileContent = MutableStateFlow<BridgeFileContent?>(null)
+    val previewFileContent: StateFlow<BridgeFileContent?> = _previewFileContent.asStateFlow()
+
+    private val _previewFileLoading = MutableStateFlow(false)
+    val previewFileLoading: StateFlow<Boolean> = _previewFileLoading.asStateFlow()
+
     private val _disableAutoScroll = MutableStateFlow(false)
     val disableAutoScroll: StateFlow<Boolean> = _disableAutoScroll.asStateFlow()
 
@@ -141,6 +154,15 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _selectedModel = MutableStateFlow<ModelRef?>(null)
     val selectedModel: StateFlow<ModelRef?> = _selectedModel.asStateFlow()
+
+    private val _selectedVariant = MutableStateFlow<String?>(null)
+    val selectedVariant: StateFlow<String?> = _selectedVariant.asStateFlow()
+
+    private val _hasExplicitDefaultVariant = MutableStateFlow(false)
+    val hasExplicitDefaultVariant: StateFlow<Boolean> = _hasExplicitDefaultVariant.asStateFlow()
+
+    private val _availableVariants = MutableStateFlow<List<String>>(emptyList())
+    val availableVariants: StateFlow<List<String>> = _availableVariants.asStateFlow()
 
     private val _selectedAgent = MutableStateFlow("build")
     val selectedAgent: StateFlow<String> = _selectedAgent.asStateFlow()
@@ -170,6 +192,90 @@ class SessionDetailViewModel @Inject constructor(
 
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    private fun activeProfileKey(): String? = dbProvider.getActiveProfileId()?.ifBlank { null }
+
+    private fun providerCacheKey(profileId: String): String = "provider_cache::$profileId"
+
+    private fun variantPrefKey(profileId: String, providerID: String, modelID: String): String =
+        "variant_pref::$profileId::$providerID::$modelID"
+
+    private fun loadCachedProviders(): ProviderListDto? {
+        val profileId = activeProfileKey() ?: return null
+        val raw = prefs.getString(providerCacheKey(profileId), null) ?: return null
+        return runCatching { Json.decodeFromString<ProviderListDto>(raw) }.getOrNull()
+    }
+
+    private fun saveCachedProviders(providers: ProviderListDto) {
+        val profileId = activeProfileKey() ?: return
+        prefs.edit().putString(providerCacheKey(profileId), Json.encodeToString(providers)).apply()
+    }
+
+    private fun saveVariantPreference(providerID: String, modelID: String, variant: String?) {
+        val profileId = activeProfileKey() ?: return
+        prefs.edit().putString(variantPrefKey(profileId, providerID, modelID), variant ?: "default").apply()
+    }
+
+    private fun restoreVariantPreference(providerID: String, modelID: String) {
+        val profileId = activeProfileKey()
+        if (profileId == null) {
+            _selectedVariant.value = null
+            _hasExplicitDefaultVariant.value = false
+            return
+        }
+        when (val stored = prefs.getString(variantPrefKey(profileId, providerID, modelID), null)) {
+            null -> {
+                _selectedVariant.value = null
+                _hasExplicitDefaultVariant.value = false
+            }
+            "default" -> {
+                _selectedVariant.value = null
+                _hasExplicitDefaultVariant.value = true
+            }
+            else -> {
+                _selectedVariant.value = stored
+                _hasExplicitDefaultVariant.value = false
+            }
+        }
+    }
+
+    private fun applySelectedModel(ref: ModelRef) {
+        _selectedModel.value = ref
+        updateAvailableVariants()
+        restoreVariantPreference(ref.providerID, ref.modelID)
+    }
+
+    private fun resolvePreviewPath(path: String): String {
+        if (path.isBlank()) return path
+        if (path.startsWith("/") || Regex("^[A-Za-z]:[\\/]").containsMatchIn(path)) return path
+        if (currentDirectory.isBlank()) return path
+        return File(currentDirectory, path).path.replace('\\', '/')
+    }
+
+    fun openFilePreview(path: String) {
+        val resolvedPath = resolvePreviewPath(path)
+        viewModelScope.launch(Dispatchers.IO) {
+            _previewFileLoading.value = true
+            _previewFileContent.value = null
+            _previewFileState.value = com.openmate.feature.session.component.FileViewState(
+                path = resolvedPath,
+                name = resolvedPath.substringAfterLast('/').substringAfterLast('\\'),
+            )
+            try {
+                _previewFileContent.value = apiClient.bridgeReadFile(resolvedPath)
+            } catch (e: Exception) {
+                _errorMessage.value = e.message ?: "Failed to read file"
+            } finally {
+                _previewFileLoading.value = false
+            }
+        }
+    }
+
+    fun closeFilePreview() {
+        _previewFileState.value = null
+        _previewFileContent.value = null
+        _previewFileLoading.value = false
     }
 
     fun restoreDraft() {
@@ -264,6 +370,7 @@ class SessionDetailViewModel @Inject constructor(
                     _sessionTitle.value = session.title
                 }
                 currentDirectory = session?.directory ?: ""
+                loadCachedProviders()?.let { _providers.value = it }
                 sseEventRepository.setActiveSessionScope(currentDirectory.ifBlank { null }, enabled = true)
                 if (session?.totalDuration != null && _sessionTotalDuration.value == null) {
                     _sessionTotalDuration.value = session.totalDuration
@@ -271,7 +378,7 @@ class SessionDetailViewModel @Inject constructor(
                 val sPID = session?.modelProviderID
                 val sMID = session?.modelID
                 if (sPID != null && sMID != null && _selectedModel.value == null) {
-                    _selectedModel.value = ModelRef(sPID, sMID, session.modelName ?: sMID)
+                    applySelectedModel(ModelRef(sPID, sMID, session.modelName ?: sMID))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "loadSession title API failed", e)
@@ -402,13 +509,14 @@ class SessionDetailViewModel @Inject constructor(
         _inputText.value = ""
         val model = _selectedModel.value
         val agent = _selectedAgent.value
+        val variant = _selectedVariant.value
         val files = _attachedFiles.value
         _attachedFiles.value = emptyList()
         clearDraft(sessionID)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
-                apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null })
+                apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null }, variant)
                 applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -513,11 +621,14 @@ class SessionDetailViewModel @Inject constructor(
         if (_selectedModel.value != null) return
         val recent = _recentModels.value.firstOrNull()
         if (recent != null) {
-            _selectedModel.value = recent
+            applySelectedModel(recent)
             return
         }
         try {
-            val result = apiClient.getProviders()
+            val result = loadCachedProviders() ?: apiClient.getProviders().also {
+                _providers.value = it
+                saveCachedProviders(it)
+            }
             _providers.value = result
             val connected = result.connected
             val defaults = result.default
@@ -526,7 +637,7 @@ class SessionDetailViewModel @Inject constructor(
                 val provider = result.all.find { it.id == providerID } ?: continue
                 val model = provider.models[modelID] ?: provider.models.values.firstOrNull() ?: continue
                 val ref = ModelRef(providerID, modelID, model.name.ifBlank { modelID })
-                _selectedModel.value = ref
+                applySelectedModel(ref)
                 val sid = currentSessionID ?: return
                 try {
                     sessionRepository.updateSessionModel(sid, providerID, modelID, ref.modelName)
@@ -538,12 +649,21 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    fun loadProviders() {
+    fun loadProviders(forceRefresh: Boolean = false) {
+        if (!forceRefresh) {
+            loadCachedProviders()?.let {
+                _providers.value = it
+                updateAvailableVariants()
+                return
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val result = apiClient.getProviders()
                 Log.d(TAG, "loadProviders OK: ${result.all.size} providers, connected=${result.connected}")
                 _providers.value = result
+                saveCachedProviders(result)
+                updateAvailableVariants()
             } catch (e: Exception) {
                 Log.e(TAG, "loadProviders FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
             }
@@ -552,7 +672,7 @@ class SessionDetailViewModel @Inject constructor(
 
     fun selectModel(providerID: String, modelID: String, modelName: String) {
         val ref = ModelRef(providerID, modelID, modelName)
-        _selectedModel.value = ref
+        applySelectedModel(ref)
         val updated = (listOf(ref) + _recentModels.value.filter {
             !(it.providerID == providerID && it.modelID == modelID)
         }).take(5)
@@ -568,6 +688,28 @@ class SessionDetailViewModel @Inject constructor(
 
     fun clearSelectedModel() {
         _selectedModel.value = null
+        _selectedVariant.value = null
+        _hasExplicitDefaultVariant.value = false
+        _availableVariants.value = emptyList()
+    }
+
+    fun selectVariant(variant: String?) {
+        _selectedVariant.value = variant
+        _hasExplicitDefaultVariant.value = variant == null
+        _selectedModel.value?.let { model ->
+            saveVariantPreference(model.providerID, model.modelID, variant)
+        }
+    }
+
+    private fun updateAvailableVariants() {
+        val model = _selectedModel.value ?: run {
+            _availableVariants.value = emptyList()
+            return
+        }
+        val provider = _providers.value?.all?.find { it.id == model.providerID }
+        val modelInfo = provider?.models?.get(model.modelID)
+        val variants = modelInfo?.variants?.keys?.toList() ?: emptyList()
+        _availableVariants.value = variants
     }
 
     fun getWorkingDirectory(): String = currentDirectory
@@ -783,7 +925,7 @@ class SessionDetailViewModel @Inject constructor(
             val mId = modelObj?.get("modelID")?.jsonPrimitive?.contentOrNull
             if (pId != null && mId != null) {
                 val ref = ModelRef(pId, mId, mId)
-                _selectedModel.value = ref
+                applySelectedModel(ref)
                 viewModelScope.launch(Dispatchers.IO) {
                     try {
                         sessionRepository.updateSessionModel(currentSessionID!!, pId, mId, mId)

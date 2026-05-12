@@ -112,6 +112,7 @@ class OpencodeApiClient(
         agent: String? = null,
         files: List<FileAttachment> = emptyList(),
         directory: String? = null,
+        variant: String? = null,
     ) {
         val textParts = listOf(
             mapOf("type" to "text", "text" to content)
@@ -139,6 +140,9 @@ class OpencodeApiClient(
         }
         if (agent != null) {
             extraFields["agent"] = agent
+        }
+        if (variant != null) {
+            extraFields["variant"] = variant
         }
         val bodyMap = parts + extraFields
         val body = mapToJson(bodyMap)

@@ -475,8 +475,11 @@ fun PartColumn(
                             val summary = toolSummary(item.toolName, item.args, item.result)
                             if (item.toolName == "task" && onNavigateToSubtask != null) {
                                 val subtaskSessionID = remember(item.metadata, item.result) {
-                                    item.metadata.str("sessionId")
-                                        ?: item.result?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+                                    extractSubtaskSessionId(
+                                        metadata = item.metadata,
+                                        structured = null,
+                                        resultText = item.result,
+                                    )
                                 }
                                 val subtaskPerms = subtaskSessionID?.let { sid ->
                                     pendingPermissions.filter { it.sessionID == sid }
@@ -487,6 +490,7 @@ fun PartColumn(
                                 TaskToolLine(
                                     item = item,
                                     summary = summary,
+                                    subtaskSessionID = subtaskSessionID,
                                     onNavigate = onNavigateToSubtask,
                                     subtaskPermissions = subtaskPerms,
                                     subtaskQuestions = subtaskQs,
@@ -516,7 +520,11 @@ fun PartColumn(
                                 answers = questionAnswers,
                             )
                         } else if (item.toolName == "task" && onNavigateToSubtask != null) {
-                            TaskToolLine(item, summary, onNavigateToSubtask)
+                            TaskToolLine(
+                                item = item,
+                                summary = summary,
+                                onNavigate = onNavigateToSubtask,
+                            )
                         } else if (summary.isBlock) {
                             BlockToolLine(item, summary, onViewFile)
                         } else {
@@ -818,12 +826,11 @@ internal fun DismissedQuestionToolLine() {
     }
 }
 
-private val TaskIdRegex = Regex("task_id:\\s*(ses_\\S+)")
-
 @Composable
 internal fun TaskToolLine(
     item: DisplayItem.ToolItem,
     summary: ToolSummary,
+    subtaskSessionID: String? = null,
     onNavigate: (subtaskSessionID: String, title: String) -> Unit,
     subtaskPermissions: List<PermissionRequest> = emptyList(),
     subtaskQuestions: List<QuestionRequest> = emptyList(),
@@ -831,18 +838,21 @@ internal fun TaskToolLine(
     onReplyQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
     onRejectQuestion: (String) -> Unit = {},
 ) {
-    val subtaskSessionID = remember(item.metadata, item.result) {
-        item.metadata.str("sessionId")
-            ?: item.result?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
+    val resolvedSubtaskSessionID = subtaskSessionID ?: remember(item.metadata, item.result) {
+        extractSubtaskSessionId(
+            metadata = item.metadata,
+            structured = null,
+            resultText = item.result,
+        )
     }
     val isRunning = item.state == ToolCallState.RUNNING
-    val canNavigate = subtaskSessionID != null
+    val canNavigate = resolvedSubtaskSessionID != null
 
     Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (canNavigate) Modifier.clickable { onNavigate(subtaskSessionID!!, summary.text) } else Modifier)
+                .then(if (canNavigate) Modifier.clickable { onNavigate(resolvedSubtaskSessionID!!, summary.text) } else Modifier)
                 .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

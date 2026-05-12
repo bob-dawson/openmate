@@ -187,4 +187,6 @@
     <string name="next_result">下一个</string>
     <string name="content_desc_close">关闭</string>
     <string name="copy">复制</string>
+    <string name="select_variant">选择 Variant</string>
+    <string name="variant_default">默认</string>
 </resources>

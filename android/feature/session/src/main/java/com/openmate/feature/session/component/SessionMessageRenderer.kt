@@ -433,6 +433,7 @@ fun AssistantMessageItem(
                             TaskToolLine(
                                 item = displayItem,
                                 summary = summary,
+                                subtaskSessionID = subtaskSessionID,
                                 onNavigate = onNavigateToSubtask,
                                 subtaskPermissions = subtaskPerms,
                                 subtaskQuestions = subtaskQs,

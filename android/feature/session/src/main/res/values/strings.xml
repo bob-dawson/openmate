@@ -190,4 +190,6 @@
     <string name="next_result">Next</string>
     <string name="content_desc_close">Close</string>
     <string name="copy">Copy</string>
+    <string name="select_variant">Select Variant</string>
+    <string name="variant_default">Default</string>
 </resources>

@@ -114,6 +114,19 @@ private const val LARGE_FILE_THRESHOLD = 10 * 1024 * 1024L
 private enum class SortColumn { NAME, SIZE, MODIFIED }
 private enum class SortOrder { ASC, DESC }
 
+internal fun shouldShowSearchSortHeader(
+    selectedTab: Int,
+    filenameQuery: String,
+    filenameResults: List<BridgeSearchResultDto>,
+    contentSearching: Boolean,
+    contentResults: List<BridgeSearchResultDto>,
+): Boolean {
+    return when {
+        selectedTab == 1 -> !contentSearching && contentResults.isNotEmpty()
+        else -> filenameQuery.length >= 2 && filenameResults.isNotEmpty()
+    }
+}
+
 data class FileContextMenuState(
     val entry: BridgeDirEntryDto? = null,
     val path: String = "",
@@ -819,6 +832,12 @@ fun WorkspaceBrowserScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
+                    BrowserHeaderRow(
+                        sortColumn = sortColumn,
+                        sortOrder = sortOrder,
+                        onSort = { toggleSort(it) },
+                    )
+                    HorizontalDivider()
                     LazyColumn {
                         items(sortSearchResults(contentResults), key = { it.path }) { result ->
                             val name = result.path.substringAfterLast("/").substringAfterLast("\\")
@@ -856,6 +875,12 @@ fun WorkspaceBrowserScreen(
                 }
             } else if (filenameQuery.length >= 2) {
                 if (filenameResults.isNotEmpty()) {
+                    BrowserHeaderRow(
+                        sortColumn = sortColumn,
+                        sortOrder = sortOrder,
+                        onSort = { toggleSort(it) },
+                    )
+                    HorizontalDivider()
                     LazyColumn {
                         items(sortSearchResults(filenameResults), key = { it.path }) { result ->
                             val name = result.path.substringAfterLast("/").substringAfterLast("\\")
@@ -1052,7 +1077,7 @@ fun WorkspaceBrowserScreen(
     }
 }
 
-private data class FileViewState(val path: String, val name: String)
+data class FileViewState(val path: String, val name: String)
 private data class LargeFileConfirm(val path: String, val filename: String, val size: Long)
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -1149,7 +1174,7 @@ private fun DownloadOverlay(state: DownloadState) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FileViewer(
+internal fun FileViewer(
     state: FileViewState,
     fileContent: BridgeFileContent?,
     isLoading: Boolean,

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
@@ -38,10 +39,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,12 +70,14 @@ import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.TopBar
 import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
+import com.openmate.feature.session.component.FileViewer
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
 import com.openmate.feature.session.component.SessionMessageSearchPanel
@@ -84,6 +91,14 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.common.formatDurationMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+internal fun shouldScrollToBottomOnInitialLoad(
+    messageCount: Int,
+    previousMessageCount: Int,
+    hasSavedScrollPosition: Boolean,
+): Boolean {
+    return messageCount > 0 && previousMessageCount == 0 && !hasSavedScrollPosition
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,6 +124,9 @@ fun SessionDetailScreen(
     val isUploading by viewModel.isUploading.collectAsState()
     val providers by viewModel.providers.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
+    val selectedVariant by viewModel.selectedVariant.collectAsState()
+    val hasExplicitDefaultVariant by viewModel.hasExplicitDefaultVariant.collectAsState()
+    val availableVariants by viewModel.availableVariants.collectAsState()
     val recentModels by viewModel.recentModels.collectAsState()
     val selectedAgent by viewModel.selectedAgent.collectAsState()
     val sessionStatus by viewModel.sessionStatus.collectAsState()
@@ -118,7 +136,11 @@ fun SessionDetailScreen(
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
+    val previewFileState by viewModel.previewFileState.collectAsState()
+    val previewFileContent by viewModel.previewFileContent.collectAsState()
+    val previewFileLoading by viewModel.previewFileLoading.collectAsState()
     val listState = rememberLazyListState()
+    val listRestored = rememberSaveable(sessionID) { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
@@ -130,6 +152,7 @@ fun SessionDetailScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
+    var showVariantPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
@@ -157,13 +180,19 @@ fun SessionDetailScreen(
     val prevMessageCount = remember { mutableIntStateOf(0) }
     LaunchedEffect(messages.size) {
         autoFollowTracker.onMessagesChanged(messages.size, isLoading)
-        if (messages.size > 0 && prevMessageCount.intValue == 0) {
+        if (shouldScrollToBottomOnInitialLoad(messages.size, prevMessageCount.intValue, listRestored.value)) {
             delay(300)
             if (listState.layoutInfo.totalItemsCount > 0) {
                 listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1)
             }
         }
         prevMessageCount.intValue = messages.size
+    }
+
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+        if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+            listRestored.value = true
+        }
     }
 
     val contentUpdateKey = remember(messages) {
@@ -286,6 +315,18 @@ fun SessionDetailScreen(
         }
     }
 
+    val fileState = previewFileState
+    if (fileState != null) {
+        FileViewer(
+            state = fileState,
+            fileContent = previewFileContent,
+            isLoading = previewFileLoading,
+            error = "",
+            onBack = { viewModel.closeFilePreview() },
+        )
+        return
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         contentWindowInsets = WindowInsets.systemBars.union(WindowInsets.ime),
@@ -331,7 +372,7 @@ fun SessionDetailScreen(
                                 text = { Text(stringResource(R.string.model)) },
                                 onClick = {
                                     menuExpanded = false
-                                    viewModel.loadProviders()
+                                    viewModel.loadProviders(forceRefresh = false)
                                     showModelPicker = true
                                 },
                             )
@@ -467,14 +508,7 @@ fun SessionDetailScreen(
                             onRejectQuestion = { requestID -> viewModel.rejectQuestion(requestID) },
                             onReplyPermission = { requestID, reply, msg -> viewModel.replyPermission(requestID, reply, msg) },
                             runningAnchors = runningAnchors,
-                            onViewFile = { filePath ->
-                                val dir = filePath.substringBeforeLast('/', filePath.substringBeforeLast('\\'))
-                                if (dir.isNotBlank() && dir != filePath) {
-                                    onNavigateToBrowser(dir)
-                                } else {
-                                    onNavigateToBrowser(viewModel.getWorkingDirectory())
-                                }
-                            },
+                            onViewFile = { filePath -> viewModel.openFilePreview(filePath) },
                         )
                     }
                     if (displayMessages.isEmpty()) {
@@ -523,14 +557,33 @@ fun SessionDetailScreen(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(MaterialTheme.colorScheme.secondaryContainer)
+                                .clickable {
+                                    viewModel.loadProviders(forceRefresh = false)
+                                    showModelPicker = true
+                                }
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                         ) {
                             Text(
-                                text = "${selectedModel!!.providerID}/${selectedModel!!.modelName}",
+                                text = selectedModel!!.modelName,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    if (availableVariants.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.tertiaryContainer)
+                                .clickable { showVariantPicker = true }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = selectedVariant ?: stringResource(R.string.variant_default),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
                             )
                         }
                     }
@@ -719,10 +772,36 @@ fun SessionDetailScreen(
             currentModel = selectedModel?.let { SelectedModel(it.providerID, it.modelID, it.modelName) },
             recentModels = recentModels.map { SelectedModel(it.providerID, it.modelID, it.modelName) },
             onSelect = { model ->
+                val variantsForModel = providers
+                    ?.all
+                    ?.find { it.id == model.providerID }
+                    ?.models
+                    ?.get(model.modelID)
+                    ?.variants
+                    ?.keys
+                    ?.toList()
+                    .orEmpty()
                 viewModel.selectModel(model.providerID, model.modelID, model.modelName)
                 showModelPicker = false
+                if (variantsForModel.isNotEmpty()) {
+                    showVariantPicker = true
+                }
             },
+            onRefresh = { viewModel.loadProviders(forceRefresh = true) },
             onDismiss = { showModelPicker = false },
+        )
+    }
+
+    if (showVariantPicker && availableVariants.isNotEmpty()) {
+        VariantPickerSheet(
+            variants = availableVariants,
+            currentVariant = selectedVariant,
+            hasExplicitDefaultVariant = hasExplicitDefaultVariant,
+            onSelect = {
+                viewModel.selectVariant(it)
+                showVariantPicker = false
+            },
+            onDismiss = { showVariantPicker = false },
         )
     }
 
@@ -787,5 +866,82 @@ private fun SessionRetryCard(status: SessionRetryStatus) {
                 )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VariantPickerSheet(
+    variants: List<String>,
+    currentVariant: String?,
+    hasExplicitDefaultVariant: Boolean,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 32.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.select_variant),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                item {
+                    VariantRow(
+                        name = stringResource(R.string.variant_default),
+                        isSelected = currentVariant == null && hasExplicitDefaultVariant,
+                        onClick = { onSelect(null) },
+                    )
+                }
+                items(variants) { variant ->
+                    VariantRow(
+                        name = variant,
+                        isSelected = currentVariant == variant,
+                        onClick = { onSelect(variant) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VariantRow(
+    name: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = null,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            ),
+            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
     }
 }

@@ -54,6 +54,16 @@ class SessionMessageRendererTest {
     }
 
     @Test
+    fun extractSubtaskSessionId_acceptsUppercaseSessionIdInStructuredPayload() {
+        val structured = buildJsonObject {
+            put("sessionID", JsonPrimitive("ses_subtask_structured_upper"))
+        }
+
+        assertThat(extractSubtaskSessionId(metadata = null, structured = structured, resultText = null))
+            .isEqualTo("ses_subtask_structured_upper")
+    }
+
+    @Test
     fun parseQuestionArgs_keepsCustomFlag() {
         val questions = parseQuestionArgs(
             """

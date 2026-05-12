@@ -22,7 +22,11 @@ import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.TodoRepository
+import com.openmate.core.database.ActiveDatabaseProvider
+import com.openmate.core.database.DatabaseFactory
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.ModelInfoDto
+import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
 import java.util.ArrayDeque
 import java.util.concurrent.TimeUnit
@@ -44,6 +48,8 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
@@ -434,6 +440,169 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun selectModel_updatesAvailableVariants_and_selectVariant_changesSelection() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(message("m1", timeCreated = 1)),
+                lastSeq = null,
+            ),
+        )
+
+        viewModel.loadProviders()
+        waitUntil { viewModel.providers.value != null }
+
+        viewModel.selectModel("openai", "gpt-5", "gpt-5")
+
+        assertThat(viewModel.availableVariants.value).containsExactly("medium", "high")
+        assertThat(viewModel.selectedVariant.value).isNull()
+
+        viewModel.selectVariant("high")
+
+        assertThat(viewModel.selectedVariant.value).isEqualTo("high")
+
+        viewModel.selectModel("openai", "gpt-4o-mini", "gpt-4o-mini")
+
+        assertThat(viewModel.availableVariants.value).isEmpty()
+        assertThat(viewModel.selectedVariant.value).isNull()
+    }
+
+    @Test
+    fun sendMessage_passesSelectedVariantToApiClient() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient()
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(message("m1", timeCreated = 1)),
+            lastSeq = null,
+            incrementalSyncResults = ArrayDeque(listOf(SessionMessageSyncResult(lastSeq = 1, changes = emptyList()))),
+        )
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+        viewModel.loadProviders()
+        waitUntil { viewModel.providers.value != null }
+        viewModel.selectModel("openai", "gpt-5", "gpt-5")
+        viewModel.selectVariant("high")
+        viewModel.updateInput("hello")
+
+        viewModel.sendMessage(SESSION_ID)
+        waitUntil { apiClient.promptCalls.isNotEmpty() }
+
+        assertThat(apiClient.promptCalls.single().variant).isEqualTo("high")
+    }
+
+    @Test
+    fun loadProviders_andVariantPreference_areScopedByProfileId_notDirectoryOrName() = runTest(dispatcher) {
+        val prefs = appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+        val profileOneProviders = ProviderListDto(
+            all = listOf(
+                ProviderInfoDto(
+                    id = "openai",
+                    name = "OpenAI",
+                    models = mapOf(
+                        "gpt-5" to ModelInfoDto(
+                            id = "gpt-5",
+                            providerID = "openai",
+                            name = "gpt-5 profile 1",
+                            variants = mapOf("medium" to buildJsonObject { }),
+                        ),
+                    ),
+                ),
+            ),
+            connected = listOf("openai"),
+            default = mapOf("openai" to "gpt-5"),
+        )
+        val profileTwoProviders = ProviderListDto(
+            all = listOf(
+                ProviderInfoDto(
+                    id = "openai",
+                    name = "OpenAI",
+                    models = mapOf(
+                        "gpt-5" to ModelInfoDto(
+                            id = "gpt-5",
+                            providerID = "openai",
+                            name = "gpt-5 profile 2",
+                            variants = mapOf("high" to buildJsonObject { }),
+                        ),
+                    ),
+                ),
+            ),
+            connected = listOf("openai"),
+            default = mapOf("openai" to "gpt-5"),
+        )
+        prefs.edit()
+            .putString("provider_cache::profile-1", Json.encodeToString(profileOneProviders))
+            .putString("provider_cache::profile-2", Json.encodeToString(profileTwoProviders))
+            .putString("variant_pref::profile-1::openai::gpt-5", "medium")
+            .putString("variant_pref::profile-2::openai::gpt-5", "default")
+            .apply()
+
+        val profileOneDbProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
+            setActive("profile-1")
+        }
+        val profileOneViewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(message("m1", timeCreated = 1)),
+                lastSeq = null,
+            ),
+            dbProvider = profileOneDbProvider,
+        )
+
+        profileOneViewModel.loadProviders()
+        waitUntil { profileOneViewModel.providers.value != null }
+        profileOneViewModel.selectModel("openai", "gpt-5", "gpt-5")
+
+        assertThat(profileOneViewModel.providers.value?.all?.single()?.models?.get("gpt-5")?.name)
+            .isEqualTo("gpt-5 profile 1")
+        assertThat(profileOneViewModel.selectedVariant.value).isEqualTo("medium")
+
+        val profileTwoDbProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
+            setActive("profile-2")
+        }
+        val profileTwoViewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(message("m1", timeCreated = 1)),
+                lastSeq = null,
+            ),
+            dbProvider = profileTwoDbProvider,
+        )
+
+        profileTwoViewModel.loadProviders()
+        waitUntil { profileTwoViewModel.providers.value != null }
+        profileTwoViewModel.selectModel("openai", "gpt-5", "gpt-5")
+
+        assertThat(profileTwoViewModel.providers.value?.all?.single()?.models?.get("gpt-5")?.name)
+            .isEqualTo("gpt-5 profile 2")
+        assertThat(profileTwoViewModel.selectedVariant.value).isNull()
+        assertThat(profileTwoViewModel.hasExplicitDefaultVariant.value).isTrue()
+
+        profileOneDbProvider.clearActive()
+        profileTwoDbProvider.clearActive()
+    }
+
+    @Test
+    fun openFilePreview_resolvesRelativePathAgainstCurrentDirectory() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient()
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(message("m1", timeCreated = 1)),
+                lastSeq = null,
+            ),
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+
+        viewModel.openFilePreview("src/Main.kt")
+        waitUntil { apiClient.readFileCalls.isNotEmpty() }
+
+        assertThat(apiClient.readFileCalls.single()).isEqualTo("/workspace/src/Main.kt")
+    }
+
+    @Test
     fun abort_stopsBusyTimerImmediatelyBeforeSyncCatchesUp() = runTest(dispatcher) {
         val repository = FakeSessionMessageRepository(
             recentWindow = listOf(
@@ -547,6 +716,9 @@ class SessionDetailViewModelTest {
         permissionRepository: PermissionRepository = FakePermissionRepository(),
         sseEventRepository: SseEventRepository = FakeSseEventRepository(),
         apiClient: OpencodeApiClient = FakeOpencodeApiClient().client,
+        dbProvider: ActiveDatabaseProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
+            setActive("profile-default")
+        },
     ): SessionDetailViewModel {
         appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
             .edit()
@@ -561,6 +733,7 @@ class SessionDetailViewModelTest {
             questionRepository = questionRepository,
             permissionRepository = permissionRepository,
             sseEventRepository = sseEventRepository,
+            dbProvider = dbProvider,
             apiClient = apiClient,
         )
     }
@@ -654,6 +827,11 @@ class SessionDetailViewModelTest {
     }
 
     private class FakeOpencodeApiClient {
+        data class PromptCall(
+            val sessionId: String,
+            val variant: String?,
+        )
+
         data class SummarizeCall(
             val sessionId: String,
             val providerId: String,
@@ -663,12 +841,52 @@ class SessionDetailViewModelTest {
 
         val summarizeErrors = ArrayDeque<Exception>()
         val summarizeCalls = mutableListOf<SummarizeCall>()
+        val promptCalls = mutableListOf<PromptCall>()
+        val readFileCalls = mutableListOf<String>()
 
         val client: OpencodeApiClient = OpencodeApiClient(
             client = OkHttpClient.Builder()
                 .callTimeout(10, TimeUnit.MILLISECONDS)
                 .addInterceptor { chain ->
                     val request = chain.request()
+                    if (request.url.encodedPath == "/provider") {
+                        val providersJson = Json.encodeToString(
+                            ProviderListDto(
+                                all = listOf(
+                                    ProviderInfoDto(
+                                        id = "openai",
+                                        name = "OpenAI",
+                                        models = mapOf(
+                                            "gpt-5" to ModelInfoDto(
+                                                id = "gpt-5",
+                                                providerID = "openai",
+                                                name = "gpt-5",
+                                                variants = mapOf(
+                                                    "medium" to buildJsonObject { },
+                                                    "high" to buildJsonObject { },
+                                                ),
+                                            ),
+                                            "gpt-4o-mini" to ModelInfoDto(
+                                                id = "gpt-4o-mini",
+                                                providerID = "openai",
+                                                name = "gpt-4o-mini",
+                                                variants = null,
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                                connected = listOf("openai"),
+                                default = mapOf("openai" to "gpt-5"),
+                            ),
+                        )
+                        return@addInterceptor Response.Builder()
+                            .request(request)
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(200)
+                            .message("OK")
+                            .body(providersJson.toResponseBody())
+                            .build()
+                    }
                     if (request.url.encodedPath.contains("/summarize")) {
                         if (summarizeErrors.isNotEmpty()) {
                             throw summarizeErrors.removeFirst()
@@ -684,6 +902,27 @@ class SessionDetailViewModelTest {
                             modelId = body["modelID"]!!.jsonPrimitive.content,
                             directory = request.url.queryParameter("directory"),
                         )
+                    } else if (request.url.encodedPath.contains("/prompt_async")) {
+                        val sessionId = request.url.pathSegments.getOrNull(1).orEmpty()
+                        val bodyText = Buffer().also { buffer ->
+                            request.body?.writeTo(buffer)
+                        }.readUtf8()
+                        val body = Json.parseToJsonElement(bodyText).jsonObject
+                        promptCalls += PromptCall(
+                            sessionId = sessionId,
+                            variant = body["variant"]?.jsonPrimitive?.contentOrNull,
+                        )
+                    } else if (request.url.encodedPath == "/api/bridge/fs/read") {
+                        val path = request.url.queryParameter("path").orEmpty()
+                        readFileCalls += path
+                        return@addInterceptor Response.Builder()
+                            .request(request)
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(200)
+                            .message("OK")
+                            .header("content-type", "text/plain")
+                            .body("preview".toResponseBody())
+                            .build()
                     }
 
                     Response.Builder()
