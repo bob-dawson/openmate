@@ -33,6 +33,22 @@ class SyncDebugController @Inject constructor(
         )
     }
 
+    fun log(
+        level: SyncLogLevel,
+        category: SyncLogCategory,
+        sessionId: String? = null,
+        title: String,
+        message: String,
+    ) {
+        logStore.log(
+            level = level,
+            category = category,
+            sessionId = sessionId,
+            title = title,
+            message = message,
+        )
+    }
+
     fun reconnectSse() {
         val traceId = "sse-manual-${System.currentTimeMillis()}"
         logStore.log(

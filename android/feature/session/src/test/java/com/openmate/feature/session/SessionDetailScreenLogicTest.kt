@@ -44,4 +44,5 @@ class SessionDetailScreenLogicTest {
             "12:00:01.000 ERROR [Sync] 增量同步失败 trace=inc-1 message=SocketTimeoutException",
         )
     }
+
 }

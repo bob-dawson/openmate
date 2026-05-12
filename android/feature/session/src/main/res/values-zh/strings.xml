@@ -191,7 +191,7 @@
     <string name="variant_default">默认</string>
     <string name="sync_logs">同步日志</string>
     <string name="sync_logs_search_hint">输入正则过滤日志</string>
-    <string name="sync_logs_reconnect_sse">重连SSE</string>
-    <string name="sync_logs_incremental_sync">增量同步</string>
+    <string name="sync_logs_reconnect_sse">重连</string>
+    <string name="sync_logs_incremental_sync">同步</string>
     <string name="sync_logs_clear_confirm">确认清除？</string>
 </resources>

@@ -194,7 +194,7 @@
     <string name="variant_default">Default</string>
     <string name="sync_logs">Sync Logs</string>
     <string name="sync_logs_search_hint">Filter logs with regex</string>
-    <string name="sync_logs_reconnect_sse">Reconnect SSE</string>
-    <string name="sync_logs_incremental_sync">Incremental Sync</string>
+    <string name="sync_logs_reconnect_sse">Reconnect</string>
+    <string name="sync_logs_incremental_sync">Sync</string>
     <string name="sync_logs_clear_confirm">Clear?</string>
 </resources>

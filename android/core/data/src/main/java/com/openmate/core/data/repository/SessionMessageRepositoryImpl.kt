@@ -42,13 +42,34 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     override fun observeMessages(sessionId: String): Flow<List<SessionMessage>> {
         return dbProvider.getActive().sessionMessageDao().observeBySession(sessionId)
-            .map { entities -> entities.map { it.toDomain() } }
+            .map { entities ->
+                val latest = entities.lastOrNull()
+                logStore.log(
+                    level = SyncLogLevel.Info,
+                    category = SyncLogCategory.Sync,
+                    sessionId = sessionId,
+                    title = "观察消息表",
+                    message = "observe messages count=${entities.size} last=${latest?.id ?: "none"}/${latest?.type ?: "none"}",
+                )
+                entities.map { it.toDomain() }
+            }
     }
 
     override fun observeSyncEvents(): Flow<SessionMessageSyncEvent> = syncEvents
 
     override suspend fun getRecentWindow(sessionId: String, limit: Int): List<SessionMessage> {
-        return dbProvider.getActive().sessionMessageDao().getRecentWindow(sessionId, limit).map { it.toDomain() }
+        val startedAt = System.currentTimeMillis()
+        val entities = dbProvider.getActive().sessionMessageDao().getRecentWindow(sessionId, limit)
+        val costMs = System.currentTimeMillis() - startedAt
+        val latest = entities.lastOrNull()
+        logStore.log(
+            level = SyncLogLevel.Info,
+            category = SyncLogCategory.Sync,
+            sessionId = sessionId,
+            title = "读取消息表",
+            message = "load recent window count=${entities.size} limit=$limit cost=${costMs}ms last=${latest?.id ?: "none"}/${latest?.type ?: "none"}",
+        )
+        return entities.map { it.toDomain() }
     }
 
     override suspend fun getOlderPage(
@@ -57,9 +78,20 @@ class SessionMessageRepositoryImpl @Inject constructor(
         beforeId: String,
         limit: Int,
     ): List<SessionMessage> {
-        return dbProvider.getActive().sessionMessageDao()
+        val startedAt = System.currentTimeMillis()
+        val entities = dbProvider.getActive().sessionMessageDao()
             .getOlderPage(sessionId, beforeTimeCreated, beforeId, limit)
-            .map { it.toDomain() }
+        val costMs = System.currentTimeMillis() - startedAt
+        val first = entities.firstOrNull()
+        val last = entities.lastOrNull()
+        logStore.log(
+            level = SyncLogLevel.Info,
+            category = SyncLogCategory.Sync,
+            sessionId = sessionId,
+            title = "读取旧消息页",
+            message = "load older page count=${entities.size} before=$beforeId/$beforeTimeCreated limit=$limit cost=${costMs}ms first=${first?.id ?: "none"} last=${last?.id ?: "none"}",
+        )
+        return entities.map { it.toDomain() }
     }
 
     override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult {

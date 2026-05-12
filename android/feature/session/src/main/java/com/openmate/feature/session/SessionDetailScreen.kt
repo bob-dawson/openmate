@@ -1,5 +1,6 @@
 package com.openmate.feature.session
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -330,6 +331,9 @@ fun SessionDetailScreen(
 
     val fileState = previewFileState
     if (fileState != null) {
+        BackHandler(enabled = true) {
+            viewModel.closeFilePreview()
+        }
         FileViewer(
             state = fileState,
             fileContent = previewFileContent,
@@ -341,6 +345,9 @@ fun SessionDetailScreen(
     }
 
     if (showSyncLogs) {
+        BackHandler(enabled = true) {
+            showSyncLogs = false
+        }
         SyncLogScreen(
             currentSessionId = sessionID,
             logEntries = syncLogEntries,

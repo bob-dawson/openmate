@@ -6,7 +6,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.data.sync.SyncDebugController
+import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogEntry
+import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionMessageSyncResult
@@ -66,7 +68,6 @@ class SessionDetailViewModel @Inject constructor(
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val syncDebugController: SyncDebugController,
-    private val onCopyLogs: ((String) -> Unit)? = null,
     internal val apiClient: OpencodeApiClient,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
@@ -236,10 +237,8 @@ class SessionDetailViewModel @Inject constructor(
 
     fun copyVisibleSyncLogsToClipboard(lines: List<String>) {
         val text = lines.joinToString("\n")
-        onCopyLogs?.invoke(text) ?: run {
-            val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("sync_logs", text))
-        }
+        val clipboard = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("sync_logs", text))
     }
 
     private fun activeProfileKey(): String? = dbProvider.getActiveProfileId()?.ifBlank { null }
@@ -566,6 +565,13 @@ class SessionDetailViewModel @Inject constructor(
 
     fun sendMessage(sessionID: String) {
         val text = _inputText.value.ifBlank { return }
+        syncDebugController.log(
+            level = SyncLogLevel.Info,
+            category = SyncLogCategory.Manual,
+            sessionId = sessionID,
+            title = "发送消息",
+            message = "send message requested textLength=${text.length} attachments=${_attachedFiles.value.size}",
+        )
         _inputText.value = ""
         val model = _selectedModel.value
         val agent = _selectedAgent.value
@@ -911,6 +917,11 @@ class SessionDetailViewModel @Inject constructor(
         )
         _messages.value = recent
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
+        logMessageWindowState(
+            sessionId = sessionId,
+            source = "initial-window",
+            messages = recent,
+        )
         recalculateMessageDerivedState(recent)
     }
 
@@ -922,7 +933,32 @@ class SessionDetailViewModel @Inject constructor(
         }
         _messages.value = messageWindowState.messages
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
+        currentSessionID?.let { sessionId ->
+            logMessageWindowState(
+                sessionId = sessionId,
+                source = "apply-sync",
+                messages = messageWindowState.messages,
+            )
+        }
         recalculateMessageDerivedState(messageWindowState.messages)
+    }
+
+    private fun logMessageWindowState(
+        sessionId: String,
+        source: String,
+        messages: List<SessionMessage>,
+    ) {
+        val last = messages.lastOrNull()
+        val lastCompaction = messages.lastOrNull {
+            it.type == "compaction" || (it.type == "assistant" && it.data.contains("\"agent\":\"compaction\""))
+        }
+        syncDebugController.log(
+            level = SyncLogLevel.Info,
+            category = SyncLogCategory.Sync,
+            sessionId = sessionId,
+            title = "消息窗口更新",
+            message = "source=$source count=${messages.size} last=${last?.id ?: "none"}/${last?.type ?: "none"} lastCompaction=${lastCompaction?.id ?: "none"}/${lastCompaction?.type ?: "none"}",
+        )
     }
 
     private fun recalculateMessageDerivedState(list: List<SessionMessage>) {

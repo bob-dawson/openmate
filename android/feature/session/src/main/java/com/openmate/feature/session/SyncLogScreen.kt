@@ -1,11 +1,10 @@
 package com.openmate.feature.session
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -13,10 +12,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,11 +24,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import com.openmate.core.data.sync.SyncLogEntry
 
+private val SyncLogActionPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SyncLogScreen(
     currentSessionId: String,
@@ -57,7 +59,6 @@ fun SyncLogScreen(
     }
 
     var clearConfirming by remember { mutableStateOf(false) }
-    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -65,12 +66,30 @@ fun SyncLogScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = onBack) { Text(stringResource(R.string.content_desc_back)) }
-            Button(onClick = { onCopy(filterResult.visibleLogs) }) { Text(stringResource(R.string.copy)) }
-            Button(onClick = onReconnectSse) { Text(stringResource(R.string.sync_logs_reconnect_sse)) }
-            Button(onClick = onManualIncrementalSync) { Text(stringResource(R.string.sync_logs_incremental_sync)) }
-            Button(
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            TextButton(onClick = onBack, shape = RoundedCornerShape(4.dp), contentPadding = SyncLogActionPadding) {
+                Text(stringResource(R.string.content_desc_back))
+            }
+            TextButton(
+                onClick = { onCopy(filterResult.visibleLogs) },
+                shape = RoundedCornerShape(4.dp),
+                contentPadding = SyncLogActionPadding,
+            ) { Text(stringResource(R.string.copy)) }
+            TextButton(
+                onClick = onReconnectSse,
+                shape = RoundedCornerShape(4.dp),
+                contentPadding = SyncLogActionPadding,
+            ) { Text(stringResource(R.string.sync_logs_reconnect_sse)) }
+            TextButton(
+                onClick = onManualIncrementalSync,
+                shape = RoundedCornerShape(4.dp),
+                contentPadding = SyncLogActionPadding,
+            ) { Text(stringResource(R.string.sync_logs_incremental_sync)) }
+            TextButton(
                 onClick = {
                     if (shouldExecuteSyncLogClear(clearConfirming, true)) {
                         onClear()
@@ -79,6 +98,8 @@ fun SyncLogScreen(
                         clearConfirming = true
                     }
                 },
+                shape = RoundedCornerShape(4.dp),
+                contentPadding = SyncLogActionPadding,
             ) {
                 Text(if (clearConfirming) stringResource(R.string.sync_logs_clear_confirm) else stringResource(R.string.delete))
             }

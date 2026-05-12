@@ -408,10 +408,8 @@ class SessionDetailViewModelTest {
 
     @Test
     fun copyVisibleSyncLogs_joinsOnlyFilteredVisibleRows() = runTest(dispatcher) {
-        val copied = mutableListOf<String>()
         val viewModel = createViewModel(
             sessionMessageRepository = FakeSessionMessageRepository(),
-            onCopyLogs = { copied += it },
         )
 
         viewModel.copyVisibleSyncLogsToClipboard(
@@ -420,7 +418,8 @@ class SessionDetailViewModelTest {
             )
         )
 
-        assertThat(copied.single()).isEqualTo(
+        val clipboard = appContext().getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        assertThat(clipboard.primaryClip?.getItemAt(0)?.text?.toString()).isEqualTo(
             "12:00:01.000 ERROR [Sync] 增量同步失败 trace=inc-1 message=SocketTimeoutException"
         )
     }
@@ -868,7 +867,6 @@ class SessionDetailViewModelTest {
             sessionMessageRepository = FakeSessionMessageRepository(),
             appDispatchers = AppDispatchers(io = dispatcher, main = dispatcher, default = dispatcher),
         ),
-        onCopyLogs: ((String) -> Unit)? = null,
         apiClient: OpencodeApiClient = FakeOpencodeApiClient().client,
         dbProvider: ActiveDatabaseProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
             setActive("profile-default")
@@ -889,7 +887,6 @@ class SessionDetailViewModelTest {
             sseEventRepository = sseEventRepository,
             syncDebugController = syncDebugController,
             dbProvider = dbProvider,
-            onCopyLogs = onCopyLogs,
             apiClient = apiClient,
         )
     }
