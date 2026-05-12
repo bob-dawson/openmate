@@ -5,12 +5,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
 @Serializable
-data class MessageWithPartsDto(
-    val info: MessageInfoDto,
-    val parts: List<PartDto> = emptyList(),
-)
-
-@Serializable
 data class MessageHeaderDto(
     val info: MessageInfoDto,
 )
@@ -69,48 +63,4 @@ data class MessageCacheTokensDto(
     val write: Long = 0,
 )
 
-@Serializable
-data class PartDto(
-    val type: String,
-    val id: String = "",
-    @SerialName("sessionID") val sessionID: String = "",
-    @SerialName("messageID") val messageID: String = "",
-    val text: String? = null,
-    val time: JsonElement? = null,
-    val metadata: JsonElement? = null,
-    val synthetic: Boolean? = null,
-    val ignored: Boolean? = null,
-    @SerialName("callID") val callID: String? = null,
-    val tool: String? = null,
-    val state: ToolStateDto? = null,
-    val snapshot: String? = null,
-    val hash: String? = null,
-    val files: List<String>? = null,
-    val mime: String? = null,
-    val url: String? = null,
-    val filename: String? = null,
-    val name: String? = null,
-    val reason: String? = null,
-    val cost: Double? = null,
-    val tokens: JsonElement? = null,
-    val prompt: String? = null,
-    val description: String? = null,
-    val agent: String? = null,
-    val auto: Boolean? = null,
-    val overflow: Boolean? = null,
-    val attempt: Int? = null,
-    val error: String? = null,
-)
 
-@Serializable
-data class ToolStateDto(
-    val status: String = "",
-    val input: JsonElement? = null,
-    val output: String? = null,
-    val title: String? = null,
-    val metadata: JsonElement? = null,
-    val structured: JsonElement? = null,
-    val time: JsonElement? = null,
-    val error: String? = null,
-    val raw: String? = null,
-)

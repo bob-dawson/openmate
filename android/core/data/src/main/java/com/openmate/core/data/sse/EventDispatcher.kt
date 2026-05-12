@@ -6,7 +6,6 @@ import javax.inject.Inject
 
 class EventDispatcher @Inject constructor(
     private val sessionHandler: SessionEventHandler,
-    private val messageHandler: MessageEventHandler,
     private val permissionHandler: PermissionEventHandler,
     private val questionHandler: QuestionEventHandler,
     private val todoHandler: TodoEventHandler,
@@ -46,7 +45,7 @@ class EventDispatcher @Inject constructor(
 
         when {
             type.startsWith("session.") -> sessionHandler.handle(type, event)
-            type.startsWith("message.") -> messageHandler.handle(type, event)
+            type.startsWith("message.") -> { /* handled by SessionMessageEventHandler via SessionMessageRepository */ }
             type.startsWith("permission.") -> permissionHandler.handle(type, event)
             type.startsWith("question.") -> questionHandler.handle(type, event)
             type.startsWith("todo.") -> todoHandler.handle(type, event)
