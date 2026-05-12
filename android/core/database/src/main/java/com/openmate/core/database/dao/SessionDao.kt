@@ -36,12 +36,6 @@ interface SessionDao {
     @Query("UPDATE SessionEntity SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String?)
 
-    @Query("UPDATE SessionEntity SET syncAnchor = :anchor WHERE id = :id")
-    suspend fun updateSyncAnchor(id: String, anchor: String?)
-
-    @Query("SELECT syncAnchor FROM SessionEntity WHERE id = :id")
-    suspend fun getSyncAnchor(id: String): String?
-
     @Query("UPDATE SessionEntity SET totalDuration = totalDuration + :increment WHERE id = :id")
     suspend fun addDuration(id: String, increment: Long)
 
