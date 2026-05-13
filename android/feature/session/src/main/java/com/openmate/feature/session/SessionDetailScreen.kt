@@ -152,7 +152,12 @@ fun SessionDetailScreen(
     val previewFileState by viewModel.previewFileState.collectAsState()
     val previewFileContent by viewModel.previewFileContent.collectAsState()
     val previewFileLoading by viewModel.previewFileLoading.collectAsState()
-    val listState = rememberLazyListState()
+    val savedIndex = rememberSaveable(sessionID) { mutableIntStateOf(0) }
+    val savedOffset = rememberSaveable(sessionID) { mutableIntStateOf(0) }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = savedIndex.intValue,
+        initialFirstVisibleItemScrollOffset = savedOffset.intValue,
+    )
     val listRestored = rememberSaveable(sessionID) { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -171,6 +176,13 @@ fun SessionDetailScreen(
     var showSyncLogs by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     val autoFollowTracker = remember { AutoFollowTracker() }
+    val savedShouldFollow = rememberSaveable(sessionID) { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        autoFollowTracker.restoreState(savedShouldFollow.value)
+    }
+    LaunchedEffect(autoFollowTracker.shouldFollow) {
+        savedShouldFollow.value = autoFollowTracker.shouldFollow
+    }
     var prevImeBottom by remember { mutableIntStateOf(0) }
     var pagingTriggerState by remember(sessionID) { mutableStateOf(SessionPagingTrigger.State(lastTriggeredFirstMessageId = null)) }
     var pendingRestoreAnchor by remember(sessionID) { mutableStateOf<String?>(null) }
@@ -191,7 +203,7 @@ fun SessionDetailScreen(
         }
     }
 
-    val prevMessageCount = remember { mutableIntStateOf(0) }
+    val prevMessageCount = rememberSaveable(sessionID) { mutableIntStateOf(0) }
     LaunchedEffect(messages.size) {
         autoFollowTracker.onMessagesChanged(messages.size, isLoading)
         if (shouldScrollToBottomOnInitialLoad(messages.size, prevMessageCount.intValue, listRestored.value)) {
@@ -204,7 +216,9 @@ fun SessionDetailScreen(
     }
 
     LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
-        if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+        if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0) {
+            savedIndex.intValue = listState.firstVisibleItemIndex
+            savedOffset.intValue = listState.firstVisibleItemScrollOffset
             listRestored.value = true
         }
     }

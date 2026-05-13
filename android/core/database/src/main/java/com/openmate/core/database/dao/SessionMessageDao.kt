@@ -69,6 +69,9 @@ interface SessionMessageDao {
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'compaction' AND completedAt IS NULL ORDER BY timeCreated DESC LIMIT 1")
     suspend fun getLatestIncompleteCompaction(sessionId: String): SessionMessageEntity?
 
+    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' AND data LIKE '%' || :callID || '%' ORDER BY timeCreated DESC LIMIT 1")
+    suspend fun getAssistantByToolCallId(sessionId: String, callID: String): SessionMessageEntity?
+
     @Query("UPDATE session_message SET roundMark = 0 WHERE type = 'assistant' AND roundMark = 1 AND completedAt IS NULL")
     suspend fun fixRunningAssistantRoundMark()
 

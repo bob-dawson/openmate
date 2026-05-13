@@ -86,9 +86,8 @@ class SubtaskDetailScreenRunningAnchorTest {
 
         composeRule.setContent {
             MaterialTheme {
-                SubtaskDetailScreen(
-                    subtaskSessionID = sessionId,
-                    title = "Subtask",
+                SessionDetailScreen(
+                    sessionID = sessionId,
                     onBack = {},
                     viewModel = viewModel,
                 )

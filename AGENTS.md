@@ -7,6 +7,13 @@
 - **opencode 源码**: `D:\github\opencode` — 排查服务端事件流、`prompt_async`、`session.next.*` 相关逻辑时优先查看该仓库及其 `AGENTS.md`
 - **调试脚本**: `D:\openmate\scripts\`
 
+## Key Paths
+
+- **opencode DB**: `C:\Users\bob_d\.local\share\opencode\opencode.db` — SQLite，包含 event/session_message 等表，Bridge sync API 直接读此 DB
+- **opencode state**: `C:\Users\bob_d\.local\state\opencode\` — frecency, model, prompt-history 等
+- **opencode config**: `C:\Users\bob_d\.config\opencode\`
+- **查询 opencode DB 示例**: `sqlite3 "C:\Users\bob_d\.local\share\opencode\opencode.db" "SELECT seq, type FROM event WHERE aggregate_id='ses_xxx' ORDER BY seq LIMIT 10"`
+
 ## Communication
 
 - 默认使用中文与用户交流，除非用户明确要求使用其他语言。
@@ -18,6 +25,25 @@
 - 需要实时性时，可使用 SSE 提升更新速度，但必须配合轮询与增量同步等现有补偿机制保证最终一致性与信息完整性。
 
 ## Debug & Analysis Tools
+
+### 0. opencode 事件数据库
+opencode 的事件存储在 SQLite 数据库中，Bridge 直接读这个 DB 提供 sync API。
+
+**DB 路径**: `C:\Users\bob_d\.local\share\opencode\opencode.db`
+
+```powershell
+# 查询特定会话的事件（如 step.failed、message.part.updated 等）
+python -c "
+import sqlite3, json
+db = sqlite3.connect(r'C:\Users\bob_d\.local\share\opencode\opencode.db')
+rows = db.execute('SELECT seq, type, data FROM event WHERE aggregate_id = ? AND seq > ? ORDER BY seq', ['SESSION_ID', START_SEQ]).fetchall()
+for seq, typ, data_str in rows:
+    print(f'seq={seq} type={typ}')
+db.close()
+"
+```
+
+关键表：`event`（id, aggregate_id, seq, type, data）、`event_sequence`（aggregate_id, seq）、`session_message`
 
 ### 1. Session API Analysis (opencode REST API)
 `D:\openmate\scripts\session_tool.py` — 通过 opencode REST API 查询服务端原始数据。

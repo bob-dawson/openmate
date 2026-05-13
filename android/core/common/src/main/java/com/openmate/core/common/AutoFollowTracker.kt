@@ -19,6 +19,10 @@ class AutoFollowTracker {
     private var isKeyboardAnimating: Boolean = false
     private var isUserNavigating: Boolean = false
 
+    fun restoreState(shouldFollow: Boolean) {
+        this.shouldFollow = shouldFollow
+    }
+
     fun onMessagesChanged(count: Int, isLoading: Boolean) {
         if (count == 0) {
             prevMessageCount = 0
@@ -26,13 +30,11 @@ class AutoFollowTracker {
         }
         if (prevMessageCount == 0) {
             prevMessageCount = count
-            if (!isLoading) {
-                requestScroll()
-            }
             return
         }
+        val added = count > prevMessageCount
         prevMessageCount = count
-        if (shouldFollow && !isLoading && !isUserNavigating) {
+        if (added && shouldFollow && !isLoading && !isUserNavigating) {
             requestScroll()
         }
     }

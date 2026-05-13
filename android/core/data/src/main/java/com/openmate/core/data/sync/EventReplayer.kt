@@ -40,6 +40,7 @@ class EventReplayer {
             data class LoadById(val id: String) : Action()
             data class LoadLatestIncompleteAssistant(val sessionId: String) : Action()
             data class LoadLatestIncompleteCompaction(val sessionId: String) : Action()
+            data class LoadAssistantByToolCallId(val sessionId: String, val callID: String) : Action()
         }
     }
 
@@ -400,10 +401,10 @@ class EventReplayer {
                 }
 
                 "message.part.updated" -> {
-                    val cached = cachedAssistant() ?: return
                     val part = props["part"]?.jsonObject ?: return
                     val partType = part["type"]?.jsonPrimitive?.contentOrNull ?: return
                     if (partType == "patch") {
+                        val cached = cachedAssistant() ?: return
                         val messageId = part["messageID"]?.jsonPrimitive?.contentOrNull ?: return
                         if (messageId != cachedId) return
                         val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
@@ -418,7 +419,23 @@ class EventReplayer {
                         val callID = part["callID"]?.jsonPrimitive?.contentOrNull
                             ?: part["id"]?.jsonPrimitive?.contentOrNull
                             ?: return
-                        val content = cached["content"]?.jsonArray ?: return
+                        val cached = cachedAssistant()
+                        val (targetData, targetId) = if (cached != null) {
+                            val content = cached["content"]?.jsonArray
+                            val toolIdx = content?.indexOfLast {
+                                it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" &&
+                                (it.jsonObject["id"]?.jsonPrimitive?.contentOrNull == callID ||
+                                 it.jsonObject["callID"]?.jsonPrimitive?.contentOrNull == callID)
+                            } ?: -1
+                            if (toolIdx >= 0) Pair(cached, cachedId!!) else {
+                                val loaded = findToolInDb(callID, sessionId, loader) ?: return
+                                Pair(loaded.first, loaded.second)
+                            }
+                        } else {
+                            val loaded = findToolInDb(callID, sessionId, loader) ?: return
+                            Pair(loaded.first, loaded.second)
+                        }
+                        val content = targetData["content"]?.jsonArray ?: return
                         val toolIdx = content.indexOfLast {
                             it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" &&
                             (it.jsonObject["id"]?.jsonPrimitive?.contentOrNull == callID ||
@@ -430,7 +447,19 @@ class EventReplayer {
                         val prevState = toolObj["state"]?.jsonObject
                         if (prevState != null) {
                             val mergedState = prevState.toMutableMap()
-                            partState["metadata"]?.jsonObject?.let { mergedState["metadata"] = it }
+                            val newMeta = partState["metadata"]?.jsonObject
+                            if (newMeta != null) {
+                                val prevMeta = prevState["metadata"]?.jsonObject
+                                val prevSid = prevMeta?.let { m -> (m["sessionId"] ?: m["sessionID"])?.jsonPrimitive?.contentOrNull }
+                                val newSid = (newMeta["sessionId"] ?: newMeta["sessionID"])?.jsonPrimitive?.contentOrNull
+                                if (prevSid != null && newSid == null) {
+                                    val mergedMeta = newMeta.toMutableMap()
+                                    mergedMeta["sessionId"] = JsonPrimitive(prevSid)
+                                    mergedState["metadata"] = JsonObject(mergedMeta)
+                                } else {
+                                    mergedState["metadata"] = newMeta
+                                }
+                            }
                             partState["title"]?.jsonPrimitive?.let { mergedState["title"] = it }
                             partState["structured"]?.jsonObject?.let { mergedState["structured"] = it }
                             partState["content"]?.jsonArray?.let { mergedState["content"] = it }
@@ -439,11 +468,13 @@ class EventReplayer {
                             toolObj["state"] = partState
                         }
                         mutableContent[toolIdx] = JsonObject(toolObj)
-                        val updated = cached.toMutableMap()
+                        val updated = targetData.toMutableMap()
                         updated["content"] = JsonArray(mutableContent)
                         val merged = JsonObject(updated)
-                        updateCache(merged)
-                        changes += ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                        if (targetId == cachedId) {
+                            updateCache(merged)
+                        }
+                        changes += ReplayChange.Update(targetId, "assistant", merged, timestamp)
                     }
                 }
 
@@ -542,6 +573,16 @@ class EventReplayer {
             return CachedAssistant(cachedId!!, cachedData!!, cachedTimeCreated)
         }
         return null
+    }
+
+    private suspend fun findToolInDb(
+        callID: String,
+        sessionId: String,
+        loader: DbLoader,
+    ): Pair<JsonObject, String>? {
+        val entity = loader(DbLoader.Action.LoadAssistantByToolCallId(sessionId, callID)) ?: return null
+        val data = runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull() ?: return null
+        return Pair(data, entity.id)
     }
 
     private fun findToolIndex(content: JsonArray, callID: String): Int? {

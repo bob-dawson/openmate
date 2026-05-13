@@ -106,6 +106,8 @@ class SessionDetailViewModel @Inject constructor(
     private val _sessionStatus = MutableStateFlow("")
     val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
 
+    private val _serverBusy = MutableStateFlow<Boolean?>(null)
+
     private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
     val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
 
@@ -390,6 +392,7 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun loadSession(sessionID: String) {
+        if (currentSessionID == sessionID) return
         currentSessionID = sessionID
         observeMsgJob?.cancel()
         observeTodoJob?.cancel()
@@ -418,12 +421,18 @@ class SessionDetailViewModel @Inject constructor(
                 if (session != null && session.title.isNotBlank()) {
                     _sessionTitle.value = session.title
                 }
+                val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
+                if (_serverBusy.value != busy) {
+                    _serverBusy.value = busy
+                    recalculateMessageDerivedState(messageWindowState.messages)
+                }
             }
         }
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val session = sessionRepository.getSession(sessionID)
+                _serverBusy.value = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
                 if (session?.title?.isNotBlank() == true) {
                     _sessionTitle.value = session.title
                 }
@@ -621,6 +630,7 @@ class SessionDetailViewModel @Inject constructor(
         }
         messageWindowState = messageWindowState.copy(messages = updatedMessages)
         _messages.value = updatedMessages
+        _serverBusy.value = false
         _sessionStatus.value = SessionStatus.IDLE.name
         _currentBusyStart.value = null
         _runningAnchors.value = emptyMap()
@@ -963,8 +973,8 @@ class SessionDetailViewModel @Inject constructor(
 
     private fun recalculateMessageDerivedState(list: List<SessionMessage>) {
         val lastMsg = list.lastOrNull()
-        val hasBusyAssistant = lastMsg != null && !(lastMsg.type == "assistant" && lastMsg.roundMark)
         val lastAssistant = list.lastOrNull { it.type == "assistant" }
+        val hasBusyAssistant = _serverBusy.value == true
         val lastAssistantFinish = lastAssistant?.let {
             runCatching {
                 Json.parseToJsonElement(it.data).jsonObject["finish"]?.jsonPrimitive?.contentOrNull
@@ -995,22 +1005,9 @@ class SessionDetailViewModel @Inject constructor(
                     sessionRepository.addSessionDuration(currentSessionID!!, increment)
                 } catch (_: Exception) {}
             }
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    sessionRepository.updateSessionStatus(currentSessionID!!, SessionStatus.IDLE.name)
-                } catch (_: Exception) {}
-            }
         }
 
-        val newStatus = if (hasBusyAssistant) SessionStatus.BUSY.name else SessionStatus.IDLE.name
-        if (newStatus != _sessionStatus.value) {
-            _sessionStatus.value = newStatus
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    sessionRepository.updateSessionStatus(currentSessionID!!, newStatus)
-                } catch (_: Exception) {}
-            }
-        }
+        _sessionStatus.value = if (hasBusyAssistant) SessionStatus.BUSY.name else SessionStatus.IDLE.name
         wasBusy = hasBusyAssistant
 
         val lastFinalizedAssistant = list.lastOrNull { it.type == "assistant" && it.roundMark }

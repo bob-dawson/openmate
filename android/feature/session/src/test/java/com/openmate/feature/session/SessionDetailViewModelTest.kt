@@ -771,6 +771,42 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun abort_stopsBusyTimerWhenNoAssistantMessageYet() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                SessionMessage(
+                    id = "u1",
+                    sessionId = SESSION_ID,
+                    type = "user",
+                    data = "{}",
+                    timeCreated = 500L,
+                    timeUpdated = 500L,
+                    roundMark = true,
+                ),
+            ),
+            lastSeq = null,
+            incrementalSyncResults = ArrayDeque(
+                listOf(
+                    SessionMessageSyncResult(lastSeq = 1, changes = emptyList()),
+                    SessionMessageSyncResult(lastSeq = 1, changes = emptyList()),
+                    SessionMessageSyncResult(lastSeq = 1, changes = emptyList()),
+                ),
+            ),
+        )
+        val sessionRepository = FakeSessionRepository()
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            sessionRepository = sessionRepository,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        advanceUntilIdle()
+
+        assertThat(viewModel.currentBusyStart.value).isNull()
+        assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.IDLE.name)
+    }
+
+    @Test
     fun loadSession_restoresRunningAnchorFromIncompleteCompactionMessageAge() = runTest(dispatcher) {
         val messageStartedAt = System.currentTimeMillis() - 125_000L
         val repository = FakeSessionMessageRepository(

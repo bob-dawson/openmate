@@ -58,8 +58,8 @@ fun NavGraphBuilder.sessionScreens(
         val sessionID = backStackEntry.arguments?.getString("sessionID") ?: return@composable
         SessionDetailScreen(
             sessionID = sessionID,
-            onNavigateToSubtask = { subtaskSessionID, title ->
-                navController.navigate("${SessionRoutes.SUBTASK_DETAIL}/$subtaskSessionID?title=${URLEncoder.encode(title, "UTF-8")}")
+            onNavigateToSubtask = { subtaskSessionID, _ ->
+                navController.navigate("${SessionRoutes.SUBTASK_DETAIL}/$subtaskSessionID")
             },
             onNavigateToBrowser = { directory ->
                 val encoded = URLEncoder.encode(directory, "UTF-8")
@@ -69,17 +69,21 @@ fun NavGraphBuilder.sessionScreens(
         )
     }
     composable(
-        route = "${SessionRoutes.SUBTASK_DETAIL}/{subtaskSessionID}?title={title}",
+        route = "${SessionRoutes.SUBTASK_DETAIL}/{subtaskSessionID}",
         arguments = listOf(
             navArgument("subtaskSessionID") { type = NavType.StringType },
-            navArgument("title") { type = NavType.StringType; defaultValue = "Subtask" },
         ),
     ) { backStackEntry ->
         val subtaskSessionID = backStackEntry.arguments?.getString("subtaskSessionID") ?: return@composable
-        val title = URLDecoder.decode(backStackEntry.arguments?.getString("title") ?: "Subtask", "UTF-8")
-        SubtaskDetailScreen(
-            subtaskSessionID = subtaskSessionID,
-            title = title,
+        SessionDetailScreen(
+            sessionID = subtaskSessionID,
+            onNavigateToSubtask = { nestedId, _ ->
+                navController.navigate("${SessionRoutes.SUBTASK_DETAIL}/$nestedId")
+            },
+            onNavigateToBrowser = { directory ->
+                val encoded = URLEncoder.encode(directory, "UTF-8")
+                navController.navigate("${SessionRoutes.WORKSPACE_BROWSER}/$encoded")
+            },
             onBack = { navController.popBackStack() },
         )
     }
