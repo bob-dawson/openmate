@@ -108,6 +108,9 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _serverBusy = MutableStateFlow<Boolean?>(null)
 
+    private val _userModelMap = MutableStateFlow<Map<String, String>>(emptyMap())
+    val userModelMap: StateFlow<Map<String, String>> = _userModelMap.asStateFlow()
+
     private val _pendingQuestions = MutableStateFlow<List<QuestionRequest>>(emptyList())
     val pendingQuestions: StateFlow<List<QuestionRequest>> = _pendingQuestions.asStateFlow()
 
@@ -935,6 +938,7 @@ class SessionDetailViewModel @Inject constructor(
         }
         _isStreaming.value = lastAssistant?.completedAt == null || (lastAssistantFinish != "stop" && lastAssistantFinish != "length")
         _queuedMessageIds.value = buildQueuedMessageIds(list)
+        _userModelMap.value = buildUserModelMap(list)
 
         if (_sessionRetryStatus.value != null) {
             _currentBusyStart.value = null
@@ -1030,6 +1034,34 @@ class SessionDetailViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun buildUserModelMap(list: List<SessionMessage>): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        var currentModel: String? = null
+        for (msg in list) {
+            when (msg.type) {
+                "model-switched" -> {
+                    val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
+                    val model = data?.get("model")?.jsonObject
+                    val provider = model?.get("providerID")?.jsonPrimitive?.contentOrNull ?: ""
+                    val modelId = model?.get("id")?.jsonPrimitive?.contentOrNull ?: ""
+                    currentModel = if (provider.isNotBlank()) "$provider/$modelId" else modelId.ifBlank { null }
+                }
+                "assistant" -> {
+                    val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
+                    val model = data?.get("model")?.jsonObject
+                    val provider = model?.get("providerID")?.jsonPrimitive?.contentOrNull ?: ""
+                    val modelId = model?.get("id")?.jsonPrimitive?.contentOrNull ?: ""
+                    val m = if (provider.isNotBlank()) "$provider/$modelId" else modelId.ifBlank { null }
+                    if (m != null) currentModel = m
+                }
+                "user" -> {
+                    if (currentModel != null) map[msg.id] = currentModel
+                }
+            }
+        }
+        return map
     }
 
     private fun observeTodos(sessionID: String) {

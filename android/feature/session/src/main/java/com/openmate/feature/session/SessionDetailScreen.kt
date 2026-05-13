@@ -152,6 +152,7 @@ fun SessionDetailScreen(
     val previewFileState by viewModel.previewFileState.collectAsState()
     val previewFileContent by viewModel.previewFileContent.collectAsState()
     val previewFileLoading by viewModel.previewFileLoading.collectAsState()
+    val userModelMap by viewModel.userModelMap.collectAsState()
     val savedIndex = rememberSaveable(sessionID) { mutableIntStateOf(0) }
     val savedOffset = rememberSaveable(sessionID) { mutableIntStateOf(0) }
     val listState = rememberLazyListState(
@@ -532,21 +533,7 @@ fun SessionDetailScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
                     items(displayMessages, key = { it.id }) { entity ->
-                        val userModelName = if (entity.type == "user") {
-                            val idx = messages.indexOf(entity)
-                            if (idx > 0) {
-                                val prev = messages[idx - 1]
-                                if (prev.type == "model-switched") {
-                                    runCatching {
-                                        val data = Json.parseToJsonElement(prev.data).jsonObject
-                                        val model = data["model"]?.jsonObject
-                                        val provider = model?.get("providerID")?.jsonPrimitive?.contentOrNull ?: ""
-                                        val modelId = model?.get("id")?.jsonPrimitive?.contentOrNull ?: ""
-                                        if (provider.isNotBlank()) "$provider/$modelId" else modelId
-                                    }.getOrNull()
-                                } else null
-                            } else null
-                        } else null
+                        val userModelName = if (entity.type == "user") userModelMap[entity.id] else null
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning,
