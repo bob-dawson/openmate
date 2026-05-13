@@ -1,0 +1,8 @@
+build/
+.gradle/
+*.db
+sync-result.json
+sync-debugger-error.log
+sessions.json
+tmp-result.json
+*.jar
