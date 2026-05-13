@@ -941,7 +941,7 @@ class SessionDetailViewModel @Inject constructor(
 
         if (hasBusyAssistant) {
             if (_currentBusyStart.value == null) {
-                _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list)
+                _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list) ?: System.currentTimeMillis()
             }
         } else if (wasBusy) {
             val start = _currentBusyStart.value ?: System.currentTimeMillis()
