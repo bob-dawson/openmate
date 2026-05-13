@@ -66,6 +66,9 @@ import kotlinx.serialization.json.jsonObject
 
 private val WarningColor = Color(0xFFFFA500)
 private val AgentColor = Color(0xFF9D7CD8)
+private val AnsiEscapeRegex = Regex("""\u001B\[[0-9;]*[A-Za-z]|\u001B\].*?\u0007|\x1b\[[0-9;]*[A-Za-z]|\x9B[0-9;]*[A-Za-z]""")
+
+internal fun stripAnsi(text: String): String = AnsiEscapeRegex.replace(text, "")
 private val questionJson = Json { ignoreUnknownKeys = true }
 
 sealed class DisplayItem {
@@ -491,7 +494,7 @@ internal fun ErrorToolLine(item: DisplayItem.ToolItem) {
                         .padding(8.dp),
                 ) {
                     Text(
-                        text = err.take(500),
+                        text = stripAnsi(err).take(500),
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -711,14 +714,17 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                             )
                         }
                         item.result?.let { output ->
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = output.take(500),
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 10,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            val cleaned = stripAnsi(output)
+                            if (cleaned.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = cleaned.take(500),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 10,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                     } else if (item.toolName == "edit") {
                         val jsonArgs = try {
@@ -758,7 +764,7 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                         if (oldStr == null && newStr == null) {
                             item.result?.let { output ->
                                 Text(
-                                    text = output.take(500),
+                                    text = stripAnsi(output).take(500),
                                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 10,
@@ -793,7 +799,7 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                         } else {
                             item.result?.let { output ->
                                 Text(
-                                    text = output.take(500),
+                                    text = stripAnsi(output).take(500),
                                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 10,
@@ -842,7 +848,7 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                     } else {
                         item.result?.let { output ->
                             Text(
-                                text = output.take(500),
+                                text = stripAnsi(output).take(500),
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 3,
