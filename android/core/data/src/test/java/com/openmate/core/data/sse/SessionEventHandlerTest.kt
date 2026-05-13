@@ -3,6 +3,7 @@ package com.openmate.core.data.sse
 import com.google.common.truth.Truth.assertThat
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.DatabaseFactory
+import com.openmate.core.database.entity.SessionEntity
 import com.openmate.core.network.SseData
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -27,7 +28,7 @@ class SessionEventHandlerTest {
         dbProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
         retryStateStore = SessionRetryStateStore()
-        handler = SessionEventHandler(dbProvider = dbProvider, retryStateStore = retryStateStore)
+        handler = SessionEventHandler(dbProvider = dbProvider, retryStateStore = retryStateStore, api = com.openmate.core.network.OpencodeApiClient(okhttp3.OkHttpClient()))
     }
 
     @After
@@ -38,6 +39,14 @@ class SessionEventHandlerTest {
 
     @Test
     fun handle_sessionStatusRetry_updatesObservedRetryState() = runTest {
+        dbProvider.getActive().sessionDao().upsert(SessionEntity(
+            id = SESSION_ID,
+            title = "test",
+            directory = "/test",
+            projectID = "proj",
+            createdAt = 0L,
+            updatedAt = 0L,
+        ))
         handler.handle(
             type = "session.status",
             event = sseEvent(

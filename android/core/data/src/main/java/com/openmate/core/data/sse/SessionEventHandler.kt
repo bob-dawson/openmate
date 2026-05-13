@@ -4,7 +4,9 @@ import android.util.Log
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
+import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SseData
+import com.openmate.core.network.dto.toDomain
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
@@ -12,6 +14,7 @@ import javax.inject.Inject
 open class SessionEventHandler @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
     private val retryStateStore: SessionRetryStateStore,
+    private val api: OpencodeApiClient,
 ) {
     suspend fun handle(type: String, event: SseData) {
         val props = event.properties
@@ -27,6 +30,7 @@ open class SessionEventHandler @Inject constructor(
                     val title = info?.get("title")?.jsonPrimitive?.content ?: ""
                     val directory = info?.get("directory")?.jsonPrimitive?.content ?: ""
                     val projectID = info?.get("projectID")?.jsonPrimitive?.content ?: ""
+                    val parentID = info?.get("parentID")?.jsonPrimitive?.content
                     val time = info?.get("time")?.jsonObject
                     val created = time?.get("created")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
                     val updated = time?.get("updated")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
@@ -35,6 +39,7 @@ open class SessionEventHandler @Inject constructor(
                         title = title,
                         directory = directory,
                         projectID = projectID,
+                        parentID = parentID,
                         createdAt = created,
                         updatedAt = updated,
                         status = SessionStatus.IDLE.name,
@@ -105,17 +110,25 @@ open class SessionEventHandler @Inject constructor(
                         val startedAt = if (statusType == "busy" && existing.startedAt == null) now else if (statusType != "busy") null else existing.startedAt
                         db.sessionDao().upsert(existing.copy(status = status, startedAt = startedAt))
                     } else {
-                        val entity = com.openmate.core.database.entity.SessionEntity(
-                            id = sessionID,
-                            title = "",
-                            directory = "",
-                            projectID = "",
-                            createdAt = now,
-                            updatedAt = now,
-                            status = status,
-                            startedAt = if (statusType == "busy") now else null,
-                        )
-                        db.sessionDao().upsert(entity)
+                        try {
+                            val dto = api.getSession(sessionID)
+                            if (dto.parentID != null) return
+                            val domain = dto.toDomain()
+                            val entity = com.openmate.core.database.entity.SessionEntity(
+                                id = domain.id,
+                                title = domain.title,
+                                directory = domain.directory,
+                                projectID = domain.projectID,
+                                parentID = domain.parentID,
+                                createdAt = domain.createdAt,
+                                updatedAt = domain.updatedAt,
+                                status = status,
+                                startedAt = if (statusType == "busy") now else null,
+                            )
+                            db.sessionDao().upsert(entity)
+                        } catch (e: Exception) {
+                            Log.w("SessionEventHandler", "session.status: fetch session failed, skipping", e)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w("SessionEventHandler", "session.status failed", e)
