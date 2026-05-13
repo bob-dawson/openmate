@@ -421,6 +421,7 @@ class SessionDetailViewModel @Inject constructor(
             val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
             _serverBusy.value = busy
             _sessionStatus.value = if (busy) SessionStatus.BUSY.name else SessionStatus.IDLE.name
+            _currentBusyStart.value = session?.startedAt
             if (session?.title?.isNotBlank() == true) {
                 _sessionTitle.value = session.title
             }
@@ -445,6 +446,9 @@ class SessionDetailViewModel @Inject constructor(
                 val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
                 if (_serverBusy.value != busy) {
                     _serverBusy.value = busy
+                    if (busy && _currentBusyStart.value == null) {
+                        _currentBusyStart.value = session?.startedAt ?: System.currentTimeMillis()
+                    }
                     recalculateMessageDerivedState(messageWindowState.messages)
                 }
             }

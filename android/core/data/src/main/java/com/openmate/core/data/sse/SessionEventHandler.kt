@@ -100,17 +100,20 @@ open class SessionEventHandler @Inject constructor(
                         retryStateStore.update(sessionID, null)
                     }
                     val existing = db.sessionDao().getById(sessionID)
+                    val now = System.currentTimeMillis()
                     if (existing != null) {
-                        db.sessionDao().upsert(existing.copy(status = status))
+                        val startedAt = if (statusType == "busy" && existing.startedAt == null) now else if (statusType != "busy") null else existing.startedAt
+                        db.sessionDao().upsert(existing.copy(status = status, startedAt = startedAt))
                     } else {
                         val entity = com.openmate.core.database.entity.SessionEntity(
                             id = sessionID,
                             title = "",
                             directory = "",
                             projectID = "",
-                            createdAt = System.currentTimeMillis(),
-                            updatedAt = System.currentTimeMillis(),
+                            createdAt = now,
+                            updatedAt = now,
                             status = status,
+                            startedAt = if (statusType == "busy") now else null,
                         )
                         db.sessionDao().upsert(entity)
                     }

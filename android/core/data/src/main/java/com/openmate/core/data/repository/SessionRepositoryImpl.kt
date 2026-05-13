@@ -104,11 +104,19 @@ class SessionRepositoryImpl @Inject constructor(
         try {
             val statusMap = api.getSessionStatuses()
             val dao = dbProvider.getActive().sessionDao()
+            val now = System.currentTimeMillis()
             for ((sessionID, statusDto) in statusMap) {
+                val newStatus = statusDto.toDomain().name
                 val existing = dao.getById(sessionID)
-                val statusName = statusDto.toDomain().name
                 if (existing != null) {
-                    dao.upsert(existing.copy(status = statusName))
+                    if (existing.status == newStatus) continue
+                    val isBusy = newStatus == SessionStatus.BUSY.name || newStatus == SessionStatus.RUNNING.name
+                    val startedAt = when {
+                        isBusy && existing.startedAt == null -> now
+                        !isBusy -> null
+                        else -> existing.startedAt
+                    }
+                    dao.upsert(existing.copy(status = newStatus, startedAt = startedAt))
                 } else {
                     dao.upsert(
                         com.openmate.core.database.entity.SessionEntity(
@@ -116,9 +124,10 @@ class SessionRepositoryImpl @Inject constructor(
                             title = "",
                             directory = "",
                             projectID = "",
-                            createdAt = System.currentTimeMillis(),
-                            updatedAt = System.currentTimeMillis(),
-                            status = statusName,
+                            createdAt = now,
+                            updatedAt = now,
+                            status = newStatus,
+                            startedAt = if (newStatus == SessionStatus.BUSY.name || newStatus == SessionStatus.RUNNING.name) now else null,
                         )
                     )
                 }
@@ -128,35 +137,9 @@ class SessionRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun refreshSessionStatusesFromMessages() {
-        try {
-            val statuses = api.getSessionStatuses()
-            val db = dbProvider.getActive()
-            for ((sessionID, statusDto) in statuses) {
-                val newStatus = statusDto.toDomain().name
-                val existing = db.sessionDao().getById(sessionID)
-                if (existing != null && existing.status != newStatus) {
-                    db.sessionDao().updateStatus(sessionID, newStatus)
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("SessionRepository", "refreshSessionStatusesFromAPI failed", e)
-        }
-    }
+    override suspend fun refreshSessionStatusesFromMessages() = refreshSessionStatuses()
 
-    override suspend fun syncSessionStatusFromRemote(sessionID: String) {
-        try {
-            val directory = dbProvider.getActive().sessionDao().getById(sessionID)?.directory?.ifBlank { null }
-            val page = api.getMessageHeaders(sessionID, 1, null, directory)
-            val hasIncomplete = page.items.any { it.info.role == "assistant" && it.info.time.completed == null }
-            val newStatus = if (hasIncomplete) SessionStatus.BUSY.name else SessionStatus.IDLE.name
-            val db = dbProvider.getActive()
-            val existing = db.sessionDao().getById(sessionID)
-            if (existing != null && existing.status != newStatus) {
-                db.sessionDao().updateStatus(sessionID, newStatus)
-            }
-        } catch (_: Exception) {}
-    }
+    override suspend fun syncSessionStatusFromRemote(sessionID: String) = refreshSessionStatuses()
 
     override fun observeSessions(directory: String?): Flow<List<Session>> {
         val dao = dbProvider.getActive().sessionDao()
