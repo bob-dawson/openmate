@@ -417,6 +417,27 @@ class SessionDetailViewModel @Inject constructor(
         wasBusy = false
 
         viewModelScope.launch(Dispatchers.IO) {
+            val session = sessionRepository.getSession(sessionID)
+            val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
+            _serverBusy.value = busy
+            _sessionStatus.value = if (busy) SessionStatus.BUSY.name else SessionStatus.IDLE.name
+            if (session?.title?.isNotBlank() == true) {
+                _sessionTitle.value = session.title
+            }
+            currentDirectory = session?.directory ?: ""
+            loadCachedProviders()?.let { _providers.value = it }
+            sseEventRepository.setActiveSessionScope(currentDirectory.ifBlank { null }, enabled = true)
+            if (session?.totalDuration != null && _sessionTotalDuration.value == null) {
+                _sessionTotalDuration.value = session.totalDuration
+            }
+            val sPID = session?.modelProviderID
+            val sMID = session?.modelID
+            if (sPID != null && sMID != null && _selectedModel.value == null) {
+                applySelectedModel(ModelRef(sPID, sMID, session.modelName ?: sMID))
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
             sessionRepository.observeSession(sessionID).collect { session ->
                 if (session != null && session.title.isNotBlank()) {
                     _sessionTitle.value = session.title
@@ -426,29 +447,6 @@ class SessionDetailViewModel @Inject constructor(
                     _serverBusy.value = busy
                     recalculateMessageDerivedState(messageWindowState.messages)
                 }
-            }
-        }
-
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val session = sessionRepository.getSession(sessionID)
-                _serverBusy.value = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
-                if (session?.title?.isNotBlank() == true) {
-                    _sessionTitle.value = session.title
-                }
-                currentDirectory = session?.directory ?: ""
-                loadCachedProviders()?.let { _providers.value = it }
-                sseEventRepository.setActiveSessionScope(currentDirectory.ifBlank { null }, enabled = true)
-                if (session?.totalDuration != null && _sessionTotalDuration.value == null) {
-                    _sessionTotalDuration.value = session.totalDuration
-                }
-                val sPID = session?.modelProviderID
-                val sMID = session?.modelID
-                if (sPID != null && sMID != null && _selectedModel.value == null) {
-                    applySelectedModel(ModelRef(sPID, sMID, session.modelName ?: sMID))
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "loadSession title API failed", e)
             }
         }
 
