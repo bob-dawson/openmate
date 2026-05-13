@@ -140,148 +140,146 @@ class SessionMessageRepositoryImpl @Inject constructor(
         )
 
         try {
-            val payload = syncApiClient.eventsPayload(sessionId, syncState.lastSeq)
-            val response = payload.response
-            val t1 = System.currentTimeMillis()
-            val packageBytes = payload.rawBody.toByteArray(Charsets.UTF_8).size
-            if (response.events.isEmpty()) {
-                Log.d("SyncRepo", "<< incrementalSync END: no new events (${t1 - t0}ms)")
-                val lastSeq = response.maxSeq ?: syncState.lastSeq
-                if (lastSeq != syncState.lastSeq) {
-                    db.syncStateDao().upsert(SyncStateEntity(sessionId, lastSeq))
+            var afterSeq = syncState.lastSeq
+            val allAppliedChanges = mutableListOf<SessionMessageSyncChange>()
+            var totalEvents = 0
+            var totalBytes = 0L
+            var batchIndex = 0
+
+            while (true) {
+                batchIndex++
+                val payload = syncApiClient.eventsPayload(sessionId, afterSeq)
+                val response = payload.response
+                val packageBytes = payload.rawBody.toByteArray(Charsets.UTF_8).size
+                totalBytes += packageBytes
+
+                if (response.events.isEmpty()) {
+                    val lastSeq = response.maxSeq ?: afterSeq
+                    if (lastSeq != afterSeq) {
+                        db.syncStateDao().upsert(SyncStateEntity(sessionId, lastSeq))
+                    }
+                    Log.d("SyncRepo", "<< incrementalSync END: no more events (batch=$batchIndex totalEvts=$totalEvents totalBytes=$totalBytes ${System.currentTimeMillis() - t0}ms)")
+                    logStore.log(
+                        level = SyncLogLevel.Info,
+                        category = SyncLogCategory.Sync,
+                        sessionId = sessionId,
+                        title = "增量同步结束",
+                        message = "incremental sync completed batches=$batchIndex applied=${allAppliedChanges.size} totalEvents=$totalEvents cost=${System.currentTimeMillis() - t0}ms totalBytes=$totalBytes",
+                        bytes = totalBytes.toInt(),
+                        relatedSeq = lastSeq,
+                        traceId = traceId,
+                    )
+                    return SessionMessageSyncResult(lastSeq = lastSeq, changes = allAppliedChanges)
                 }
+
+                val eventCount = response.events.size
+                totalEvents += eventCount
+                Log.d("SyncRepo", "  batch $batchIndex: $eventCount events, maxSeq=${response.maxSeq}")
                 logStore.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sync,
                     sessionId = sessionId,
-                    title = "增量同步结束",
-                    message = "incremental sync completed applied=0 cost=${t1 - t0}ms totalBytes=$packageBytes",
+                    title = "增量包返回",
+                    message = "batch=$batchIndex eventCount=$eventCount maxSeq=${response.maxSeq}",
                     bytes = packageBytes,
-                    relatedSeq = lastSeq,
                     traceId = traceId,
                 )
-                return SessionMessageSyncResult(lastSeq = lastSeq, changes = emptyList())
-            }
-            Log.d("SyncRepo", "  fetch events: ${response.events.size} events in ${t1 - t0}ms, maxSeq=${response.maxSeq}")
-            logStore.log(
-                level = SyncLogLevel.Info,
-                category = SyncLogCategory.Sync,
-                sessionId = sessionId,
-                title = "增量包返回",
-                message = "events response received eventCount=${response.events.size} maxSeq=${response.maxSeq}",
-                bytes = packageBytes,
-                traceId = traceId,
-            )
 
-            val loader = EventReplayer.DbLoader { action ->
-                when (action) {
-                    is EventReplayer.DbLoader.Action.LoadById ->
-                        db.sessionMessageDao().getById(action.id)
-                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
-                        db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
-                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
-                        db.sessionMessageDao().getLatestIncompleteCompaction(action.sessionId)
-                    is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId ->
-                        db.sessionMessageDao().getAssistantByToolCallId(action.sessionId, action.callID)
-                }
-            }
-
-            val replayer = EventReplayer()
-            val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
-            response.events.forEachIndexed { index, event ->
-                val rawEventBody = payload.rawEventBodies.getOrNull(index)
-                val bytesValue = rawEventBody?.toByteArray(Charsets.UTF_8)?.size
-                    ?: json.encodeToString(event).toByteArray(Charsets.UTF_8).size
-                logStore.log(
-                    level = SyncLogLevel.Info,
-                    category = SyncLogCategory.Sync,
-                    sessionId = sessionId,
-                    title = "增量消息处理",
-                    message = "event type=${event.type} aggregateId=${event.aggregateId}",
-                    bytes = bytesValue,
-                    relatedSeq = event.seq,
-                    traceId = traceId,
-                )
-            }
-            val changes = replayer.replay(events, sessionId, loader)
-            val t2 = System.currentTimeMillis()
-            Log.d("SyncRepo", "  replay: ${events.size} events -> ${changes.size} changes in ${t2 - t1}ms")
-
-            val coalesced = mutableMapOf<String, ReplayChange>()
-            for (change in changes) {
-                val key = when (change) {
-                    is ReplayChange.Insert -> change.entity.id
-                    is ReplayChange.Update -> change.id
-                }
-                val prev = coalesced[key]
-                if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
-                    val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-                    coalesced[key] = ReplayChange.Insert(prev.entity.copy(
-                        data = change.data.toString(),
-                        timeUpdated = change.timeUpdated,
-                        completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
-                        roundMark = change.roundMark ?: prev.entity.roundMark,
-                    ))
-                } else {
-                    coalesced[key] = change
-                }
-            }
-            logStore.log(
-                level = SyncLogLevel.Info,
-                category = SyncLogCategory.Sync,
-                sessionId = sessionId,
-                title = "Replay结果",
-                message = "replay finished eventCount=${events.size} changeCount=${changes.size} coalescedWrites=${coalesced.size}",
-                traceId = traceId,
-            )
-
-            val appliedChanges = mutableListOf<SessionMessageSyncChange>()
-            db.withTransaction {
-                for (change in coalesced.values) {
-                    when (change) {
-                        is ReplayChange.Insert -> {
-                            db.sessionMessageDao().upsert(change.entity)
-                            appliedChanges += SessionMessageSyncChange.Insert(change.entity.toDomain())
-                        }
-                        is ReplayChange.Update -> {
-                            val existing = db.sessionMessageDao().getById(change.id) ?: continue
-                            val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-                            val updated = SessionMessageEntity(
-                                id = change.id,
-                                sessionId = existing.sessionId,
-                                type = existing.type,
-                                data = change.data.toString(),
-                                timeCreated = existing.timeCreated,
-                                timeUpdated = change.timeUpdated,
-                                completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
-                                roundMark = change.roundMark ?: existing.roundMark,
-                            )
-                            db.sessionMessageDao().upsert(updated)
-                            appliedChanges += SessionMessageSyncChange.Update(updated.toDomain())
-                        }
+                val loader = EventReplayer.DbLoader { action ->
+                    when (action) {
+                        is EventReplayer.DbLoader.Action.LoadById ->
+                            db.sessionMessageDao().getById(action.id)
+                        is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
+                            db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
+                        is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
+                            db.sessionMessageDao().getLatestIncompleteCompaction(action.sessionId)
+                        is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId ->
+                            db.sessionMessageDao().getAssistantByToolCallId(action.sessionId, action.callID)
                     }
                 }
 
-                val seq = response.maxSeq ?: 0L
-                db.syncStateDao().upsert(SyncStateEntity(sessionId, seq))
-                val t3 = System.currentTimeMillis()
-                Log.d("SyncRepo", "<< incrementalSync END: ${events.size} evts -> ${changes.size} chgs -> ${coalesced.size} writes, lastSeq=$seq, db=${t3 - t2}ms, total=${t3 - t0}ms")
-                logStore.log(
-                    level = SyncLogLevel.Info,
-                    category = SyncLogCategory.Sync,
-                    sessionId = sessionId,
-                    title = "增量同步结束",
-                    message = "incremental sync completed applied=${appliedChanges.size} cost=${t3 - t0}ms totalBytes=$packageBytes",
-                    bytes = packageBytes,
-                    relatedSeq = seq,
-                    traceId = traceId,
-                )
-            }
+                val replayer = EventReplayer()
+                val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
+                response.events.forEachIndexed { index, event ->
+                    val rawEventBody = payload.rawEventBodies.getOrNull(index)
+                    val bytesValue = rawEventBody?.toByteArray(Charsets.UTF_8)?.size
+                        ?: json.encodeToString(event).toByteArray(Charsets.UTF_8).size
+                    logStore.log(
+                        level = SyncLogLevel.Info,
+                        category = SyncLogCategory.Sync,
+                        sessionId = sessionId,
+                        title = "增量消息处理",
+                        message = "event type=${event.type} aggregateId=${event.aggregateId}",
+                        bytes = bytesValue,
+                        relatedSeq = event.seq,
+                        traceId = traceId,
+                    )
+                }
+                val changes = replayer.replay(events, sessionId, loader)
+                Log.d("SyncRepo", "  replay: ${events.size} events -> ${changes.size} changes")
 
-            return SessionMessageSyncResult(
-                lastSeq = response.maxSeq ?: syncState.lastSeq,
-                changes = appliedChanges,
-            )
+                val coalesced = mutableMapOf<String, ReplayChange>()
+                for (change in changes) {
+                    val key = when (change) {
+                        is ReplayChange.Insert -> change.entity.id
+                        is ReplayChange.Update -> change.id
+                    }
+                    val prev = coalesced[key]
+                    if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
+                        val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
+                        coalesced[key] = ReplayChange.Insert(prev.entity.copy(
+                            data = change.data.toString(),
+                            timeUpdated = change.timeUpdated,
+                            completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
+                            roundMark = change.roundMark ?: prev.entity.roundMark,
+                        ))
+                    } else {
+                        coalesced[key] = change
+                    }
+                }
+
+                db.withTransaction {
+                    val batchChanges = mutableListOf<SessionMessageSyncChange>()
+                    for (change in coalesced.values) {
+                        when (change) {
+                            is ReplayChange.Insert -> {
+                                db.sessionMessageDao().upsert(change.entity)
+                                batchChanges += SessionMessageSyncChange.Insert(change.entity.toDomain())
+                                allAppliedChanges += SessionMessageSyncChange.Insert(change.entity.toDomain())
+                            }
+                            is ReplayChange.Update -> {
+                                val existing = db.sessionMessageDao().getById(change.id) ?: continue
+                                val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
+                                val updated = SessionMessageEntity(
+                                    id = change.id,
+                                    sessionId = existing.sessionId,
+                                    type = existing.type,
+                                    data = change.data.toString(),
+                                    timeCreated = existing.timeCreated,
+                                    timeUpdated = change.timeUpdated,
+                                    completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
+                                    roundMark = change.roundMark ?: existing.roundMark,
+                                )
+                                db.sessionMessageDao().upsert(updated)
+                                batchChanges += SessionMessageSyncChange.Update(updated.toDomain())
+                                allAppliedChanges += SessionMessageSyncChange.Update(updated.toDomain())
+                            }
+                        }
+                    }
+
+                    val batchMaxSeq = response.events.maxOfOrNull { it.seq }
+                    val newSeq = batchMaxSeq?.let { maxOf(afterSeq, it) } ?: afterSeq
+                    db.syncStateDao().upsert(SyncStateEntity(sessionId, newSeq))
+                    afterSeq = newSeq
+
+                    if (batchChanges.isNotEmpty()) {
+                        syncEvents.emit(SessionMessageSyncEvent(
+                            sessionId = sessionId,
+                            result = SessionMessageSyncResult(lastSeq = newSeq, changes = batchChanges),
+                        ))
+                    }
+                }
+            }
         } catch (e: Exception) {
             val totalMs = System.currentTimeMillis() - t0
             logStore.log(
@@ -297,9 +295,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
     }
 
     override suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult {
-        val result = incrementalSync(sessionId)
-        syncEvents.emit(SessionMessageSyncEvent(sessionId = sessionId, result = result))
-        return result
+        return incrementalSync(sessionId)
     }
 
     override suspend fun fetchFullMessage(sessionId: String, messageId: String) {

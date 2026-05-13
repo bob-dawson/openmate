@@ -29,12 +29,12 @@ class SyncApiClient @Inject constructor(
             json.decodeFromString<InitResponseDto>(body)
         }
 
-    suspend fun events(sessionId: String, afterSeq: Long): EventsResponseDto =
-        eventsPayload(sessionId, afterSeq).response
+    suspend fun events(sessionId: String, afterSeq: Long, limit: Int = 100): EventsResponseDto =
+        eventsPayload(sessionId, afterSeq, limit).response
 
-    suspend fun eventsPayload(sessionId: String, afterSeq: Long): EventsPayloadDto =
+    suspend fun eventsPayload(sessionId: String, afterSeq: Long, limit: Int = 100): EventsPayloadDto =
         withContext(Dispatchers.IO) {
-            val url = "$baseUrl/api/bridge/sync/session/$sessionId/events?afterSeq=$afterSeq"
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/events?afterSeq=$afterSeq&limit=$limit"
             val request = Request.Builder().url(url).get().build()
             val response = client.newCall(request).execute()
             val body = response.body?.string() ?: throw Exception("Empty response")

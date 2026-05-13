@@ -11,6 +11,7 @@ data class StepResult(
     val changeType: String? = null,
     val changeDetail: String? = null,
     val skipReason: String? = null,
+    val batch: Int = 1,
 )
 
 @Serializable
@@ -25,6 +26,7 @@ data class SyncResult(
     val sessionId: String,
     val afterSeq: Long,
     val totalEvents: Int,
+    val batches: Int = 1,
     val steps: List<StepResult>,
     val summary: Summary,
 )
@@ -44,14 +46,15 @@ class OutputFormatter {
         } ?: "null"
         val changeStr = step.changeType?.let { "$it ${step.changeDetail?.takeLast(8) ?: ""}" } ?: "SKIP"
         val skipStr = step.skipReason?.let { " ($it)" } ?: ""
-        return "[seq=${step.seq}] ${step.eventType} | cache=$cacheStr | $changeStr$skipStr"
+        val batchStr = if (step.batch > 1) "[B${step.batch}]" else ""
+        return "[seq=${step.seq}]$batchStr ${step.eventType} | cache=$cacheStr | $changeStr$skipStr"
     }
 
     fun formatSummaryConsole(result: SyncResult): String {
         return """
             |=== Summary ===
             |Session: ${result.sessionId}
-            |Events: ${result.totalEvents}
+            |Events: ${result.totalEvents} (batches=${result.batches})
             |Changes: ${result.summary.totalChanges}
             |Skipped: ${result.summary.skippedEvents}
             |Skip reasons: ${result.summary.skipReasons}

@@ -18,6 +18,7 @@ pub struct InitQuery {
 #[serde(rename_all = "camelCase")]
 pub struct EventsQuery {
     pub after_seq: Option<i64>,
+    pub limit: Option<i64>,
 }
 
 pub async fn init(
@@ -53,12 +54,22 @@ pub async fn events(
     Query(query): Query<EventsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
     let after_seq = query.after_seq.unwrap_or(0);
+    let limit = query.limit.unwrap_or(100);
     let (events, max_seq) = state.sync_db
-        .get_events(&session_id, after_seq)
+        .get_events(&session_id, after_seq, limit)
         .map_err(|e| AppError::DatabaseError(e))?;
 
+    let truncated: Vec<Value> = events.into_iter().map(|mut evt| {
+        if let Some(data_val) = evt.get("data") {
+            let evt_type = evt["type"].as_str().unwrap_or("");
+            let truncated_data = super::truncate::truncate_event(evt_type, data_val);
+            evt["data"] = truncated_data;
+        }
+        evt
+    }).collect();
+
     Ok(Json(json!({
-        "events": events,
+        "events": truncated,
         "maxSeq": max_seq,
     })))
 }

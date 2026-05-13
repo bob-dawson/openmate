@@ -65,16 +65,8 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
             }
 
             val effectiveAfterSeq = afterSeq ?: dao.getSyncState(sessionId)?.lastSeq ?: 0L
-            println("Fetching events after seq=$effectiveAfterSeq...")
-
-            val eventsResponse = client.getEvents(sessionId, effectiveAfterSeq)
-            val events = eventsResponse.events
-            println("Got ${events.size} events, maxSeq=${eventsResponse.maxSeq}")
-
-            if (events.isEmpty()) {
-                println("No new events.")
-                return@runBlocking
-            }
+            var currentAfterSeq = effectiveAfterSeq
+            println("Fetching events after seq=$currentAfterSeq (paginated)...")
 
             val loader = EventReplayer.DbLoader { action ->
                 when (action) {
@@ -93,95 +85,122 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
             val allChanges = mutableListOf<ReplayChange>()
             val steps = mutableListOf<StepResult>()
             val skipReasons = mutableMapOf<String, Int>()
+            var totalEvents = 0
+            var batchIndex = 0
 
-            for (event in events) {
-                val singleEvent = listOf(ReplayEvent(event.id, event.type, event.data))
-                val changes = replayer.replay(singleEvent, sessionId, loader)
-                allChanges.addAll(changes)
+            while (true) {
+                batchIndex++
+                val eventsResponse = client.getEvents(sessionId, currentAfterSeq)
+                val events = eventsResponse.events
+                println("Batch $batchIndex: got ${events.size} events, maxSeq=${eventsResponse.maxSeq}")
 
-                val (cacheId, cacheType, toolCount) = replayer.getCacheState()
-                val cacheState = CacheSnapshot(id = cacheId, type = cacheType, toolCount = toolCount)
-                val change = changes.firstOrNull()
-                val skipReason = if (changes.isEmpty()) "noChange" else null
-
-                if (skipReason != null) {
-                    skipReasons[skipReason] = (skipReasons[skipReason] ?: 0) + 1
-                }
-
-                val step = StepResult(
-                    seq = event.seq,
-                    eventType = event.type,
-                    eventId = event.id,
-                    cacheState = cacheState,
-                    changeType = when (change) {
-                        is ReplayChange.Insert -> "INSERT ${change.entity.type}"
-                        is ReplayChange.Update -> "UPDATE ${change.type} ${change.id}"
-                        null -> null
-                    },
-                    changeDetail = when (change) {
-                        is ReplayChange.Insert -> change.entity.id
-                        is ReplayChange.Update -> change.id
-                        null -> null
-                    },
-                    skipReason = skipReason,
-                )
-                steps += step
-
-                if (!jsonOnly) {
-                    println(OutputFormatter().formatStepConsole(step))
-                }
-            }
-
-            db.transaction {
-                val coalesced = mutableMapOf<String, ReplayChange>()
-                for (change in allChanges) {
-                    val key = when (change) {
-                        is ReplayChange.Insert -> change.entity.id
-                        is ReplayChange.Update -> change.id
+                if (events.isEmpty()) {
+                    val lastSeq = eventsResponse.maxSeq ?: currentAfterSeq
+                    if (lastSeq != currentAfterSeq) {
+                        dao.upsertSyncState(SyncStateEntity(sessionId, lastSeq))
                     }
-                    val prev = coalesced[key]
-                    if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
-                        val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-                        coalesced[key] = ReplayChange.Insert(prev.entity.copy(
-                            data = change.data.toString(),
-                            timeUpdated = change.timeUpdated,
-                            completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
-                            roundMark = change.roundMark ?: prev.entity.roundMark,
-                        ))
-                    } else {
-                        coalesced[key] = change
+                    println("No more events (batches=$batchIndex totalEvents=$totalEvents)")
+                    break
+                }
+
+                totalEvents += events.size
+
+                val batchChanges = mutableListOf<ReplayChange>()
+
+                for (event in events) {
+                    val singleEvent = listOf(ReplayEvent(event.id, event.type, event.data))
+                    val changes = replayer.replay(singleEvent, sessionId, loader)
+                    batchChanges.addAll(changes)
+                    allChanges.addAll(changes)
+
+                    val (cacheId, cacheType, toolCount) = replayer.getCacheState()
+                    val cacheState = CacheSnapshot(id = cacheId, type = cacheType, toolCount = toolCount)
+                    val change = changes.firstOrNull()
+                    val skipReason = if (changes.isEmpty()) "noChange" else null
+
+                    if (skipReason != null) {
+                        skipReasons[skipReason] = (skipReasons[skipReason] ?: 0) + 1
+                    }
+
+                    val step = StepResult(
+                        seq = event.seq,
+                        eventType = event.type,
+                        eventId = event.id,
+                        cacheState = cacheState,
+                        changeType = when (change) {
+                            is ReplayChange.Insert -> "INSERT ${change.entity.type}"
+                            is ReplayChange.Update -> "UPDATE ${change.type} ${change.id}"
+                            null -> null
+                        },
+                        changeDetail = when (change) {
+                            is ReplayChange.Insert -> change.entity.id
+                            is ReplayChange.Update -> change.id
+                            null -> null
+                        },
+                        skipReason = skipReason,
+                        batch = batchIndex,
+                    )
+                    steps += step
+
+                    if (!jsonOnly) {
+                        println(OutputFormatter().formatStepConsole(step))
                     }
                 }
 
-                for (change in coalesced.values) {
-                    when (change) {
-                        is ReplayChange.Insert -> dao.upsert(change.entity)
-                        is ReplayChange.Update -> {
-                            val existing = dao.getById(change.id) ?: continue
+                db.transaction {
+                    val coalesced = mutableMapOf<String, ReplayChange>()
+                    for (change in batchChanges) {
+                        val key = when (change) {
+                            is ReplayChange.Insert -> change.entity.id
+                            is ReplayChange.Update -> change.id
+                        }
+                        val prev = coalesced[key]
+                        if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
                             val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-                            val updated = SessionMessageEntity(
-                                id = change.id,
-                                sessionId = existing.sessionId,
-                                type = existing.type,
+                            coalesced[key] = ReplayChange.Insert(prev.entity.copy(
                                 data = change.data.toString(),
-                                timeCreated = existing.timeCreated,
                                 timeUpdated = change.timeUpdated,
-                                completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
-                                roundMark = change.roundMark ?: existing.roundMark,
-                            )
-                            dao.upsert(updated)
+                                completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
+                                roundMark = change.roundMark ?: prev.entity.roundMark,
+                            ))
+                        } else {
+                            coalesced[key] = change
                         }
                     }
-                }
 
-                val maxSeq = eventsResponse.maxSeq ?: effectiveAfterSeq
-                dao.upsertSyncState(SyncStateEntity(sessionId, maxSeq))
+                    for (change in coalesced.values) {
+                        when (change) {
+                            is ReplayChange.Insert -> dao.upsert(change.entity)
+                            is ReplayChange.Update -> {
+                                val existing = dao.getById(change.id) ?: continue
+                                val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
+                                val updated = SessionMessageEntity(
+                                    id = change.id,
+                                    sessionId = existing.sessionId,
+                                    type = existing.type,
+                                    data = change.data.toString(),
+                                    timeCreated = existing.timeCreated,
+                                    timeUpdated = change.timeUpdated,
+                                    completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
+                                    roundMark = change.roundMark ?: existing.roundMark,
+                                )
+                                dao.upsert(updated)
+                            }
+                        }
+                    }
+
+                    val batchMaxSeq = events.maxOfOrNull { it.seq }
+                    val newSeq = batchMaxSeq?.let { maxOf(currentAfterSeq, it) } ?: currentAfterSeq
+                    dao.upsertSyncState(SyncStateEntity(sessionId, newSeq))
+                    currentAfterSeq = newSeq
+                }
             }
 
             val result = SyncResult(
                 sessionId = sessionId,
                 afterSeq = effectiveAfterSeq,
-                totalEvents = events.size,
+                totalEvents = totalEvents,
+                batches = batchIndex,
                 steps = steps,
                 summary = Summary(
                     totalChanges = allChanges.size,

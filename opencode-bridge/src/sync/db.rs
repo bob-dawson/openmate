@@ -94,16 +94,17 @@ impl SyncDb {
         Ok((messages, max_seq))
     }
 
-    pub fn get_events(&self, session_id: &str, after_seq: i64) -> Result<(Vec<Value>, Option<i64>), String> {
+    pub fn get_events(&self, session_id: &str, after_seq: i64, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
         let conn = self.connect()?;
         let mut stmt = conn.prepare(
             "SELECT id, aggregate_id, seq, type, data
              FROM event
              WHERE aggregate_id = ? AND seq > ?
-             ORDER BY seq"
+             ORDER BY seq
+             LIMIT ?"
         ).map_err(|e| format!("Prepare failed: {}", e))?;
 
-        let events: Vec<Value> = stmt.query_map(params![session_id, after_seq], |row| {
+        let events: Vec<Value> = stmt.query_map(params![session_id, after_seq, limit], |row| {
             let id: String = row.get(0)?;
             let aggregate_id: String = row.get(1)?;
             let seq: i64 = row.get(2)?;

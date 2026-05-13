@@ -10,6 +10,254 @@ pub fn truncate_message(msg_type: &str, data: &Value) -> Value {
     }
 }
 
+fn base_event_type(event_type: &str) -> &str {
+    if let Some(pos) = event_type.rfind('.') {
+        let suffix = &event_type[pos + 1..];
+        if suffix.chars().all(|c| c.is_ascii_digit()) {
+            return &event_type[..pos];
+        }
+    }
+    event_type
+}
+
+pub fn truncate_event(event_type: &str, data: &Value) -> Value {
+    let base = base_event_type(event_type);
+    match base {
+        "session.next.step.started" | "session.next.step.ended" => truncate_event_step(data),
+        "session.next.reasoning.ended" => truncate_event_reasoning_ended(data),
+        "session.next.tool.called" => truncate_event_tool_called(data),
+        "session.next.tool.success" | "session.next.tool.progress" => {
+            truncate_event_tool_result(data)
+        }
+        "session.next.compaction.ended" => truncate_event_compaction_ended(data),
+        "session.next.shell.ended" => truncate_event_shell_ended(data),
+        "session.next.prompted" => truncate_event_prompted(data),
+        "message.part.updated" => truncate_event_part_updated(data),
+        _ => data.clone(),
+    }
+}
+
+fn truncate_event_step(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        obj.remove("snapshot");
+    }
+    result
+}
+
+fn truncate_event_reasoning_ended(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
+            let truncated = truncate_ends_chars(text, 100);
+            obj.insert(String::from("text"), Value::String(truncated));
+        }
+    }
+    result
+}
+
+fn truncate_tool_input(tool_name: &str, input: &Value) -> Value {
+    match tool_name {
+        "bash" => keep_fields(input, &["command"]),
+        "read" => keep_fields(input, &["filePath"]),
+        "write" => keep_fields(input, &["filePath"]),
+        "edit" => keep_fields(input, &["filePath"]),
+        "glob" => keep_fields(input, &["pattern", "path"]),
+        "grep" => keep_fields(input, &["pattern", "path", "include"]),
+        "task" => keep_fields(input, &["description", "subagent_type"]),
+        "webfetch" => keep_fields(input, &["url", "format"]),
+        "websearch" => keep_fields(input, &["query"]),
+        "skill" => keep_fields(input, &["name"]),
+        "lsp" => keep_fields(input, &["operation", "filePath", "line", "character", "query"]),
+        "question" | "todowrite" => input.clone(),
+        _ => keep_fields(input, &["name"]),
+    }
+}
+
+fn truncate_event_tool_called(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        if let Some(input) = obj.get("input").cloned() {
+            let tool_name = obj
+                .get("tool")
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+            obj.insert(String::from("input"), truncate_tool_input(tool_name, &input));
+        }
+    }
+    result
+}
+
+fn truncate_event_tool_result(data: &Value) -> Value {
+    let mut result = data.clone();
+    let obj = match result.as_object_mut() {
+        Some(o) => o,
+        None => return result,
+    };
+
+    if let Some(structured) = obj.get("structured") {
+        if structured.to_string().len() > 500 {
+            obj.remove("structured");
+        }
+    }
+
+    if let Some(content) = obj.get_mut("content").and_then(|c| c.as_array_mut()) {
+        for item in content.iter_mut() {
+            match item.get("type").and_then(|t| t.as_str()) {
+                Some("text") => {
+                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                        if text.len() > 500 {
+                            let truncated = truncate_bash_output(text, 5, 5);
+                            if let Some(io) = item.as_object_mut() {
+                                io.insert(String::from("text"), Value::String(truncated));
+                            }
+                        }
+                    }
+                }
+                Some("file") | Some("image") => {
+                    if let Some(io) = item.as_object_mut() {
+                        io.remove("data");
+                        io.remove("content");
+                        io.remove("source");
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    result
+}
+
+fn truncate_event_compaction_ended(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        obj.remove("include");
+        if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
+            let truncated = truncate_ends_lines(text, 10, 10);
+            obj.insert(String::from("text"), Value::String(truncated));
+        }
+    }
+    result
+}
+
+fn truncate_event_shell_ended(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        if let Some(output) = obj.get("output").and_then(|o| o.as_str()) {
+            let truncated = truncate_bash_output(output, 5, 5);
+            obj.insert(String::from("output"), Value::String(truncated));
+        }
+    }
+    result
+}
+
+fn truncate_event_prompted(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        if let Some(prompt) = obj.get_mut("prompt").and_then(|p| p.as_object_mut()) {
+            if let Some(files) = prompt.get_mut("files").and_then(|f| f.as_array_mut()) {
+                for file in files.iter_mut() {
+                    if let Some(fo) = file.as_object_mut() {
+                        if let Some(source) = fo.get_mut("source").and_then(|s| s.as_object_mut()) {
+                            source.remove("text");
+                        }
+                        fo.remove("description");
+                    }
+                }
+            }
+            if let Some(agents) = prompt.get_mut("agents").and_then(|a| a.as_array_mut()) {
+                for agent in agents.iter_mut() {
+                    if let Some(ao) = agent.as_object_mut() {
+                        ao.remove("source");
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+fn truncate_event_part_updated(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        if let Some(part) = obj.get_mut("part").and_then(|p| p.as_object_mut()) {
+            let part_type = part
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            match part_type.as_str() {
+                "tool" => {
+                    if let Some(state) = part.get_mut("state").and_then(|s| s.as_object_mut()) {
+                        let tool_name = state
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .unwrap_or("");
+                        if let Some(input) = state.get("input").cloned() {
+                            state.insert(
+                                String::from("input"),
+                                truncate_tool_input(tool_name, &input),
+                            );
+                        }
+                        if let Some(structured) = state.get("structured") {
+                            if structured.to_string().len() > 500 {
+                                state.remove("structured");
+                            }
+                        }
+                        if let Some(content) =
+                            state.get_mut("content").and_then(|c| c.as_array_mut())
+                        {
+                            for item in content.iter_mut() {
+                                match item.get("type").and_then(|t| t.as_str()) {
+                                    Some("text") => {
+                                        if let Some(text) =
+                                            item.get("text").and_then(|t| t.as_str())
+                                        {
+                                            if text.len() > 500 {
+                                                let truncated =
+                                                    truncate_bash_output(text, 5, 5);
+                                                if let Some(io) = item.as_object_mut() {
+                                                    io.insert(
+                                                        String::from("text"),
+                                                        Value::String(truncated),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Some("file") | Some("image") => {
+                                        if let Some(io) = item.as_object_mut() {
+                                            io.remove("data");
+                                            io.remove("content");
+                                            io.remove("source");
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                "patch" => {
+                    if let Some(files) =
+                        part.get_mut("files").and_then(|f| f.as_array_mut())
+                    {
+                        for file in files.iter_mut() {
+                            if let Some(fo) = file.as_object_mut() {
+                                fo.remove("patch");
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    result
+}
+
 fn truncate_user(data: &Value) -> Value {
     let mut result = data.clone();
     let obj = match result.as_object_mut() {
@@ -644,5 +892,208 @@ mod tests {
         assert_eq!(result["input"]["operation"], "hover");
         assert_eq!(result["input"]["filePath"], "/a.rs");
         assert!(result.get("structured").is_none());
+    }
+
+    #[test]
+    fn test_base_event_type_strips_version() {
+        assert_eq!(base_event_type("session.next.tool.called.1"), "session.next.tool.called");
+        assert_eq!(base_event_type("message.part.updated.1"), "message.part.updated");
+        assert_eq!(base_event_type("session.updated.1"), "session.updated");
+        assert_eq!(base_event_type("nodotsuffix"), "nodotsuffix");
+    }
+
+    #[test]
+    fn test_truncate_event_step_removes_snapshot() {
+        let data = json!({
+            "sessionID": "s1",
+            "agent": "code",
+            "model": {"id": "gpt-4"},
+            "snapshot": {"big": "data"},
+            "timestamp": 1234
+        });
+        let result = truncate_event("session.next.step.started.1", &data);
+        assert!(result.get("snapshot").is_none());
+        assert_eq!(result["agent"], "code");
+        assert_eq!(result["model"]["id"], "gpt-4");
+    }
+
+    #[test]
+    fn test_truncate_event_reasoning_ended() {
+        let long_text: String = (0..300).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let data = json!({
+            "sessionID": "s1",
+            "reasoningID": "r1",
+            "text": long_text,
+            "timestamp": 1234
+        });
+        let result = truncate_event("session.next.reasoning.ended.1", &data);
+        let text = result["text"].as_str().unwrap();
+        assert!(text.contains("...[truncated]..."));
+        assert_eq!(result["reasoningID"], "r1");
+    }
+
+    #[test]
+    fn test_truncate_event_tool_called() {
+        let data = json!({
+            "sessionID": "s1",
+            "callID": "c1",
+            "tool": "bash",
+            "input": {"command": "ls -la", "timeout": 120, "workdir": "/tmp"},
+            "provider": "openai",
+            "timestamp": 1234
+        });
+        let result = truncate_event("session.next.tool.called.1", &data);
+        assert_eq!(result["input"]["command"], "ls -la");
+        assert!(result["input"]["timeout"].is_null());
+        assert!(result["input"]["workdir"].is_null());
+        assert_eq!(result["tool"], "bash");
+    }
+
+    #[test]
+    fn test_truncate_event_tool_success_skips_large_structured() {
+        let big_val = "x".repeat(501);
+        let data = json!({
+            "sessionID": "s1",
+            "callID": "c1",
+            "structured": {"data": big_val},
+            "content": [{"type": "text", "text": "ok"}],
+            "provider": "openai",
+            "timestamp": 1234
+        });
+        let result = truncate_event("session.next.tool.success.1", &data);
+        assert!(result.get("structured").is_none());
+        assert_eq!(result["callID"], "c1");
+    }
+
+    #[test]
+    fn test_truncate_event_tool_success_truncates_large_text_content() {
+        let long_output: String = (1..=200).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let data = json!({
+            "sessionID": "s1",
+            "callID": "c1",
+            "structured": {"exit": 0},
+            "content": [{"type": "text", "text": long_output}],
+            "provider": "openai"
+        });
+        let result = truncate_event("session.next.tool.success.1", &data);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("lines truncated"));
+    }
+
+    #[test]
+    fn test_truncate_event_tool_success_removes_file_binary_data() {
+        let data = json!({
+            "sessionID": "s1",
+            "callID": "c1",
+            "structured": {"truncated": true},
+            "content": [{"type": "file", "uri": "file:///a.rs", "name": "a.rs", "data": "base64..."}],
+            "provider": "openai"
+        });
+        let result = truncate_event("session.next.tool.success.1", &data);
+        assert_eq!(result["content"][0]["name"], "a.rs");
+        assert!(result["content"][0].get("data").is_none());
+    }
+
+    #[test]
+    fn test_truncate_event_compaction_ended() {
+        let lines: String = (1..=30).map(|i| format!("summary line {i}")).collect::<Vec<_>>().join("\n");
+        let data = json!({
+            "sessionID": "s1",
+            "text": lines,
+            "include": ["file1.rs", "file2.rs"],
+            "timestamp": 1234
+        });
+        let result = truncate_event("session.next.compaction.ended.1", &data);
+        assert!(result.get("include").is_none());
+        let text = result["text"].as_str().unwrap();
+        assert!(text.contains("...[truncated]..."));
+    }
+
+    #[test]
+    fn test_truncate_event_shell_ended() {
+        let output: String = (1..=20).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n");
+        let data = json!({
+            "sessionID": "s1",
+            "callID": "c1",
+            "output": output,
+            "timestamp": 1234
+        });
+        let result = truncate_event("session.next.shell.ended.1", &data);
+        let output = result["output"].as_str().unwrap();
+        assert!(output.contains("10 lines truncated"));
+    }
+
+    #[test]
+    fn test_truncate_event_prompted() {
+        let data = json!({
+            "sessionID": "s1",
+            "prompt": {
+                "text": "hello",
+                "files": [{"name": "foo.rs", "uri": "file:///foo.rs", "source": {"text": "big"}, "description": "desc"}],
+                "agents": [{"id": "a1", "source": {"text": "agent src"}}]
+            },
+            "timestamp": 1234
+        });
+        let result = truncate_event("session.next.prompted.1", &data);
+        assert_eq!(result["prompt"]["text"], "hello");
+        assert!(result["prompt"]["files"][0]["source"]["text"].is_null());
+        assert!(result["prompt"]["files"][0]["description"].is_null());
+        assert!(result["prompt"]["agents"][0].get("source").is_none());
+    }
+
+    #[test]
+    fn test_truncate_event_part_updated_tool() {
+        let data = json!({
+            "sessionID": "s1",
+            "part": {
+                "type": "tool",
+                "callID": "c1",
+                "name": "bash",
+                "state": {
+                    "status": "completed",
+                    "name": "bash",
+                    "input": {"command": "ls", "timeout": 120},
+                    "structured": {"exit": 0},
+                    "content": [{"type": "text", "text": (1..=200).map(|i| format!("line{i}")).collect::<Vec<_>>().join("\n")}]
+                }
+            },
+            "time": {}
+        });
+        let result = truncate_event("message.part.updated.1", &data);
+        let state = &result["part"]["state"];
+        assert_eq!(state["input"]["command"], "ls");
+        assert!(state["input"]["timeout"].is_null());
+        assert_eq!(state["structured"]["exit"], 0);
+        let text = state["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("lines truncated"));
+    }
+
+    #[test]
+    fn test_truncate_event_part_updated_patch() {
+        let data = json!({
+            "sessionID": "s1",
+            "part": {
+                "type": "patch",
+                "hash": "abc",
+                "files": [
+                    {"filePath": "a.rs", "type": "modify", "additions": 10, "patch": "big patch content"}
+                ]
+            }
+        });
+        let result = truncate_event("message.part.updated.1", &data);
+        let files = result["part"]["files"].as_array().unwrap();
+        assert_eq!(files[0]["filePath"], "a.rs");
+        assert_eq!(files[0]["additions"], 10);
+        assert!(files[0]["patch"].is_null());
+    }
+
+    #[test]
+    fn test_truncate_event_passthrough_small_types() {
+        let data = json!({"sessionID": "s1", "agent": "code", "timestamp": 1234});
+        assert_eq!(truncate_event("session.next.agent.switched.1", &data), data);
+        let data2 = json!({"sessionID": "s1", "error": "fail", "timestamp": 1234});
+        assert_eq!(truncate_event("session.next.step.failed.1", &data2), data2);
+        let data3 = json!({"sessionID": "s1", "callID": "c1", "name": "bash", "timestamp": 1234});
+        assert_eq!(truncate_event("session.next.tool.input.started.1", &data3), data3);
     }
 }

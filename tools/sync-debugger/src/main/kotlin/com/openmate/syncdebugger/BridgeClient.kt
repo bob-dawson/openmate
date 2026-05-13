@@ -18,8 +18,8 @@ class BridgeClient(private val baseUrl: String, token: String? = null) {
         }
     }
 
-    suspend fun getEvents(sessionId: String, afterSeq: Long): EventsResponseDto {
-        val body = client.get("$baseUrl/api/bridge/sync/session/$sessionId/events?afterSeq=$afterSeq").bodyAsText()
+    suspend fun getEvents(sessionId: String, afterSeq: Long, limit: Int = 100): EventsResponseDto {
+        val body = client.get("$baseUrl/api/bridge/sync/session/$sessionId/events?afterSeq=$afterSeq&limit=$limit").bodyAsText()
         return json.decodeFromString<EventsResponseDto>(body)
     }
 
