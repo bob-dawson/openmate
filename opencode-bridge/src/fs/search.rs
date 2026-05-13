@@ -114,6 +114,43 @@ fn should_skip_file(name: &str, glob_pattern: Option<&str>) -> bool {
     }
 }
 
+fn has_wildcards(s: &str) -> bool {
+    s.contains('*') || s.contains('?')
+}
+
+fn has_path_sep(s: &str) -> bool {
+    s.contains('/') || s.contains('\\')
+}
+
+fn path_matches(query: &str, full_path: &str, root: &Path) -> bool {
+    let query_norm = query.replace('\\', "/");
+    if has_path_sep(&query_norm) {
+        let path_norm = full_path.replace('\\', "/");
+        let root_str = root.to_string_lossy().replace('\\', "/");
+        let root_prefix = if root_str.ends_with('/') {
+            root_str
+        } else {
+            format!("{}/", root_str)
+        };
+        let relative = path_norm.strip_prefix(&root_prefix).unwrap_or(&path_norm);
+        if has_wildcards(&query_norm) {
+            glob_matches(&query_norm, relative) || glob_matches(&query_norm, &path_norm)
+        } else {
+            relative.contains(&query_norm.to_lowercase()) || path_norm.to_lowercase().contains(&query_norm.to_lowercase())
+        }
+    } else {
+        let name = Path::new(full_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if has_wildcards(query) {
+            glob_matches(query, &name)
+        } else {
+            name.to_lowercase().contains(&query.to_lowercase())
+        }
+    }
+}
+
 fn search_by_filename(
     root: &Path,
     query: &str,
@@ -121,7 +158,6 @@ fn search_by_filename(
     glob_pattern: Option<&str>,
 ) -> Result<Vec<SearchResult>, String> {
     let mut results = Vec::new();
-    let query_lower = query.to_lowercase();
 
     walk_dir(root, &mut |path| {
         if results.len() >= max_results {
@@ -134,10 +170,11 @@ fn search_by_filename(
         if should_skip_file(&name, glob_pattern) {
             return true;
         }
-        if name.to_lowercase().contains(&query_lower) {
+        let full = path.to_string_lossy().to_string();
+        if path_matches(query, &full, root) {
             let (is_dir, size, modified) = file_meta(path);
             results.push(SearchResult {
-                path: path.to_string_lossy().to_string(),
+                path: full,
                 line: None,
                 column: None,
                 snippet: None,
@@ -605,6 +642,110 @@ mod tests {
         };
         let results = search_files(&req).unwrap();
         assert_eq!(results.len(), 1);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_filename_wildcard_star() {
+        let dir = unique_test_dir("wc_star");
+        fs::write(dir.join("main.rs"), "fn main()").unwrap();
+        fs::write(dir.join("lib.rs"), "pub fn lib()").unwrap();
+        fs::write(dir.join("readme.md"), "# Hello").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "*.rs".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: None,
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_filename_wildcard_question() {
+        let dir = unique_test_dir("wc_q");
+        fs::write(dir.join("a1.txt"), "x").unwrap();
+        fs::write(dir.join("a2.txt"), "x").unwrap();
+        fs::write(dir.join("ab12.txt"), "x").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "a?.txt".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: None,
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_filename_path_sep_matches_relative() {
+        let dir = unique_test_dir("pathsep");
+        let sub = dir.join("src");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("main.rs"), "fn main()").unwrap();
+        fs::write(dir.join("main.rs"), "fn other()").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "src/main".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: None,
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].path.contains("src"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_filename_path_sep_with_wildcard() {
+        let dir = unique_test_dir("pathwc");
+        let sub = dir.join("src");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("main.rs"), "fn main()").unwrap();
+        fs::write(sub.join("lib.rs"), "pub fn lib()").unwrap();
+        fs::write(dir.join("app.rs"), "fn app()").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "src/*.rs".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: None,
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_filename_no_wildcard_still_contains() {
+        let dir = unique_test_dir("no_wc");
+        fs::write(dir.join("hello_world.rs"), "fn main()").unwrap();
+        fs::write(dir.join("other.ts"), "let x").unwrap();
+
+        let req = SearchRequest {
+            path: dir.to_str().unwrap().to_string(),
+            query: "hello".to_string(),
+            search_type: "filename".to_string(),
+            max_results: 50,
+            glob: None,
+        };
+        let results = search_files(&req).unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].path.ends_with("hello_world.rs"));
 
         let _ = fs::remove_dir_all(&dir);
     }
