@@ -14,6 +14,8 @@ import com.openmate.syncdebugger.replayer.SessionMessageMapper
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -88,7 +90,8 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
             val skipReasons = mutableMapOf<String, Int>()
             var totalEvents = 0
             var batchIndex = 0
-            var revertEvtId: String? = null
+            var revertFromId: String? = null
+            var revertToId: String? = null
 
             while (true) {
                 batchIndex++
@@ -107,40 +110,77 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
 
                 totalEvents += events.size
 
+                // Pre-resolve revert IDs from session.updated events in this batch
+                val revertIdMap = mutableMapOf<String, String?>()
+                for (event in events) {
+                    if (!event.type.startsWith("session.updated")) continue
+                    val info = event.data["info"]?.jsonObject
+                    val revertJson = info?.get("revert")
+                    if (revertJson is JsonObject) {
+                        val msgId = revertJson["messageID"]?.jsonPrimitive?.contentOrNull ?: continue
+                        val evtId = client.resolveEvtId(sessionId, msgId)
+                        revertIdMap[msgId] = evtId
+                        if (evtId != null) {
+                            println("[Revert] pre-resolve msg=$msgId -> evt=$evtId")
+                        }
+                    }
+                }
+
                 val batchChanges = mutableListOf<ReplayChange>()
-                var batchHasRevertRemoval = false
 
                 for (event in events) {
-                    // Handle session.updated with revert
-                    if (event.type == "session.updated" || event.type == "session.updated.1") {
-                        val revertObj = event.data["revert"]?.jsonObject
-                        if (revertObj != null) {
-                            val msgId = revertObj["messageID"]?.jsonPrimitive?.contentOrNull
-                            if (msgId != null) {
-                                val evtId = client.resolveEvtId(sessionId, msgId)
-                                if (evtId != null) {
-                                    revertEvtId = evtId
-                                    println("[Revert] resolved msg=$msgId -> evt=$evtId")
-                                }
-                            }
+                    // Handle session.updated revert state (update in-memory revert IDs)
+                    if (event.type.startsWith("session.updated")) {
+                        val info = event.data["info"]?.jsonObject
+                        val revertJson = info?.get("revert")
+                        val hasRevertKey = info?.contains("revert") == true
+                        if (revertJson is JsonObject) {
+                            val msgId = revertJson["messageID"]?.jsonPrimitive?.contentOrNull
+                            val fromId = msgId?.let { revertIdMap[it] }
+                            val toId = if (fromId != null) {
+                                dao.getInRange(sessionId, fromId, "\uffff").lastOrNull()?.id
+                            } else null
+                            revertFromId = fromId
+                            revertToId = toId
+                            println("[Revert] session.updated msgId=$msgId fromId=$fromId toId=$toId")
+                        } else if (hasRevertKey && revertJson is JsonNull) {
+                            revertFromId = null
+                            revertToId = null
+                            println("[Revert] session.updated cleared")
                         }
                     }
 
-                    // Handle message.removed / message.part.removed
-                    if (event.type == "message.removed" || event.type == "message.removed.1" ||
-                        event.type == "message.part.removed" || event.type == "message.part.removed.1") {
-                        batchHasRevertRemoval = true
+                    // Handle message.removed / message.part.removed with range delete
+                    if (event.type.startsWith("message.removed") || event.type.startsWith("message.part.removed")) {
+                        val fromId = revertFromId
+                        val toId = revertToId
+                        if (fromId != null && toId != null) {
+                            val toDelete = dao.getInRange(sessionId, fromId, toId)
+                            if (toDelete.isNotEmpty()) {
+                                db.transaction {
+                                    dao.deleteRange(sessionId, fromId, toId)
+                                }
+                                for (msg in toDelete) {
+                                    batchChanges += ReplayChange.Delete(msg.id)
+                                }
+                                println("[Revert] range delete fromId=$fromId toId=$toId count=${toDelete.size}")
+                            }
+                            revertFromId = null
+                            revertToId = null
+                        }
                     }
 
-                    val singleEvent = listOf(ReplayEvent(event.id, event.type, event.data))
-                    val changes = replayer.replay(singleEvent, sessionId, loader)
-                    batchChanges.addAll(changes)
-                    allChanges.addAll(changes)
+                        val strippedType = event.type.replace(Regex("\\.\\d+$"), "")
+                        val replayEvent = ReplayEvent(event.id, strippedType, event.data)
+                        val change = replayer.processEvent(replayEvent, sessionId, loader)
+                        if (change != null) {
+                            batchChanges += change
+                            allChanges += change
+                        }
 
-                    val (cacheId, cacheType, toolCount) = replayer.getCacheState()
-                    val cacheState = CacheSnapshot(id = cacheId, type = cacheType, toolCount = toolCount)
-                    val change = changes.firstOrNull()
-                    val skipReason = if (changes.isEmpty()) "noChange" else null
+                        val (cacheId, cacheType, toolCount) = replayer.getCacheState()
+                        val cacheState = CacheSnapshot(id = cacheId, type = cacheType, toolCount = toolCount)
+                        val skipReason = if (change == null) "noChange" else null
 
                     if (skipReason != null) {
                         skipReasons[skipReason] = (skipReasons[skipReason] ?: 0) + 1
@@ -154,11 +194,13 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                         changeType = when (change) {
                             is ReplayChange.Insert -> "INSERT ${change.entity.type}"
                             is ReplayChange.Update -> "UPDATE ${change.type} ${change.id}"
+                            is ReplayChange.Delete -> "DELETE ${change.id}"
                             null -> null
                         },
                         changeDetail = when (change) {
                             is ReplayChange.Insert -> change.entity.id
                             is ReplayChange.Update -> change.id
+                            is ReplayChange.Delete -> change.id
                             null -> null
                         },
                         skipReason = skipReason,
@@ -177,6 +219,7 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                         val key = when (change) {
                             is ReplayChange.Insert -> change.entity.id
                             is ReplayChange.Update -> change.id
+                            is ReplayChange.Delete -> change.id
                         }
                         val prev = coalesced[key]
                         if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
@@ -187,6 +230,12 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                                 completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
                                 roundMark = change.roundMark ?: prev.entity.roundMark,
                             ))
+                        } else if (change is ReplayChange.Delete) {
+                            if (prev is ReplayChange.Insert) {
+                                coalesced.remove(key)
+                            } else {
+                                coalesced[key] = change
+                            }
                         } else {
                             coalesced[key] = change
                         }
@@ -210,6 +259,7 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                                 )
                                 dao.upsert(updated)
                             }
+                            is ReplayChange.Delete -> dao.delete(change.id)
                         }
                     }
 

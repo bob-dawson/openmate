@@ -36,6 +36,30 @@ data class Summary(
     val totalChanges: Int,
     val skippedEvents: Int,
     val skipReasons: Map<String, Int>,
+    val perf: PerfSummary? = null,
+)
+
+@Serializable
+data class PerfSummary(
+    val totalWallMs: Long = 0,
+    val fetchMs: Long = 0,
+    val replayMs: Long = 0,
+    val dbWriteMs: Long = 0,
+    val resolveEvtIdMs: Long = 0,
+    val loaderCalls: Map<String, Int> = emptyMap(),
+    val loaderCacheHits: Int = 0,
+    val loaderCacheMisses: Int = 0,
+    val replayerCreatedCount: Int = 1,
+    val batchTimings: List<BatchTiming> = emptyList(),
+)
+
+@Serializable
+data class BatchTiming(
+    val batch: Int,
+    val fetchMs: Long,
+    val replayMs: Long,
+    val dbWriteMs: Long,
+    val events: Int,
 )
 
 class OutputFormatter {

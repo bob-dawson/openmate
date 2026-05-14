@@ -18,4 +18,5 @@ sealed class ReplayChange {
         val completedAt: Long? = null,
         val roundMark: Boolean? = null,
     ) : ReplayChange()
+    data class Delete(val id: String) : ReplayChange()
 }

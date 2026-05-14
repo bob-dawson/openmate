@@ -71,6 +71,32 @@ class JdbcDao(private val db: JdbcDb) {
         }
     }
 
+    fun getInRange(sessionId: String, fromId: String, toId: String): List<SessionMessageEntity> {
+        val sql = "SELECT * FROM session_message WHERE sessionId = ? AND id >= ? AND id <= ? ORDER BY timeCreated"
+        val result = mutableListOf<SessionMessageEntity>()
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
+            ps.setString(2, fromId)
+            ps.setString(3, toId)
+            ps.executeQuery().use { rs ->
+                while (rs.next()) {
+                    result.add(readEntity(rs))
+                }
+            }
+        }
+        return result
+    }
+
+    fun deleteRange(sessionId: String, fromId: String, toId: String) {
+        val sql = "DELETE FROM session_message WHERE sessionId = ? AND id >= ? AND id <= ?"
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
+            ps.setString(2, fromId)
+            ps.setString(3, toId)
+            ps.executeUpdate()
+        }
+    }
+
     fun upsert(entity: SessionMessageEntity) {
         val sql = "INSERT OR REPLACE INTO session_message (id, sessionId, type, data, timeCreated, timeUpdated, completedAt, roundMark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         db.connection.prepareStatement(sql).use { ps ->
