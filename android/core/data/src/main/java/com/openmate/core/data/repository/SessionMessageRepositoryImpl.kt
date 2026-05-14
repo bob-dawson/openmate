@@ -201,8 +201,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
                 val replayer = EventReplayer()
                 val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
-                val hasV2MessageRemoval = response.events.any { it.type == "message.removed" || it.type == "message.part.removed" }
-                if (hasV2MessageRemoval) hasV2MessageRemoval = true
+                val batchHasV2Removal = response.events.any { it.type == "message.removed" || it.type == "message.part.removed" }
+                if (batchHasV2Removal) hasV2MessageRemoval = true
                 response.events.forEachIndexed { index, event ->
                     val rawEventBody = payload.rawEventBodies.getOrNull(index)
                     val bytesValue = rawEventBody?.toByteArray(Charsets.UTF_8)?.size
