@@ -134,12 +134,6 @@ class SessionRepositoryImpl @Inject constructor(
                     )
                 }
             }
-            val busySessions = dao.getBusySessions()
-            for (session in busySessions) {
-                if (!statusMap.containsKey(session.id)) {
-                    dao.upsert(session.copy(status = SessionStatus.IDLE.name, startedAt = null))
-                }
-            }
         } catch (e: Exception) {
             android.util.Log.e("SessionRepository", "refreshSessionStatuses failed", e)
         }
@@ -217,10 +211,6 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? {
         return syncApiClient.resolveMessageID(sessionID, timeCreated)
-    }
-
-    override suspend fun resolveEvtID(sessionID: String, messageID: String): String? {
-        return syncApiClient.resolveEvtID(sessionID, messageID)
     }
 
     fun updateObservedRetryStatus(id: String, status: SessionRetryStatus?) {
