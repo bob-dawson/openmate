@@ -14,6 +14,7 @@ import com.openmate.syncdebugger.replayer.SessionMessageMapper
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -87,6 +88,7 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
             val skipReasons = mutableMapOf<String, Int>()
             var totalEvents = 0
             var batchIndex = 0
+            var revertEvtId: String? = null
 
             while (true) {
                 batchIndex++
@@ -106,8 +108,30 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                 totalEvents += events.size
 
                 val batchChanges = mutableListOf<ReplayChange>()
+                var batchHasRevertRemoval = false
 
                 for (event in events) {
+                    // Handle session.updated with revert
+                    if (event.type == "session.updated" || event.type == "session.updated.1") {
+                        val revertObj = event.data["revert"]?.jsonObject
+                        if (revertObj != null) {
+                            val msgId = revertObj["messageID"]?.jsonPrimitive?.contentOrNull
+                            if (msgId != null) {
+                                val evtId = client.resolveEvtId(sessionId, msgId)
+                                if (evtId != null) {
+                                    revertEvtId = evtId
+                                    println("[Revert] resolved msg=$msgId -> evt=$evtId")
+                                }
+                            }
+                        }
+                    }
+
+                    // Handle message.removed / message.part.removed
+                    if (event.type == "message.removed" || event.type == "message.removed.1" ||
+                        event.type == "message.part.removed" || event.type == "message.part.removed.1") {
+                        batchHasRevertRemoval = true
+                    }
+
                     val singleEvent = listOf(ReplayEvent(event.id, event.type, event.data))
                     val changes = replayer.replay(singleEvent, sessionId, loader)
                     batchChanges.addAll(changes)

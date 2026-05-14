@@ -50,6 +50,27 @@ class JdbcDao(private val db: JdbcDb) {
         }
     }
 
+    fun getAllForSession(sessionId: String): List<SessionMessageEntity> {
+        val sql = "SELECT * FROM session_message WHERE sessionId = ? ORDER BY timeCreated"
+        val result = mutableListOf<SessionMessageEntity>()
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
+            ps.executeQuery().use { rs ->
+                while (rs.next()) {
+                    result.add(readEntity(rs))
+                }
+            }
+        }
+        return result
+    }
+
+    fun delete(id: String) {
+        db.connection.prepareStatement("DELETE FROM session_message WHERE id = ?").use { ps ->
+            ps.setString(1, id)
+            ps.executeUpdate()
+        }
+    }
+
     fun upsert(entity: SessionMessageEntity) {
         val sql = "INSERT OR REPLACE INTO session_message (id, sessionId, type, data, timeCreated, timeUpdated, completedAt, roundMark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         db.connection.prepareStatement(sql).use { ps ->
