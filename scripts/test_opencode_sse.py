@@ -2,7 +2,7 @@
 import urllib.request
 import time
 
-url = "http://127.0.0.1:4096/global/event"
+url = "http://127.0.0.1:4098/global/event"
 print(f"Connecting to {url} ...")
 req = urllib.request.Request(url)
 try:

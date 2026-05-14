@@ -1,8 +1,8 @@
 """Trigger prompt and listen for sync events from opencode."""
 import urllib.request, json, time, threading
 
-sessions_url = "http://127.0.0.1:4096/session"
-sse_url = "http://127.0.0.1:4096/global/event"
+sessions_url = "http://127.0.0.1:4098/session"
+sse_url = "http://127.0.0.1:4098/global/event"
 
 resp = urllib.request.urlopen(sessions_url, timeout=5)
 sessions = json.loads(resp.read())
@@ -43,7 +43,7 @@ t = threading.Thread(target=listen, daemon=True)
 t.start()
 time.sleep(2)
 
-prompt_url = f"http://127.0.0.1:4096/session/{sid}/prompt_async"
+prompt_url = f"http://127.0.0.1:4098/session/{sid}/prompt_async"
 data = json.dumps({"parts": [{"type": "text", "text": "say hi in 3 words"}]}).encode()
 req = urllib.request.Request(prompt_url, data=data, method="POST")
 req.add_header("Content-Type", "application/json")
