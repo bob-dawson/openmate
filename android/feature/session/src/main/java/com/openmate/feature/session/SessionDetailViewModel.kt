@@ -1230,6 +1230,9 @@ class SessionDetailViewModel @Inject constructor(
                 sessionRepository.revertSession(sessionID, msgID, directory = currentDirectory.ifBlank { null })
                 _sessionRevert.value = SessionRevert(messageID = msgID, from = targetMsg.id)
                 _revertedPrompt.value = promptText
+                if (!promptText.isNullOrBlank()) {
+                    _inputText.value = promptText
+                }
                 applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
             } catch (e: Exception) {
                 Log.e(TAG, "revertToMessage failed", e)
@@ -1246,25 +1249,23 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun revertToLastMessage(sessionID: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val recent = sessionMessageRepository.getRecentWindow(sessionID, 100)
-                val lastUser = recent.lastOrNull { it.type == "user" }
-                if (lastUser != null) {
-                    revertToMessage(sessionID, lastUser.id)
-                } else {
-                    syncDebugController.log(
-                        level = SyncLogLevel.Warn,
-                        category = SyncLogCategory.Manual,
-                        sessionId = sessionID,
-                        title = "revert跳过",
-                        message = "no user message found in recent window",
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "revertToLastMessage failed", e)
-                _errorMessage.value = "Revert failed: ${e.message}"
-            }
+        val revertFromId = _sessionRevert.value?.from
+        val visibleMessages = if (revertFromId != null) {
+            messageWindowState.messages.filter { it.id < revertFromId }
+        } else {
+            messageWindowState.messages
+        }
+        val lastUser = visibleMessages.lastOrNull { it.type == "user" }
+        if (lastUser != null) {
+            revertToMessage(sessionID, lastUser.id)
+        } else {
+            syncDebugController.log(
+                level = SyncLogLevel.Warn,
+                category = SyncLogCategory.Manual,
+                sessionId = sessionID,
+                title = "revert跳过",
+                message = "no visible user message found",
+            )
         }
     }
 

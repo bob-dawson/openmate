@@ -174,7 +174,6 @@ fun SessionDetailScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRevertDialog by remember { mutableStateOf(false) }
-    var showUnrevertDialog by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showVariantPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
@@ -388,22 +387,12 @@ fun SessionDetailScreen(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
                 actions = {
-                    if (sessionRevert != null) {
-                        IconButton(onClick = { showUnrevertDialog = true }) {
-                            Icon(
-                                Icons.Default.Redo,
-                                contentDescription = "恢复",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = { showRevertDialog = true }) {
-                            Icon(
-                                Icons.Default.Undo,
-                                contentDescription = "回滚",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
+                    IconButton(onClick = { showRevertDialog = true }) {
+                        Icon(
+                            Icons.Default.Undo,
+                            contentDescription = "回滚",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                     IconButton(onClick = { showSearch = true }) {
                         Icon(
@@ -850,27 +839,6 @@ fun SessionDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRevertDialog = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
-
-    if (showUnrevertDialog) {
-        AlertDialog(
-            onDismissRequest = { showUnrevertDialog = false },
-            title = { Text("恢复") },
-            text = { Text("确定恢复被回滚的消息？文件变更也会恢复。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.unrevert(sessionID)
-                    showUnrevertDialog = false
-                }) {
-                    Text("恢复")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUnrevertDialog = false }) {
                     Text(stringResource(R.string.cancel))
                 }
             },
