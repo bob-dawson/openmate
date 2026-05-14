@@ -74,7 +74,7 @@ class SyncApiClient @Inject constructor(
 
     suspend fun resolveEvtID(sessionId: String, messageID: String): String? =
         withContext(Dispatchers.IO) {
-            val url = "$baseUrl/api/bridge/sync/session/$sessionId/resolve-evt-id?messageID=$messageID"
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/resolve-evt-id?messageId=$messageID"
             val request = Request.Builder().url(url).get().build()
             val response = client.newCall(request).execute()
             val body = response.body?.string() ?: throw Exception("Empty response")

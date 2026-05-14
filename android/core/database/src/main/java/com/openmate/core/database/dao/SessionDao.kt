@@ -36,6 +36,9 @@ interface SessionDao {
     @Query("UPDATE SessionEntity SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: String, status: String?)
 
+    @Query("UPDATE SessionEntity SET status = :status, startedAt = :startedAt WHERE id = :id")
+    suspend fun updateStatusAndStartedAt(id: String, status: String?, startedAt: Long?)
+
     @Query("UPDATE SessionEntity SET totalDuration = totalDuration + :increment WHERE id = :id")
     suspend fun addDuration(id: String, increment: Long)
 
@@ -44,4 +47,10 @@ interface SessionDao {
 
     @Query("SELECT * FROM SessionEntity WHERE status IN ('BUSY', 'RUNNING') AND parentID IS NULL")
     suspend fun getBusySessions(): List<SessionEntity>
+
+    @Query("UPDATE SessionEntity SET title = :title WHERE id = :id")
+    suspend fun updateTitle(id: String, title: String)
+
+    @Query("UPDATE SessionEntity SET revertMessageID = :revertMessageID, revertPartID = :revertPartID, revertFrom = :revertFrom, revertTo = :revertTo WHERE id = :id")
+    suspend fun updateRevertFields(id: String, revertMessageID: String?, revertPartID: String?, revertFrom: String?, revertTo: String?): Int
 }

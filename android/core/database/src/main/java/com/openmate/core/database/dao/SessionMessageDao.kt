@@ -75,6 +75,9 @@ interface SessionMessageDao {
     @Query("UPDATE session_message SET roundMark = 0 WHERE type = 'assistant' AND roundMark = 1 AND completedAt IS NULL")
     suspend fun fixRunningAssistantRoundMark()
 
+    @Query("SELECT id FROM session_message WHERE sessionId = :sessionId AND id >= :fromId ORDER BY id DESC LIMIT 1")
+    suspend fun getMaxIdGte(sessionId: String, fromId: String): String?
+
     @Transaction
     suspend fun replaceAllForSession(sessionId: String, messages: List<SessionMessageEntity>) {
         deleteBySession(sessionId)

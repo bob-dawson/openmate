@@ -80,10 +80,16 @@ class SessionDetailViewModel @Inject constructor(
     private val _sessionRevert = MutableStateFlow<SessionRevert?>(null)
     val sessionRevert: StateFlow<SessionRevert?> = _sessionRevert.asStateFlow()
 
+    private data class PendingRevertCleanup(
+        val fromId: String,
+        val toId: String?,
+    )
+    private val _pendingRevertCleanup = MutableStateFlow<PendingRevertCleanup?>(null)
+
     private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
     val messages: StateFlow<List<SessionMessage>> = combine(_messages, _sessionRevert) { msgs, revert ->
-        val revertLocalId = revert?.localMessageID
-        if (revertLocalId != null) msgs.filter { it.id < revertLocalId } else msgs
+        val revertFromId = revert?.from
+        if (revertFromId != null) msgs.filter { it.id < revertFromId } else msgs
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var messageWindowState = SessionMessageWindowManager.State(
@@ -462,18 +468,25 @@ class SessionDetailViewModel @Inject constructor(
                     _sessionTitle.value = session.title
                 }
                 val newRevert = session?.revert
-                if (newRevert != null && newRevert.localMessageID == null && _sessionRevert.value?.localMessageID != null) {
-                    _sessionRevert.value = newRevert.copy(localMessageID = _sessionRevert.value?.localMessageID)
-                } else if (newRevert != null && newRevert.localMessageID == null && _sessionRevert.value?.localMessageID == null) {
-                    _sessionRevert.value = newRevert
-                    viewModelScope.launch(Dispatchers.IO) {
-                        val evtId = sessionRepository.resolveEvtID(currentSessionID!!, newRevert.messageID)
-                        if (evtId != null) {
-                            _sessionRevert.value = newRevert.copy(localMessageID = evtId)
+                if (newRevert != null) {
+                    val fromId = newRevert.from
+                    if (fromId != null) {
+                        _sessionRevert.value = newRevert
+                        _pendingRevertCleanup.value = PendingRevertCleanup(fromId = fromId, toId = newRevert.to)
+                    } else {
+                        _sessionRevert.value = newRevert
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val evtId = runCatching { sessionRepository.resolveEvtID(currentSessionID!!, newRevert.messageID) }
+                                .onFailure { Log.w(TAG, "resolveEvtID failed for ${newRevert.messageID}", it) }
+                                .getOrNull()
+                            if (evtId != null) {
+                                _sessionRevert.value = newRevert.copy(from = evtId)
+                                _pendingRevertCleanup.value = PendingRevertCleanup(fromId = evtId, toId = null)
+                            }
                         }
                     }
                 } else {
-                    _sessionRevert.value = newRevert
+                    _sessionRevert.value = null
                 }
                 val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
                 if (_serverBusy.value != busy) {
@@ -943,20 +956,21 @@ class SessionDetailViewModel @Inject constructor(
 
     private fun handleV2MessageRemoval() {
         currentSessionID ?: return
-        val revert = _sessionRevert.value ?: return
-        val localId = revert.localMessageID ?: return
+        val cleanup = _pendingRevertCleanup.value ?: return
+        if (cleanup.toId == null) return
         syncDebugController.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
             sessionId = currentSessionID!!,
             title = "v2消息删除(revert范围)",
-            message = "localId=$localId clearing revert range",
+            message = "fromId=${cleanup.fromId} toId=${cleanup.toId} clearing revert range",
         )
-        val removed = _messages.value.filter { it.id >= localId }
-        val kept = _messages.value.filter { it.id < localId }
+        val toId = cleanup.toId!!
+        val removed = _messages.value.filter { it.id >= cleanup.fromId && it.id <= toId }
+        val kept = _messages.value.filterNot { it.id >= cleanup.fromId && it.id <= toId }
         _messages.value = kept
         messageWindowState = messageWindowState.copy(messages = kept)
-        _sessionRevert.value = null
+        _pendingRevertCleanup.value = null
         if (removed.isNotEmpty()) {
             viewModelScope.launch(Dispatchers.IO) {
                 removed.forEach { msg ->
@@ -1256,7 +1270,8 @@ class SessionDetailViewModel @Inject constructor(
                     obj["text"]?.jsonPrimitive?.contentOrNull
                 }.getOrNull()
                 sessionRepository.revertSession(sessionID, msgID, directory = currentDirectory.ifBlank { null })
-                _sessionRevert.value = SessionRevert(messageID = msgID, localMessageID = targetMsg.id)
+                _sessionRevert.value = SessionRevert(messageID = msgID, from = targetMsg.id)
+                _pendingRevertCleanup.value = PendingRevertCleanup(fromId = targetMsg.id, toId = null)
                 _revertedPrompt.value = promptText
                 applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
             } catch (e: Exception) {

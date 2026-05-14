@@ -213,6 +213,10 @@ class SessionRepositoryImpl @Inject constructor(
         return syncApiClient.resolveMessageID(sessionID, timeCreated)
     }
 
+    override suspend fun resolveEvtID(sessionID: String, messageID: String): String? {
+        return syncApiClient.resolveEvtID(sessionID, messageID)
+    }
+
     fun updateObservedRetryStatus(id: String, status: SessionRetryStatus?) {
         retryStateStore.update(id, status)
     }

@@ -34,6 +34,8 @@ data class SessionEntity(
     val modelName: String? = null,
     val revertMessageID: String? = null,
     val revertPartID: String? = null,
+    val revertFrom: String? = null,
+    val revertTo: String? = null,
 )
 
 fun SessionEntity.toDomain(): Session {
@@ -55,7 +57,7 @@ fun SessionEntity.toDomain(): Session {
         modelProviderID = modelProviderID,
         modelID = modelID,
         modelName = modelName,
-        revert = revertMessageID?.let { SessionRevert(it, revertPartID) },
+        revert = revertMessageID?.let { SessionRevert(it, revertPartID, revertFrom, revertTo) },
     )
 }
 
@@ -80,5 +82,7 @@ fun Session.toEntity(): SessionEntity {
         modelName = modelName,
         revertMessageID = revert?.messageID,
         revertPartID = revert?.partID,
+        revertFrom = revert?.from,
+        revertTo = revert?.to,
     )
 }

@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -128,7 +130,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
         }
         val t0 = System.currentTimeMillis()
         val traceId = "inc-${System.nanoTime()}"
-        Log.d("SyncRepo", ">> incrementalSync START: sessionId=$sessionId afterSeq=${syncState.lastSeq}")
+        Log.d(
+            "SyncRepo",
+            ">> incrementalSync START: sessionId=$sessionId afterSeq=${syncState.lastSeq}"
+        )
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
@@ -159,7 +164,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     if (lastSeq != afterSeq) {
                         db.syncStateDao().upsert(SyncStateEntity(sessionId, lastSeq))
                     }
-                    Log.d("SyncRepo", "<< incrementalSync END: no more events (batch=$batchIndex totalEvts=$totalEvents totalBytes=$totalBytes ${System.currentTimeMillis() - t0}ms)")
+                    Log.d(
+                        "SyncRepo",
+                        "<< incrementalSync END: no more events (batch=$batchIndex totalEvts=$totalEvents totalBytes=$totalBytes ${System.currentTimeMillis() - t0}ms)"
+                    )
                     logStore.log(
                         level = SyncLogLevel.Info,
                         category = SyncLogCategory.Sync,
@@ -170,12 +178,19 @@ class SessionMessageRepositoryImpl @Inject constructor(
                         relatedSeq = lastSeq,
                         traceId = traceId,
                     )
-                    return SessionMessageSyncResult(lastSeq = lastSeq, changes = allAppliedChanges, hasV2MessageRemoval = hasV2MessageRemoval)
+                    return SessionMessageSyncResult(
+                        lastSeq = lastSeq,
+                        changes = allAppliedChanges,
+                        hasV2MessageRemoval = hasV2MessageRemoval
+                    )
                 }
 
                 val eventCount = response.events.size
                 totalEvents += eventCount
-                Log.d("SyncRepo", "  batch $batchIndex: $eventCount events, maxSeq=${response.maxSeq}")
+                Log.d(
+                    "SyncRepo",
+                    "  batch $batchIndex: $eventCount events, maxSeq=${response.maxSeq}"
+                )
                 logStore.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sync,
@@ -190,95 +205,215 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     when (action) {
                         is EventReplayer.DbLoader.Action.LoadById ->
                             db.sessionMessageDao().getById(action.id)
+
                         is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
                             db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
+
                         is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
                             db.sessionMessageDao().getLatestIncompleteCompaction(action.sessionId)
+
                         is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId ->
-                            db.sessionMessageDao().getAssistantByToolCallId(action.sessionId, action.callID)
+                            db.sessionMessageDao()
+                                .getAssistantByToolCallId(action.sessionId, action.callID)
                     }
                 }
 
                 val replayer = EventReplayer()
-                val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
-                val batchHasV2Removal = response.events.any { it.type == "message.removed" || it.type == "message.part.removed" }
-                if (batchHasV2Removal) hasV2MessageRemoval = true
-                response.events.forEachIndexed { index, event ->
-                    val rawEventBody = payload.rawEventBodies.getOrNull(index)
-                    val bytesValue = rawEventBody?.toByteArray(Charsets.UTF_8)?.size
-                        ?: json.encodeToString(event).toByteArray(Charsets.UTF_8).size
-                    logStore.log(
-                        level = SyncLogLevel.Info,
-                        category = SyncLogCategory.Sync,
-                        sessionId = sessionId,
-                        title = "增量消息处理",
-                        message = "event type=${event.type} aggregateId=${event.aggregateId}",
-                        bytes = bytesValue,
-                        relatedSeq = event.seq,
-                        traceId = traceId,
-                    )
-                }
-                val changes = replayer.replay(events, sessionId, loader)
-                Log.d("SyncRepo", "  replay: ${events.size} events -> ${changes.size} changes")
-
-                val coalesced = mutableMapOf<String, ReplayChange>()
-                for (change in changes) {
-                    val key = when (change) {
-                        is ReplayChange.Insert -> change.entity.id
-                        is ReplayChange.Update -> change.id
-                        is ReplayChange.Delete -> change.id
-                    }
-                    val prev = coalesced[key]
-                    if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
-                        val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-                        coalesced[key] = ReplayChange.Insert(prev.entity.copy(
-                            data = change.data.toString(),
-                            timeUpdated = change.timeUpdated,
-                            completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
-                            roundMark = change.roundMark ?: prev.entity.roundMark,
-                        ))
-                    } else if (prev is ReplayChange.Insert && change is ReplayChange.Delete) {
-                        coalesced.remove(key)
-                    } else if (prev is ReplayChange.Update && change is ReplayChange.Delete) {
-                        coalesced[key] = change
-                    } else {
-                        coalesced[key] = change
+                val revertIdMap = mutableMapOf<String, String?>()
+                for (event in response.events) {
+                    if (!event.type.startsWith("session.updated")) continue
+                    val info = event.data["info"]?.jsonObject
+                    val revertJson = info?.get("revert")
+                    if (revertJson is JsonObject) {
+                        val revertMsgID =
+                            revertJson["messageID"]?.jsonPrimitive?.content ?: continue
+                        logStore.log(
+                            level = SyncLogLevel.Info,
+                            category = SyncLogCategory.Sync,
+                            sessionId = sessionId,
+                            title = "revert预解析",
+                            message = "seq=${event.seq} msgID=$revertMsgID",
+                            relatedSeq = event.seq,
+                            traceId = traceId,
+                        )
+                        val evtId =
+                            runCatching { syncApiClient.resolveEvtID(sessionId, revertMsgID) }
+                                .onFailure {
+                                    Log.w("SyncRepo", "resolveEvtID failed for $revertMsgID", it)
+                                    logStore.log(
+                                        level = SyncLogLevel.Error,
+                                        category = SyncLogCategory.Sync,
+                                        sessionId = sessionId,
+                                        title = "revert预解析失败",
+                                        message = "seq=${event.seq} msgID=$revertMsgID error=${it.javaClass.simpleName}: ${it.message}",
+                                        relatedSeq = event.seq,
+                                        traceId = traceId,
+                                    )
+                                }
+                                .getOrNull()
+                        logStore.log(
+                            level = SyncLogLevel.Info,
+                            category = SyncLogCategory.Sync,
+                            sessionId = sessionId,
+                            title = "revert预解析结果",
+                            message = "seq=${event.seq} msgID=$revertMsgID evtId=$evtId",
+                            relatedSeq = event.seq,
+                            traceId = traceId,
+                        )
+                        revertIdMap[revertMsgID] = evtId
                     }
                 }
 
                 db.withTransaction {
+                    var pendingId: String? = null
+                    var pendingIsInsert: Boolean = false
+                    var pendingEntity: SessionMessageEntity? = null
                     val batchChanges = mutableListOf<SessionMessageSyncChange>()
-                    for (change in coalesced.values) {
-                        when (change) {
-                            is ReplayChange.Insert -> {
-                                db.sessionMessageDao().upsert(change.entity)
-                                batchChanges += SessionMessageSyncChange.Insert(change.entity.toDomain())
-                                allAppliedChanges += SessionMessageSyncChange.Insert(change.entity.toDomain())
+
+                    suspend fun flushPending() {
+                        val entity = pendingEntity ?: return
+                        pendingEntity = null
+                        pendingId = null
+                        db.sessionMessageDao().upsert(entity)
+                        if (pendingIsInsert) {
+                            batchChanges += SessionMessageSyncChange.Insert(entity.toDomain())
+                            allAppliedChanges += SessionMessageSyncChange.Insert(entity.toDomain())
+                        } else {
+                            batchChanges += SessionMessageSyncChange.Update(entity.toDomain())
+                            allAppliedChanges += SessionMessageSyncChange.Update(entity.toDomain())
+                        }
+                    }
+
+                    for ((index, event) in response.events.withIndex()) {
+                        if (event.type == "message.removed" || event.type == "message.part.removed")
+                            hasV2MessageRemoval = true
+
+                        val rawEventBody = payload.rawEventBodies.getOrNull(index)
+                        val bytesValue = rawEventBody?.toByteArray(Charsets.UTF_8)?.size
+                            ?: json.encodeToString(event).toByteArray(Charsets.UTF_8).size
+                        logStore.log(
+                            level = SyncLogLevel.Info,
+                            category = SyncLogCategory.Sync,
+                            sessionId = sessionId,
+                            title = "增量消息处理",
+                            message = "event type=${event.type} aggregateId=${event.aggregateId}",
+                            bytes = bytesValue,
+                            relatedSeq = event.seq,
+                            traceId = traceId,
+                        )
+
+                        val replayEvent = ReplayEvent(event.id, event.type, event.data)
+                        val change = replayer.processEvent(replayEvent, sessionId, loader)
+                        if (change != null) {
+                            val changeId = when (change) {
+                                is ReplayChange.Insert -> change.entity.id
+                                is ReplayChange.Update -> change.id
+                                is ReplayChange.Delete -> change.id
                             }
-                            is ReplayChange.Update -> {
-                                val existing = db.sessionMessageDao().getById(change.id) ?: continue
-                                val dataCompletedAt = change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-                                val updated = SessionMessageEntity(
-                                    id = change.id,
-                                    sessionId = existing.sessionId,
-                                    type = existing.type,
-                                    data = change.data.toString(),
-                                    timeCreated = existing.timeCreated,
-                                    timeUpdated = change.timeUpdated,
-                                    completedAt = dataCompletedAt ?: change.completedAt ?: existing.completedAt,
-                                    roundMark = change.roundMark ?: existing.roundMark,
+                            if (pendingId != null && pendingId != changeId) {
+                                flushPending()
+                            }
+                            when (change) {
+                                is ReplayChange.Insert -> {
+                                    pendingId = changeId
+                                    pendingIsInsert = true
+                                    pendingEntity = change.entity
+                                }
+
+                                is ReplayChange.Update -> {
+                                    val dataCompletedAt =
+                                        change.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
+                                    if (pendingId == changeId && pendingIsInsert) {
+                                        pendingEntity = pendingEntity!!.copy(
+                                            data = change.data.toString(),
+                                            timeUpdated = change.timeUpdated,
+                                            completedAt = dataCompletedAt ?: change.completedAt
+                                            ?: pendingEntity!!.completedAt,
+                                            roundMark = change.roundMark
+                                                ?: pendingEntity!!.roundMark,
+                                        )
+                                    } else if (pendingId == changeId && !pendingIsInsert) {
+                                        pendingEntity = SessionMessageEntity(
+                                            id = pendingEntity!!.id,
+                                            sessionId = pendingEntity!!.sessionId,
+                                            type = pendingEntity!!.type,
+                                            data = change.data.toString(),
+                                            timeCreated = pendingEntity!!.timeCreated,
+                                            timeUpdated = change.timeUpdated,
+                                            completedAt = dataCompletedAt ?: change.completedAt
+                                            ?: pendingEntity!!.completedAt,
+                                            roundMark = change.roundMark
+                                                ?: pendingEntity!!.roundMark,
+                                        )
+                                    } else {
+                                        val existing =
+                                            db.sessionMessageDao().getById(change.id) ?: continue
+                                        pendingId = changeId
+                                        pendingIsInsert = false
+                                        pendingEntity = SessionMessageEntity(
+                                            id = change.id,
+                                            sessionId = existing.sessionId,
+                                            type = existing.type,
+                                            data = change.data.toString(),
+                                            timeCreated = existing.timeCreated,
+                                            timeUpdated = change.timeUpdated,
+                                            completedAt = dataCompletedAt ?: change.completedAt
+                                            ?: existing.completedAt,
+                                            roundMark = change.roundMark ?: existing.roundMark,
+                                        )
+                                    }
+                                }
+
+                                is ReplayChange.Delete -> {
+                                    if (pendingId == changeId) {
+                                        pendingId = null
+                                        pendingEntity = null
+                                    }
+                                    db.sessionMessageDao().delete(change.id)
+                                    batchChanges += SessionMessageSyncChange.Remove(change.id)
+                                    allAppliedChanges += SessionMessageSyncChange.Remove(change.id)
+                                }
+                            }
+                        } // end if (change != null)
+
+                        if (event.type.startsWith("session.updated")) {
+                            val aggId = event.aggregateId.ifBlank { sessionId }
+                            flushPending()
+                            val info = event.data["info"]?.jsonObject
+                            val revertJson = info?.get("revert")
+                            val hasRevertKey = info?.contains("revert") == true
+                            if (revertJson is JsonObject) {
+                                val revertMsgID = revertJson["messageID"]?.jsonPrimitive?.content
+                                val revertPartID = revertJson["partID"]?.jsonPrimitive?.content
+                                val fromId = revertMsgID?.let { revertIdMap[it] }
+                                val toId = if (fromId != null) db.sessionMessageDao()
+                                    .getMaxIdGte(aggId, fromId) else null
+                                val rows = db.sessionDao().updateRevertFields(aggId, revertMsgID, revertPartID, fromId, toId)
+                                logStore.log(
+                                    level = if (rows == 0) SyncLogLevel.Error else SyncLogLevel.Info,
+                                    category = SyncLogCategory.Sync,
+                                    sessionId = sessionId,
+                                    title = "revert写入结果",
+                                    message = "seq=${event.seq} aggId=$aggId msgID=$revertMsgID fromId=$fromId toId=$toId rows=$rows",
+                                    relatedSeq = event.seq,
+                                    traceId = traceId,
                                 )
-                                db.sessionMessageDao().upsert(updated)
-                                batchChanges += SessionMessageSyncChange.Update(updated.toDomain())
-                                allAppliedChanges += SessionMessageSyncChange.Update(updated.toDomain())
-                            }
-                            is ReplayChange.Delete -> {
-                                db.sessionMessageDao().delete(change.id)
-                                batchChanges += SessionMessageSyncChange.Remove(change.id)
-                                allAppliedChanges += SessionMessageSyncChange.Remove(change.id)
+                            } else if (hasRevertKey && revertJson is JsonNull) {
+                                val rows = db.sessionDao().updateRevertFields(aggId, null, null, null, null)
+                                logStore.log(
+                                    level = if (rows == 0) SyncLogLevel.Error else SyncLogLevel.Info,
+                                    category = SyncLogCategory.Sync,
+                                    sessionId = sessionId,
+                                    title = "revert清除结果",
+                                    message = "seq=${event.seq} aggId=$aggId rows=$rows",
+                                    relatedSeq = event.seq,
+                                    traceId = traceId,
+                                )
                             }
                         }
                     }
+
+                    flushPending()
 
                     val batchMaxSeq = response.events.maxOfOrNull { it.seq }
                     val newSeq = batchMaxSeq?.let { maxOf(afterSeq, it) } ?: afterSeq
@@ -286,10 +421,15 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     afterSeq = newSeq
 
                     if (batchChanges.isNotEmpty()) {
-                        syncEvents.emit(SessionMessageSyncEvent(
-                            sessionId = sessionId,
-                            result = SessionMessageSyncResult(lastSeq = newSeq, changes = batchChanges),
-                        ))
+                        syncEvents.emit(
+                            SessionMessageSyncEvent(
+                                sessionId = sessionId,
+                                result = SessionMessageSyncResult(
+                                    lastSeq = newSeq,
+                                    changes = batchChanges
+                                ),
+                            )
+                        )
                     }
                 }
             }
@@ -314,11 +454,13 @@ class SessionMessageRepositoryImpl @Inject constructor(
     override suspend fun fetchFullMessage(sessionId: String, messageId: String) {
         val db = dbProvider.getActive()
         val response = syncApiClient.full(sessionId, messageId)
-        db.sessionMessageFullContentDao().upsert(SessionMessageFullContentEntity(
-            messageId = response.id,
-            content = response.data.toString(),
-            fetchedAt = System.currentTimeMillis(),
-        ))
+        db.sessionMessageFullContentDao().upsert(
+            SessionMessageFullContentEntity(
+                messageId = response.id,
+                content = response.data.toString(),
+                fetchedAt = System.currentTimeMillis(),
+            )
+        )
     }
 
     override suspend fun getLastSeq(sessionId: String): Long? {

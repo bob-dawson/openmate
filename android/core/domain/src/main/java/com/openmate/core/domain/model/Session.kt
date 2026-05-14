@@ -3,7 +3,8 @@ package com.openmate.core.domain.model
 data class SessionRevert(
     val messageID: String,
     val partID: String? = null,
-    val localMessageID: String? = null,
+    val from: String? = null,
+    val to: String? = null,
 )
 
 data class Session(

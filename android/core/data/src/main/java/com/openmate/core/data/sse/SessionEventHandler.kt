@@ -6,7 +6,12 @@ import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SseData
+import com.openmate.core.network.SyncApiClient
 import com.openmate.core.network.dto.toDomain
+import com.openmate.core.data.sync.SyncLogLevel
+import com.openmate.core.data.sync.SyncLogCategory
+import com.openmate.core.data.sync.SyncLogStore
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -16,6 +21,8 @@ open class SessionEventHandler @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
     private val retryStateStore: SessionRetryStateStore,
     private val api: OpencodeApiClient,
+    private val syncApiClient: SyncApiClient,
+    private val logStore: SyncLogStore,
 ) {
     suspend fun handle(type: String, event: SseData) {
         val props = event.properties
@@ -57,21 +64,69 @@ open class SessionEventHandler @Inject constructor(
                     val info = props["info"]?.jsonObject
                     val title = info?.get("title")?.jsonPrimitive?.content
                     val revertJson = info?.get("revert")
-                    val newRevertMessageID: String?
-                    val newRevertPartID: String?
+                    val hasRevertKey = info?.contains("revert") == true
                     if (revertJson is JsonObject) {
-                        newRevertMessageID = revertJson["messageID"]?.jsonPrimitive?.content
-                        newRevertPartID = revertJson["partID"]?.jsonPrimitive?.content
+                        val newRevertMessageID = revertJson["messageID"]?.jsonPrimitive?.content
+                        val newRevertPartID = revertJson["partID"]?.jsonPrimitive?.content
+                        val evtId = runCatching { syncApiClient.resolveEvtID(sessionID, newRevertMessageID ?: "") }
+                            .onFailure {
+                                Log.w("SessionEventHandler", "resolveEvtID failed for $newRevertMessageID", it)
+                                logStore.log(
+                                    level = SyncLogLevel.Error,
+                                    category = SyncLogCategory.Sync,
+                                    sessionId = sessionID,
+                                    title = "SSE revert预解析失败",
+                                    message = "msgID=$newRevertMessageID error=${it.javaClass.simpleName}: ${it.message}",
+                                )
+                            }
+                            .getOrNull()
+                        logStore.log(
+                            level = SyncLogLevel.Info,
+                            category = SyncLogCategory.Sync,
+                            sessionId = sessionID,
+                            title = "SSE revert写入",
+                            message = "msgID=$newRevertMessageID evtId=$evtId",
+                        )
+                        db.sessionDao().updateRevertFields(
+                            id = sessionID,
+                            revertMessageID = newRevertMessageID,
+                            revertPartID = newRevertPartID,
+                            revertFrom = evtId,
+                            revertTo = null,
+                        )
+                        if (title != null) {
+                            db.sessionDao().updateTitle(sessionID, title)
+                        }
+                    } else if (hasRevertKey && revertJson is JsonNull) {
+                        logStore.log(
+                            level = SyncLogLevel.Info,
+                            category = SyncLogCategory.Sync,
+                            sessionId = sessionID,
+                            title = "SSE revert清除",
+                            message = "revert=null",
+                        )
+                        db.sessionDao().updateRevertFields(
+                            id = sessionID,
+                            revertMessageID = null,
+                            revertPartID = null,
+                            revertFrom = null,
+                            revertTo = null,
+                        )
+                        if (title != null) {
+                            db.sessionDao().updateTitle(sessionID, title)
+                        }
                     } else {
-                        newRevertMessageID = null
-                        newRevertPartID = null
+                        logStore.log(
+                            level = SyncLogLevel.Info,
+                            category = SyncLogCategory.Sync,
+                            sessionId = sessionID,
+                            title = "SSE revert跳过",
+                            message = "无revert字段，保留现有值",
+                        )
+                        if (title != null) {
+                            db.sessionDao().updateTitle(sessionID, title)
+                        }
                     }
-                    val updated = existing.copy(
-                        title = title ?: existing.title,
-                        revertMessageID = newRevertMessageID,
-                        revertPartID = newRevertPartID,
-                    )
-                    db.sessionDao().upsert(updated)
                 } catch (e: Exception) {
                     Log.w("SessionEventHandler", "session.updated failed", e)
                 }
@@ -123,7 +178,7 @@ open class SessionEventHandler @Inject constructor(
                     val now = System.currentTimeMillis()
                     if (existing != null) {
                         val startedAt = if (statusType == "busy" && existing.startedAt == null) now else if (statusType != "busy") null else existing.startedAt
-                        db.sessionDao().upsert(existing.copy(status = status, startedAt = startedAt))
+                        db.sessionDao().updateStatusAndStartedAt(sessionID, status, startedAt)
                     } else {
                         try {
                             val dto = api.getSession(sessionID)
