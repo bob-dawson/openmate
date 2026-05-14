@@ -57,6 +57,9 @@ interface SessionMessageDao {
     @Query("DELETE FROM session_message WHERE id = :id")
     suspend fun delete(id: String)
 
+    @Query("DELETE FROM session_message WHERE sessionId = :sessionId AND id >= :fromId AND id <= :toId")
+    suspend fun deleteRange(sessionId: String, fromId: String, toId: String)
+
     @Query("DELETE FROM session_message WHERE sessionId = :sessionId")
     suspend fun deleteBySession(sessionId: String)
 
@@ -77,6 +80,9 @@ interface SessionMessageDao {
 
     @Query("SELECT id FROM session_message WHERE sessionId = :sessionId AND id >= :fromId ORDER BY id DESC LIMIT 1")
     suspend fun getMaxIdGte(sessionId: String, fromId: String): String?
+
+    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND id >= :fromId AND id <= :toId ORDER BY id")
+    suspend fun getInRange(sessionId: String, fromId: String, toId: String): List<SessionMessageEntity>
 
     @Transaction
     suspend fun replaceAllForSession(sessionId: String, messages: List<SessionMessageEntity>) {

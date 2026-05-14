@@ -80,12 +80,6 @@ class SessionDetailViewModel @Inject constructor(
     private val _sessionRevert = MutableStateFlow<SessionRevert?>(null)
     val sessionRevert: StateFlow<SessionRevert?> = _sessionRevert.asStateFlow()
 
-    private data class PendingRevertCleanup(
-        val fromId: String,
-        val toId: String?,
-    )
-    private val _pendingRevertCleanup = MutableStateFlow<PendingRevertCleanup?>(null)
-
     private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
     val messages: StateFlow<List<SessionMessage>> = combine(_messages, _sessionRevert) { msgs, revert ->
         val revertFromId = revert?.from
@@ -472,7 +466,6 @@ class SessionDetailViewModel @Inject constructor(
                     val fromId = newRevert.from
                     if (fromId != null) {
                         _sessionRevert.value = newRevert
-                        _pendingRevertCleanup.value = PendingRevertCleanup(fromId = fromId, toId = newRevert.to)
                     } else {
                         _sessionRevert.value = newRevert
                         viewModelScope.launch(Dispatchers.IO) {
@@ -481,7 +474,6 @@ class SessionDetailViewModel @Inject constructor(
                                 .getOrNull()
                             if (evtId != null) {
                                 _sessionRevert.value = newRevert.copy(from = evtId)
-                                _pendingRevertCleanup.value = PendingRevertCleanup(fromId = evtId, toId = null)
                             }
                         }
                     }
@@ -939,9 +931,6 @@ class SessionDetailViewModel @Inject constructor(
         if (hadNoMessages && result.changes.size >= MESSAGE_WINDOW_PAGE_SIZE) {
             messageWindowState = messageWindowState.copy(hasOlderMessages = true)
         }
-        if (result.hasV2MessageRemoval) {
-            handleV2MessageRemoval()
-        }
         _messages.value = messageWindowState.messages
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
         currentSessionID?.let { sessionId ->
@@ -952,32 +941,6 @@ class SessionDetailViewModel @Inject constructor(
             )
         }
         recalculateMessageDerivedState(messageWindowState.messages)
-    }
-
-    private fun handleV2MessageRemoval() {
-        currentSessionID ?: return
-        val cleanup = _pendingRevertCleanup.value ?: return
-        if (cleanup.toId == null) return
-        syncDebugController.log(
-            level = SyncLogLevel.Info,
-            category = SyncLogCategory.Sync,
-            sessionId = currentSessionID!!,
-            title = "v2消息删除(revert范围)",
-            message = "fromId=${cleanup.fromId} toId=${cleanup.toId} clearing revert range",
-        )
-        val toId = cleanup.toId!!
-        val removed = _messages.value.filter { it.id >= cleanup.fromId && it.id <= toId }
-        val kept = _messages.value.filterNot { it.id >= cleanup.fromId && it.id <= toId }
-        _messages.value = kept
-        messageWindowState = messageWindowState.copy(messages = kept)
-        _pendingRevertCleanup.value = null
-        if (removed.isNotEmpty()) {
-            viewModelScope.launch(Dispatchers.IO) {
-                removed.forEach { msg ->
-                    sessionMessageRepository.deleteMessage(currentSessionID!!, msg.id)
-                }
-            }
-        }
     }
 
     private fun logMessageWindowState(
@@ -1271,7 +1234,6 @@ class SessionDetailViewModel @Inject constructor(
                 }.getOrNull()
                 sessionRepository.revertSession(sessionID, msgID, directory = currentDirectory.ifBlank { null })
                 _sessionRevert.value = SessionRevert(messageID = msgID, from = targetMsg.id)
-                _pendingRevertCleanup.value = PendingRevertCleanup(fromId = targetMsg.id, toId = null)
                 _revertedPrompt.value = promptText
                 applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
             } catch (e: Exception) {

@@ -165,7 +165,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
             var totalEvents = 0
             var totalBytes = 0L
             var batchIndex = 0
-            var hasV2MessageRemoval = false
 
             while (true) {
                 batchIndex++
@@ -196,7 +195,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     return SessionMessageSyncResult(
                         lastSeq = lastSeq,
                         changes = allAppliedChanges,
-                        hasV2MessageRemoval = hasV2MessageRemoval
                     )
                 }
 
@@ -300,9 +298,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     }
 
                     for ((index, event) in response.events.withIndex()) {
-                        if (event.type == "message.removed" || event.type == "message.part.removed")
-                            hasV2MessageRemoval = true
-
                         val rawEventBody = payload.rawEventBodies.getOrNull(index)
                         val bytesValue = rawEventBody?.toByteArray(Charsets.UTF_8)?.size
                             ?: json.encodeToString(event).toByteArray(Charsets.UTF_8).size
@@ -413,6 +408,24 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                     relatedSeq = event.seq,
                                     traceId = traceId,
                                 )
+                                if (fromId != null) {
+                                    val deleteTo = toId ?: fromId
+                                    val toDelete = db.sessionMessageDao().getInRange(aggId, fromId, deleteTo)
+                                    for (msg in toDelete) {
+                                        batchChanges += SessionMessageSyncChange.Remove(msg.id)
+                                        allAppliedChanges += SessionMessageSyncChange.Remove(msg.id)
+                                    }
+                                    db.sessionMessageDao().deleteRange(aggId, fromId, deleteTo)
+                                    logStore.log(
+                                        level = SyncLogLevel.Info,
+                                        category = SyncLogCategory.Sync,
+                                        sessionId = sessionId,
+                                        title = "revert范围删除",
+                                        message = "seq=${event.seq} aggId=$aggId fromId=$fromId toId=$deleteTo count=${toDelete.size}",
+                                        relatedSeq = event.seq,
+                                        traceId = traceId,
+                                    )
+                                }
                             } else if (hasRevertKey && revertJson is JsonNull) {
                                 val rows = db.sessionDao().updateRevertFields(aggId, null, null, null, null)
                                 logStore.log(
