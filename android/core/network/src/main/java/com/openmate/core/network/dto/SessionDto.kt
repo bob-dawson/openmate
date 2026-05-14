@@ -1,6 +1,7 @@
 package com.openmate.core.network.dto
 
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionRevert
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -63,6 +64,7 @@ fun SessionDto.toDomain(): Session {
         updatedAt = time.updated,
         isCompacting = time.compacting != null,
         isArchived = time.archived != null,
+        revert = revert?.let { SessionRevert(messageID = it.messageID ?: "", partID = it.partID) },
     )
 }
 

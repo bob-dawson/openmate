@@ -1,5 +1,6 @@
 package com.openmate.core.network
 
+import android.util.Log
 import com.openmate.core.network.dto.BridgeDeleteRequest
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
@@ -155,6 +156,21 @@ class OpencodeApiClient(
         val params = mutableMapOf<String, String>()
         directory?.let { params["directory"] = it }
         postUnit("/session/$sessionID/abort", emptyMap<String, String>(), params)
+    }
+
+    suspend fun revertSession(sessionID: String, messageID: String, partID: String? = null, directory: String? = null) {
+        val body = mutableMapOf<String, String>()
+        body["messageID"] = messageID
+        partID?.let { body["partID"] = it }
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/session/$sessionID/revert", body, params)
+    }
+
+    suspend fun unrevertSession(sessionID: String, directory: String? = null) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/session/$sessionID/unrevert", emptyMap<String, String>(), params)
     }
 
     suspend fun listPermissions(directory: String? = null): List<PermissionDto> {
@@ -450,11 +466,14 @@ class OpencodeApiClient(
             else -> json.encodeToString(JsonElement.serializer(), JsonPrimitive(body.toString()))
         }
         val url = buildUrl(path, params)
+        Log.d("OpencodeApiClient", "POST $url body=$jsonStr")
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val request = Request.Builder().url(url).post(requestBody).build()
         val response = client.newCall(request).execute()
         if (!response.isSuccessful) {
-            throw ServerUnavailableException("HTTP ${response.code}")
+            val respBody = response.body?.string()?.take(500) ?: ""
+            Log.e("OpencodeApiClient", "POST $url failed: HTTP ${response.code} body=$respBody")
+            throw ServerUnavailableException("HTTP ${response.code}: $respBody")
         }
     }
 

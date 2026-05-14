@@ -15,4 +15,5 @@ interface SessionMessageRepository {
     suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult
     suspend fun fetchFullMessage(sessionId: String, messageId: String)
     suspend fun getLastSeq(sessionId: String): Long?
+    suspend fun deleteMessage(sessionId: String, messageId: String)
 }

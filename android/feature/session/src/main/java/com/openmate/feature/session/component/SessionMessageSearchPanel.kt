@@ -83,6 +83,7 @@ fun SessionMessageSearchPanel(
     onNavigateToMessage: (Int) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
+    onRevertToMessage: (String) -> Unit = {},
 ) {
     val selectedTab = remember { mutableIntStateOf(0) }
     val searchQuery = remember { mutableStateOf("") }
@@ -213,6 +214,15 @@ fun SessionMessageSearchPanel(
                                     contextMenuMessage = null
                                 },
                             )
+                            if (message.type == "user") {
+                                DropdownMenuItem(
+                                    text = { Text("回滚至此") },
+                                    onClick = {
+                                        onRevertToMessage(message.id)
+                                        contextMenuMessage = null
+                                    },
+                                )
+                            }
                         }
                     }
                 }

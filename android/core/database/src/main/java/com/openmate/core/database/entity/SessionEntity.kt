@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionRevert
 import com.openmate.core.domain.model.SessionStatus
 
 @Entity(
@@ -31,6 +32,8 @@ data class SessionEntity(
     val modelProviderID: String? = null,
     val modelID: String? = null,
     val modelName: String? = null,
+    val revertMessageID: String? = null,
+    val revertPartID: String? = null,
 )
 
 fun SessionEntity.toDomain(): Session {
@@ -52,6 +55,7 @@ fun SessionEntity.toDomain(): Session {
         modelProviderID = modelProviderID,
         modelID = modelID,
         modelName = modelName,
+        revert = revertMessageID?.let { SessionRevert(it, revertPartID) },
     )
 }
 
@@ -74,5 +78,7 @@ fun Session.toEntity(): SessionEntity {
         modelProviderID = modelProviderID,
         modelID = modelID,
         modelName = modelName,
+        revertMessageID = revert?.messageID,
+        revertPartID = revert?.partID,
     )
 }

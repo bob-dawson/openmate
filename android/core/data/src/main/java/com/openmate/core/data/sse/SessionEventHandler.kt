@@ -7,6 +7,7 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SseData
 import com.openmate.core.network.dto.toDomain
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
@@ -55,7 +56,21 @@ open class SessionEventHandler @Inject constructor(
                     val existing = db.sessionDao().getById(sessionID) ?: return
                     val info = props["info"]?.jsonObject
                     val title = info?.get("title")?.jsonPrimitive?.content
-                    val updated = if (title != null) existing.copy(title = title) else existing
+                    val revertJson = info?.get("revert")
+                    val newRevertMessageID: String?
+                    val newRevertPartID: String?
+                    if (revertJson is JsonObject) {
+                        newRevertMessageID = revertJson["messageID"]?.jsonPrimitive?.content
+                        newRevertPartID = revertJson["partID"]?.jsonPrimitive?.content
+                    } else {
+                        newRevertMessageID = null
+                        newRevertPartID = null
+                    }
+                    val updated = existing.copy(
+                        title = title ?: existing.title,
+                        revertMessageID = newRevertMessageID,
+                        revertPartID = newRevertPartID,
+                    )
                     db.sessionDao().upsert(updated)
                 } catch (e: Exception) {
                     Log.w("SessionEventHandler", "session.updated failed", e)

@@ -4,16 +4,21 @@ import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -151,6 +156,7 @@ fun SessionMessageRenderer(
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
     runningAnchors: Map<String, Long> = emptyMap(),
     onViewFile: ((filePath: String) -> Unit)? = null,
+    onRevertToMessage: (String) -> Unit = {},
 ) {
     val dataJson = remember(entity.data) {
         runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull()
@@ -162,7 +168,11 @@ fun SessionMessageRenderer(
             val hasFiles = dataJson["files"]?.jsonArray?.isNotEmpty() == true || dataJson["content"]?.jsonArray?.any { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "file" } == true
             if (!hasText && !hasFiles) return
             Column(modifier = Modifier.fillMaxWidth()) {
-                UserMessageItem(dataJson)
+                UserMessageItem(
+                    data = dataJson,
+                    messageID = entity.id,
+                    onRevertToMessage = onRevertToMessage,
+                )
                 MessageMetadata(
                     messageId = entity.id,
                     timeCreated = entity.timeCreated,
@@ -377,33 +387,72 @@ private fun AssistantErrorCard(message: String) {
 }
 
 @Composable
-fun UserMessageItem(data: JsonObject) {
+fun UserMessageItem(
+    data: JsonObject,
+    messageID: String,
+    onRevertToMessage: (String) -> Unit = {},
+) {
+    var showMenu by remember { mutableStateOf(false) }
+    val clipboardManager = LocalClipboardManager.current
     val text = data["text"]?.jsonPrimitive?.contentOrNull ?: ""
-    if (text.isNotBlank()) {
-        MessageBubble(text = text, isUser = true, modifier = Modifier.fillMaxWidth())
-    }
-    val files = data["files"]?.jsonArray
-    if (files != null) {
-        for (file in files) {
-            val obj = file.jsonObject
-            val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: "file"
-            val filename = obj["filename"]?.jsonPrimitive?.contentOrNull
-            if (filename != null) {
-                FileAttachmentTag(mime = mime, filename = filename)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = { showMenu = true },
+            ),
+    ) {
+        Column {
+            if (text.isNotBlank()) {
+                MessageBubble(text = text, isUser = true, isTextSelectable = false, modifier = Modifier.fillMaxWidth())
             }
-        }
-    }
-    val content = data["content"]?.jsonArray
-    if (content != null) {
-        for (item in content) {
-            val obj = item.jsonObject
-            if (obj["type"]?.jsonPrimitive?.contentOrNull == "file") {
-                val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: "file"
-                val filename = obj["filename"]?.jsonPrimitive?.contentOrNull
-                if (filename != null) {
-                    FileAttachmentTag(mime = mime, filename = filename)
+            val files = data["files"]?.jsonArray
+            if (files != null) {
+                for (file in files) {
+                    val obj = file.jsonObject
+                    val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: "file"
+                    val filename = obj["filename"]?.jsonPrimitive?.contentOrNull
+                    if (filename != null) {
+                        FileAttachmentTag(mime = mime, filename = filename)
+                    }
                 }
             }
+            val content = data["content"]?.jsonArray
+            if (content != null) {
+                for (item in content) {
+                    val obj = item.jsonObject
+                    if (obj["type"]?.jsonPrimitive?.contentOrNull == "file") {
+                        val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: "file"
+                        val filename = obj["filename"]?.jsonPrimitive?.contentOrNull
+                        if (filename != null) {
+                            FileAttachmentTag(mime = mime, filename = filename)
+                        }
+                    }
+                }
+            }
+        }
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+        ) {
+            DropdownMenuItem(
+                text = { Text("Copy") },
+                onClick = {
+                    if (text.isNotBlank()) {
+                        clipboardManager.setText(AnnotatedString(text))
+                    }
+                    showMenu = false
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("回滚至此") },
+                onClick = {
+                    onRevertToMessage(messageID)
+                    showMenu = false
+                },
+            )
         }
     }
 }

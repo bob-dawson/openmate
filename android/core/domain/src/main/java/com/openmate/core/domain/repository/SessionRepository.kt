@@ -23,4 +23,8 @@ interface SessionRepository {
     suspend fun updateSessionModel(id: String, providerID: String?, modelID: String?, modelName: String?)
     suspend fun updateSessionStatus(id: String, status: String)
     suspend fun getSessionRetryStatus(id: String): SessionRetryStatus?
+    suspend fun revertSession(sessionID: String, messageID: String, partID: String? = null, directory: String? = null)
+    suspend fun unrevertSession(sessionID: String, directory: String? = null)
+    suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String?
+    suspend fun resolveEvtID(sessionID: String, messageID: String): String?
 }

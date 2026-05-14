@@ -86,6 +86,46 @@ pub async fn full(
     Ok(Json(message))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveQuery {
+    pub time_created: i64,
+}
+
+pub async fn resolve_message_id(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Query(query): Query<ResolveQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let message_id = state.sync_db
+        .resolve_message_id(&session_id, query.time_created)
+        .map_err(|e| AppError::DatabaseError(e))?;
+
+    Ok(Json(json!({
+        "messageID": message_id,
+    })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveEvtQuery {
+    pub message_id: String,
+}
+
+pub async fn resolve_evt_id(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Query(query): Query<ResolveEvtQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let evt_id = state.sync_db
+        .resolve_evt_id(&session_id, &query.message_id)
+        .map_err(|e| AppError::DatabaseError(e))?;
+
+    Ok(Json(json!({
+        "evtID": evt_id,
+    })))
+}
+
 pub async fn sessions(
     State(state): State<AppState>,
 ) -> Result<impl IntoResponse, AppError> {

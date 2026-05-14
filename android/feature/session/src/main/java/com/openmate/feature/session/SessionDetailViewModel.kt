@@ -9,6 +9,8 @@ import com.openmate.core.data.sync.SyncDebugController
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogEntry
 import com.openmate.core.data.sync.SyncLogLevel
+import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionRevert
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionMessageSyncResult
@@ -38,8 +40,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,8 +77,14 @@ class SessionDetailViewModel @Inject constructor(
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
 
+    private val _sessionRevert = MutableStateFlow<SessionRevert?>(null)
+    val sessionRevert: StateFlow<SessionRevert?> = _sessionRevert.asStateFlow()
+
     private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
-    val messages: StateFlow<List<SessionMessage>> = _messages.asStateFlow()
+    val messages: StateFlow<List<SessionMessage>> = combine(_messages, _sessionRevert) { msgs, revert ->
+        val revertLocalId = revert?.localMessageID
+        if (revertLocalId != null) msgs.filter { it.id < revertLocalId } else msgs
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var messageWindowState = SessionMessageWindowManager.State(
         messages = emptyList(),
@@ -162,6 +173,9 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _syncLogEntries = MutableStateFlow<List<SyncLogEntry>>(emptyList())
     val syncLogEntries: StateFlow<List<SyncLogEntry>> = _syncLogEntries.asStateFlow()
+
+    private val _revertedPrompt = MutableStateFlow<String?>(null)
+    val revertedPrompt: StateFlow<String?> = _revertedPrompt.asStateFlow()
 
     data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
 
@@ -417,6 +431,7 @@ class SessionDetailViewModel @Inject constructor(
         _runningAnchors.value = emptyMap()
         _isLoadingOlder.value = false
         _hasOlderMessages.value = false
+        _sessionRevert.value = null
         wasBusy = false
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -445,6 +460,20 @@ class SessionDetailViewModel @Inject constructor(
             sessionRepository.observeSession(sessionID).collect { session ->
                 if (session != null && session.title.isNotBlank()) {
                     _sessionTitle.value = session.title
+                }
+                val newRevert = session?.revert
+                if (newRevert != null && newRevert.localMessageID == null && _sessionRevert.value?.localMessageID != null) {
+                    _sessionRevert.value = newRevert.copy(localMessageID = _sessionRevert.value?.localMessageID)
+                } else if (newRevert != null && newRevert.localMessageID == null && _sessionRevert.value?.localMessageID == null) {
+                    _sessionRevert.value = newRevert
+                    viewModelScope.launch(Dispatchers.IO) {
+                        val evtId = sessionRepository.resolveEvtID(currentSessionID!!, newRevert.messageID)
+                        if (evtId != null) {
+                            _sessionRevert.value = newRevert.copy(localMessageID = evtId)
+                        }
+                    }
+                } else {
+                    _sessionRevert.value = newRevert
                 }
                 val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
                 if (_serverBusy.value != busy) {
@@ -897,6 +926,9 @@ class SessionDetailViewModel @Inject constructor(
         if (hadNoMessages && result.changes.size >= MESSAGE_WINDOW_PAGE_SIZE) {
             messageWindowState = messageWindowState.copy(hasOlderMessages = true)
         }
+        if (result.hasV2MessageRemoval) {
+            handleV2MessageRemoval()
+        }
         _messages.value = messageWindowState.messages
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
         currentSessionID?.let { sessionId ->
@@ -907,6 +939,31 @@ class SessionDetailViewModel @Inject constructor(
             )
         }
         recalculateMessageDerivedState(messageWindowState.messages)
+    }
+
+    private fun handleV2MessageRemoval() {
+        currentSessionID ?: return
+        val revert = _sessionRevert.value ?: return
+        val localId = revert.localMessageID ?: return
+        syncDebugController.log(
+            level = SyncLogLevel.Info,
+            category = SyncLogCategory.Sync,
+            sessionId = currentSessionID!!,
+            title = "v2消息删除(revert范围)",
+            message = "localId=$localId clearing revert range",
+        )
+        val removed = _messages.value.filter { it.id >= localId }
+        val kept = _messages.value.filter { it.id < localId }
+        _messages.value = kept
+        messageWindowState = messageWindowState.copy(messages = kept)
+        _sessionRevert.value = null
+        if (removed.isNotEmpty()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                removed.forEach { msg ->
+                    sessionMessageRepository.deleteMessage(currentSessionID!!, msg.id)
+                }
+            }
+        }
     }
 
     private fun logMessageWindowState(
@@ -1147,5 +1204,129 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "replyPermission failed", e)
             }
         }
+    }
+
+    fun revertToMessage(sessionID: String, messageID: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val busy = isSessionBusy()
+                val recentMessages = sessionMessageRepository.getRecentWindow(sessionID, 100)
+                val targetMsg = recentMessages.find { it.id == messageID }
+                if (targetMsg == null) {
+                    syncDebugController.log(
+                        level = SyncLogLevel.Error,
+                        category = SyncLogCategory.Manual,
+                        sessionId = sessionID,
+                        title = "revert失败",
+                        message = "messageID=$messageID not found in recent window",
+                    )
+                    return@launch
+                }
+                val msgID = sessionRepository.resolveMessageID(sessionID, targetMsg.timeCreated)
+                if (msgID == null) {
+                    syncDebugController.log(
+                        level = SyncLogLevel.Error,
+                        category = SyncLogCategory.Manual,
+                        sessionId = sessionID,
+                        title = "revert失败",
+                        message = "evtID=$messageID timeCreated=${targetMsg.timeCreated} resolve msg_ ID failed",
+                    )
+                    return@launch
+                }
+                syncDebugController.log(
+                    level = SyncLogLevel.Info,
+                    category = SyncLogCategory.Manual,
+                    sessionId = sessionID,
+                    title = "revert请求",
+                    message = "evtID=$messageID → msgID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
+                )
+                if (busy) {
+                    syncDebugController.log(
+                        level = SyncLogLevel.Info,
+                        category = SyncLogCategory.Manual,
+                        sessionId = sessionID,
+                        title = "abort先执行",
+                        message = "session busy, aborting before revert",
+                    )
+                    sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
+                    delay(500)
+                }
+                val promptText = runCatching {
+                    val obj = Json.parseToJsonElement(targetMsg.data).jsonObject
+                    obj["text"]?.jsonPrimitive?.contentOrNull
+                }.getOrNull()
+                sessionRepository.revertSession(sessionID, msgID, directory = currentDirectory.ifBlank { null })
+                _sessionRevert.value = SessionRevert(messageID = msgID, localMessageID = targetMsg.id)
+                _revertedPrompt.value = promptText
+                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
+            } catch (e: Exception) {
+                Log.e(TAG, "revertToMessage failed", e)
+                syncDebugController.log(
+                    level = SyncLogLevel.Error,
+                    category = SyncLogCategory.Manual,
+                    sessionId = sessionID,
+                    title = "revert失败",
+                    message = "evtID=$messageID error=${e.message}",
+                )
+                _errorMessage.value = "Revert failed: ${e.message}"
+            }
+        }
+    }
+
+    fun revertToLastMessage(sessionID: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val recent = sessionMessageRepository.getRecentWindow(sessionID, 100)
+                val lastUser = recent.lastOrNull { it.type == "user" }
+                if (lastUser != null) {
+                    revertToMessage(sessionID, lastUser.id)
+                } else {
+                    syncDebugController.log(
+                        level = SyncLogLevel.Warn,
+                        category = SyncLogCategory.Manual,
+                        sessionId = sessionID,
+                        title = "revert跳过",
+                        message = "no user message found in recent window",
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "revertToLastMessage failed", e)
+                _errorMessage.value = "Revert failed: ${e.message}"
+            }
+        }
+    }
+
+    fun unrevert(sessionID: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                syncDebugController.log(
+                    level = SyncLogLevel.Info,
+                    category = SyncLogCategory.Manual,
+                    sessionId = sessionID,
+                    title = "unrevert请求",
+                    message = "dir=${currentDirectory.ifBlank { "null" }}",
+                )
+                sessionRepository.unrevertSession(sessionID, directory = currentDirectory.ifBlank { null })
+                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
+            } catch (e: Exception) {
+                Log.e(TAG, "unrevert failed", e)
+                syncDebugController.log(
+                    level = SyncLogLevel.Error,
+                    category = SyncLogCategory.Manual,
+                    sessionId = sessionID,
+                    title = "unrevert失败",
+                    message = "error=${e.message}",
+                )
+                _errorMessage.value = "Unrevert failed: ${e.message}"
+            }
+        }
+    }
+
+    fun clearRevertedPrompt() {
+        _revertedPrompt.value = null
+    }
+
+    private fun isSessionBusy(): Boolean {
+        return _sessionStatus.value == SessionStatus.BUSY.name || _sessionStatus.value == SessionStatus.RUNNING.name
     }
 }

@@ -3,6 +3,7 @@ package com.openmate.core.domain.model
 data class SessionMessageSyncResult(
     val lastSeq: Long,
     val changes: List<SessionMessageSyncChange>,
+    val hasV2MessageRemoval: Boolean = false,
 )
 
 sealed interface SessionMessageSyncChange {

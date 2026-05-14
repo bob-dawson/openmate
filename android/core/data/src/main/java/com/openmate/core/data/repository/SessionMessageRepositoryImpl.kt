@@ -145,6 +145,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
             var totalEvents = 0
             var totalBytes = 0L
             var batchIndex = 0
+            var hasV2MessageRemoval = false
 
             while (true) {
                 batchIndex++
@@ -169,7 +170,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                         relatedSeq = lastSeq,
                         traceId = traceId,
                     )
-                    return SessionMessageSyncResult(lastSeq = lastSeq, changes = allAppliedChanges)
+                    return SessionMessageSyncResult(lastSeq = lastSeq, changes = allAppliedChanges, hasV2MessageRemoval = hasV2MessageRemoval)
                 }
 
                 val eventCount = response.events.size
@@ -200,6 +201,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
                 val replayer = EventReplayer()
                 val events = response.events.map { e -> ReplayEvent(e.id, e.type, e.data) }
+                val hasV2MessageRemoval = response.events.any { it.type == "message.removed" || it.type == "message.part.removed" }
+                if (hasV2MessageRemoval) hasV2MessageRemoval = true
                 response.events.forEachIndexed { index, event ->
                     val rawEventBody = payload.rawEventBodies.getOrNull(index)
                     val bytesValue = rawEventBody?.toByteArray(Charsets.UTF_8)?.size
@@ -223,6 +226,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     val key = when (change) {
                         is ReplayChange.Insert -> change.entity.id
                         is ReplayChange.Update -> change.id
+                        is ReplayChange.Delete -> change.id
                     }
                     val prev = coalesced[key]
                     if (prev is ReplayChange.Insert && change is ReplayChange.Update) {
@@ -233,6 +237,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             completedAt = dataCompletedAt ?: change.completedAt ?: prev.entity.completedAt,
                             roundMark = change.roundMark ?: prev.entity.roundMark,
                         ))
+                    } else if (prev is ReplayChange.Insert && change is ReplayChange.Delete) {
+                        coalesced.remove(key)
+                    } else if (prev is ReplayChange.Update && change is ReplayChange.Delete) {
+                        coalesced[key] = change
                     } else {
                         coalesced[key] = change
                     }
@@ -263,6 +271,11 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                 db.sessionMessageDao().upsert(updated)
                                 batchChanges += SessionMessageSyncChange.Update(updated.toDomain())
                                 allAppliedChanges += SessionMessageSyncChange.Update(updated.toDomain())
+                            }
+                            is ReplayChange.Delete -> {
+                                db.sessionMessageDao().delete(change.id)
+                                batchChanges += SessionMessageSyncChange.Remove(change.id)
+                                allAppliedChanges += SessionMessageSyncChange.Remove(change.id)
                             }
                         }
                     }
@@ -310,6 +323,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     override suspend fun getLastSeq(sessionId: String): Long? {
         return dbProvider.getActive().syncStateDao().get(sessionId)?.lastSeq
+    }
+
+    override suspend fun deleteMessage(sessionId: String, messageId: String) {
+        dbProvider.getActive().sessionMessageDao().delete(messageId)
     }
 }
 

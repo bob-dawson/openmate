@@ -62,7 +62,36 @@ class SyncApiClient @Inject constructor(
             val body = response.body?.string() ?: throw Exception("Empty response")
             json.decodeFromString<FullMessageResponseDto>(body)
         }
+    suspend fun resolveMessageID(sessionId: String, timeCreated: Long): String? =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/resolve-message-id?timeCreated=$timeCreated"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            val parsed = json.decodeFromString<ResolveMessageIDResponseDto>(body)
+            parsed.messageID
+        }
+
+    suspend fun resolveEvtID(sessionId: String, messageID: String): String? =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/resolve-evt-id?messageID=$messageID"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            val parsed = json.decodeFromString<ResolveEvtIDResponseDto>(body)
+            parsed.evtID
+        }
 }
+
+@kotlinx.serialization.Serializable
+data class ResolveMessageIDResponseDto(
+    val messageID: String? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class ResolveEvtIDResponseDto(
+    val evtID: String? = null,
+)
 
 private fun extractRawEventBodies(rawBody: String): List<String> {
     val eventsKeyIndex = rawBody.indexOf("\"events\"")

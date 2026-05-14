@@ -54,6 +54,8 @@ pub async fn run_server(
         .route("/api/bridge/sync/session/{sessionID}/init", get(sync::router::init))
         .route("/api/bridge/sync/session/{sessionID}/events", get(sync::router::events))
         .route("/api/bridge/sync/session/{sessionID}/message/{messageID}/full", get(sync::router::full))
+        .route("/api/bridge/sync/session/{sessionID}/resolve-message-id", get(sync::router::resolve_message_id))
+        .route("/api/bridge/sync/session/{sessionID}/resolve-evt-id", get(sync::router::resolve_evt_id))
         .route("/api/bridge/sync/events", get(sync::sse::sync_sse))
         .route("/api/bridge/status", get(bridge::router::status))
         .route(

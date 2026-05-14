@@ -29,7 +29,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
@@ -142,6 +144,7 @@ fun SessionDetailScreen(
     val recentModels by viewModel.recentModels.collectAsState()
     val selectedAgent by viewModel.selectedAgent.collectAsState()
     val sessionStatus by viewModel.sessionStatus.collectAsState()
+    val sessionRevert by viewModel.sessionRevert.collectAsState()
     val skills by viewModel.skills.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
@@ -170,6 +173,8 @@ fun SessionDetailScreen(
     var menuExpanded by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showRevertDialog by remember { mutableStateOf(false) }
+    var showUnrevertDialog by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showVariantPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
@@ -383,6 +388,23 @@ fun SessionDetailScreen(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
                 actions = {
+                    if (sessionRevert != null) {
+                        IconButton(onClick = { showUnrevertDialog = true }) {
+                            Icon(
+                                Icons.Default.Redo,
+                                contentDescription = "恢复",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = { showRevertDialog = true }) {
+                            Icon(
+                                Icons.Default.Undo,
+                                contentDescription = "回滚",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
                     IconButton(onClick = { showSearch = true }) {
                         Icon(
                             Icons.Default.Search,
@@ -550,6 +572,7 @@ fun SessionDetailScreen(
                             onReplyPermission = { requestID, reply, msg -> viewModel.replyPermission(requestID, reply, msg) },
                             runningAnchors = runningAnchors,
                             onViewFile = { filePath -> viewModel.openFilePreview(filePath) },
+                            onRevertToMessage = { messageID -> viewModel.revertToMessage(sessionID, messageID) },
                         )
                     }
                     if (displayMessages.isEmpty()) {
@@ -567,6 +590,30 @@ fun SessionDetailScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            if (sessionRevert != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "已回滚消息",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    TextButton(onClick = { viewModel.unrevert(sessionID) }) {
+                        Text(
+                            text = "恢复",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
                     }
                 }
             }
@@ -786,6 +833,48 @@ fun SessionDetailScreen(
         )
     }
 
+    if (showRevertDialog) {
+        AlertDialog(
+            onDismissRequest = { showRevertDialog = false },
+            title = { Text("回滚") },
+            text = { Text("确定回滚到上一条消息？此操作将撤销之后的所有对话和文件变更。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.revertToLastMessage(sessionID)
+                    showRevertDialog = false
+                }) {
+                    Text("回滚")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRevertDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showUnrevertDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnrevertDialog = false },
+            title = { Text("恢复") },
+            text = { Text("确定恢复被回滚的消息？文件变更也会恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.unrevert(sessionID)
+                    showUnrevertDialog = false
+                }) {
+                    Text("恢复")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnrevertDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
     if (showSearch) {
         Dialog(
             onDismissRequest = { showSearch = false },
@@ -802,6 +891,10 @@ fun SessionDetailScreen(
                     }
                 },
                 onClose = { showSearch = false },
+                onRevertToMessage = { messageID ->
+                    viewModel.revertToMessage(sessionID, messageID)
+                    showSearch = false
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }

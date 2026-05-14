@@ -155,6 +155,42 @@ impl SyncDb {
         }
     }
 
+    pub fn resolve_message_id(&self, session_id: &str, time_created: i64) -> Result<Option<String>, String> {
+        let conn = self.connect()?;
+        let result = conn.query_row(
+            "SELECT id FROM message WHERE session_id = ? AND time_created = ? AND json_extract(data, '$.role') = 'user'",
+            params![session_id, time_created],
+            |row| row.get(0),
+        );
+        match result {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("Query failed: {}", e)),
+        }
+    }
+
+    pub fn resolve_evt_id(&self, session_id: &str, message_id: &str) -> Result<Option<String>, String> {
+        let conn = self.connect()?;
+        let time_created: i64 = match conn.query_row(
+            "SELECT time_created FROM message WHERE id = ? AND session_id = ?",
+            params![message_id, session_id],
+            |row| row.get(0),
+        ) {
+            Ok(t) => t,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(e) => return Err(format!("Query failed: {}", e)),
+        };
+        let result = conn.query_row(
+            "SELECT id FROM session_message WHERE session_id = ? AND time_created = ? AND type = 'user'",
+            params![session_id, time_created],
+            |row| row.get(0),
+        );
+        match result {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("Query failed: {}", e)),
+        }
+    }
     pub fn get_sessions(&self) -> Result<Vec<Value>, String> {
         tracing::info!("get_sessions: db_path={}", self.db_path.display());
         let conn = self.connect()?;

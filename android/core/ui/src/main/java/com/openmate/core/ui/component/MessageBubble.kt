@@ -27,6 +27,7 @@ fun MessageBubble(
     text: String,
     isUser: Boolean,
     modifier: Modifier = Modifier,
+    isTextSelectable: Boolean = true,
 ) {
     if (isUser) {
         Row(
@@ -52,7 +53,7 @@ fun MessageBubble(
                 ),
                 syntaxHighlightColor = CodeBlockBackground,
                 syntaxHighlightTextColor = CodeBlockText,
-                isTextSelectable = true,
+                isTextSelectable = isTextSelectable,
             )
         }
     } else {
@@ -66,7 +67,7 @@ fun MessageBubble(
             ),
             syntaxHighlightColor = CodeBlockBackground,
             syntaxHighlightTextColor = CodeBlockText,
-            isTextSelectable = true,
+            isTextSelectable = isTextSelectable,
         )
     }
 }
