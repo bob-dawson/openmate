@@ -30,6 +30,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import androidx.room.withTransaction
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 class SessionMessageRepositoryImpl @Inject constructor(
@@ -41,6 +42,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 64)
+
+    private val syncingSessions = ConcurrentHashMap<String, Unit>()
 
     override fun observeMessages(sessionId: String): Flow<List<SessionMessage>> {
         return dbProvider.getActive().sessionMessageDao().observeBySession(sessionId)
@@ -122,6 +125,18 @@ class SessionMessageRepositoryImpl @Inject constructor(
     }
 
     override suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult {
+        if (syncingSessions.putIfAbsent(sessionId, Unit) != null) {
+            Log.d("SyncRepo", "incrementalSync skip: already syncing $sessionId")
+            return SessionMessageSyncResult(lastSeq = 0L, changes = emptyList())
+        }
+        try {
+            return doIncrementalSync(sessionId)
+        } finally {
+            syncingSessions.remove(sessionId)
+        }
+    }
+
+    private suspend fun doIncrementalSync(sessionId: String): SessionMessageSyncResult {
         val db = dbProvider.getActive()
         db.sessionMessageDao().fixRunningAssistantRoundMark()
         val syncState = db.syncStateDao().get(sessionId) ?: run {

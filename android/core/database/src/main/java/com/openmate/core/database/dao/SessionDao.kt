@@ -53,4 +53,7 @@ interface SessionDao {
 
     @Query("UPDATE SessionEntity SET revertMessageID = :revertMessageID, revertPartID = :revertPartID, revertFrom = :revertFrom, revertTo = :revertTo WHERE id = :id")
     suspend fun updateRevertFields(id: String, revertMessageID: String?, revertPartID: String?, revertFrom: String?, revertTo: String?): Int
+
+    @Query("UPDATE SessionEntity SET revertMessageID = :revertMessageID, revertPartID = :revertPartID, revertFrom = :revertFrom WHERE id = :id")
+    suspend fun updateRevertFromSse(id: String, revertMessageID: String?, revertPartID: String?, revertFrom: String?)
 }

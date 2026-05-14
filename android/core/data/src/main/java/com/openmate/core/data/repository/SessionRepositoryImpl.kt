@@ -33,15 +33,24 @@ class SessionRepositoryImpl @Inject constructor(
             val existing = existingMap[domain.id]
             if (existing != null) {
                 val dbStatus = runCatching { SessionStatus.valueOf(existing.status ?: "") }.getOrNull()
-                domain.copy(
-                    status = dbStatus ?: domain.status,
+                existing.copy(
+                    title = domain.title,
+                    directory = domain.directory,
+                    projectID = domain.projectID,
+                    workspaceID = domain.workspaceID,
+                    parentID = domain.parentID,
+                    createdAt = domain.createdAt,
+                    updatedAt = domain.updatedAt,
+                    isCompacting = domain.isCompacting,
+                    isArchived = domain.isArchived,
+                    status = (dbStatus ?: domain.status)?.name,
+                    startedAt = domain.startedAt ?: existing.startedAt,
                     phoneStartedAt = existing.phoneStartedAt,
-                    startedAt = existing.startedAt,
                     totalDuration = existing.totalDuration,
                     modelProviderID = existing.modelProviderID,
                     modelID = existing.modelID,
                     modelName = existing.modelName,
-                ).toEntity()
+                )
             } else {
                 domain.toEntity()
             }
@@ -56,21 +65,29 @@ class SessionRepositoryImpl @Inject constructor(
             val domain = dto.toDomain()
             val dao = dbProvider.getActive().sessionDao()
             val existing = dao.getById(id)
-            val merged = if (existing != null) {
+            if (existing != null) {
                 val dbStatus = runCatching { SessionStatus.valueOf(existing.status ?: "") }.getOrNull()
-                domain.copy(
-                    status = dbStatus ?: domain.status,
+                dao.upsert(existing.copy(
+                    title = domain.title,
+                    directory = domain.directory,
+                    projectID = domain.projectID,
+                    workspaceID = domain.workspaceID,
+                    parentID = domain.parentID,
+                    createdAt = domain.createdAt,
+                    updatedAt = domain.updatedAt,
+                    isCompacting = domain.isCompacting,
+                    isArchived = domain.isArchived,
+                    status = (dbStatus ?: domain.status)?.name,
+                    startedAt = domain.startedAt ?: existing.startedAt,
                     phoneStartedAt = existing.phoneStartedAt,
-                    startedAt = existing.startedAt,
                     totalDuration = existing.totalDuration,
                     modelProviderID = existing.modelProviderID,
                     modelID = existing.modelID,
                     modelName = existing.modelName,
-                )
+                ))
             } else {
-                domain
+                dao.upsert(domain.toEntity())
             }
-            dao.upsert(merged.toEntity())
             dao.getById(id)?.toDomain()
         } catch (_: Exception) {
             dbProvider.getActive().sessionDao().getById(id)?.toDomain()
@@ -92,10 +109,9 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun updateSession(id: String, title: String?) {
         api.updateSession(id, title)
-        val dao = dbProvider.getActive().sessionDao()
-        val existing = dao.getById(id) ?: return
-        val updated = if (title != null) existing.copy(title = title) else existing
-        dao.upsert(updated)
+        if (title != null) {
+            dbProvider.getActive().sessionDao().updateTitle(id, title)
+        }
     }
 
     override suspend fun abortSession(id: String, directory: String?) {
@@ -118,7 +134,7 @@ class SessionRepositoryImpl @Inject constructor(
                         !isBusy -> null
                         else -> existing.startedAt
                     }
-                    dao.upsert(existing.copy(status = newStatus, startedAt = startedAt))
+                    dao.updateStatusAndStartedAt(sessionID, newStatus, startedAt)
                 } else {
                     dao.upsert(
                         com.openmate.core.database.entity.SessionEntity(

@@ -8,6 +8,7 @@ import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SseData
 import com.openmate.core.network.SyncApiClient
 import com.openmate.core.network.dto.toDomain
+import com.openmate.core.database.entity.toEntity
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogStore
@@ -87,12 +88,11 @@ open class SessionEventHandler @Inject constructor(
                             title = "SSE revert写入",
                             message = "msgID=$newRevertMessageID evtId=$evtId",
                         )
-                        db.sessionDao().updateRevertFields(
+                        db.sessionDao().updateRevertFromSse(
                             id = sessionID,
                             revertMessageID = newRevertMessageID,
                             revertPartID = newRevertPartID,
                             revertFrom = evtId,
-                            revertTo = null,
                         )
                         if (title != null) {
                             db.sessionDao().updateTitle(sessionID, title)
@@ -184,18 +184,10 @@ open class SessionEventHandler @Inject constructor(
                             val dto = api.getSession(sessionID)
                             if (dto.parentID != null) return
                             val domain = dto.toDomain()
-                            val entity = com.openmate.core.database.entity.SessionEntity(
-                                id = domain.id,
-                                title = domain.title,
-                                directory = domain.directory,
-                                projectID = domain.projectID,
-                                parentID = domain.parentID,
-                                createdAt = domain.createdAt,
-                                updatedAt = domain.updatedAt,
+                            db.sessionDao().upsert(domain.toEntity().copy(
                                 status = status,
                                 startedAt = if (statusType == "busy") now else null,
-                            )
-                            db.sessionDao().upsert(entity)
+                            ))
                         } catch (e: Exception) {
                             Log.w("SessionEventHandler", "session.status: fetch session failed, skipping", e)
                         }
