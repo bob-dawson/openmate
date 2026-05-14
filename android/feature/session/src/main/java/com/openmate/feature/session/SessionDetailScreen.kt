@@ -535,12 +535,14 @@ fun SessionDetailScreen(
                     TodoListCard(todos = todos)
                 }
                 val isBusy = currentBusyStart != null
-                val displayMessages = remember(messages, queuedMessageIds, isBusy) {
-                    if (!isBusy || queuedMessageIds.isEmpty()) messages
+                val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
+                    val revertFromId = sessionRevert?.from
+                    val filtered = if (revertFromId != null) messages.filter { it.id < revertFromId } else messages
+                    if (!isBusy || queuedMessageIds.isEmpty()) filtered
                     else {
                         val queued = mutableListOf<SessionMessage>()
                         val rest = mutableListOf<SessionMessage>()
-                        for (msg in messages) {
+                        for (msg in filtered) {
                             if (msg.id in queuedMessageIds) queued.add(msg)
                             else rest.add(msg)
                         }

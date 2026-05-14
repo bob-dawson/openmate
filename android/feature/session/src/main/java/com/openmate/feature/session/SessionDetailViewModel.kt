@@ -40,11 +40,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,10 +78,7 @@ class SessionDetailViewModel @Inject constructor(
     val sessionRevert: StateFlow<SessionRevert?> = _sessionRevert.asStateFlow()
 
     private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
-    val messages: StateFlow<List<SessionMessage>> = combine(_messages, _sessionRevert) { msgs, revert ->
-        val revertFromId = revert?.from
-        if (revertFromId != null) msgs.filter { it.id < revertFromId } else msgs
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val messages: StateFlow<List<SessionMessage>> = _messages.asStateFlow()
 
     private var messageWindowState = SessionMessageWindowManager.State(
         messages = emptyList(),
@@ -507,7 +501,8 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 rebuildInitialWindow(sessionID)
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
-                val syncResult = if (lastSeq != null && lastSeq > 0) {
+                val hasLocalMessages = messageWindowState.messages.isNotEmpty()
+                val syncResult = if (lastSeq != null && lastSeq > 0 && hasLocalMessages) {
                     sessionMessageRepository.incrementalSync(sessionID)
                 } else {
                     sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE)

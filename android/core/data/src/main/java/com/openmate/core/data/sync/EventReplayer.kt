@@ -71,7 +71,7 @@ class EventReplayer {
     ) : ReplayChange?  {
         val props = event.data
         val timestamp = parseTimestamp(props)
-        val eventType = event.type.substringBeforeLast(".")
+        val eventType = event.type
 
         when (eventType) {
                 "session.next.agent.switched" -> {

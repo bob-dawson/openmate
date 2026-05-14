@@ -67,32 +67,12 @@ open class SessionEventHandler @Inject constructor(
                     val revertJson = info?.get("revert")
                     val hasRevertKey = info?.contains("revert") == true
                     if (revertJson is JsonObject) {
-                        val newRevertMessageID = revertJson["messageID"]?.jsonPrimitive?.content
-                        val newRevertPartID = revertJson["partID"]?.jsonPrimitive?.content
-                        val evtId = runCatching { syncApiClient.resolveEvtID(sessionID, newRevertMessageID ?: "") }
-                            .onFailure {
-                                Log.w("SessionEventHandler", "resolveEvtID failed for $newRevertMessageID", it)
-                                logStore.log(
-                                    level = SyncLogLevel.Error,
-                                    category = SyncLogCategory.Sync,
-                                    sessionId = sessionID,
-                                    title = "SSE revert预解析失败",
-                                    message = "msgID=$newRevertMessageID error=${it.javaClass.simpleName}: ${it.message}",
-                                )
-                            }
-                            .getOrNull()
                         logStore.log(
                             level = SyncLogLevel.Info,
-                            category = SyncLogCategory.Sync,
+                            category = SyncLogCategory.Sse,
                             sessionId = sessionID,
-                            title = "SSE revert写入",
-                            message = "msgID=$newRevertMessageID evtId=$evtId",
-                        )
-                        db.sessionDao().updateRevertFromSse(
-                            id = sessionID,
-                            revertMessageID = newRevertMessageID,
-                            revertPartID = newRevertPartID,
-                            revertFrom = evtId,
+                            title = "SSE revert写入跳过",
+                            message = "msgID=${revertJson["messageID"]?.jsonPrimitive?.content}, defer to incremental sync",
                         )
                         if (title != null) {
                             db.sessionDao().updateTitle(sessionID, title)
@@ -100,17 +80,10 @@ open class SessionEventHandler @Inject constructor(
                     } else if (hasRevertKey && revertJson is JsonNull) {
                         logStore.log(
                             level = SyncLogLevel.Info,
-                            category = SyncLogCategory.Sync,
+                            category = SyncLogCategory.Sse,
                             sessionId = sessionID,
-                            title = "SSE revert清除",
-                            message = "revert=null",
-                        )
-                        db.sessionDao().updateRevertFields(
-                            id = sessionID,
-                            revertMessageID = null,
-                            revertPartID = null,
-                            revertFrom = null,
-                            revertTo = null,
+                            title = "SSE revert清除跳过",
+                            message = "revert=null, defer to incremental sync",
                         )
                         if (title != null) {
                             db.sessionDao().updateTitle(sessionID, title)
