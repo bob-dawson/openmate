@@ -49,7 +49,7 @@ db.close()
 ### 1. Session API Analysis (opencode REST API)
 `D:\openmate\scripts\session_tool.py` — 通过 opencode REST API 查询服务端原始数据。
 
-**前提**: opencode serve 运行在 `http://127.0.0.1:4096`
+**前提**: opencode serve 运行在 `http://127.0.0.1:4098`
 
 ```powershell
 # 列出所有顶层会话（不含子会话）

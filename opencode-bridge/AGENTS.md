@@ -5,7 +5,7 @@ Rust 反向代理 + 进程管理 + 文件服务 + 认证，位于 Android 客户
 ## 架构
 
 ```
-Android 客户端  ──→  Bridge (port 4097)  ──→  opencode serve (port 4096)
+Android 客户端  ──→  Bridge (port 4097)  ──→  opencode serve (port 4098)
                        │
                        ├─ 代理转发 (fallback)
                        ├─ 进程管理 (auto-start / auto-restart)
@@ -74,7 +74,7 @@ auth_enabled = true  # 是否启用认证
 [opencode]
 binary = "opencode"    # opencode 可执行文件名 (PATH 中或全路径)
 hostname = "127.0.0.1" # opencode serve 监听地址
-port = 4096            # opencode serve 监听端口
+port = 4098            # opencode serve 监听端口
 directory = ""         # 工作目录，空=exe所在目录
 auto_start = true      # Bridge 启动时自动拉起 opencode
 auto_restart = true    # opencode 崩溃后自动重启
@@ -190,7 +190,7 @@ tests/
 
 ## 关键设计决策
 
-- **Fallback 代理**：未匹配路由原样转发给 opencode，Android 端零改动对接（仅改端口 4096→4097）
+- **Fallback 代理**：未匹配路由原样转发给 opencode，Android 端零改动对接（仅改端口 4098→4097）
 - **allowed_paths = []** 允许所有路径，Phase 1 LAN 场景靠网络隔离
 - **PathGuard** 对不存在的路径用 `find_existing_ancestor()` 向上找存在的父目录做 canonicalize
 - **SSE 代理** 用 mpsc channel + ReceiverStream，自动重连（3s/5s 间隔）

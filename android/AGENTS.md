@@ -97,6 +97,6 @@ Base fields: `{id, sessionID, messageID, type}`
 `text` | `reasoning` | `tool` (callID, tool, state) | `file` | `agent` | `step-start` | `step-finish` | `snapshot` | `patch` | `subtask` | `retry` | `compaction`
 
 ## Current Status
-- **Phase 1** (直连 LAN opencode) 开发中，Phase 2 (Cloud Relay + Bridge Agent) 设计中
-- feature 模块无测试，domain 部分测试与源码不同步
-- opencode server: `opencode serve --hostname 0.0.0.0 --port 4096`（必须 `--hostname 0.0.0.0`）
+- **Phase 1** (直连 LAN opencode) 已完成，Phase 2 (Cloud Relay + Bridge Agent) Bridge开发已完成， Cloud Relay未开始
+
+

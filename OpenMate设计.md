@@ -268,7 +268,7 @@ class OpencodeManager {
   "opencode": {
     "binary": "opencode",           // 可执行文件路径
     "hostname": "127.0.0.1",
-    "port": 4096,
+    "port": 4098,
     "directory": "/home/user/project"
   },
   "autoStart": true                 // Bridge 启动时自动启动 opencode
