@@ -41,4 +41,7 @@ interface SessionDao {
 
     @Query("UPDATE SessionEntity SET modelProviderID = :providerID, modelID = :modelID, modelName = :modelName WHERE id = :id")
     suspend fun updateModel(id: String, providerID: String?, modelID: String?, modelName: String?)
+
+    @Query("SELECT * FROM SessionEntity WHERE status IN ('BUSY', 'RUNNING') AND parentID IS NULL")
+    suspend fun getBusySessions(): List<SessionEntity>
 }

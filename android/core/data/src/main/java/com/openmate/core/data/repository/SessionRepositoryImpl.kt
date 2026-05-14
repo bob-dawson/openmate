@@ -10,6 +10,7 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.SyncApiClient
 import com.openmate.core.network.dto.SessionStatusDto
 import com.openmate.core.network.dto.toDomain
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +19,7 @@ import javax.inject.Inject
 
 class SessionRepositoryImpl @Inject constructor(
     private val api: OpencodeApiClient,
+    private val syncApiClient: SyncApiClient,
     private val dbProvider: ActiveDatabaseProvider,
     private val retryStateStore: SessionRetryStateStore,
 ) : SessionRepository {
@@ -132,6 +134,12 @@ class SessionRepositoryImpl @Inject constructor(
                     )
                 }
             }
+            val busySessions = dao.getBusySessions()
+            for (session in busySessions) {
+                if (!statusMap.containsKey(session.id)) {
+                    dao.upsert(session.copy(status = SessionStatus.IDLE.name, startedAt = null))
+                }
+            }
         } catch (e: Exception) {
             android.util.Log.e("SessionRepository", "refreshSessionStatuses failed", e)
         }
@@ -197,6 +205,18 @@ class SessionRepositoryImpl @Inject constructor(
             message = message,
             next = status.next,
         )
+    }
+
+    override suspend fun revertSession(sessionID: String, messageID: String, partID: String?, directory: String?) {
+        api.revertSession(sessionID, messageID, partID, directory)
+    }
+
+    override suspend fun unrevertSession(sessionID: String, directory: String?) {
+        api.unrevertSession(sessionID, directory)
+    }
+
+    override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? {
+        return syncApiClient.resolveMessageID(sessionID, timeCreated)
     }
 
     fun updateObservedRetryStatus(id: String, status: SessionRetryStatus?) {

@@ -77,7 +77,6 @@ class EventReplayer {
                         put("agent", props["agent"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    setCache(event.id, "agent-switched", data, timestamp)
                     changes += ReplayChange.Insert(entity(event.id, sessionId, "agent-switched", data, timestamp))
                 }
 
@@ -86,7 +85,6 @@ class EventReplayer {
                         put("model", props["model"]?.jsonObject ?: buildJsonObject {})
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    setCache(event.id, "model-switched", data, timestamp)
                     changes += ReplayChange.Insert(entity(event.id, sessionId, "model-switched", data, timestamp))
                 }
 
@@ -98,7 +96,6 @@ class EventReplayer {
                         put("agents", props["prompt"]?.jsonObject?.get("agents") ?: JsonArray(emptyList()))
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    setCache(event.id, "user", data, timestamp, roundMark = userRoundMark)
                     changes += ReplayChange.Insert(entity(event.id, sessionId, "user", data, timestamp, roundMark = userRoundMark))
                 }
 
@@ -108,7 +105,6 @@ class EventReplayer {
                         put("text", props["text"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    setCache(event.id, "synthetic", data, timestamp)
                     changes += ReplayChange.Insert(entity(event.id, sessionId, "synthetic", data, timestamp))
                 }
 
@@ -121,7 +117,6 @@ class EventReplayer {
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
                     activeShells[callID] = ShellEntry(event.id, data, timestamp)
-                    setCache(event.id, "shell", data, timestamp)
                     changes += ReplayChange.Insert(entity(event.id, sessionId, "shell", data, timestamp))
                 }
 
@@ -165,7 +160,7 @@ class EventReplayer {
                 }
 
                 "session.next.step.ended" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val updated = cached.toMutableMap()
                     updated["finish"] = JsonPrimitive(props["finish"]?.jsonPrimitive?.contentOrNull ?: "")
                     props["cost"]?.jsonPrimitive?.let { updated["cost"] = it }
@@ -188,7 +183,7 @@ class EventReplayer {
                 }
 
                 "session.next.step.failed" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val updated = cached.toMutableMap()
                     updated["finish"] = JsonPrimitive("error")
                     props["error"]?.jsonObject?.let { updated["error"] = it }
@@ -231,7 +226,7 @@ class EventReplayer {
                 }
 
                 "session.next.text.started" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject { put("type", "text"); put("text", "") })
                     val updated = cached.toMutableMap()
@@ -242,7 +237,7 @@ class EventReplayer {
                 }
 
                 "session.next.text.ended" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val content = cached["content"]?.jsonArray?.toMutableList() ?: return
                     val idx = content.indexOfLast { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" }
                     if (idx >= 0) {
@@ -258,7 +253,7 @@ class EventReplayer {
                 }
 
                 "session.next.tool.input.started" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
                     val name = props["name"]?.jsonPrimitive?.contentOrNull ?: return
                     val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
@@ -280,7 +275,7 @@ class EventReplayer {
                 }
 
                 "session.next.tool.called" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
                     val content = cached["content"]?.jsonArray ?: return
                     val toolIdx = findToolIndex(content, callID) ?: return
@@ -307,7 +302,7 @@ class EventReplayer {
                 }
 
                 "session.next.tool.progress" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
                     val content = cached["content"]?.jsonArray ?: return
                     val toolIdx = findToolIndex(content, callID) ?: return
@@ -328,7 +323,7 @@ class EventReplayer {
                 }
 
                 "session.next.tool.success" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
                     val content = cached["content"]?.jsonArray ?: return
                     val toolIdx = findToolIndex(content, callID) ?: return
@@ -361,7 +356,7 @@ class EventReplayer {
                 }
 
                 "session.next.tool.failed" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return
                     val content = cached["content"]?.jsonArray ?: return
                     val toolIdx = findToolIndex(content, callID) ?: return
@@ -470,7 +465,7 @@ class EventReplayer {
                 }
 
                 "session.next.reasoning.started" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return
                     val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject {
@@ -486,7 +481,7 @@ class EventReplayer {
                 }
 
                 "session.next.reasoning.ended" -> {
-                    val cached = cachedAssistant() ?: return
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return
                     val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return
                     val content = cached["content"]?.jsonArray ?: return
                     val idx = content.indexOfLast {
@@ -550,6 +545,12 @@ class EventReplayer {
 
     private fun updateCache(data: JsonObject) {
         cachedData = data
+    }
+
+    private suspend fun ensureCachedAssistant(sessionId: String, loader: DbLoader): JsonObject? {
+        if (cachedType == "assistant") return cachedData
+        ensureAssistantCache(sessionId, loader)
+        return cachedData?.takeIf { cachedType == "assistant" }
     }
 
     private fun cachedAssistant(): JsonObject? {
