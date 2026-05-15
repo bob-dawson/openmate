@@ -24,24 +24,29 @@ fun TopBar(
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
     actions: @Composable () -> Unit = {},
+    titleContent: (@Composable () -> Unit)? = null,
 ) {
     TopAppBar(
         title = {
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (subtitle != null) {
+            if (titleContent != null) {
+                titleContent()
+            } else {
+                Column {
                     Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = title,
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (subtitle != null) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         },

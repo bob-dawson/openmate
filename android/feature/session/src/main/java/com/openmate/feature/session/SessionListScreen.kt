@@ -95,11 +95,27 @@ fun SessionListScreen(
         topBar = {
             TopBar(
                 title = dirName,
-                subtitle = directory,
                 onBack = onBack,
-                actions = {
-                    ConnectionDot(status = connectionStatus)
-                    Spacer(modifier = Modifier.width(8.dp))
+                titleContent = {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = dirName,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            ConnectionDot(status = connectionStatus)
+                        }
+                        Text(
+                            text = directory,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 },
             )
         },

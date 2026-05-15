@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -57,6 +58,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -84,6 +86,7 @@ import com.openmate.feature.session.DownloadState
 import com.openmate.feature.session.WorkspaceBrowserViewModel
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -129,6 +132,7 @@ fun WorkspaceBrowserScreen(
     var entries by remember { mutableStateOf<List<BridgeDirEntryDto>>(emptyList()) }
     var filenameQuery by remember { mutableStateOf("") }
     var filenameResults by remember { mutableStateOf<List<BridgeSearchResultDto>>(emptyList()) }
+    var searchGeneration by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf("") }
     var viewingFile by remember { mutableStateOf<FileViewState?>(null) }
@@ -415,16 +419,25 @@ fun WorkspaceBrowserScreen(
 
     LaunchedEffect(filenameQuery) {
         if (filenameQuery.length >= 2) {
-            scope.launch(Dispatchers.IO) {
+            delay(500)
+            if (filenameQuery.length >= 2) {
+                val gen = ++searchGeneration
                 try {
-                    filenameResults = apiClient.bridgeSearch(
-                        currentPath.ifBlank { "." },
-                        filenameQuery,
-                        "filename",
-                        50,
-                    )
+                    val results = withContext(Dispatchers.IO) {
+                        apiClient.bridgeSearch(
+                            currentPath.ifBlank { "." },
+                            filenameQuery,
+                            "filename",
+                            50,
+                        )
+                    }
+                    if (gen == searchGeneration) {
+                        filenameResults = results
+                    }
                 } catch (_: Exception) {
-                    filenameResults = emptyList()
+                    if (gen == searchGeneration) {
+                        filenameResults = emptyList()
+                    }
                 }
             }
         } else {

@@ -388,8 +388,19 @@ fun SessionDetailScreen(
             TopBar(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
+                titleContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = sessionTitle.ifBlank { stringResource(R.string.chat) },
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        ConnectionDot(status = connectionStatus)
+                    }
+                },
                 actions = {
-                    ConnectionDot(status = connectionStatus)
                     IconButton(onClick = { showRevertDialog = true }) {
                         Icon(
                             Icons.Default.Undo,

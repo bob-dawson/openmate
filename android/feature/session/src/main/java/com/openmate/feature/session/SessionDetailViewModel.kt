@@ -1046,7 +1046,10 @@ class SessionDetailViewModel @Inject constructor(
             }.getOrNull()
         }
 
-        _isStreaming.value = lastAssistant?.completedAt == null || (lastAssistantFinish != "stop" && lastAssistantFinish != "length")
+        val lastAssistantFinished = lastAssistantFinish == "stop" || lastAssistantFinish == "error" || lastAssistantFinish == "length" || lastAssistantFinish == "other"
+
+        val isReverting = _sessionRevert.value != null
+        _isStreaming.value = lastAssistant == null || (!lastAssistantFinished && !isReverting)
         _queuedMessageIds.value = buildQueuedMessageIds(list)
         _userModelMap.value = buildUserModelMap(list)
 
@@ -1068,7 +1071,7 @@ class SessionDetailViewModel @Inject constructor(
                     if (sid != null) {
                         viewModelScope.launch(Dispatchers.IO) {
                             val dbStart = sessionMessageRepository.findBusyStartTime(sid)
-                            if (dbStart != null && _currentBusyStart.value == null) {
+                            if (dbStart != null && _currentBusyStart.value == null && _isStreaming.value) {
                                 _currentBusyStart.value = dbStart
                             }
                         }

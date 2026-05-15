@@ -99,25 +99,34 @@ interface SessionMessageDao {
     suspend fun getLatestIncompleteAssistant(sessionId: String): SessionMessageEntity?
 
     @Query("""
-        SELECT COALESCE(
-            (SELECT m.timeCreated FROM session_message m
-             WHERE m.sessionId = :sessionId
-               AND m.type = 'user'
-               AND m.timeCreated < (
-                 SELECT timeCreated FROM session_message
+        SELECT CASE
+            WHEN EXISTS (
+                SELECT 1 FROM session_message
+                WHERE sessionId = :sessionId
+                  AND type = 'assistant'
+                  AND completedAt IS NULL
+            )
+            THEN COALESCE(
+                (SELECT m.timeCreated FROM session_message m
+                 WHERE m.sessionId = :sessionId
+                   AND m.type = 'user'
+                   AND m.timeCreated < (
+                     SELECT timeCreated FROM session_message
+                     WHERE sessionId = :sessionId
+                       AND type = 'assistant'
+                       AND completedAt IS NULL
+                     ORDER BY timeCreated ASC
+                     LIMIT 1
+                   )
+                 ORDER BY m.timeCreated DESC
+                 LIMIT 1),
+                (SELECT timeCreated FROM session_message
                  WHERE sessionId = :sessionId
-                   AND type = 'assistant'
-                   AND completedAt IS NULL
                  ORDER BY timeCreated ASC
-                 LIMIT 1
-               )
-             ORDER BY m.timeCreated DESC
-             LIMIT 1),
-            (SELECT timeCreated FROM session_message
-             WHERE sessionId = :sessionId
-             ORDER BY timeCreated ASC
-             LIMIT 1)
-        )
+                 LIMIT 1)
+            )
+            ELSE NULL
+        END
     """)
     suspend fun findBusyStartTime(sessionId: String): Long?
 
