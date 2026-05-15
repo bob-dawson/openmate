@@ -26,7 +26,6 @@ feature/settings/       → 设置页 (1 ViewModel)
 ```
 
 ## Build & Run
-- **IDE**: Android Studio 编译，不要跑 `assembleDebug`（除非被要求）
 - **Gradle build 命令必须加 `--no-daemon`**: Windows 上 Gradle daemon 完成后不退出进程，导致 bash 工具卡住不返回。示例: `.\gradlew.bat assembleDebug --no-daemon 2>&1 | Select-String -Pattern "^e:|BUILD"`
 - **Kotlin 编译错误过滤**: `Select-String -Pattern "^e:"`（`^` 锚点很重要，否则会匹配 `core:database:preBuild` 等正常日志）
 
