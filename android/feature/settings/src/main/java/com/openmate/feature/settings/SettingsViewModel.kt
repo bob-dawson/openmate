@@ -8,6 +8,8 @@ import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.database.ActiveDatabaseProvider
+import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.dto.OpencodeVersionResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.openmate.feature.settings.R
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -28,6 +30,7 @@ class SettingsViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
+    private val apiClient: OpencodeApiClient,
 ) : ViewModel() {
 
     private val prefs: SharedPreferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -44,11 +47,24 @@ class SettingsViewModel @Inject constructor(
     private val _showReasoning = MutableStateFlow(prefs.getBoolean(KEY_SHOW_REASONING, true))
     val showReasoning: StateFlow<Boolean> = _showReasoning.asStateFlow()
 
+    private val _opencodeVersion = MutableStateFlow<OpencodeVersionResponse?>(null)
+    val opencodeVersion: StateFlow<OpencodeVersionResponse?> = _opencodeVersion.asStateFlow()
+
+    private val _isUpgrading = MutableStateFlow(false)
+    val isUpgrading: StateFlow<Boolean> = _isUpgrading.asStateFlow()
+
+    private val _isRestarting = MutableStateFlow(false)
+    val isRestarting: StateFlow<Boolean> = _isRestarting.asStateFlow()
+
+    private val _upgradeError = MutableStateFlow<String?>(null)
+    val upgradeError: StateFlow<String?> = _upgradeError.asStateFlow()
+
     private val cacheDir get() = File(appContext.cacheDir, "file_cache")
 
     init {
         loadActiveProfile()
         refreshCacheInfo()
+        checkVersion()
     }
 
     fun refreshCacheInfo() {
@@ -110,5 +126,57 @@ class SettingsViewModel @Inject constructor(
     fun setShowReasoning(show: Boolean) {
         _showReasoning.value = show
         prefs.edit().putBoolean(KEY_SHOW_REASONING, show).apply()
+    }
+
+    fun checkVersion() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _opencodeVersion.value = apiClient.bridgeOpencodeVersion()
+                _upgradeError.value = null
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun upgradeOpencode() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isUpgrading.value = true
+            _upgradeError.value = null
+            try {
+                val result = apiClient.bridgeOpencodeUpgrade()
+                if (result.success) {
+                    _opencodeVersion.value = OpencodeVersionResponse(
+                        current = result.newVersion,
+                        latest = result.newVersion,
+                        hasUpdate = false,
+                    )
+                } else {
+                    if (result.recovered == true) {
+                        _opencodeVersion.value = OpencodeVersionResponse(
+                            current = result.currentVersion,
+                            latest = null,
+                            hasUpdate = false,
+                        )
+                    }
+                    _upgradeError.value = result.error ?: "Upgrade failed"
+                }
+            } catch (e: Exception) {
+                _upgradeError.value = e.message ?: "Upgrade failed"
+            } finally {
+                _isUpgrading.value = false
+            }
+        }
+    }
+
+    fun restartOpencode() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _isRestarting.value = true
+            try {
+                apiClient.bridgeOpencodeRestart()
+            } catch (e: Exception) {
+                _upgradeError.value = e.message ?: "Restart failed"
+            } finally {
+                _isRestarting.value = false
+            }
+        }
     }
 }

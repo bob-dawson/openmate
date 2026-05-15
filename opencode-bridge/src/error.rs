@@ -73,6 +73,12 @@ pub enum AppError {
 
     #[error("Message not found: {0}")]
     MessageNotFound(String),
+
+    #[error("Upgrade failed: {0}")]
+    UpgradeFailed(String),
+
+    #[error("Upgrade in progress")]
+    UpgradeInProgress,
 }
 
 impl IntoResponse for AppError {
@@ -101,6 +107,8 @@ impl IntoResponse for AppError {
             AppError::DatabaseError(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::SessionNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::MessageNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            AppError::UpgradeFailed(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            AppError::UpgradeInProgress => (StatusCode::CONFLICT, self.to_string()),
         };
 
         let body = json!({ "error": message });

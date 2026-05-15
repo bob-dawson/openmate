@@ -608,6 +608,96 @@ private fun SettingsContent(
         }
 
         item {
+            val opencodeVersion by viewModel.opencodeVersion.collectAsState()
+            val isUpgrading by viewModel.isUpgrading.collectAsState()
+            val isRestarting by viewModel.isRestarting.collectAsState()
+
+            var showUpgradeDialog by remember { mutableStateOf(false) }
+            var showRestartDialog by remember { mutableStateOf(false) }
+
+            if (showUpgradeDialog) {
+                AlertDialog(
+                    onDismissRequest = { showUpgradeDialog = false },
+                    title = { Text(stringResource(R.string.confirm)) },
+                    text = { Text(stringResource(R.string.upgrade_confirm)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showUpgradeDialog = false
+                            viewModel.upgradeOpencode()
+                        }) {
+                            Text(stringResource(R.string.upgrade_opencode), color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showUpgradeDialog = false }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    },
+                )
+            }
+
+            if (showRestartDialog) {
+                AlertDialog(
+                    onDismissRequest = { showRestartDialog = false },
+                    title = { Text(stringResource(R.string.confirm)) },
+                    text = { Text(stringResource(R.string.restart_confirm)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showRestartDialog = false
+                            viewModel.restartOpencode()
+                        }) {
+                            Text(stringResource(R.string.restart_opencode))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRestartDialog = false }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    },
+                )
+            }
+
+            SectionHeader(title = stringResource(R.string.opencode_management))
+            SettingsCard {
+                SettingsRow(
+                    title = stringResource(R.string.version),
+                    subtitle = null,
+                    trailing = {
+                        Text(
+                            text = if (isUpgrading) stringResource(R.string.upgrading)
+                                   else if (isRestarting) stringResource(R.string.restarting)
+                                   else opencodeVersion?.current ?: stringResource(R.string.opencode_not_connected),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+                if (opencodeVersion?.hasUpdate == true && !isUpgrading && !isRestarting) {
+                    SettingsRow(
+                        title = stringResource(R.string.upgrade_to, opencodeVersion?.latest ?: ""),
+                        subtitle = null,
+                        showDivider = false,
+                        modifier = Modifier.clickable { showUpgradeDialog = true },
+                        trailing = {
+                            Text(
+                                text = stringResource(R.string.upgrade_opencode),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                } else {
+                    SettingsRow(
+                        title = stringResource(R.string.restart_opencode),
+                        subtitle = null,
+                        showDivider = false,
+                        modifier = Modifier.clickable(enabled = !isRestarting && !isUpgrading) { showRestartDialog = true },
+                    )
+                }
+            }
+        }
+
+        item {
             SectionHeader(title = stringResource(R.string.about))
             SettingsCard {
                 SettingsRow(

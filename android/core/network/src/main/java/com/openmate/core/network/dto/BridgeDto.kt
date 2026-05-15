@@ -57,6 +57,7 @@ data class BridgeInfoDto(
 @Serializable
 data class BridgeOpencodeInfoDto(
     val status: String = "unknown",
+    val version: String? = null,
     val url: String = "",
     val directory: String = "",
 )
@@ -119,4 +120,25 @@ data class PairConfirmRequest(
 @Serializable
 data class PairConfirmResponse(
     val token: String = "",
+)
+
+@Serializable
+data class OpencodeVersionResponse(
+    val current: String? = null,
+    val latest: String? = null,
+    @SerialName("hasUpdate")
+    val hasUpdate: Boolean = false,
+)
+
+@Serializable
+data class OpencodeUpgradeResponse(
+    val success: Boolean = false,
+    @SerialName("previousVersion")
+    val previousVersion: String? = null,
+    @SerialName("newVersion")
+    val newVersion: String? = null,
+    val error: String? = null,
+    val recovered: Boolean? = null,
+    @SerialName("currentVersion")
+    val currentVersion: String? = null,
 )

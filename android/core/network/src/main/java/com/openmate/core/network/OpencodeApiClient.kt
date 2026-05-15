@@ -15,6 +15,8 @@ import com.openmate.core.network.dto.BridgeWriteRequest
 import com.openmate.core.network.dto.FileNodeDto
 import com.openmate.core.network.dto.HealthDto
 import com.openmate.core.network.dto.MessageHeaderDto
+import com.openmate.core.network.dto.OpencodeUpgradeResponse
+import com.openmate.core.network.dto.OpencodeVersionResponse
 import com.openmate.core.network.dto.PairConfirmRequest
 import com.openmate.core.network.dto.PairConfirmResponse
 import com.openmate.core.network.dto.PairRequestResponse
@@ -392,6 +394,18 @@ class OpencodeApiClient(
             throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
         }
         json.decodeFromString(responseBody)
+    }
+
+    suspend fun bridgeOpencodeVersion(): OpencodeVersionResponse {
+        return get("/api/bridge/opencode/version")
+    }
+
+    suspend fun bridgeOpencodeUpgrade(): OpencodeUpgradeResponse {
+        return post("/api/bridge/opencode/upgrade", JsonObject(emptyMap()))
+    }
+
+    suspend fun bridgeOpencodeRestart() {
+        postUnit("/api/bridge/opencode/restart", JsonObject(emptyMap()))
     }
 
     suspend fun bridgeDownloadFile(

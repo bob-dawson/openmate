@@ -188,4 +188,13 @@
     <string name="sync_logs_reconnect_sse">重连</string>
     <string name="sync_logs_incremental_sync">同步</string>
     <string name="sync_logs_clear_confirm">确认清除？</string>
+    <string name="opencode_management">OpenCode</string>
+    <string name="opencode_not_connected">未连接</string>
+    <string name="upgrade_to">升级到 v%1$s</string>
+    <string name="upgrade_opencode">升级</string>
+    <string name="restart_opencode">重启</string>
+    <string name="upgrade_confirm">升级将重启 opencode，进行中的会话会被中断。继续？</string>
+    <string name="restart_confirm">确定重启 opencode？</string>
+    <string name="upgrading">升级中…</string>
+    <string name="restarting">重启中…</string>
 </resources>

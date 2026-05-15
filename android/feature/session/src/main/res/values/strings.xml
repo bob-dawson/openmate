@@ -191,4 +191,13 @@
     <string name="sync_logs_reconnect_sse">Reconnect</string>
     <string name="sync_logs_incremental_sync">Sync</string>
     <string name="sync_logs_clear_confirm">Clear?</string>
+    <string name="opencode_management">OpenCode</string>
+    <string name="opencode_not_connected">Not connected</string>
+    <string name="upgrade_to">Upgrade to v%1$s</string>
+    <string name="upgrade_opencode">Upgrade</string>
+    <string name="restart_opencode">Restart</string>
+    <string name="upgrade_confirm">Upgrading will restart opencode. Active sessions will be interrupted. Continue?</string>
+    <string name="restart_confirm">Restart opencode?</string>
+    <string name="upgrading">Upgrading…</string>
+    <string name="restarting">Restarting…</string>
 </resources>

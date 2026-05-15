@@ -39,6 +39,7 @@ pub async fn status(State(state): State<AppState>) -> impl IntoResponse {
         },
         "opencode": {
             "status": status_str,
+            "version": state.opencode_manager.get_cached_version().await,
             "url": state.config.opencode_url(),
             "directory": state.config.opencode.directory,
         }
@@ -92,4 +93,81 @@ pub async fn restart_opencode(
         .map_err(|e| AppError::OpencodeStartFailed(e))?;
 
     Ok(Json(json!({ "success": true, "status": "starting" })))
+}
+
+pub async fn opencode_version(State(state): State<AppState>) -> impl IntoResponse {
+    let current = state.opencode_manager.get_cached_version().await;
+    let latest = state.opencode_manager.get_latest_version().await.ok();
+
+    let has_update = match (&current, &latest) {
+        (Some(c), Some(l)) => is_newer_version(l, c),
+        _ => false,
+    };
+
+    Json(json!({
+        "current": current,
+        "latest": latest,
+        "hasUpdate": has_update,
+    }))
+}
+
+pub async fn upgrade_opencode(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    if state.opencode_manager.is_upgrade_in_progress() {
+        return Err(AppError::UpgradeInProgress);
+    }
+    let result = state
+        .opencode_manager
+        .upgrade()
+        .await
+        .map_err(|e| AppError::UpgradeFailed(e))?;
+    Ok(Json(json!(result)))
+}
+
+fn is_newer_version(new: &str, old: &str) -> bool {
+    let parse = |v: &str| -> Vec<u32> {
+        v.trim_start_matches('v')
+            .split('.')
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    };
+    let new_parts = parse(new);
+    let old_parts = parse(old);
+    new_parts > old_parts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_newer_version_major() {
+        assert!(is_newer_version("2.0.0", "1.15.0"));
+    }
+
+    #[test]
+    fn test_is_newer_version_minor() {
+        assert!(is_newer_version("1.16.0", "1.15.0"));
+    }
+
+    #[test]
+    fn test_is_newer_version_patch() {
+        assert!(is_newer_version("1.15.1", "1.15.0"));
+    }
+
+    #[test]
+    fn test_is_newer_version_same() {
+        assert!(!is_newer_version("1.15.0", "1.15.0"));
+    }
+
+    #[test]
+    fn test_is_newer_version_older() {
+        assert!(!is_newer_version("1.14.0", "1.15.0"));
+    }
+
+    #[test]
+    fn test_is_newer_version_with_v_prefix() {
+        assert!(is_newer_version("v1.16.0", "v1.15.0"));
+    }
 }

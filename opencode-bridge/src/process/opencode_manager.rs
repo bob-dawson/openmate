@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 
 use crate::state::OpencodeStatus;
@@ -12,6 +13,21 @@ pub struct OpencodeManager {
     port: Arc<u16>,
     directory: Arc<String>,
     auto_restart: Arc<bool>,
+    opencode_version: Arc<RwLock<Option<String>>>,
+    upgrade_in_progress: Arc<AtomicBool>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct UpgradeResult {
+    pub success: bool,
+    #[serde(rename = "previousVersion")]
+    pub previous_version: Option<String>,
+    #[serde(rename = "newVersion")]
+    pub new_version: Option<String>,
+    pub error: Option<String>,
+    pub recovered: Option<bool>,
+    #[serde(rename = "currentVersion")]
+    pub current_version: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -25,6 +41,8 @@ impl OpencodeManager {
             port: Arc::new(4096),
             directory: Arc::new(String::new()),
             auto_restart: Arc::new(true),
+            opencode_version: Arc::new(RwLock::new(None)),
+            upgrade_in_progress: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -44,6 +62,8 @@ impl OpencodeManager {
             port: Arc::new(port),
             directory: Arc::new(directory),
             auto_restart: Arc::new(auto_restart),
+            opencode_version: Arc::new(RwLock::new(None)),
+            upgrade_in_progress: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -57,10 +77,18 @@ impl OpencodeManager {
 
     pub async fn check_health(&self) -> bool {
         let url = format!("{}/global/health", self.opencode_url);
-        reqwest::get(&url)
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
+        match reqwest::get(&url).await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    if let Some(version) = body.get("version").and_then(|v| v.as_str()) {
+                        let mut cached = self.opencode_version.write().await;
+                        *cached = Some(version.to_string());
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
     }
 
     pub async fn start(&self) -> Result<(), String> {
@@ -86,6 +114,7 @@ impl OpencodeManager {
         let url = self.opencode_url.clone();
         let status_arc = self.status.clone();
         let auto_restart = *self.auto_restart;
+        let version_arc = self.opencode_version.clone();
 
         tokio::spawn(async move {
             let mut retry_count = 0u32;
@@ -97,6 +126,12 @@ impl OpencodeManager {
                 let client = reqwest::Client::new();
                 if let Ok(resp) = client.get(format!("{}/global/health", url)).send().await {
                     if resp.status().is_success() {
+                        if let Ok(body) = resp.json::<serde_json::Value>().await {
+                            if let Some(v) = body.get("version").and_then(|v| v.as_str()) {
+                                let mut cached = version_arc.write().await;
+                                *cached = Some(v.to_string());
+                            }
+                        }
                         let mut s = status_arc.write().await;
                         *s = OpencodeStatus::Running;
                         tracing::info!("opencode is ready");
@@ -205,6 +240,123 @@ impl OpencodeManager {
     pub async fn set_status(&self, new_status: OpencodeStatus) {
         let mut status = self.status.write().await;
         *status = new_status;
+    }
+
+    pub async fn get_cached_version(&self) -> Option<String> {
+        self.opencode_version.read().await.clone()
+    }
+
+    pub async fn get_latest_version(&self) -> Result<String, String> {
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            tokio::process::Command::new("npm")
+                .args(["view", "opencode-ai", "version"])
+                .output(),
+        )
+        .await
+        .map_err(|_| "npm view timed out (30s)".to_string())?
+        .map_err(|e| format!("Failed to run npm view: {}", e))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "npm view failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if version.is_empty() {
+            return Err("npm view returned empty version".to_string());
+        }
+        Ok(version)
+    }
+
+    pub fn is_upgrade_in_progress(&self) -> bool {
+        self.upgrade_in_progress.load(Ordering::Relaxed)
+    }
+
+    pub async fn upgrade(&self) -> Result<UpgradeResult, String> {
+        if self.upgrade_in_progress.swap(true, Ordering::Relaxed) {
+            return Err("Upgrade already in progress".to_string());
+        }
+        let result = self.do_upgrade_internal().await;
+        self.upgrade_in_progress.store(false, Ordering::Relaxed);
+        result
+    }
+
+    async fn do_upgrade_internal(&self) -> Result<UpgradeResult, String> {
+        let previous_version = self.get_cached_version().await;
+
+        if self.is_running().await {
+            self.stop().await?;
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        }
+
+        let npm_result = tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            tokio::process::Command::new("npm")
+                .args(["install", "-g", "opencode-ai@latest"])
+                .output(),
+        )
+        .await;
+
+        match npm_result {
+            Ok(Ok(output)) if output.status.success() => {
+                self.start().await?;
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                let new_version = self.get_cached_version().await;
+                Ok(UpgradeResult {
+                    success: true,
+                    previous_version,
+                    new_version,
+                    error: None,
+                    recovered: None,
+                    current_version: None,
+                })
+            }
+            Ok(Ok(output)) => {
+                let error = String::from_utf8_lossy(&output.stderr).to_string();
+                let recovered = self.start().await.is_ok();
+                let current_version = if recovered {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    self.get_cached_version().await
+                } else {
+                    None
+                };
+                Ok(UpgradeResult {
+                    success: false,
+                    previous_version,
+                    new_version: None,
+                    error: Some(error),
+                    recovered: Some(recovered),
+                    current_version,
+                })
+            }
+            Ok(Err(e)) => {
+                let error = format!("Failed to run npm install: {}", e);
+                let recovered = self.start().await.is_ok();
+                Ok(UpgradeResult {
+                    success: false,
+                    previous_version,
+                    new_version: None,
+                    error: Some(error),
+                    recovered: Some(recovered),
+                    current_version: None,
+                })
+            }
+            Err(_) => {
+                let error = "npm install timed out (300s)".to_string();
+                let recovered = self.start().await.is_ok();
+                Ok(UpgradeResult {
+                    success: false,
+                    previous_version,
+                    new_version: None,
+                    error: Some(error),
+                    recovered: Some(recovered),
+                    current_version: None,
+                })
+            }
+        }
     }
 }
 

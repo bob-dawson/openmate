@@ -85,6 +85,14 @@ pub async fn run_server(
             "/api/bridge/opencode/restart",
             post(bridge::router::restart_opencode),
         )
+        .route(
+            "/api/bridge/opencode/version",
+            get(bridge::router::opencode_version),
+        )
+        .route(
+            "/api/bridge/opencode/upgrade",
+            post(bridge::router::upgrade_opencode),
+        )
         .route("/api/bridge/pair/request", post(auth::pair::pair_request))
         .route("/api/bridge/pair/approve", post(auth::pair::pair_approve))
         .route("/api/bridge/pair/confirm", post(auth::pair::pair_confirm))
