@@ -39,7 +39,7 @@ fun ChatInputBar(
             .fillMaxWidth()
             .background(TopBarBackground)
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.Bottom,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         OutlinedTextField(
             value = text,

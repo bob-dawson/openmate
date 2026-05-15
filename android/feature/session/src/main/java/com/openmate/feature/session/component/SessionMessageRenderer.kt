@@ -590,7 +590,7 @@ fun AssistantMessageItem(
                         } else if (summary.isBlock) {
                             BlockToolLine(displayItem, summary, onViewFile)
                         } else {
-                            InlineToolLine(displayItem)
+                            InlineToolLine(displayItem, onViewFile)
                         }
                     }
                 }

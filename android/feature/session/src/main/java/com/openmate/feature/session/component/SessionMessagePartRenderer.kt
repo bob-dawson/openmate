@@ -91,6 +91,7 @@ internal data class ToolSummary(
     val icon: String,
     val text: String,
     val isBlock: Boolean,
+    val filePath: String? = null,
 )
 
 private val ApplyPatchFileLineRegex = Regex("""(?m)^(?:[AMDCRTU?!]{1,2}|M)\s+(.+)$""")
@@ -174,8 +175,8 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
             return ToolSummary("glob", "$pattern$suffix".ifBlank { "glob" }, false)
         }
         "read" -> {
-            val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            return ToolSummary("read", filePath.ifBlank { "read" }, false)
+            val fp = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
+            return ToolSummary("read", fp.ifBlank { "read" }, false, fp.ifBlank { null })
         }
         "grep" -> {
             val pattern = jsonArgs.str("pattern") ?: ""
@@ -196,12 +197,12 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
             return ToolSummary("codesearch", query.ifBlank { "codesearch" }, false)
         }
         "write" -> {
-            val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            return ToolSummary("write", filePath.ifBlank { "write" }, filePath.isNotBlank())
+            val fp = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
+            return ToolSummary("write", fp.ifBlank { "write" }, fp.isNotBlank(), fp.ifBlank { null })
         }
         "edit" -> {
-            val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            return ToolSummary("edit", filePath.ifBlank { "edit" }, filePath.isNotBlank())
+            val fp = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
+            return ToolSummary("edit", fp.ifBlank { "edit" }, true, fp.ifBlank { null })
         }
         "task" -> {
             val desc = jsonArgs.str("description") ?: ""
@@ -356,7 +357,7 @@ private fun parseTodoArgs(args: String?): List<TodoInfo>? {
 @Composable
 internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
     val summary = toolSummary(item.toolName, item.args, item.result)
-    val isFilePathClickable = onViewFile != null && summary.text.isNotBlank() && isFilePath(summary.text)
+    val clickablePath = summary.filePath
     Row(
         modifier = Modifier.padding(vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -368,13 +369,13 @@ internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: 
         )
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
-            if (isFilePath(summary.text)) {
+            if (clickablePath != null) {
                 StartEllipsisText(
-                    text = summary.text,
+                    text = clickablePath,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isFilePathClickable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (onViewFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
-                    modifier = if (isFilePathClickable) Modifier.clickable { onViewFile!!.invoke(summary.text) } else Modifier,
+                    modifier = if (onViewFile != null) Modifier.clickable { onViewFile!!.invoke(clickablePath) } else Modifier,
                 )
             } else {
                 Text(
@@ -392,7 +393,7 @@ internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: 
 @Composable
 internal fun RunningToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
     val summary = toolSummary(item.toolName, item.args, item.result)
-    val isFilePathClickable = onViewFile != null && summary.text.isNotBlank() && isFilePath(summary.text)
+    val clickablePath = summary.filePath
     Row(
         modifier = Modifier.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -409,13 +410,13 @@ internal fun RunningToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath:
         )
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
-            if (isFilePath(summary.text)) {
+            if (clickablePath != null) {
                 StartEllipsisText(
-                    text = summary.text,
+                    text = clickablePath,
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isFilePathClickable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (onViewFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
-                    modifier = if (isFilePathClickable) Modifier.clickable { onViewFile!!.invoke(summary.text) } else Modifier,
+                    modifier = if (onViewFile != null) Modifier.clickable { onViewFile!!.invoke(clickablePath) } else Modifier,
                 )
             } else {
                 Text(
@@ -646,13 +647,12 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
         item.files
     }
 
-    val canViewFile = onViewFile != null && summary.text.isNotBlank() && isFilePath(summary.text)
+    val canViewFile = onViewFile != null && summary.filePath != null
 
     Column(modifier = Modifier.padding(vertical = 2.dp)) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded.value = !expanded.value }
                 .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -663,13 +663,13 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
             )
             if (summary.text.isNotBlank()) {
                 Spacer(modifier = Modifier.width(4.dp))
-                if (isFilePath(summary.text)) {
+                if (summary.filePath != null) {
                     StartEllipsisText(
-                        text = summary.text,
+                        text = summary.filePath,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (canViewFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
-                        modifier = if (canViewFile) Modifier.clickable { onViewFile!!.invoke(summary.text) } else Modifier,
+                        modifier = if (canViewFile) Modifier.clickable { onViewFile!!.invoke(summary.filePath) } else Modifier,
                     )
                 } else {
                     Text(
@@ -686,6 +686,7 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                 text = if (expanded.value) "▲" else "▼",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clickable { expanded.value = !expanded.value },
             )
         }
 
