@@ -1,25 +1,39 @@
 use rusqlite::{Connection, OpenFlags, params};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use crate::config::Config;
 
 pub struct SyncDb {
+    pool: Pool<SqliteConnectionManager>,
     db_path: PathBuf,
 }
 
 impl SyncDb {
     pub fn new(config: &Config) -> Self {
-        Self {
-            db_path: config.db_path(),
+        let db_path = config.db_path();
+        let manager = SqliteConnectionManager::file(&db_path)
+            .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX);
+        let pool = Pool::builder()
+            .max_size(4)
+            .min_idle(Some(1))
+            .connection_timeout(std::time::Duration::from_secs(5))
+            .build(manager)
+            .expect("Failed to create SQLite connection pool");
+
+        {
+            let conn = pool.get().expect("Failed to get initial DB connection");
+            conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
+                .ok();
         }
+
+        Self { pool, db_path }
     }
 
-    fn connect(&self) -> Result<Connection, String> {
-        Connection::open_with_flags(
-            &self.db_path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).map_err(|e| format!("Failed to open opencode.db: {}", e))
+    fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, String> {
+        self.pool.get().map_err(|e| format!("DB pool error: {}", e))
     }
 
     pub fn ensure_indexes(&self) -> Result<(), String> {
@@ -47,7 +61,7 @@ impl SyncDb {
     }
 
     fn query_max_seq(&self, aggregate_id: &str) -> Option<i64> {
-        let conn = self.connect().ok()?;
+        let conn = self.conn().ok()?;
         conn.query_row(
             "SELECT MAX(seq) FROM event WHERE aggregate_id = ?",
             params![aggregate_id],
@@ -56,7 +70,7 @@ impl SyncDb {
     }
 
     fn get_session_message_snapshot(&self, session_id: &str, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
-        let conn = self.connect()?;
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, session_id, type, time_created, time_updated, data
              FROM session_message
@@ -95,7 +109,7 @@ impl SyncDb {
     }
 
     pub fn get_events(&self, session_id: &str, after_seq: i64, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
-        let conn = self.connect()?;
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, aggregate_id, seq, type, data
              FROM event
@@ -132,7 +146,7 @@ impl SyncDb {
     }
 
     pub fn get_full_message(&self, message_id: &str) -> Result<Option<Value>, String> {
-        let conn = self.connect()?;
+        let conn = self.conn()?;
         let result = conn.query_row(
             "SELECT id, type, data FROM session_message WHERE id = ?",
             params![message_id],
@@ -156,7 +170,7 @@ impl SyncDb {
     }
 
     pub fn resolve_message_id(&self, session_id: &str, time_created: i64) -> Result<Option<String>, String> {
-        let conn = self.connect()?;
+        let conn = self.conn()?;
         let result = conn.query_row(
             "SELECT id FROM message WHERE session_id = ? AND time_created = ? AND json_extract(data, '$.role') = 'user'",
             params![session_id, time_created],
@@ -170,7 +184,7 @@ impl SyncDb {
     }
 
     pub fn resolve_evt_id(&self, session_id: &str, message_id: &str) -> Result<Option<String>, String> {
-        let conn = self.connect()?;
+        let conn = self.conn()?;
         let time_created: i64 = match conn.query_row(
             "SELECT time_created FROM message WHERE id = ? AND session_id = ?",
             params![message_id, session_id],
@@ -191,9 +205,10 @@ impl SyncDb {
             Err(e) => Err(format!("Query failed: {}", e)),
         }
     }
+
     pub fn get_sessions(&self) -> Result<Vec<Value>, String> {
-        tracing::info!("get_sessions: db_path={}", self.db_path.display());
-        let conn = self.connect()?;
+        tracing::info!("get_sessions: using connection pool");
+        let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT s.id, s.title, s.agent, s.model, s.time_created, s.time_updated,
                     CASE WHEN es.seq IS NOT NULL THEN 1 ELSE 0 END as hasEvents,
@@ -232,7 +247,7 @@ impl SyncDb {
     }
 
     fn get_legacy_message_snapshot(&self, session_id: &str, limit: i64) -> Result<Vec<Value>, String> {
-        let conn = self.connect()?;
+        let conn = self.conn()?;
         let mut msg_stmt = conn.prepare(
             "SELECT id, session_id, time_created, time_updated, data
              FROM message

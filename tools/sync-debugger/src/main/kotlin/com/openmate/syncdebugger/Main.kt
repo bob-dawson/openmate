@@ -32,6 +32,7 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
     private val token by option("--token", help = "Bridge auth token (or file path starting with @)")
     private val jsonOutput by option("--output", help = "JSON output file").default("sync-result.json")
     private val jsonOnly by option("--json-only", help = "Only output JSON").flag()
+    private val eventLimit by option("--limit", help = "Events per batch").int().default(100)
 
     override fun run() = runBlocking {
         val db = JdbcDb(dbPath)
@@ -93,11 +94,29 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
             var revertFromId: String? = null
             var revertToId: String? = null
 
+            var totalFetchMs = 0L
+            var totalReplayMs = 0L
+            var totalDbWriteMs = 0L
+            var totalResolveEvtIdMs = 0L
+            var replayerCreatedCount = 1
+            val loaderCallCounts = mutableMapOf<String, Int>()
+            val batchTimings = mutableListOf<BatchTiming>()
+            val wallStart = System.currentTimeMillis()
+
+            val countingLoader = EventReplayer.DbLoader { action ->
+                val key = action::class.simpleName ?: action.toString()
+                loaderCallCounts[key] = (loaderCallCounts[key] ?: 0) + 1
+                loader(action)
+            }
+
             while (true) {
                 batchIndex++
-                val eventsResponse = client.getEvents(sessionId, currentAfterSeq)
+                val fetchStart = System.currentTimeMillis()
+                val eventsResponse = client.getEvents(sessionId, currentAfterSeq, eventLimit)
                 val events = eventsResponse.events
-                println("Batch $batchIndex: got ${events.size} events, maxSeq=${eventsResponse.maxSeq}")
+                val fetchMs = System.currentTimeMillis() - fetchStart
+                totalFetchMs += fetchMs
+                println("Batch $batchIndex: got ${events.size} events, maxSeq=${eventsResponse.maxSeq} fetch=${fetchMs}ms")
 
                 if (events.isEmpty()) {
                     val lastSeq = eventsResponse.maxSeq ?: currentAfterSeq
@@ -110,7 +129,6 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
 
                 totalEvents += events.size
 
-                // Pre-resolve revert IDs from session.updated events in this batch
                 val revertIdMap = mutableMapOf<String, String?>()
                 for (event in events) {
                     if (!event.type.startsWith("session.updated")) continue
@@ -118,7 +136,9 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                     val revertJson = info?.get("revert")
                     if (revertJson is JsonObject) {
                         val msgId = revertJson["messageID"]?.jsonPrimitive?.contentOrNull ?: continue
+                        val resolveStart = System.currentTimeMillis()
                         val evtId = client.resolveEvtId(sessionId, msgId)
+                        totalResolveEvtIdMs += System.currentTimeMillis() - resolveStart
                         revertIdMap[msgId] = evtId
                         if (evtId != null) {
                             println("[Revert] pre-resolve msg=$msgId -> evt=$evtId")
@@ -127,6 +147,7 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                 }
 
                 val batchChanges = mutableListOf<ReplayChange>()
+                val replayStart = System.currentTimeMillis()
 
                 for (event in events) {
                     // Handle session.updated revert state (update in-memory revert IDs)
@@ -172,7 +193,7 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
 
                         val strippedType = event.type.replace(Regex("\\.\\d+$"), "")
                         val replayEvent = ReplayEvent(event.id, strippedType, event.data)
-                        val change = replayer.processEvent(replayEvent, sessionId, loader)
+                        val change = replayer.processEvent(replayEvent, sessionId, countingLoader)
                         if (change != null) {
                             batchChanges += change
                             allChanges += change
@@ -213,6 +234,10 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                     }
                 }
 
+                val replayMs = System.currentTimeMillis() - replayStart
+                totalReplayMs += replayMs
+
+                val dbWriteStart = System.currentTimeMillis()
                 db.transaction {
                     val coalesced = mutableMapOf<String, ReplayChange>()
                     for (change in batchChanges) {
@@ -268,6 +293,11 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                     dao.upsertSyncState(SyncStateEntity(sessionId, newSeq))
                     currentAfterSeq = newSeq
                 }
+
+                val dbWriteMs = System.currentTimeMillis() - dbWriteStart
+                totalDbWriteMs += dbWriteMs
+                batchTimings += BatchTiming(batchIndex, fetchMs, replayMs, dbWriteMs, events.size)
+                println("  batch $batchIndex timing: fetch=${fetchMs}ms replay=${replayMs}ms dbWrite=${dbWriteMs}ms")
             }
 
             val result = SyncResult(
@@ -280,6 +310,16 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                     totalChanges = allChanges.size,
                     skippedEvents = steps.count { it.skipReason != null },
                     skipReasons = skipReasons,
+                    perf = PerfSummary(
+                        totalWallMs = System.currentTimeMillis() - wallStart,
+                        fetchMs = totalFetchMs,
+                        replayMs = totalReplayMs,
+                        dbWriteMs = totalDbWriteMs,
+                        resolveEvtIdMs = totalResolveEvtIdMs,
+                        loaderCalls = loaderCallCounts,
+                        replayerCreatedCount = replayerCreatedCount,
+                        batchTimings = batchTimings,
+                    ),
                 ),
             )
 

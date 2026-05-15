@@ -75,6 +75,23 @@ class OutputFormatter {
     }
 
     fun formatSummaryConsole(result: SyncResult): String {
+        val perf = result.summary.perf
+        val perfLines = if (perf != null) {
+            """
+            |--- Performance ---
+            |Total wall: ${perf.totalWallMs}ms
+            |  Fetch: ${perf.fetchMs}ms (${perf.fetchMs * 100 / maxOf(perf.totalWallMs, 1)}%)
+            |  Replay: ${perf.replayMs}ms (${perf.replayMs * 100 / maxOf(perf.totalWallMs, 1)}%)
+            |  DB write: ${perf.dbWriteMs}ms (${perf.dbWriteMs * 100 / maxOf(perf.totalWallMs, 1)}%)
+            |  ResolveEvtID: ${perf.resolveEvtIdMs}ms
+            |  Replayer created: ${perf.replayerCreatedCount}x
+            |  Loader calls: ${perf.loaderCalls}
+            |  Top 5 slowest batches:
+            ${perf.batchTimings.sortedByDescending { it.replayMs }.take(5).joinToString("\n") { b ->
+                "|    B${b.batch}: ${b.events}evts fetch=${b.fetchMs}ms replay=${b.replayMs}ms db=${b.dbWriteMs}ms"
+            }}
+            """.trimMargin()
+        } else ""
         return """
             |=== Summary ===
             |Session: ${result.sessionId}
@@ -82,6 +99,7 @@ class OutputFormatter {
             |Changes: ${result.summary.totalChanges}
             |Skipped: ${result.summary.skippedEvents}
             |Skip reasons: ${result.summary.skipReasons}
+            $perfLines
         """.trimMargin()
     }
 }

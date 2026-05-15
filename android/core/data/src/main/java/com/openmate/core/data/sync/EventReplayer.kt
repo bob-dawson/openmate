@@ -50,7 +50,6 @@ class EventReplayer {
         sessionId: String,
         loader: DbLoader,
     ): ReplayChange? {
-        ensureAssistantCache(sessionId, loader)
         return processEventInternal(event, sessionId, loader)
     }
 

@@ -166,6 +166,24 @@ class SessionMessageRepositoryImpl @Inject constructor(
             var totalBytes = 0L
             var batchIndex = 0
 
+            val loader = EventReplayer.DbLoader { action ->
+                when (action) {
+                    is EventReplayer.DbLoader.Action.LoadById ->
+                        db.sessionMessageDao().getById(action.id)
+
+                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
+                        db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
+
+                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
+                        db.sessionMessageDao().getLatestIncompleteCompaction(action.sessionId)
+
+                    is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId ->
+                        db.sessionMessageDao()
+                            .getAssistantByToolCallId(action.sessionId, action.callID)
+                }
+            }
+            val replayer = EventReplayer()
+
             while (true) {
                 batchIndex++
                 val payload = syncApiClient.eventsPayload(sessionId, afterSeq)
@@ -214,24 +232,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     traceId = traceId,
                 )
 
-                val loader = EventReplayer.DbLoader { action ->
-                    when (action) {
-                        is EventReplayer.DbLoader.Action.LoadById ->
-                            db.sessionMessageDao().getById(action.id)
-
-                        is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
-                            db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
-
-                        is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
-                            db.sessionMessageDao().getLatestIncompleteCompaction(action.sessionId)
-
-                        is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId ->
-                            db.sessionMessageDao()
-                                .getAssistantByToolCallId(action.sessionId, action.callID)
-                    }
-                }
-
-                val replayer = EventReplayer()
                 val revertIdMap = mutableMapOf<String, String?>()
                 for (event in response.events) {
                     if (!event.type.startsWith("session.updated")) continue
