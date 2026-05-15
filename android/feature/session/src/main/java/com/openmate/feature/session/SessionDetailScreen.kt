@@ -865,6 +865,11 @@ fun SessionDetailScreen(
                     viewModel.revertToMessage(sessionID, messageID)
                     showSearch = false
                 },
+                hasOlderMessages = hasOlderMessages,
+                isLoadingOlder = isLoadingOlder,
+                onLoadMore = { userTurns ->
+                    viewModel.loadMoreSearchMessages(userTurns)
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         }

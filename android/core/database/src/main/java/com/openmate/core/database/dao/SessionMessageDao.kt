@@ -66,6 +66,35 @@ interface SessionMessageDao {
     @Query("SELECT COUNT(*) FROM session_message WHERE sessionId = :sessionId")
     suspend fun countBySession(sessionId: String): Int
 
+    @Query("""
+        SELECT * FROM session_message
+        WHERE sessionId = :sessionId
+          AND type = 'user'
+          AND (timeCreated < :beforeTimeCreated OR (timeCreated = :beforeTimeCreated AND id < :beforeId))
+        ORDER BY timeCreated DESC, id DESC
+        LIMIT 1 OFFSET :offset
+    """)
+    suspend fun findNthOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String, offset: Int): SessionMessageEntity?
+
+    @Query("""
+        SELECT * FROM session_message
+        WHERE sessionId = :sessionId
+          AND (timeCreated > :anchorTimeCreated OR (timeCreated = :anchorTimeCreated AND id >= :anchorId))
+          AND (timeCreated < :beforeTimeCreated OR (timeCreated = :beforeTimeCreated AND id < :beforeId))
+        ORDER BY timeCreated ASC, id ASC
+    """)
+    suspend fun getMessagesBetween(sessionId: String, anchorTimeCreated: Long, anchorId: String, beforeTimeCreated: Long, beforeId: String): List<SessionMessageEntity>
+
+    @Transaction
+    suspend fun getOlderPageByUserTurns(sessionId: String, beforeTimeCreated: Long, beforeId: String, userTurns: Int): List<SessionMessageEntity> {
+        val anchor = findNthOlderUserMessage(sessionId, beforeTimeCreated, beforeId, userTurns - 1)
+        return if (anchor != null) {
+            getMessagesBetween(sessionId, anchor.timeCreated, anchor.id, beforeTimeCreated, beforeId)
+        } else {
+            getOlderPage(sessionId, beforeTimeCreated, beforeId, Int.MAX_VALUE)
+        }
+    }
+
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' AND roundMark = 0 AND completedAt IS NULL ORDER BY timeCreated DESC LIMIT 1")
     suspend fun getLatestIncompleteAssistant(sessionId: String): SessionMessageEntity?
 

@@ -99,6 +99,28 @@ class SessionMessageRepositoryImpl @Inject constructor(
         return entities.map { it.toDomain() }
     }
 
+    override suspend fun getOlderPageByUserTurns(
+        sessionId: String,
+        beforeTimeCreated: Long,
+        beforeId: String,
+        userTurns: Int,
+    ): List<SessionMessage> {
+        val startedAt = System.currentTimeMillis()
+        val entities = dbProvider.getActive().sessionMessageDao()
+            .getOlderPageByUserTurns(sessionId, beforeTimeCreated, beforeId, userTurns)
+        val costMs = System.currentTimeMillis() - startedAt
+        val first = entities.firstOrNull()
+        val last = entities.lastOrNull()
+        logStore.log(
+            level = SyncLogLevel.Info,
+            category = SyncLogCategory.Sync,
+            sessionId = sessionId,
+            title = "按用户轮次加载旧消息",
+            message = "userTurns=$userTurns count=${entities.size} cost=${costMs}ms first=${first?.id ?: "none"} last=${last?.id ?: "none"}",
+        )
+        return entities.map { it.toDomain() }
+    }
+
     override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult {
         val db = dbProvider.getActive()
         Log.d("SyncRepo", "initSync start: sessionId=$sessionId")

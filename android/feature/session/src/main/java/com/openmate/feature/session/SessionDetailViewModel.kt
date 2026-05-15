@@ -903,6 +903,42 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    fun loadMoreSearchMessages(userTurns: Int) {
+        val sessionId = currentSessionID ?: return
+        if (_isLoadingOlder.value) return
+        val first = messageWindowState.messages.firstOrNull() ?: return
+
+        _isLoadingOlder.value = true
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val older = sessionMessageRepository.getOlderPageByUserTurns(
+                    sessionId = sessionId,
+                    beforeTimeCreated = first.timeCreated,
+                    beforeId = first.id,
+                    userTurns = userTurns,
+                )
+                if (older.isNotEmpty()) {
+                    messageWindowState = SessionMessageWindowManager.prependOlderPage(
+                        state = messageWindowState,
+                        olderPage = older,
+                        hasOlderMessages = true,
+                    )
+                    _messages.value = messageWindowState.messages
+                    _hasOlderMessages.value = messageWindowState.hasOlderMessages
+                    recalculateMessageDerivedState(messageWindowState.messages)
+                } else {
+                    _hasOlderMessages.value = false
+                    messageWindowState = messageWindowState.copy(hasOlderMessages = false)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "loadMoreSearchMessages failed", e)
+            } finally {
+                _isLoadingOlder.value = false
+            }
+        }
+    }
+
     private suspend fun rebuildInitialWindow(sessionId: String) {
         val recent = sessionMessageRepository.getRecentWindow(sessionId, MESSAGE_WINDOW_PAGE_SIZE)
         messageWindowState = SessionMessageWindowManager.State(

@@ -117,6 +117,9 @@
     <string name="tab_all_messages">All</string>
     <string name="enter_search_query">Enter search query</string>
     <string name="no_search_results">No results</string>
+    <string name="load_older_messages">Load older</string>
+    <string name="user_turns_unit">turns</string>
+    <string name="user_turns_label">Turns:</string>
     <string name="label_you">Me</string>
     <string name="label_agent">Agent</string>
     <string name="scroll_to_bottom">Scroll to bottom</string>

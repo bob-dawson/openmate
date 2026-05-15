@@ -10,6 +10,7 @@ interface SessionMessageRepository {
     fun observeSyncEvents(): Flow<SessionMessageSyncEvent>
     suspend fun getRecentWindow(sessionId: String, limit: Int): List<SessionMessage>
     suspend fun getOlderPage(sessionId: String, beforeTimeCreated: Long, beforeId: String, limit: Int): List<SessionMessage>
+    suspend fun getOlderPageByUserTurns(sessionId: String, beforeTimeCreated: Long, beforeId: String, userTurns: Int): List<SessionMessage>
     suspend fun initSync(sessionId: String, limit: Int = 30): SessionMessageSyncResult
     suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult
     suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult
