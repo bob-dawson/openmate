@@ -95,6 +95,7 @@ if (-not $Version) {
 }
 
 $ReleaseDir = "$ReleaseBase\$Version"
+$InstallDoc = "$ProjectRoot\docs\INSTALL.md"
 
 if ($DryRun) {
     Write-Host "[DRY RUN] Would create release $Version at $ReleaseDir" -ForegroundColor Yellow
@@ -180,8 +181,11 @@ if (-not $SkipAndroid) {
     Write-Host "[4/5] Skipping Android build" -ForegroundColor Yellow
 }
 
-# Step 5: Generate changelog and tag
+# Step 5: Copy install guide and generate changelog and tag
 Write-Host "[5/5] Generating changelog..." -ForegroundColor Cyan
+if (Test-Path $InstallDoc) {
+    Copy-Item $InstallDoc "$ReleaseDir\INSTALL.md" -Force
+}
 $lastTag = Get-LastTag -ExcludeVersion $Version
 if ($lastTag) {
     Write-Host "  Last tag: $lastTag" -ForegroundColor Gray
