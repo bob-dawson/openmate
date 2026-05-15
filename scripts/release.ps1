@@ -30,10 +30,15 @@ function Get-BridgeVersion {
 }
 
 function Get-LastTag {
+    param([string]$ExcludeVersion = "")
     $ea = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $tag = git -C $ProjectRoot describe --tags --abbrev=0 2>&1
+    $tags = & git -C $ProjectRoot tag --sort=-version:refname 2>&1
     $ErrorActionPreference = $ea
-    if ($tag -and $LASTEXITCODE -eq 0) { return $tag }
+    $exclude = if ($ExcludeVersion) { "v$ExcludeVersion" } else { "" }
+    foreach ($t in $tags) {
+        $t = $t.Trim()
+        if ($t -and $t -ne $exclude) { return $t }
+    }
     return $null
 }
 
@@ -48,8 +53,11 @@ function Generate-Changelog {
     }
 
     $tmpFile = [System.IO.Path]::GetTempFileName()
-    & git -c core.quotepath=false -C $ProjectRoot log @logArgs --output=$tmpFile 2>&1 | Out-Null
-    $commits = [System.IO.File]::ReadAllLines($tmpFile, [System.Text.Encoding]::UTF8)
+    $prevEncoding = [Console]::OutputEncoding
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    & git -c core.quotepath=false -C $ProjectRoot log @logArgs | Out-File -FilePath $tmpFile -Encoding UTF8
+    [Console]::OutputEncoding = $prevEncoding
+    $commits = Get-Content $tmpFile -Encoding UTF8
     Remove-Item $tmpFile -Force
     if (-not $commits) {
         $commits = "(no commits since last tag)"
@@ -174,7 +182,7 @@ if (-not $SkipAndroid) {
 
 # Step 5: Generate changelog and tag
 Write-Host "[5/5] Generating changelog..." -ForegroundColor Cyan
-$lastTag = Get-LastTag
+$lastTag = Get-LastTag -ExcludeVersion $Version
 if ($lastTag) {
     Write-Host "  Last tag: $lastTag" -ForegroundColor Gray
 } else {
@@ -200,7 +208,7 @@ if (-not $SkipTag) {
 Write-Host ""
 Write-Host "=== Release $Version Complete ===" -ForegroundColor Green
 Get-ChildItem $ReleaseDir | ForEach-Object {
-    $size = if ($_.Length -gt 1MB) { "({0:N1} MB)" -f ($_.Length / 1MB) } else { "({0:N0} KB)" -f ($_.Length / 1KB) }
+    $size = if ($_.Length -gt 1MB) { "({0:N1} MB)" -f ($_.Length / 1MB) } elseif ($_.Length -gt 1KB) { "({0:N1} KB)" -f ($_.Length / 1KB) } else { "({0:N0} B)" -f $_.Length }
     Write-Host ("  {0} {1}" -f $_.Name, $size) -ForegroundColor White
 }
 Write-Host ""
