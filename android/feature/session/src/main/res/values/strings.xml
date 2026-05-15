@@ -187,6 +187,7 @@
     <string name="select_variant">Select Variant</string>
     <string name="variant_default">Default</string>
     <string name="sync_logs">Sync Logs</string>
+    <string name="upload_database">Upload Database</string>
     <string name="sync_logs_search_hint">Filter logs with regex</string>
     <string name="sync_logs_reconnect_sse">Reconnect</string>
     <string name="sync_logs_incremental_sync">Sync</string>

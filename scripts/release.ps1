@@ -122,9 +122,9 @@ if (-not $SkipBridge) {
         $output | Where-Object { $_ -match "Compiling|Finished|error" } | ForEach-Object { Write-Host "  $_" }
         if ($LASTEXITCODE -ne 0) { throw "Bridge build failed" }
 
-        Copy-Item "$BridgeRoot\target\release\openmate.exe" "$ReleaseDir\openmate-windows-x86_64.exe" -Force
+        Copy-Item "$BridgeRoot\target\release\openmate.exe" "$ReleaseDir\openmate.exe" -Force
         Copy-Item "$BridgeRoot\bridge.toml" "$ReleaseDir\bridge.toml" -Force
-        Write-Host "  Bridge Windows -> openmate-windows-x86_64.exe" -ForegroundColor Green
+        Write-Host "  Bridge Windows -> openmate.exe" -ForegroundColor Green
     } finally {
         Pop-Location
     }

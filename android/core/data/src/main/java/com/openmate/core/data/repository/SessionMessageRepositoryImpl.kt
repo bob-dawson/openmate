@@ -121,6 +121,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
         return entities.map { it.toDomain() }
     }
 
+    override suspend fun findBusyStartTime(sessionId: String): Long? {
+        return dbProvider.getActive().sessionMessageDao().findBusyStartTime(sessionId)
+    }
+
     override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult {
         val db = dbProvider.getActive()
         Log.d("SyncRepo", "initSync start: sessionId=$sessionId")
@@ -479,7 +483,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     afterSeq = newSeq
 
                     if (batchChanges.isNotEmpty()) {
-                        syncEvents.emit(
+                        syncEvents.tryEmit(
                             SessionMessageSyncEvent(
                                 sessionId = sessionId,
                                 result = SessionMessageSyncResult(

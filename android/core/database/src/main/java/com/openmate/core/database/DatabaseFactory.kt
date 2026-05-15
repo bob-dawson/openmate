@@ -17,6 +17,11 @@ class DatabaseFactory(private val context: Context) {
             .build()
     }
 
+    fun getDatabasePath(profileId: String): File {
+        val sanitizedName = profileId.replace(Regex("[^a-zA-Z0-9_]"), "_")
+        return context.getDatabasePath("instance_$sanitizedName")
+    }
+
     fun delete(context: Context, profileId: String) {
         val sanitizedName = profileId.replace(Regex("[^a-zA-Z0-9_]"), "_")
         val dbName = "instance_$sanitizedName"

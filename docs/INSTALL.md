@@ -6,7 +6,7 @@ Bridge 是连接 Android 客户端与 opencode 的代理服务。
 
 ### Windows
 
-1. 将 `openmate-windows-x86_64.exe` 和 `bridge.toml` 放到同一目录
+1. 将 `openmate.exe` 和 `bridge.toml` 放到同一目录
 2. 编辑 `bridge.toml`，修改 `binary` 为 opencode 的实际路径：
    ```toml
    [opencode]
@@ -15,14 +15,14 @@ Bridge 是连接 Android 客户端与 opencode 的代理服务。
    ```
 3. 双击 exe 或命令行运行：
    ```
-   openmate-windows-x86_64.exe
+   openmate.exe
    ```
 
 ### Linux
 
 ```bash
-chmod +x openmate-linux-x86_64
-./openmate-linux-x86_64
+chmod +x openmate
+./openmate
 ```
 
 ### 安装为系统服务（可选）
@@ -45,6 +45,7 @@ chmod +x openmate-linux-x86_64
    ```
    openmate approve <PIN>
    ```
+   （Windows 使用 `openmate.exe approve <PIN>`）
 3. App 自动完成配对并连接
 
 之后在 App 中添加实例，地址填 Bridge 所在电脑的 IP，端口默认 `4097`。

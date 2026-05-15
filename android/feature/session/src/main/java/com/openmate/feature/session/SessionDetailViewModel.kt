@@ -10,6 +10,7 @@ import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogEntry
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.SessionRevert
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionRetryStatus
@@ -150,6 +151,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _previewFileLoading = MutableStateFlow(false)
     val previewFileLoading: StateFlow<Boolean> = _previewFileLoading.asStateFlow()
 
+    private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
+    val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
+
     private val _disableAutoScroll = MutableStateFlow(false)
     val disableAutoScroll: StateFlow<Boolean> = _disableAutoScroll.asStateFlow()
 
@@ -216,6 +220,7 @@ class SessionDetailViewModel @Inject constructor(
 
     init {
         observeSyncLogs()
+        observeConnectionStatus()
     }
 
     fun clearError() {
@@ -228,6 +233,14 @@ class SessionDetailViewModel @Inject constructor(
             syncDebugController.logs.collect { entries ->
                 _syncLogEntries.value = entries
                 _syncLogLines.value = entries.map { it.renderedText }
+            }
+        }
+    }
+
+    private fun observeConnectionStatus() {
+        viewModelScope.launch {
+            sseEventRepository.observeConnectionStatus().collect { status ->
+                _connectionStatus.value = status
             }
         }
     }
@@ -1046,7 +1059,20 @@ class SessionDetailViewModel @Inject constructor(
         val localBusy = _isStreaming.value
         if (localBusy) {
             if (_currentBusyStart.value == null) {
-                _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list) ?: System.currentTimeMillis()
+                val fromWindow = SessionBusyTimerCalculator.findBusyStart(list)
+                if (fromWindow != null) {
+                    _currentBusyStart.value = fromWindow
+                } else {
+                    val sid = currentSessionID
+                    if (sid != null) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            val dbStart = sessionMessageRepository.findBusyStartTime(sid)
+                            if (dbStart != null && _currentBusyStart.value == null) {
+                                _currentBusyStart.value = dbStart
+                            }
+                        }
+                    }
+                }
             }
         } else if (wasBusy) {
             val start = _currentBusyStart.value ?: System.currentTimeMillis()

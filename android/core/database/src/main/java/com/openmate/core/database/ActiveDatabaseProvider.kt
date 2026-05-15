@@ -18,7 +18,12 @@ class ActiveDatabaseProvider @Inject constructor(
         if (currentProfileId == profileId && currentDb != null) {
             return currentDb!!
         }
-        currentDb?.close()
+        currentDb?.let { db ->
+            try {
+                db.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
+            } catch (_: Exception) {}
+            db.close()
+        }
         currentProfileId = profileId
         val db = factory.create(profileId)
         currentDb = db
@@ -32,10 +37,17 @@ class ActiveDatabaseProvider @Inject constructor(
 
     @Synchronized
     fun clearActive() {
-        currentDb?.close()
+        currentDb?.let { db ->
+            try {
+                db.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(TRUNCATE)")
+            } catch (_: Exception) {}
+            db.close()
+        }
         currentDb = null
         currentProfileId = null
     }
 
     fun getActiveProfileId(): String? = currentProfileId
+
+    fun getDatabaseFile(profileId: String): java.io.File = factory.getDatabasePath(profileId)
 }

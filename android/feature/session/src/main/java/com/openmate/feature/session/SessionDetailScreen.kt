@@ -477,6 +477,14 @@ fun SessionDetailScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.upload_database)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.uploadDatabase()
+                                },
+                                enabled = !viewModel.isUploadingDb.value,
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.rename)) },
                                 onClick = {
                                     menuExpanded = false
