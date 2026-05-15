@@ -44,6 +44,7 @@ pub fn create_app_state(config: Config) -> AppState {
     let auto_restart = config.opencode.auto_restart;
 
     let sync_db = SyncDb::new(&config);
+    tracing::info!("opencode DB path: {}", sync_db.db_path().display());
 
     Arc::new(AppStateInner {
         config,

@@ -2,6 +2,7 @@ use axum::Router;
 use axum::routing::{any, get, post};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Notify;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -31,8 +32,22 @@ pub async fn run_server(
 
     let app_state = create_app_state(config.clone());
 
-    if let Err(e) = app_state.sync_db.ensure_indexes() {
-        tracing::warn!("Failed to create sync indexes: {}", e);
+    {
+        let state = app_state.clone();
+        tokio::spawn(async move {
+            loop {
+                match state.sync_db.ensure_indexes() {
+                    Ok(()) => {
+                        tracing::info!("Sync indexes created successfully");
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create sync indexes (will retry in 5min): {}", e);
+                        tokio::time::sleep(Duration::from_secs(300)).await;
+                    }
+                }
+            }
+        });
     }
 
     if app_state.opencode_manager.check_health().await {
