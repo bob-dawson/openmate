@@ -88,6 +88,7 @@ fun SessionListScreen(
 
     val filteredSessions = if (searchQuery.isBlank()) sessions
         else sessions.filter { it.title.contains(searchQuery, ignoreCase = true) }
+    val connectionStatus by viewModel.connectionStatus.collectAsState()
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -96,6 +97,10 @@ fun SessionListScreen(
                 title = dirName,
                 subtitle = directory,
                 onBack = onBack,
+                actions = {
+                    ConnectionDot(status = connectionStatus)
+                    Spacer(modifier = Modifier.width(8.dp))
+                },
             )
         },
         floatingActionButton = {
@@ -275,7 +280,7 @@ private fun SessionCard(
 }
 
 @Composable
-private fun ConnectionDot(status: ConnectionStatus) {
+internal fun ConnectionDot(status: ConnectionStatus) {
     val color = when (status) {
         ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
         ConnectionStatus.CONNECTING -> Color(0xFFf5a742)

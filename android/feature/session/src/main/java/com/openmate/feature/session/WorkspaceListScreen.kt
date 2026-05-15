@@ -141,7 +141,7 @@ fun WorkspaceListScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(instanceName)
                         Spacer(modifier = Modifier.width(8.dp))
-                        ConnectionDot(status = connectionStatus)
+                        ConnectionDotWithLabel(status = connectionStatus)
                     }
                 },
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
@@ -470,7 +470,7 @@ private fun WorkspaceBadge(text: String) {
 }
 
 @Composable
-private fun ConnectionDot(status: ConnectionStatus) {
+private fun ConnectionDotWithLabel(status: ConnectionStatus) {
     val color = when (status) {
         ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
         ConnectionStatus.CONNECTING -> Color(0xFFf5a742)

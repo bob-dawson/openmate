@@ -78,6 +78,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.TopBar
+import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.FileViewer
@@ -144,6 +145,7 @@ fun SessionDetailScreen(
     val recentModels by viewModel.recentModels.collectAsState()
     val selectedAgent by viewModel.selectedAgent.collectAsState()
     val sessionStatus by viewModel.sessionStatus.collectAsState()
+    val connectionStatus by viewModel.connectionStatus.collectAsState()
     val sessionRevert by viewModel.sessionRevert.collectAsState()
     val skills by viewModel.skills.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
@@ -387,6 +389,7 @@ fun SessionDetailScreen(
                 title = sessionTitle.ifBlank { stringResource(R.string.chat) },
                 onBack = onBack,
                 actions = {
+                    ConnectionDot(status = connectionStatus)
                     IconButton(onClick = { showRevertDialog = true }) {
                         Icon(
                             Icons.Default.Undo,

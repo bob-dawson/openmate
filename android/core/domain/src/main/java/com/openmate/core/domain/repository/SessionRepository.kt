@@ -13,7 +13,6 @@ interface SessionRepository {
     suspend fun updateSession(id: String, title: String?)
     suspend fun abortSession(id: String, directory: String? = null)
     suspend fun refreshSessionStatuses()
-    suspend fun refreshSessionStatusesFromMessages()
     suspend fun syncSessionStatusFromRemote(sessionID: String)
     fun observeSessions(directory: String?): Flow<List<Session>>
     fun observeSession(id: String): Flow<Session?>

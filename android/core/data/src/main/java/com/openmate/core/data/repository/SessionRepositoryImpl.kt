@@ -162,8 +162,6 @@ class SessionRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun refreshSessionStatusesFromMessages() = refreshSessionStatuses()
-
     override suspend fun syncSessionStatusFromRemote(sessionID: String) = refreshSessionStatuses()
 
     override fun observeSessions(directory: String?): Flow<List<Session>> {

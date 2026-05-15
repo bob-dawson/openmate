@@ -415,6 +415,14 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun loadSession(sessionID: String) {
+        if (currentSessionID == sessionID) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
+                } catch (_: Exception) {}
+            }
+            return
+        }
         currentSessionID = sessionID
         observeMsgJob?.cancel()
         observeSessionJob?.cancel()
@@ -528,11 +536,6 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "refreshPermissions failed", e)
             }
             try {
-                sessionRepository.refreshSessionStatusesFromMessages()
-            } catch (e: Exception) {
-                Log.e(TAG, "refreshStatusFromMessages failed", e)
-            }
-            try {
                 refreshRetryStatus(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "refreshRetryStatus failed", e)
@@ -546,7 +549,6 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 applySyncResult(sessionMessageRepository.incrementalSync(sid))
-                sessionRepository.refreshSessionStatusesFromMessages()
                 refreshRetryStatus(sid)
                 todoRepository.refreshTodos(sid)
                 questionRepository.refresh(currentDirectory.ifBlank { "/" })
@@ -610,7 +612,6 @@ class SessionDetailViewModel @Inject constructor(
                 delay(POLL_INTERVAL_MS)
                 try {
                     applySyncResult(sessionMessageRepository.incrementalSync(sessionId))
-                    sessionRepository.refreshSessionStatusesFromMessages()
                     refreshRetryStatus(sessionId)
                 } catch (e: Exception) {
                     Log.e(TAG, "poll sync failed", e)

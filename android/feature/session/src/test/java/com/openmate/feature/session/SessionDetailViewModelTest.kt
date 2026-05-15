@@ -1159,8 +1159,6 @@ class SessionDetailViewModelTest {
 
         override suspend fun refreshSessionStatuses() = Unit
 
-        override suspend fun refreshSessionStatusesFromMessages() = Unit
-
         override suspend fun syncSessionStatusFromRemote(sessionID: String) = Unit
 
         override fun observeSessions(directory: String?): Flow<List<Session>> = flowOf(listOf(session))
