@@ -111,8 +111,6 @@ class SessionDetailViewModel @Inject constructor(
     private val _sessionStatus = MutableStateFlow("")
     val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
 
-    private val _serverBusy = MutableStateFlow<Boolean?>(null)
-
     private val _userModelMap = MutableStateFlow<Map<String, String>>(emptyMap())
     val userModelMap: StateFlow<Map<String, String>> = _userModelMap.asStateFlow()
 
@@ -208,6 +206,7 @@ class SessionDetailViewModel @Inject constructor(
     private var currentDirectory: String = ""
     private var draftSessionID: String? = null
     private var observeMsgJob: Job? = null
+    private var observeSessionJob: Job? = null
     private var observeTodoJob: Job? = null
     private var observeQuestionJob: Job? = null
     private var observePermissionJob: Job? = null
@@ -403,12 +402,13 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun loadSession(sessionID: String) {
-        if (currentSessionID == sessionID) return
         currentSessionID = sessionID
         observeMsgJob?.cancel()
+        observeSessionJob?.cancel()
         observeTodoJob?.cancel()
         observeSyncEventJob?.cancel()
         observeRetryStatusJob?.cancel()
+        pollJob?.cancel()
         _selectedModel.value = null
         messageWindowState = SessionMessageWindowManager.State(
             messages = emptyList(),
@@ -430,10 +430,6 @@ class SessionDetailViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             val session = sessionRepository.getSession(sessionID)
-            val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
-            _serverBusy.value = busy
-            _sessionStatus.value = if (busy) SessionStatus.BUSY.name else SessionStatus.IDLE.name
-            _currentBusyStart.value = session?.startedAt
             if (session?.title?.isNotBlank() == true) {
                 _sessionTitle.value = session.title
             }
@@ -462,7 +458,7 @@ class SessionDetailViewModel @Inject constructor(
                         _sessionRevert.value = newRevert
                     } else {
                         _sessionRevert.value = newRevert
-                        viewModelScope.launch(Dispatchers.IO) {
+        observeSessionJob = viewModelScope.launch(Dispatchers.IO) {
                             val evtId = runCatching { sessionRepository.resolveEvtID(currentSessionID!!, newRevert.messageID) }
                                 .onFailure { Log.w(TAG, "resolveEvtID failed for ${newRevert.messageID}", it) }
                                 .getOrNull()
@@ -473,14 +469,6 @@ class SessionDetailViewModel @Inject constructor(
                     }
                 } else {
                     _sessionRevert.value = null
-                }
-                val busy = session?.status == SessionStatus.BUSY || session?.status == SessionStatus.RUNNING
-                if (_serverBusy.value != busy) {
-                    _serverBusy.value = busy
-                    if (busy && _currentBusyStart.value == null) {
-                        _currentBusyStart.value = session?.startedAt ?: System.currentTimeMillis()
-                    }
-                    recalculateMessageDerivedState(messageWindowState.messages)
                 }
             }
         }
@@ -552,6 +540,52 @@ class SessionDetailViewModel @Inject constructor(
                 permissionRepository.refresh(currentDirectory.ifBlank { "/" })
             } catch (e: Exception) {
                 Log.e(TAG, "manual refresh failed", e)
+            }
+        }
+    }
+
+    private val _isUploadingDb = MutableStateFlow(false)
+    val isUploadingDb: StateFlow<Boolean> = _isUploadingDb.asStateFlow()
+
+    fun uploadDatabase() {
+        val profileId = dbProvider.getActiveProfileId() ?: return
+        val sid = currentSessionID ?: return
+        val dir = currentDirectory.ifBlank { "." }
+        viewModelScope.launch(Dispatchers.IO) {
+            _isUploadingDb.value = true
+            try {
+                val dbFile = dbProvider.getDatabaseFile(profileId)
+                val files = listOf(
+                    dbFile to dbFile.name,
+                    File(dbFile.path + "-wal") to dbFile.name + "-wal",
+                    File(dbFile.path + "-shm") to dbFile.name + "-shm",
+                )
+                dbProvider.clearActive()
+                pollJob?.cancel()
+                observeSyncEventJob?.cancel()
+                try {
+                    for ((file, name) in files) {
+                        if (!file.exists()) continue
+                        val bytes = file.readBytes()
+                        val serverPath = "$dir/.openmate/debug/$name"
+                        apiClient.bridgeUploadFile(serverPath, bytes, createDirs = true)
+                    }
+                } finally {
+                    dbProvider.setActive(profileId)
+                    loadSession(sid)
+                }
+                syncDebugController.log(
+                    level = SyncLogLevel.Info,
+                    category = SyncLogCategory.Sync,
+                    sessionId = sid,
+                    title = "数据库上传完成",
+                    message = "uploaded db files to $dir/.openmate/debug/",
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "uploadDatabase failed", e)
+                _errorMessage.value = "Upload DB failed: ${e.message}"
+            } finally {
+                _isUploadingDb.value = false
             }
         }
     }
@@ -640,11 +674,9 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun abort(sessionID: String) {
-        _serverBusy.value = false
         _currentBusyStart.value = null
         _runningAnchors.value = emptyMap()
         wasBusy = false
-        _sessionStatus.value = SessionStatus.IDLE.name
         recalculateMessageDerivedState(messageWindowState.messages)
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -993,14 +1025,13 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     private fun recalculateMessageDerivedState(list: List<SessionMessage>) {
-        val lastMsg = list.lastOrNull()
         val lastAssistant = list.lastOrNull { it.type == "assistant" }
-        val hasBusyAssistant = _serverBusy.value == true
         val lastAssistantFinish = lastAssistant?.let {
             runCatching {
                 Json.parseToJsonElement(it.data).jsonObject["finish"]?.jsonPrimitive?.contentOrNull
             }.getOrNull()
         }
+
         _isStreaming.value = lastAssistant?.completedAt == null || (lastAssistantFinish != "stop" && lastAssistantFinish != "length")
         _queuedMessageIds.value = buildQueuedMessageIds(list)
         _userModelMap.value = buildUserModelMap(list)
@@ -1012,7 +1043,8 @@ class SessionDetailViewModel @Inject constructor(
             return
         }
 
-        if (hasBusyAssistant) {
+        val localBusy = _isStreaming.value
+        if (localBusy) {
             if (_currentBusyStart.value == null) {
                 _currentBusyStart.value = SessionBusyTimerCalculator.findBusyStart(list) ?: System.currentTimeMillis()
             }
@@ -1029,8 +1061,8 @@ class SessionDetailViewModel @Inject constructor(
             }
         }
 
-        _sessionStatus.value = if (hasBusyAssistant) SessionStatus.BUSY.name else SessionStatus.IDLE.name
-        wasBusy = hasBusyAssistant
+        _sessionStatus.value = if (localBusy) SessionStatus.BUSY.name else SessionStatus.IDLE.name
+        wasBusy = localBusy
 
         val lastFinalizedAssistant = list.lastOrNull { it.type == "assistant" && it.roundMark }
         if (lastFinalizedAssistant != null && _selectedModel.value == null) {

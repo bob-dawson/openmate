@@ -77,7 +77,7 @@ class SessionRepositoryImpl @Inject constructor(
                     updatedAt = domain.updatedAt,
                     isCompacting = domain.isCompacting,
                     isArchived = domain.isArchived,
-                    status = (dbStatus ?: domain.status)?.name,
+                    status = (domain.status ?: dbStatus)?.name,
                     startedAt = domain.startedAt ?: existing.startedAt,
                     phoneStartedAt = existing.phoneStartedAt,
                     totalDuration = existing.totalDuration,
@@ -123,6 +123,7 @@ class SessionRepositoryImpl @Inject constructor(
             val statusMap = api.getSessionStatuses()
             val dao = dbProvider.getActive().sessionDao()
             val now = System.currentTimeMillis()
+
             for ((sessionID, statusDto) in statusMap) {
                 val newStatus = statusDto.toDomain().name
                 val existing = dao.getById(sessionID)
@@ -148,6 +149,12 @@ class SessionRepositoryImpl @Inject constructor(
                             startedAt = if (newStatus == SessionStatus.BUSY.name || newStatus == SessionStatus.RUNNING.name) now else null,
                         )
                     )
+                }
+            }
+
+            for (busy in dao.getBusySessions()) {
+                if (busy.id !in statusMap) {
+                    dao.updateStatusAndStartedAt(busy.id, SessionStatus.IDLE.name, null)
                 }
             }
         } catch (e: Exception) {
