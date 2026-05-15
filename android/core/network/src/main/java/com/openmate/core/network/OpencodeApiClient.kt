@@ -209,8 +209,9 @@ class OpencodeApiClient(
         postUnit("/question/$requestID/reject", emptyMap<String, String>(), params)
     }
 
-    suspend fun getSessionStatuses(): Map<String, SessionStatusDto> {
-        return get("/session/status")
+    suspend fun getSessionStatuses(directory: String? = null): Map<String, SessionStatusDto> {
+        val params = directory?.let { mapOf("directory" to it) } ?: emptyMap()
+        return get("/session/status", params)
     }
 
     suspend fun getTodos(sessionID: String, directory: String? = null): List<com.openmate.core.domain.model.TodoInfo> {

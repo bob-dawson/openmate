@@ -118,7 +118,7 @@ class SessionListViewModel @Inject constructor(
                 delay(POLL_INTERVAL_MS)
                 try {
                     sessionRepository.getSessions(currentDirectory, null, null)
-                    sessionRepository.refreshSessionStatuses()
+                    sessionRepository.refreshSessionStatuses(currentDirectory)
                 } catch (e: Exception) {
                     Log.e(TAG, "poll refresh failed", e)
                 }

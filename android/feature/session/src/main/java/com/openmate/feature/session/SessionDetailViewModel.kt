@@ -456,10 +456,11 @@ class SessionDetailViewModel @Inject constructor(
             }
             currentDirectory = session?.directory ?: ""
             loadCachedProviders()?.let { _providers.value = it }
-            sseEventRepository.setActiveSessionScope(currentDirectory.ifBlank { null }, enabled = true)
             if (session?.totalDuration != null && _sessionTotalDuration.value == null) {
                 _sessionTotalDuration.value = session.totalDuration
             }
+            sseEventRepository.setActiveSessionScope(currentDirectory.ifBlank { null }, enabled = true)
+
             val sPID = session?.modelProviderID
             val sMID = session?.modelID
             if (sPID != null && sMID != null && _selectedModel.value == null) {
@@ -1017,7 +1018,9 @@ class SessionDetailViewModel @Inject constructor(
                 messages = messageWindowState.messages,
             )
         }
-        recalculateMessageDerivedState(messageWindowState.messages)
+        if (result.changes.isNotEmpty()) {
+            recalculateMessageDerivedState(messageWindowState.messages)
+        }
     }
 
     private fun logMessageWindowState(
@@ -1038,6 +1041,15 @@ class SessionDetailViewModel @Inject constructor(
         )
     }
 
+    private fun persistSessionStatus(status: String) {
+        val sid = currentSessionID ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sessionRepository.updateSessionStatus(sid, status)
+            } catch (_: Exception) {}
+        }
+    }
+
     private fun recalculateMessageDerivedState(list: List<SessionMessage>) {
         val lastAssistant = list.lastOrNull { it.type == "assistant" }
         val lastAssistantFinish = lastAssistant?.let {
@@ -1045,11 +1057,17 @@ class SessionDetailViewModel @Inject constructor(
                 Json.parseToJsonElement(it.data).jsonObject["finish"]?.jsonPrimitive?.contentOrNull
             }.getOrNull()
         }
+        val lastAssistantError = lastAssistant?.let {
+            runCatching {
+                Json.parseToJsonElement(it.data).jsonObject["error"]
+            }.getOrNull()
+        }
 
-        val lastAssistantFinished = lastAssistantFinish == "stop" || lastAssistantFinish == "error" || lastAssistantFinish == "length" || lastAssistantFinish == "other"
+        val lastAssistantFinished = lastAssistantFinish == "stop" || lastAssistantFinish == "error" || lastAssistantFinish == "length" || lastAssistantFinish == "other" || lastAssistantError != null
 
         val isReverting = _sessionRevert.value != null
-        _isStreaming.value = lastAssistant == null || (!lastAssistantFinished && !isReverting)
+        val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting
+        _isStreaming.value = lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting)
         _queuedMessageIds.value = buildQueuedMessageIds(list)
         _userModelMap.value = buildUserModelMap(list)
 
@@ -1057,6 +1075,7 @@ class SessionDetailViewModel @Inject constructor(
             _currentBusyStart.value = null
             _sessionStatus.value = SessionStatus.BUSY.name
             wasBusy = false
+            persistSessionStatus(SessionStatus.BUSY.name)
             return
         }
 
@@ -1093,6 +1112,7 @@ class SessionDetailViewModel @Inject constructor(
 
         _sessionStatus.value = if (localBusy) SessionStatus.BUSY.name else SessionStatus.IDLE.name
         wasBusy = localBusy
+        persistSessionStatus(_sessionStatus.value)
 
         val lastFinalizedAssistant = list.lastOrNull { it.type == "assistant" && it.roundMark }
         if (lastFinalizedAssistant != null && _selectedModel.value == null) {
