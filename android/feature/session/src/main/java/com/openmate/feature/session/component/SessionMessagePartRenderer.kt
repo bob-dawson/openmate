@@ -197,13 +197,11 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
         }
         "write" -> {
             val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            val hasContent = jsonArgs?.containsKey("content") == true
-            return ToolSummary("write", filePath.ifBlank { "write" }, hasContent)
+            return ToolSummary("write", filePath.ifBlank { "write" }, filePath.isNotBlank())
         }
         "edit" -> {
             val filePath = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            val hasDiff = jsonArgs?.containsKey("oldString") == true || jsonArgs?.containsKey("newString") == true
-            return ToolSummary("edit", filePath.ifBlank { "edit" }, hasDiff)
+            return ToolSummary("edit", filePath.ifBlank { "edit" }, filePath.isNotBlank())
         }
         "task" -> {
             val desc = jsonArgs.str("description") ?: ""
@@ -356,8 +354,9 @@ private fun parseTodoArgs(args: String?): List<TodoInfo>? {
 }
 
 @Composable
-internal fun InlineToolLine(item: DisplayItem.ToolItem) {
+internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
     val summary = toolSummary(item.toolName, item.args, item.result)
+    val isFilePathClickable = onViewFile != null && summary.text.isNotBlank() && isFilePath(summary.text)
     Row(
         modifier = Modifier.padding(vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -373,8 +372,9 @@ internal fun InlineToolLine(item: DisplayItem.ToolItem) {
                 StartEllipsisText(
                     text = summary.text,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isFilePathClickable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
+                    modifier = if (isFilePathClickable) Modifier.clickable { onViewFile!!.invoke(summary.text) } else Modifier,
                 )
             } else {
                 Text(
@@ -390,8 +390,9 @@ internal fun InlineToolLine(item: DisplayItem.ToolItem) {
 }
 
 @Composable
-internal fun RunningToolLine(item: DisplayItem.ToolItem) {
+internal fun RunningToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
     val summary = toolSummary(item.toolName, item.args, item.result)
+    val isFilePathClickable = onViewFile != null && summary.text.isNotBlank() && isFilePath(summary.text)
     Row(
         modifier = Modifier.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -412,8 +413,9 @@ internal fun RunningToolLine(item: DisplayItem.ToolItem) {
                 StartEllipsisText(
                     text = summary.text,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (isFilePathClickable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     fontFamily = FontFamily.Monospace,
+                    modifier = if (isFilePathClickable) Modifier.clickable { onViewFile!!.invoke(summary.text) } else Modifier,
                 )
             } else {
                 Text(
@@ -644,6 +646,8 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
         item.files
     }
 
+    val canViewFile = onViewFile != null && summary.text.isNotBlank() && isFilePath(summary.text)
+
     Column(modifier = Modifier.padding(vertical = 2.dp)) {
         Row(
             modifier = Modifier
@@ -663,8 +667,9 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                     StartEllipsisText(
                         text = summary.text,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (canViewFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
+                        modifier = if (canViewFile) Modifier.clickable { onViewFile!!.invoke(summary.text) } else Modifier,
                     )
                 } else {
                     Text(

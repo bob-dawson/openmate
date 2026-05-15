@@ -518,7 +518,7 @@ fun AssistantMessageItem(
                                 },
                             )
                         } else {
-                            InlineToolLine(displayItem)
+                            InlineToolLine(displayItem, onViewFile)
                         }
                     } else if (status == "pending" || status == "running") {
                         val matchedPerm = callID?.let { cid ->
@@ -562,7 +562,7 @@ fun AssistantMessageItem(
                             if (shouldExpandRunningTool(displayItem)) {
                                 BlockToolLine(displayItem, summary, onViewFile)
                             } else {
-                                RunningToolLine(displayItem)
+                                RunningToolLine(displayItem, onViewFile)
                             }
                         }
                     } else if (name == "task") {
