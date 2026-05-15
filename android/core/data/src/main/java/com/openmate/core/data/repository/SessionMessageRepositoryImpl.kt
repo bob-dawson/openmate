@@ -339,8 +339,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                         }
 
                         val replayEvent = ReplayEvent(event.id, event.type.replace(Regex("\\.\\d+$"), ""), event.data)
-                        val change = replayer.processEvent(replayEvent, sessionId, loader)
-                        if (change != null) {
+                        val changes = replayer.processEvent(replayEvent, sessionId, loader)
+                        for (change in changes) {
                             val changeId = when (change) {
                                 is ReplayChange.Insert -> change.entity.id
                                 is ReplayChange.Update -> change.id
@@ -410,7 +410,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                     allAppliedChanges += SessionMessageSyncChange.Remove(change.id)
                                 }
                             }
-                        } // end if (change != null)
+                        }
 
                         if (event.type.startsWith("session.updated")) {
                             val aggId = event.aggregateId.ifBlank { sessionId }

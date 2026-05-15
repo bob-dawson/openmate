@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -10,12 +12,26 @@ android {
     namespace = "com.openmate.app"
     compileSdk = 36
 
+    signingConfigs {
+        create("release") {
+            val props = Properties()
+            val propsFile = rootProject.file("local.properties")
+            if (propsFile.exists()) {
+                props.load(propsFile.inputStream())
+            }
+            storeFile = rootProject.file(props.getProperty("RELEASE_STORE_FILE", "release.keystore"))
+            storePassword = props.getProperty("RELEASE_STORE_PASSWORD", "")
+            keyAlias = props.getProperty("RELEASE_KEY_ALIAS", "openmate")
+            keyPassword = props.getProperty("RELEASE_KEY_PASSWORD", "")
+        }
+    }
+
     defaultConfig {
         applicationId = "com.openmate"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -23,6 +39,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

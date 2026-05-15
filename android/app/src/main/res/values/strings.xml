@@ -131,6 +131,15 @@
     <!-- File Browser -->
     <string name="files">Files</string>
     <string name="search_files">Search files</string>
+    <string name="search_content">Search content</string>
+    <string name="search_in_content">Search file content…</string>
+    <string name="search_button">Search</string>
+    <string name="searching">Searching…</string>
+    <string name="content_search_results">%1$d results</string>
+    <string name="line_info">Line %1$d</string>
+    <string name="tab_files">Files</string>
+    <string name="tab_content">Content</string>
+    <string name="no_results_found">No results found</string>
     <string name="no_files_found">No files found</string>
     <string name="empty_directory">Empty directory</string>
     <string name="downloading">Downloading…</string>

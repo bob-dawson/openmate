@@ -191,17 +191,18 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                         }
                     }
 
-                        val strippedType = event.type.replace(Regex("\\.\\d+$"), "")
+val strippedType = event.type.replace(Regex("\\.\\d+$"), "")
                         val replayEvent = ReplayEvent(event.id, strippedType, event.data)
-                        val change = replayer.processEvent(replayEvent, sessionId, countingLoader)
-                        if (change != null) {
+                        val changes = replayer.processEvent(replayEvent, sessionId, countingLoader)
+                        for (change in changes) {
                             batchChanges += change
                             allChanges += change
                         }
 
                         val (cacheId, cacheType, toolCount) = replayer.getCacheState()
                         val cacheState = CacheSnapshot(id = cacheId, type = cacheType, toolCount = toolCount)
-                        val skipReason = if (change == null) "noChange" else null
+                        val primaryChange = changes.firstOrNull()
+                        val skipReason = if (changes.isEmpty()) "noChange" else null
 
                     if (skipReason != null) {
                         skipReasons[skipReason] = (skipReasons[skipReason] ?: 0) + 1
@@ -212,16 +213,10 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                         eventType = event.type,
                         eventId = event.id,
                         cacheState = cacheState,
-                        changeType = when (change) {
-                            is ReplayChange.Insert -> "INSERT ${change.entity.type}"
-                            is ReplayChange.Update -> "UPDATE ${change.type} ${change.id}"
-                            is ReplayChange.Delete -> "DELETE ${change.id}"
-                            null -> null
-                        },
-                        changeDetail = when (change) {
-                            is ReplayChange.Insert -> change.entity.id
-                            is ReplayChange.Update -> change.id
-                            is ReplayChange.Delete -> change.id
+                        changeType = when (primaryChange) {
+                            is ReplayChange.Insert -> "INSERT ${primaryChange.entity.type} ${primaryChange.entity.id}"
+                            is ReplayChange.Update -> "UPDATE ${primaryChange.type} ${primaryChange.id}"
+                            is ReplayChange.Delete -> "DELETE ${primaryChange.id}"
                             null -> null
                         },
                         skipReason = skipReason,

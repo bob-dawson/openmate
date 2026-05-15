@@ -39,9 +39,7 @@ class EventReplayer {
         event: ReplayEvent,
         sessionId: String,
         loader: DbLoader,
-    ): ReplayChange? {
-        return processEventInternal(event, sessionId, loader)
-    }
+    ): List<ReplayChange> = processEventInternal(event, sessionId, loader)
 
     private suspend fun ensureAssistantCache(sessionId: String, loader: DbLoader) {
         if (cachedType == "assistant") return
@@ -57,7 +55,7 @@ class EventReplayer {
         event: ReplayEvent,
         sessionId: String,
         loader: DbLoader,
-    ) : ReplayChange?  {
+    ) : List<ReplayChange>  {
         val props = event.data
         val timestamp = parseTimestamp(props)
         val eventType = event.type
@@ -68,7 +66,7 @@ class EventReplayer {
                         put("agent", props["agent"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    return ReplayChange.Insert(entity(event.id, sessionId, "agent-switched", data, timestamp))
+                    return listOf(ReplayChange.Insert(entity(event.id, sessionId, "agent-switched", data, timestamp)))
                 }
 
                 "session.next.model.switched" -> {
@@ -76,7 +74,7 @@ class EventReplayer {
                         put("model", props["model"]?.jsonObject ?: buildJsonObject {})
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    return ReplayChange.Insert(entity(event.id, sessionId, "model-switched", data, timestamp))
+                                        return listOf(ReplayChange.Insert(entity(event.id, sessionId, "model-switched", data, timestamp)))
                 }
 
                 "session.next.prompted" -> {
@@ -87,7 +85,7 @@ class EventReplayer {
                         put("agents", props["prompt"]?.jsonObject?.get("agents") ?: JsonArray(emptyList()))
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    return ReplayChange.Insert(entity(event.id, sessionId, "user", data, timestamp, roundMark = userRoundMark))
+                                        return listOf(ReplayChange.Insert(entity(event.id, sessionId, "user", data, timestamp, roundMark = userRoundMark)))
                 }
 
                 "session.next.synthetic" -> {
@@ -96,7 +94,7 @@ class EventReplayer {
                         put("text", props["text"]?.jsonPrimitive?.contentOrNull ?: "")
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
-                    return ReplayChange.Insert(entity(event.id, sessionId, "synthetic", data, timestamp))
+                                        return listOf(ReplayChange.Insert(entity(event.id, sessionId, "synthetic", data, timestamp)))
                 }
 
                 "session.next.shell.started" -> {
@@ -108,12 +106,12 @@ class EventReplayer {
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
                     activeShells[callID] = ShellEntry(event.id, data, timestamp)
-                    return ReplayChange.Insert(entity(event.id, sessionId, "shell", data, timestamp))
+                                        return listOf(ReplayChange.Insert(entity(event.id, sessionId, "shell", data, timestamp)))
                 }
 
                 "session.next.shell.ended" -> {
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val shell = activeShells.remove(callID) ?: return null
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val shell = activeShells.remove(callID) ?: return emptyList()
                     val updated = shell.data.toMutableMap()
                     updated["output"] = JsonPrimitive(props["output"]?.jsonPrimitive?.contentOrNull ?: "")
                     val time = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
@@ -121,19 +119,25 @@ class EventReplayer {
                     updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     setCache(shell.id, "shell", merged, shell.timeCreated)
-                    return ReplayChange.Update(shell.id, "shell", merged, timestamp)
+                                        return listOf(ReplayChange.Update(shell.id, "shell", merged, timestamp))
                 }
 
                 "session.next.step.started" -> {
                     val cached = getCachedAssistant()
-                    if (cached != null) {
-                        val time = (cached.second["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
-                        if (!time.containsKey("completed")) {
+                    val pendingCompletion: ReplayChange.Update? = if (cached != null) {
+                        val timeObj = cached.second["time"]?.jsonObject
+                        val alreadyCompleted = timeObj?.containsKey("completed") == true
+                        if (!alreadyCompleted) {
+                            val time = (timeObj?.toMutableMap() ?: mutableMapOf())
                             time["completed"] = JsonPrimitive(timestamp)
+                            val merged = JsonObject(cached.second.toMutableMap().apply { put("time", JsonObject(time)) })
+                            setCache(cached.first, "assistant", merged, cached.third)
+                            ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = timestamp)
+                        } else {
+                            null
                         }
-                        val merged = JsonObject(cached.second.toMutableMap().apply { put("time", JsonObject(time)) })
-                        setCache(cached.first, "assistant", merged, cached.third)
-                        return ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = timestamp)
+                    } else {
+                        null
                     }
 
                     val data = buildJsonObject {
@@ -147,11 +151,12 @@ class EventReplayer {
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
                     setCache(event.id, "assistant", data, timestamp, roundMark = false)
-                    return ReplayChange.Insert(entity(event.id, sessionId, "assistant", data, timestamp, roundMark = false))
+                    val insert = ReplayChange.Insert(entity(event.id, sessionId, "assistant", data, timestamp, roundMark = false))
+                    return if (pendingCompletion != null) listOf(pendingCompletion, insert) else listOf(insert)
                 }
 
                 "session.next.step.ended" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
                     val updated = cached.toMutableMap()
                     updated["finish"] = JsonPrimitive(props["finish"]?.jsonPrimitive?.contentOrNull ?: "")
                     props["cost"]?.jsonPrimitive?.let { updated["cost"] = it }
@@ -170,11 +175,11 @@ class EventReplayer {
                     val finish = props["finish"]?.jsonPrimitive?.contentOrNull
                     val roundMark = finish == "stop" || finish == "length"
                     cachedRoundMark = roundMark
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = roundMark)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = roundMark))
                 }
 
                 "session.next.step.failed" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
                     val updated = cached.toMutableMap()
                     updated["finish"] = JsonPrimitive("error")
                     props["error"]?.jsonObject?.let { updated["error"] = it }
@@ -213,23 +218,23 @@ class EventReplayer {
                     val merged = JsonObject(updated)
                     updateCache(merged)
                     cachedRoundMark = true
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = true)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp, completedAt = timestamp, roundMark = true))
                 }
 
                 "session.next.text.started" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
                     val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject { put("type", "text"); put("text", "") })
                     val updated = cached.toMutableMap()
                     updated["content"] = JsonArray(content)
                     val merged = JsonObject(updated)
                     setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "session.next.text.ended" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val content = cached["content"]?.jsonArray?.toMutableList() ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val content = cached["content"]?.jsonArray?.toMutableList() ?: return emptyList()
                     val idx = content.indexOfLast { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "text" }
                     if (idx >= 0) {
                         val textObj = content[idx].jsonObject.toMutableMap()
@@ -240,13 +245,13 @@ class EventReplayer {
                     updated["content"] = JsonArray(content)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "session.next.tool.input.started" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val name = props["name"]?.jsonPrimitive?.contentOrNull ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val name = props["name"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
                     val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject {
                         put("type", "tool")
@@ -262,14 +267,14 @@ class EventReplayer {
                     updated["content"] = JsonArray(content)
                     val merged = JsonObject(updated)
                     setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "session.next.tool.called" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val content = cached["content"]?.jsonArray ?: return null
-                    val toolIdx = findToolIndex(content, callID) ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val content = cached["content"]?.jsonArray ?: return emptyList()
+                    val toolIdx = findToolIndex(content, callID) ?: return emptyList()
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
                     val timeObj = toolObj["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
@@ -289,18 +294,18 @@ class EventReplayer {
                     updated["content"] = JsonArray(mutableContent)
                     val merged = JsonObject(updated)
                     setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "session.next.tool.progress" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val content = cached["content"]?.jsonArray ?: return null
-                    val toolIdx = findToolIndex(content, callID) ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val content = cached["content"]?.jsonArray ?: return emptyList()
+                    val toolIdx = findToolIndex(content, callID) ?: return emptyList()
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
-                    val prevState = toolObj["state"]?.jsonObject ?: return null
-                    if (prevState["status"]?.jsonPrimitive?.contentOrNull != "running") return null
+                    val prevState = toolObj["state"]?.jsonObject ?: return emptyList()
+                    if (prevState["status"]?.jsonPrimitive?.contentOrNull != "running") return emptyList()
                     val mergedState = prevState.toMutableMap()
                     props["structured"]?.jsonObject?.let { mergedState["structured"] = it }
                     props["content"]?.jsonArray?.let { mergedState["content"] = it }
@@ -310,17 +315,17 @@ class EventReplayer {
                     updated["content"] = JsonArray(mutableContent)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "session.next.tool.success" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val content = cached["content"]?.jsonArray ?: return null
-                    val toolIdx = findToolIndex(content, callID) ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val content = cached["content"]?.jsonArray ?: return emptyList()
+                    val toolIdx = findToolIndex(content, callID) ?: return emptyList()
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
-                    val prevState = toolObj["state"]?.jsonObject ?: return null
+                    val prevState = toolObj["state"]?.jsonObject ?: return emptyList()
                     val prevInput = prevState["input"] ?: JsonObject(emptyMap())
                     val prevTitle = prevState["title"]?.jsonPrimitive?.contentOrNull
                     val prevMetadata = prevState["metadata"]?.jsonObject
@@ -343,17 +348,17 @@ class EventReplayer {
                     updated["content"] = JsonArray(mutableContent)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "session.next.tool.failed" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val content = cached["content"]?.jsonArray ?: return null
-                    val toolIdx = findToolIndex(content, callID) ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val callID = props["callID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val content = cached["content"]?.jsonArray ?: return emptyList()
+                    val toolIdx = findToolIndex(content, callID) ?: return emptyList()
                     val mutableContent = content.toMutableList()
                     val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
-                    val prevState = toolObj["state"]?.jsonObject ?: return null
+                    val prevState = toolObj["state"]?.jsonObject ?: return emptyList()
                     val prevTitle = prevState["title"]?.jsonPrimitive?.contentOrNull
                     val prevMetadata = prevState["metadata"]?.jsonObject
                     toolObj["state"] = buildJsonObject {
@@ -374,28 +379,28 @@ class EventReplayer {
                     updated["content"] = JsonArray(mutableContent)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "message.part.updated" -> {
-                    val part = props["part"]?.jsonObject ?: return null
-                    val partType = part["type"]?.jsonPrimitive?.contentOrNull ?: return null
+                    val part = props["part"]?.jsonObject ?: return emptyList()
+                    val partType = part["type"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
                     if (partType == "patch") {
-                        val cached = cachedAssistant() ?: return null
-                        val messageId = part["messageID"]?.jsonPrimitive?.contentOrNull ?: return null
-                        if (messageId != cachedId) return null
+                        val cached = cachedAssistant() ?: return emptyList()
+                        val messageId = part["messageID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                        if (messageId != cachedId) return emptyList()
                         val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                         content.add(part)
                         val updated = cached.toMutableMap()
                         updated["content"] = JsonArray(content)
                         val merged = JsonObject(updated)
                         updateCache(merged)
-                        return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                                return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                     } else if (partType == "tool") {
-                        val partState = part["state"]?.jsonObject ?: return null
+                        val partState = part["state"]?.jsonObject ?: return emptyList()
                         val callID = part["callID"]?.jsonPrimitive?.contentOrNull
                             ?: part["id"]?.jsonPrimitive?.contentOrNull
-                            ?: return null
+                            ?: return emptyList()
                         val cached = cachedAssistant()
                         val (targetData, targetId) = if (cached != null) {
                             val content = cached["content"]?.jsonArray
@@ -405,20 +410,20 @@ class EventReplayer {
                                  it.jsonObject["callID"]?.jsonPrimitive?.contentOrNull == callID)
                             } ?: -1
                             if (toolIdx >= 0) Pair(cached, cachedId!!) else {
-                                val loaded = findToolInDb(callID, sessionId, loader) ?: return null
+                                val loaded = findToolInDb(callID, sessionId, loader) ?: return emptyList()
                                 Pair(loaded.first, loaded.second)
                             }
                         } else {
-                            val loaded = findToolInDb(callID, sessionId, loader) ?: return null
+                            val loaded = findToolInDb(callID, sessionId, loader) ?: return emptyList()
                             Pair(loaded.first, loaded.second)
                         }
-                        val content = targetData["content"]?.jsonArray ?: return null
+                        val content = targetData["content"]?.jsonArray ?: return emptyList()
                         val toolIdx = content.indexOfLast {
                             it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" &&
                             (it.jsonObject["id"]?.jsonPrimitive?.contentOrNull == callID ||
                              it.jsonObject["callID"]?.jsonPrimitive?.contentOrNull == callID)
                         }
-                        if (toolIdx < 0) return null
+                        if (toolIdx < 0) return emptyList()
                         val mutableContent = content.toMutableList()
                         val toolObj = mutableContent[toolIdx].jsonObject.toMutableMap()
                         val prevState = toolObj["state"]?.jsonObject
@@ -451,13 +456,13 @@ class EventReplayer {
                         if (targetId == cachedId) {
                             updateCache(merged)
                         }
-                        return ReplayChange.Update(targetId, "assistant", merged, timestamp)
+                                                return listOf(ReplayChange.Update(targetId, "assistant", merged, timestamp))
                     }
                 }
 
                 "session.next.reasoning.started" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
                     val content = cached["content"]?.jsonArray?.toMutableList() ?: mutableListOf()
                     content.add(buildJsonObject {
                         put("type", "reasoning")
@@ -468,13 +473,13 @@ class EventReplayer {
                     updated["content"] = JsonArray(content)
                     val merged = JsonObject(updated)
                     setCache(cachedId!!, "assistant", merged, cachedTimeCreated)
-                    return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                 }
 
                 "session.next.reasoning.ended" -> {
-                    val cached = ensureCachedAssistant(sessionId, loader) ?: return null
-                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val content = cached["content"]?.jsonArray ?: return null
+                    val cached = ensureCachedAssistant(sessionId, loader) ?: return emptyList()
+                    val reasoningID = props["reasoningID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val content = cached["content"]?.jsonArray ?: return emptyList()
                     val idx = content.indexOfLast {
                         it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "reasoning" &&
                         it.jsonObject["id"]?.jsonPrimitive?.contentOrNull == reasoningID
@@ -488,7 +493,7 @@ class EventReplayer {
                         updated["content"] = JsonArray(mutableContent)
                         val merged = JsonObject(updated)
                         updateCache(merged)
-                        return ReplayChange.Update(cachedId!!, "assistant", merged, timestamp)
+                                                return listOf(ReplayChange.Update(cachedId!!, "assistant", merged, timestamp))
                     }
                 }
 
@@ -499,16 +504,16 @@ class EventReplayer {
                         put("time", buildJsonObject { put("created", timestamp) })
                     }
                     setCache(event.id, "compaction", data, timestamp)
-                    return ReplayChange.Insert(entity(event.id, sessionId, "compaction", data, timestamp))
+                                        return listOf(ReplayChange.Insert(entity(event.id, sessionId, "compaction", data, timestamp)))
                 }
 
                 "session.next.compaction.ended" -> {
                     if (cachedType != "compaction") {
-                        val existing = loader(DbLoader.Action.LoadLatestIncompleteCompaction(sessionId)) ?: return null
-                        val data = runCatching { Json.parseToJsonElement(existing.data).jsonObject }.getOrNull() ?: return null
+                        val existing = loader(DbLoader.Action.LoadLatestIncompleteCompaction(sessionId)) ?: return emptyList()
+                        val data = runCatching { Json.parseToJsonElement(existing.data).jsonObject }.getOrNull() ?: return emptyList()
                         setCache(existing.id, "compaction", data, existing.timeCreated)
                     }
-                    val cached = cachedData ?: return null
+                    val cached = cachedData ?: return emptyList()
                     val updated = cached.toMutableMap()
                     updated["summary"] = JsonPrimitive(props["text"]?.jsonPrimitive?.contentOrNull ?: "")
                     props["include"]?.jsonPrimitive?.contentOrNull?.let { updated["include"] = JsonPrimitive(it) }
@@ -517,33 +522,33 @@ class EventReplayer {
                     updated["time"] = JsonObject(time)
                     val merged = JsonObject(updated)
                     updateCache(merged)
-                    return ReplayChange.Update(cachedId!!, "compaction", merged, timestamp, completedAt = timestamp)
+                                        return listOf(ReplayChange.Update(cachedId!!, "compaction", merged, timestamp, completedAt = timestamp))
                 }
 
                 "message.removed" -> {
-                    val messageId = props["messageID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    return ReplayChange.Delete(messageId)
+                    val messageId = props["messageID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                                        return listOf(ReplayChange.Delete(messageId))
                 }
 
                 "message.part.removed" -> {
-                    val messageId = props["messageID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val partId = props["partID"]?.jsonPrimitive?.contentOrNull ?: return null
-                    val entity = loader(DbLoader.Action.LoadById(messageId)) ?: return null
-                    val data = runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull() ?: return null
-                    val content = data["content"]?.jsonArray ?: return null
+                    val messageId = props["messageID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val partId = props["partID"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val entity = loader(DbLoader.Action.LoadById(messageId)) ?: return emptyList()
+                    val data = runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull() ?: return emptyList()
+                    val content = data["content"]?.jsonArray ?: return emptyList()
                     val filtered = content.filterNot { part ->
                         part.jsonObject["id"]?.jsonPrimitive?.contentOrNull == partId
                     }
                     if (filtered.isEmpty()) {
-                        return ReplayChange.Delete(messageId)
+                                                return listOf(ReplayChange.Delete(messageId))
                     } else {
                         val updated = data.toMutableMap()
                         updated["content"] = JsonArray(filtered)
-                        return ReplayChange.Update(messageId, entity.type, JsonObject(updated), entity.timeUpdated)
+                                                return listOf(ReplayChange.Update(messageId, entity.type, JsonObject(updated), entity.timeUpdated))
                     }
                 }
-            }
-        return null
+}
+        return emptyList()
     }
 
     private fun setCache(id: String, type: String, data: JsonObject, timeCreated: Long, roundMark: Boolean = true) {
