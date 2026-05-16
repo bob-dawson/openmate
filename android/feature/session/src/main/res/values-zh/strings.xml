@@ -30,6 +30,8 @@
     <string name="attach_file">附加文件</string>
     <string name="browse_files">浏览文件</string>
     <string name="refresh">刷新</string>
+    <string name="resync">重新同步</string>
+    <string name="resync_desc">重新同步最近的事件以修复同步问题。选择回退事件数：</string>
     <string name="rename">重命名</string>
     <string name="no_messages">暂无消息</string>
     <string name="rename_session">重命名</string>
@@ -88,6 +90,7 @@
     <string name="search_files">搜索文件</string>
     <string name="no_results_found">未找到结果</string>
     <string name="no_files_found">未找到文件</string>
+    <string name="tap_search_to_start">点击搜索按钮开始搜索</string>
     <string name="empty_directory">空目录</string>
     <string name="downloading">下载中…</string>
     <string name="large_file">大文件</string>

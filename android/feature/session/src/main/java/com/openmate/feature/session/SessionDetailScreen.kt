@@ -20,6 +20,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -37,6 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,6 +73,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -176,6 +182,7 @@ fun SessionDetailScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showRevertDialog by remember { mutableStateOf(false) }
+    var showResyncDialog by remember { mutableStateOf(false) }
     var showModelPicker by remember { mutableStateOf(false) }
     var showVariantPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
@@ -481,6 +488,13 @@ fun SessionDetailScreen(
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.refresh()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.resync)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showResyncDialog = true
                                 },
                             )
                             DropdownMenuItem(
@@ -840,6 +854,70 @@ fun SessionDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showResyncDialog) {
+        var selectedCount by remember { mutableStateOf(50) }
+        var customCount by remember { mutableStateOf("") }
+        var currentSeq by remember { mutableStateOf<Long?>(null) }
+        LaunchedEffect(Unit) {
+            currentSeq = viewModel.getCurrentSeq()
+        }
+        val effectiveCount = customCount.toIntOrNull() ?: selectedCount
+        AlertDialog(
+            onDismissRequest = { showResyncDialog = false },
+            title = { Text(stringResource(R.string.resync)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.resync_desc, currentSeq?.toString() ?: "-"))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(20, 50, 100).forEach { count ->
+                            FilterChip(
+                                selected = selectedCount == count && customCount.isBlank(),
+                                onClick = {
+                                    selectedCount = count
+                                    customCount = ""
+                                },
+                                label = { Text("$count") },
+                            )
+                        }
+                        OutlinedTextField(
+                            value = customCount,
+                            onValueChange = { customCount = it },
+                            modifier = Modifier.width(80.dp),
+                            placeholder = { Text("自定义") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Search,
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onSearch = {
+                                    viewModel.resync(effectiveCount)
+                                    showResyncDialog = false
+                                },
+                            ),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.resync(effectiveCount)
+                    showResyncDialog = false
+                }) {
+                    Text(stringResource(R.string.resync))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResyncDialog = false }) {
                     Text(stringResource(R.string.cancel))
                 }
             },

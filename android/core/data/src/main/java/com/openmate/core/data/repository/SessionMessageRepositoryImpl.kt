@@ -358,10 +358,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                     relatedSeq = event.seq,
                                     traceId = traceId,
                                 )
-                                db.sessionDao().updateRevertFields(sessionId, null, null, null, null)
                             }
-
-
+                            db.sessionDao().updateRevertFields(sessionId, null, null, null, null)
                         }
 
                         val replayEvent = ReplayEvent(event.id, event.type.replace(Regex("\\.\\d+$"), ""), event.data)
@@ -527,6 +525,15 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     override suspend fun getLastSeq(sessionId: String): Long? {
         return dbProvider.getActive().syncStateDao().get(sessionId)?.lastSeq
+    }
+
+    override suspend fun rollbackSeq(sessionId: String, count: Long) {
+        val db = dbProvider.getActive()
+        val current = db.syncStateDao().get(sessionId)?.lastSeq ?: return
+        val newSeq = maxOf(0L, current - count)
+        db.sessionMessageDao().deleteBySession(sessionId)
+        db.sessionDao().updateRevertFields(sessionId, null, null, null, null)
+        db.syncStateDao().upsert(SyncStateEntity(sessionId, newSeq))
     }
 
     override suspend fun deleteMessage(sessionId: String, messageId: String) {

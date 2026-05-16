@@ -133,6 +133,7 @@ fun WorkspaceBrowserScreen(
     var filenameQuery by remember { mutableStateOf("") }
     var filenameResults by remember { mutableStateOf<List<BridgeSearchResultDto>>(emptyList()) }
     var searchGeneration by remember { mutableIntStateOf(0) }
+    var isSearching by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf("") }
     var viewingFile by remember { mutableStateOf<FileViewState?>(null) }
@@ -401,6 +402,7 @@ fun WorkspaceBrowserScreen(
         viewingFile = null
         filenameQuery = ""
         filenameResults = emptyList()
+        isSearching = false
         loadDir(currentPath)
     }
 
@@ -417,31 +419,29 @@ fun WorkspaceBrowserScreen(
         }
     }
 
-    LaunchedEffect(filenameQuery) {
-        if (filenameQuery.length >= 2) {
-            delay(500)
-            if (filenameQuery.length >= 2) {
-                val gen = ++searchGeneration
-                try {
-                    val results = withContext(Dispatchers.IO) {
-                        apiClient.bridgeSearch(
-                            currentPath.ifBlank { "." },
-                            filenameQuery,
-                            "filename",
-                            50,
-                        )
-                    }
-                    if (gen == searchGeneration) {
-                        filenameResults = results
-                    }
-                } catch (_: Exception) {
-                    if (gen == searchGeneration) {
-                        filenameResults = emptyList()
-                    }
+    fun performSearch() {
+        if (filenameQuery.isBlank()) return
+        scope.launch(Dispatchers.IO) {
+            isSearching = true
+            val gen = ++searchGeneration
+            try {
+                val results = apiClient.bridgeSearch(
+                    currentPath.ifBlank { "." },
+                    filenameQuery,
+                    "filename",
+                    50,
+                )
+                if (gen == searchGeneration) {
+                    filenameResults = results
+                }
+            } catch (_: Exception) {
+                if (gen == searchGeneration) {
+                    filenameResults = emptyList()
                 }
             }
-        } else {
-            filenameResults = emptyList()
+            if (gen == searchGeneration) {
+                isSearching = false
+            }
         }
     }
 
@@ -654,12 +654,27 @@ fun WorkspaceBrowserScreen(
         ) {
             OutlinedTextField(
                 value = filenameQuery,
-                onValueChange = { filenameQuery = it },
+                onValueChange = {
+                    filenameQuery = it
+                    if (it.isBlank()) {
+                        filenameResults = emptyList()
+                        isSearching = false
+                    }
+                },
                 label = { Text(stringResource(R.string.search_files)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 singleLine = true,
+                trailingIcon = {
+                    IconButton(onClick = { performSearch() }) {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = stringResource(R.string.search_files),
+                            tint = if (filenameQuery.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
             )
 
             if (canGoUp && filenameQuery.isBlank()) {
@@ -699,8 +714,15 @@ fun WorkspaceBrowserScreen(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-            } else if (filenameQuery.length >= 2) {
-                if (filenameResults.isNotEmpty()) {
+            } else if (filenameQuery.isNotBlank()) {
+                if (isSearching) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator()
+                    }
+                } else if (filenameResults.isNotEmpty()) {
                     BrowserHeaderRow(
                         sortColumn = sortColumn,
                         sortOrder = sortOrder,
@@ -740,7 +762,7 @@ fun WorkspaceBrowserScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            text = stringResource(R.string.no_files_found),
+                            text = stringResource(R.string.tap_search_to_start),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -560,6 +560,26 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    fun resync(eventCount: Int) {
+        val sid = currentSessionID ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sessionMessageRepository.rollbackSeq(sid, eventCount.toLong())
+                applySyncResult(sessionMessageRepository.incrementalSync(sid))
+                refreshRetryStatus(sid)
+                todoRepository.refreshTodos(sid)
+            } catch (e: Exception) {
+                Log.e(TAG, "resync failed", e)
+                _errorMessage.value = "Resync failed: ${e.message}"
+            }
+        }
+    }
+
+    suspend fun getCurrentSeq(): Long? {
+        val sid = currentSessionID ?: return null
+        return sessionMessageRepository.getLastSeq(sid)
+    }
+
     private val _isUploadingDb = MutableStateFlow(false)
     val isUploadingDb: StateFlow<Boolean> = _isUploadingDb.asStateFlow()
 

@@ -30,6 +30,8 @@
     <string name="attach_file">Attach File</string>
     <string name="browse_files">Browse Files</string>
     <string name="refresh">Refresh</string>
+    <string name="resync">Resync</string>
+    <string name="resync_desc">Resync recent events to fix sync issues. Select how many events to resync:</string>
     <string name="rename">Rename</string>
     <string name="no_messages">No messages yet</string>
     <string name="rename_session">Rename</string>
@@ -91,6 +93,7 @@
     <string name="search_files">Search files</string>
     <string name="no_results_found">No results found</string>
     <string name="no_files_found">No files found</string>
+    <string name="tap_search_to_start">Tap search button to start</string>
     <string name="empty_directory">Empty directory</string>
     <string name="downloading">Downloading…</string>
     <string name="large_file">Large File</string>
