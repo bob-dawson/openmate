@@ -896,10 +896,10 @@ fun SessionDetailScreen(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Number,
-                                imeAction = ImeAction.Search,
+                                imeAction = ImeAction.Go,
                             ),
                             keyboardActions = KeyboardActions(
-                                onSearch = {
+                                onGo = {
                                     viewModel.resync(effectiveCount)
                                     showResyncDialog = false
                                 },
