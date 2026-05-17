@@ -32,6 +32,7 @@ class WorkspaceBrowserViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     val apiClient: OpencodeApiClient,
     private val dbProvider: ActiveDatabaseProvider,
+    private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
     private val TAG = "WorkspaceBrowserVM"
 
@@ -119,25 +120,26 @@ class WorkspaceBrowserViewModel @Inject constructor(
     }
 
     private var pendingApkFile: File? = null
-    private var pendingApkName: String? = null
+    private var pendingApkName: File? = null
 
     fun installApk(file: File, filename: String) {
         pendingApkFile = file
-        pendingApkName = filename
+        pendingApkName = file
         FileOpener.installApk(appContext, file, filename)
     }
 
     fun retryPendingApkInstall() {
         val file = pendingApkFile ?: return
-        val name = pendingApkName ?: return
         pendingApkFile = null
         pendingApkName = null
-        openWithSystemViewer(file, name)
+        openWithSystemViewer(file, file.name)
     }
 
     fun openWithSystemViewer(file: File, filename: String) {
         FileOpener.openWithSystemViewer(appContext, file, filename)
     }
+
+    fun isBinaryFile(path: String): Boolean = bridgeFileOpener.isBinaryFile(path)
 
     fun resolveFilename(context: Context, uri: Uri): String {
         val projection = arrayOf(OpenableColumns.DISPLAY_NAME)

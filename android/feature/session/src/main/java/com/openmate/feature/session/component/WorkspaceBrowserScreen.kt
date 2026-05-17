@@ -334,8 +334,7 @@ fun WorkspaceBrowserScreen(
     }
 
     fun onFileClick(path: String) {
-        val ext = path.substringAfterLast(".").lowercase()
-        if (ext in BINARY_EXTENSIONS) {
+        if (viewModel.isBinaryFile(path)) {
             val filename = path.substringAfterLast("/")
             scope.launch(Dispatchers.IO) {
                 try {
@@ -1324,16 +1323,6 @@ private fun BrowserFileRow(
     }
     HorizontalDivider()
 }
-
-private val BINARY_EXTENSIONS = setOf(
-    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg",
-    "pdf", "zip", "gz", "tar", "rar", "7z",
-    "mp3", "wav", "ogg", "flac", "aac",
-    "mp4", "avi", "mkv", "mov", "webm",
-    "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-    "exe", "dll", "so", "dylib",
-    "apk", "ipa", "dmg",
-)
 
 private fun formatSize(bytes: Long): String {
     return when {
