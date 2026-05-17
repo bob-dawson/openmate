@@ -29,6 +29,41 @@ function Get-BridgeVersion {
     throw "Cannot read version from Cargo.toml"
 }
 
+function Get-AndroidVersionName {
+    $content = Get-Content "$AndroidRoot\app\build.gradle.kts" -Raw
+    if ($content -match 'versionName\s*=\s*"([^"]+)"') {
+        return $Matches[1]
+    }
+    throw "Cannot read versionName from build.gradle.kts"
+}
+
+function Get-AndroidVersionCode {
+    $content = Get-Content "$AndroidRoot\app\build.gradle.kts" -Raw
+    if ($content -match 'versionCode\s*=\s*(\d+)') {
+        return [int]$Matches[1]
+    }
+    throw "Cannot read versionCode from build.gradle.kts"
+}
+
+function Set-BridgeVersion {
+    param([string]$NewVersion)
+    $tomlPath = "$BridgeRoot\Cargo.toml"
+    $content = Get-Content $tomlPath -Raw
+    $content = $content -replace '(version\s*=\s*)"[^"]+"', "`$1`"$NewVersion`""
+    [System.IO.File]::WriteAllText($tomlPath, $content, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  Cargo.toml version -> $NewVersion" -ForegroundColor Green
+}
+
+function Set-AndroidVersion {
+    param([string]$NewVersion, [int]$NewCode)
+    $gradlePath = "$AndroidRoot\app\build.gradle.kts"
+    $content = Get-Content $gradlePath -Raw
+    $content = $content -replace '(versionCode\s*=\s*)\d+', "`$1$NewCode"
+    $content = $content -replace '(versionName\s*=\s*)"[^"]+"', "`$1`"$NewVersion`""
+    [System.IO.File]::WriteAllText($gradlePath, $content, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "  build.gradle.kts versionName -> $NewVersion, versionCode -> $NewCode" -ForegroundColor Green
+}
+
 function Get-LastTag {
     param([string]$ExcludeVersion = "")
     $ea = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
@@ -89,9 +124,20 @@ function Generate-Changelog {
 
 # --- Main ---
 
-if (-not $Version) {
-    $Version = Get-BridgeVersion
+# Step 0: Determine version and update version files
+$bridgeVer = Get-BridgeVersion
+$androidVer = Get-AndroidVersionName
+
+if ($Version -and $Version -ne $bridgeVer) {
+    Write-Host "Updating version: $bridgeVer -> $Version" -ForegroundColor Cyan
+    Set-BridgeVersion $Version
+    $newCode = (Get-AndroidVersionCode) + 1
+    Set-AndroidVersion $Version $newCode
+} elseif (-not $Version) {
+    $Version = $bridgeVer
     Write-Host "Using version from Cargo.toml: $Version" -ForegroundColor Cyan
+} else {
+    Write-Host "Version already $Version, no update needed" -ForegroundColor Cyan
 }
 
 $ReleaseDir = "$ReleaseBase\$Version"
@@ -109,11 +155,12 @@ Write-Host ""
 
 # Step 1: Create release directory
 New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
-Write-Host "[1/5] Release directory: $ReleaseDir" -ForegroundColor Green
+Write-Host "[1/6] Release directory: $ReleaseDir" -ForegroundColor Green
 
 # Step 2: Build Bridge (Windows)
+$bridgeOk = $false
 if (-not $SkipBridge) {
-    Write-Host "[2/5] Building Bridge (Windows x86_64)..." -ForegroundColor Cyan
+    Write-Host "[2/6] Building Bridge (Windows x86_64)..." -ForegroundColor Cyan
     Push-Location $BridgeRoot
     try {
         $ea = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
@@ -125,16 +172,18 @@ if (-not $SkipBridge) {
         Copy-Item "$BridgeRoot\target\release\openmate.exe" "$ReleaseDir\openmate.exe" -Force
         Copy-Item "$BridgeRoot\bridge.toml" "$ReleaseDir\bridge.toml" -Force
         Write-Host "  Bridge Windows -> openmate.exe" -ForegroundColor Green
+        $bridgeOk = $true
     } finally {
         Pop-Location
     }
 } else {
-    Write-Host "[2/5] Skipping Bridge build" -ForegroundColor Yellow
+    Write-Host "[2/6] Skipping Bridge build" -ForegroundColor Yellow
+    $bridgeOk = $true
 }
 
 # Step 3: Build Bridge (Linux)
 if (-not $SkipLinux -and -not $SkipBridge) {
-    Write-Host "[3/5] Building Bridge (Linux x86_64)..." -ForegroundColor Cyan
+    Write-Host "[3/6] Building Bridge (Linux x86_64)..." -ForegroundColor Cyan
     Push-Location $BridgeRoot
     try {
         $target = "x86_64-unknown-linux-gnu"
@@ -157,12 +206,13 @@ if (-not $SkipLinux -and -not $SkipBridge) {
         Pop-Location
     }
 } else {
-    Write-Host "[3/5] Skipping Linux build" -ForegroundColor Yellow
+    Write-Host "[3/6] Skipping Linux build" -ForegroundColor Yellow
 }
 
 # Step 4: Build Android APK
+$androidOk = $false
 if (-not $SkipAndroid) {
-    Write-Host "[4/5] Building Android APK..." -ForegroundColor Cyan
+    Write-Host "[4/6] Building Android APK..." -ForegroundColor Cyan
     Push-Location $AndroidRoot
     try {
         $ea = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
@@ -174,15 +224,23 @@ if (-not $SkipAndroid) {
         Copy-Item "$AndroidRoot\app\build\outputs\apk\release\app-release.apk" "$ReleaseDir\OpenMate-$Version.apk" -Force
         $apkSize = [math]::Round((Get-Item "$ReleaseDir\OpenMate-$Version.apk").Length / 1MB, 1)
         Write-Host "  APK -> OpenMate-$Version.apk ($apkSize MB)" -ForegroundColor Green
+        $androidOk = $true
     } finally {
         Pop-Location
     }
 } else {
-    Write-Host "[4/5] Skipping Android build" -ForegroundColor Yellow
+    Write-Host "[4/6] Skipping Android build" -ForegroundColor Yellow
+    $androidOk = $true
 }
 
-# Step 5: Copy install guide and generate changelog and tag
-Write-Host "[5/5] Generating changelog..." -ForegroundColor Cyan
+if (-not $bridgeOk -or -not $androidOk) {
+    Write-Host ""
+    Write-Host "=== Build failed, skipping commit and tag ===" -ForegroundColor Red
+    return
+}
+
+# Step 5: Copy install guide and generate changelog
+Write-Host "[5/6] Generating changelog..." -ForegroundColor Cyan
 if (Test-Path $InstallDoc) {
     Copy-Item $InstallDoc "$ReleaseDir\INSTALL.md" -Force
 }
@@ -195,12 +253,35 @@ if ($lastTag) {
 
 Generate-Changelog -Version $Version -LastTag $lastTag -OutPath "$ReleaseDir\CHANGELOG.md"
 
+# Step 6: Commit version changes and create tag
+Write-Host "[6/6] Committing and tagging..." -ForegroundColor Cyan
+$hasChanges = $false
+$ea2 = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+$status = & git -C $ProjectRoot status --porcelain 2>&1
+$ErrorActionPreference = $ea2
+$versionFiles = @(
+    "$BridgeRoot\Cargo.toml",
+    "$AndroidRoot\app\build.gradle.kts"
+)
+foreach ($f in $versionFiles) {
+    $rel = Resolve-Path $f | ForEach-Object { $_.Path.Replace("$ProjectRoot\", "") }
+    if ($status -match [regex]::Escape($rel)) {
+        & git -C $ProjectRoot add $f 2>&1 | Out-Null
+        $hasChanges = $true
+        Write-Host "  Staged: $rel" -ForegroundColor Gray
+    }
+}
+
+if ($hasChanges) {
+    & git -C $ProjectRoot commit -m "release: v$Version" 2>&1 | Out-Null
+    Write-Host "  Committed version bump: v$Version" -ForegroundColor Green
+}
+
 if (-not $SkipTag) {
     $tag = "v$Version"
-    Write-Host "  Creating git tag $tag..." -ForegroundColor Cyan
-    $ea2 = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    git -C $ProjectRoot tag $tag 2>&1 | Out-Null
-    $ErrorActionPreference = $ea2
+    $ea3 = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & git -C $ProjectRoot tag $tag 2>&1 | Out-Null
+    $ErrorActionPreference = $ea3
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  Tagged: $tag" -ForegroundColor Green
     } else {
