@@ -74,6 +74,7 @@ class SessionDetailViewModel @Inject constructor(
     private val dbProvider: ActiveDatabaseProvider,
     private val syncDebugController: SyncDebugController,
     internal val apiClient: OpencodeApiClient,
+    private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
 
@@ -340,19 +341,29 @@ class SessionDetailViewModel @Inject constructor(
 
     fun openFilePreview(path: String) {
         val resolvedPath = resolvePreviewPath(path)
-        viewModelScope.launch(Dispatchers.IO) {
-            _previewFileLoading.value = true
-            _previewFileContent.value = null
-            _previewFileState.value = com.openmate.feature.session.component.FileViewState(
-                path = resolvedPath,
-                name = resolvedPath.substringAfterLast('/').substringAfterLast('\\'),
-            )
-            try {
-                _previewFileContent.value = apiClient.bridgeReadFile(resolvedPath)
-            } catch (e: Exception) {
-                _errorMessage.value = e.message ?: "Failed to read file"
-            } finally {
-                _previewFileLoading.value = false
+        if (bridgeFileOpener.isBinaryFile(resolvedPath)) {
+            viewModelScope.launch(Dispatchers.IO) {
+                bridgeFileOpener.openFile(
+                    resolvedPath,
+                    onTextPreview = {},
+                    onError = { _errorMessage.value = it },
+                )
+            }
+        } else {
+            viewModelScope.launch(Dispatchers.IO) {
+                _previewFileLoading.value = true
+                _previewFileContent.value = null
+                _previewFileState.value = com.openmate.feature.session.component.FileViewState(
+                    path = resolvedPath,
+                    name = resolvedPath.substringAfterLast('/').substringAfterLast('\\'),
+                )
+                try {
+                    _previewFileContent.value = apiClient.bridgeReadFile(resolvedPath)
+                } catch (e: Exception) {
+                    _errorMessage.value = e.message ?: "Failed to read file"
+                } finally {
+                    _previewFileLoading.value = false
+                }
             }
         }
     }
@@ -1307,9 +1318,8 @@ class SessionDetailViewModel @Inject constructor(
         observeSyncEventJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 sseEventRepository.observeSessionErrors()
-                    .collect { (sid, errorMsg) ->
+                    .collect { (sid, _) ->
                         if (sid == sessionId) {
-                            _errorMessage.value = errorMsg
                             try {
                                 applySyncResult(sessionMessageRepository.incrementalSync(sid))
                             } catch (e: Exception) {
