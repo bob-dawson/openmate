@@ -97,7 +97,6 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
             var totalFetchMs = 0L
             var totalReplayMs = 0L
             var totalDbWriteMs = 0L
-            var totalResolveEvtIdMs = 0L
             var replayerCreatedCount = 1
             val loaderCallCounts = mutableMapOf<String, Int>()
             val batchTimings = mutableListOf<BatchTiming>()
@@ -129,38 +128,31 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
 
                 totalEvents += events.size
 
-                val revertIdMap = mutableMapOf<String, String?>()
-                for (event in events) {
-                    if (!event.type.startsWith("session.updated")) continue
-                    val info = event.data["info"]?.jsonObject
-                    val revertJson = info?.get("revert")
-                    if (revertJson is JsonObject) {
-                        val msgId = revertJson["messageID"]?.jsonPrimitive?.contentOrNull ?: continue
-                        val resolveStart = System.currentTimeMillis()
-                        val evtId = client.resolveEvtId(sessionId, msgId)
-                        totalResolveEvtIdMs += System.currentTimeMillis() - resolveStart
-                        revertIdMap[msgId] = evtId
-                        if (evtId != null) {
-                            println("[Revert] pre-resolve msg=$msgId -> evt=$evtId")
-                        }
-                    }
-                }
-
                 val batchChanges = mutableListOf<ReplayChange>()
                 val replayStart = System.currentTimeMillis()
 
                 for (event in events) {
-                    // Handle session.updated revert state (update in-memory revert IDs)
+                    // Handle session.updated revert state
                     if (event.type.startsWith("session.updated")) {
                         val info = event.data["info"]?.jsonObject
                         val revertJson = info?.get("revert")
                         val hasRevertKey = info?.contains("revert") == true
                         if (revertJson is JsonObject) {
                             val msgId = revertJson["messageID"]?.jsonPrimitive?.contentOrNull
-                            val fromId = msgId?.let { revertIdMap[it] }
-                            val toId = if (fromId != null) {
-                                dao.getInRange(sessionId, fromId, "\uffff").lastOrNull()?.id
-                            } else null
+                            var fromId: String? = null
+                            var toId: String? = null
+                            if (msgId != null) {
+                                val storedTs = extractStoredTs(msgId)
+                                val nowK = System.currentTimeMillis() / MOD_2_36
+                                for (k in nowK downTo maxOf(0L, nowK - 1)) {
+                                    val firstId = dao.getFirstIdAfterTimeCreated(sessionId, storedTs + k * MOD_2_36)
+                                    if (firstId != null) {
+                                        fromId = firstId
+                                        toId = dao.getMaxIdGte(sessionId, firstId)
+                                        break
+                                    }
+                                }
+                            }
                             revertFromId = fromId
                             revertToId = toId
                             println("[Revert] session.updated msgId=$msgId fromId=$fromId toId=$toId")
@@ -310,7 +302,6 @@ val strippedType = event.type.replace(Regex("\\.\\d+$"), "")
                         fetchMs = totalFetchMs,
                         replayMs = totalReplayMs,
                         dbWriteMs = totalDbWriteMs,
-                        resolveEvtIdMs = totalResolveEvtIdMs,
                         loaderCalls = loaderCallCounts,
                         replayerCreatedCount = replayerCreatedCount,
                         batchTimings = batchTimings,
@@ -334,6 +325,13 @@ val strippedType = event.type.replace(Regex("\\.\\d+$"), "")
             db.close()
         }
     }
+}
+
+private const val MOD_2_36 = 68719476736L
+
+private fun extractStoredTs(messageId: String): Long {
+    val hex = messageId.split("_")[1].take(12)
+    return hex.toLong(16) / 4096L
 }
 
 fun main(args: Array<String>) = SyncDebuggerCli().main(args)

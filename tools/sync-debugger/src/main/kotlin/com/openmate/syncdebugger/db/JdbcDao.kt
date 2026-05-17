@@ -50,6 +50,30 @@ class JdbcDao(private val db: JdbcDb) {
         }
     }
 
+    fun getFirstIdAfterTimeCreated(sessionId: String, timeCreated: Long): String? {
+        val sql = "SELECT id FROM session_message WHERE sessionId = ? AND timeCreated >= ? ORDER BY timeCreated ASC, id ASC LIMIT 1"
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
+            ps.setLong(2, timeCreated)
+            ps.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                return rs.getString("id")
+            }
+        }
+    }
+
+    fun getMaxIdGte(sessionId: String, fromId: String): String? {
+        val sql = "SELECT id FROM session_message WHERE sessionId = ? AND id >= ? ORDER BY id DESC LIMIT 1"
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
+            ps.setString(2, fromId)
+            ps.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                return rs.getString("id")
+            }
+        }
+    }
+
     fun getAllForSession(sessionId: String): List<SessionMessageEntity> {
         val sql = "SELECT * FROM session_message WHERE sessionId = ? ORDER BY timeCreated"
         val result = mutableListOf<SessionMessageEntity>()

@@ -583,7 +583,10 @@ fun SessionDetailScreen(
                 val isBusy = currentBusyStart != null
                 val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
                     val revertFromId = sessionRevert?.from
-                    val filtered = if (revertFromId != null) messages.filter { it.id < revertFromId } else messages
+                    val filtered = if (revertFromId != null) {
+                        val revertTs = extractMsgTimestamp(revertFromId)
+                        messages.filter { extractMsgTimestamp(it.id) < revertTs }
+                    } else messages
                     if (!isBusy || queuedMessageIds.isEmpty()) filtered
                     else {
                         val queued = mutableListOf<SessionMessage>()
@@ -1174,4 +1177,9 @@ private fun VariantRow(
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+private fun extractMsgTimestamp(msgId: String): Long {
+    val hex = msgId.split("_")[1].take(12)
+    return hex.toLong(16) / 4096L
 }

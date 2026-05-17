@@ -254,51 +254,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     traceId = traceId,
                 )
 
-                val revertIdMap = mutableMapOf<String, String?>()
-                for (event in response.events) {
-                    if (!event.type.startsWith("session.updated")) continue
-                    val info = event.data["info"]?.jsonObject
-                    val revertJson = info?.get("revert")
-                    if (revertJson is JsonObject) {
-                        val revertMsgID =
-                            revertJson["messageID"]?.jsonPrimitive?.content ?: continue
-                        logStore.log(
-                            level = SyncLogLevel.Info,
-                            category = SyncLogCategory.Sync,
-                            sessionId = sessionId,
-                            title = "revert预解析",
-                            message = "seq=${event.seq} msgID=$revertMsgID",
-                            relatedSeq = event.seq,
-                            traceId = traceId,
-                        )
-                        val evtId =
-                            runCatching { syncApiClient.resolveEvtID(sessionId, revertMsgID) }
-                                .onFailure {
-                                    Log.w("SyncRepo", "resolveEvtID failed for $revertMsgID", it)
-                                    logStore.log(
-                                        level = SyncLogLevel.Error,
-                                        category = SyncLogCategory.Sync,
-                                        sessionId = sessionId,
-                                        title = "revert预解析失败",
-                                        message = "seq=${event.seq} msgID=$revertMsgID error=${it.javaClass.simpleName}: ${it.message}",
-                                        relatedSeq = event.seq,
-                                        traceId = traceId,
-                                    )
-                                }
-                                .getOrNull()
-                        logStore.log(
-                            level = SyncLogLevel.Info,
-                            category = SyncLogCategory.Sync,
-                            sessionId = sessionId,
-                            title = "revert预解析结果",
-                            message = "seq=${event.seq} msgID=$revertMsgID evtId=$evtId",
-                            relatedSeq = event.seq,
-                            traceId = traceId,
-                        )
-                        revertIdMap[revertMsgID] = evtId
-                    }
-                }
-
                 db.withTransaction {
                     var pendingId: String? = null
                     var pendingIsInsert: Boolean = false
@@ -332,27 +287,28 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             traceId = traceId,
                         )
 
-                        if (event.type.startsWith("message.removed") || event.type.startsWith("message.part.removed")) {
+                        if (event.type.startsWith("message.removed") && !event.type.startsWith("message.part.removed")) {
                             val session = db.sessionDao().getById(sessionId)
                             val fromId = session?.revertFrom
                             val toId = session?.revertTo
                             if (fromId != null && toId != null) {
-                                val toDelete = db.sessionMessageDao().getInRange(sessionId, fromId, toId)
-                                for (msg in toDelete) {
+                                val rangeMessages = db.sessionMessageDao().getInRange(sessionId, fromId, toId)
+                                db.sessionMessageDao().deleteRange(sessionId, fromId, toId)
+                                for (msg in rangeMessages) {
                                     batchChanges += SessionMessageSyncChange.Remove(msg.id)
                                 }
-                                db.sessionMessageDao().deleteRange(sessionId, fromId, toId)
                                 logStore.log(
                                     level = SyncLogLevel.Info,
                                     category = SyncLogCategory.Sync,
                                     sessionId = sessionId,
                                     title = "revert范围删除",
-                                    message = "seq=${event.seq} aggId=$sessionId fromId=$fromId toId=$toId count=${toDelete.size}",
+                                    message = "seq=${event.seq} from=$fromId to=$toId count=${rangeMessages.size}",
                                     relatedSeq = event.seq,
                                     traceId = traceId,
                                 )
                             }
                             db.sessionDao().updateRevertFields(sessionId, null, null, null, null)
+                            continue
                         }
 
                         val replayEvent = ReplayEvent(event.id, event.type.replace(Regex("\\.\\d+$"), ""), event.data)
@@ -437,16 +393,27 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             if (revertJson is JsonObject) {
                                 val revertMsgID = revertJson["messageID"]?.jsonPrimitive?.content
                                 val revertPartID = revertJson["partID"]?.jsonPrimitive?.content
-                                val fromId = revertMsgID?.let { revertIdMap[it] }
-                                val toId = if (fromId != null) db.sessionMessageDao()
-                                    .getMaxIdGte(aggId, fromId) else null
+                                var fromId: String? = null
+                                var toId: String? = null
+                                if (revertMsgID != null) {
+                                    val storedTs = extractStoredTs(revertMsgID)
+                                    val nowK = System.currentTimeMillis() / MOD_2_36
+                                    for (k in nowK downTo maxOf(0L, nowK - 1)) {
+                                        val firstId = db.sessionMessageDao().getFirstIdAfterTimeCreated(sessionId, storedTs + k * MOD_2_36)
+                                        if (firstId != null) {
+                                            fromId = firstId
+                                            toId = db.sessionMessageDao().getMaxIdGte(sessionId, firstId)
+                                            break
+                                        }
+                                    }
+                                }
                                 val rows = db.sessionDao().updateRevertFields(aggId, revertMsgID, revertPartID, fromId, toId)
                                 logStore.log(
                                     level = if (rows == 0) SyncLogLevel.Error else SyncLogLevel.Info,
                                     category = SyncLogCategory.Sync,
                                     sessionId = sessionId,
                                     title = "revert写入结果",
-                                    message = "seq=${event.seq} aggId=$aggId msgID=$revertMsgID fromId=$fromId toId=$toId rows=$rows",
+                                    message = "seq=${event.seq} aggId=$aggId msgID=$revertMsgID from=$fromId to=$toId rows=$rows",
                                     relatedSeq = event.seq,
                                     traceId = traceId,
                                 )
@@ -531,6 +498,13 @@ class SessionMessageRepositoryImpl @Inject constructor(
     override suspend fun deleteMessage(sessionId: String, messageId: String) {
         dbProvider.getActive().sessionMessageDao().delete(messageId)
     }
+}
+
+private const val MOD_2_36 = 68719476736L
+
+private fun extractStoredTs(messageId: String): Long {
+    val hex = messageId.split("_")[1].take(12)
+    return hex.toLong(16) / 4096L
 }
 
 private fun SessionMessageEntity.toDomain() = SessionMessage(

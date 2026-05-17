@@ -492,20 +492,7 @@ class SessionDetailViewModel @Inject constructor(
                 }
                 val newRevert = session?.revert
                 if (newRevert != null) {
-                    val fromId = newRevert.from
-                    if (fromId != null) {
-                        _sessionRevert.value = newRevert
-                    } else {
-                        _sessionRevert.value = newRevert
-        observeSessionJob = viewModelScope.launch(Dispatchers.IO) {
-                            val evtId = runCatching { sessionRepository.resolveEvtID(currentSessionID!!, newRevert.messageID) }
-                                .onFailure { Log.w(TAG, "resolveEvtID failed for ${newRevert.messageID}", it) }
-                                .getOrNull()
-                            if (evtId != null) {
-                                _sessionRevert.value = newRevert.copy(from = evtId)
-                            }
-                        }
-                    }
+                    _sessionRevert.value = newRevert
                 } else {
                     _sessionRevert.value = null
                 }
@@ -1451,7 +1438,8 @@ class SessionDetailViewModel @Inject constructor(
     fun revertToLastMessage(sessionID: String) {
         val revertFromId = _sessionRevert.value?.from
         val visibleMessages = if (revertFromId != null) {
-            messageWindowState.messages.filter { it.id < revertFromId }
+            val revertTs = extractMsgTimestamp(revertFromId)
+            messageWindowState.messages.filter { extractMsgTimestamp(it.id) < revertTs }
         } else {
             messageWindowState.messages
         }
@@ -1502,4 +1490,9 @@ class SessionDetailViewModel @Inject constructor(
     private fun isSessionBusy(): Boolean {
         return _sessionStatus.value == SessionStatus.BUSY.name || _sessionStatus.value == SessionStatus.RUNNING.name
     }
+}
+
+private fun extractMsgTimestamp(msgId: String): Long {
+    val hex = msgId.split("_")[1].take(12)
+    return hex.toLong(16) / 4096L
 }

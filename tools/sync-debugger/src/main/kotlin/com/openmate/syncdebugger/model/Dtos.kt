@@ -47,7 +47,4 @@ data class SyncSessionDto(
     @SerialName("maxSeq") val maxSeq: Long? = null,
 )
 
-@Serializable
-data class ResolveEvtIdResponseDto(
-    @SerialName("evtID") val evtID: String? = null,
-)
+

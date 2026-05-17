@@ -45,7 +45,6 @@ data class PerfSummary(
     val fetchMs: Long = 0,
     val replayMs: Long = 0,
     val dbWriteMs: Long = 0,
-    val resolveEvtIdMs: Long = 0,
     val loaderCalls: Map<String, Int> = emptyMap(),
     val loaderCacheHits: Int = 0,
     val loaderCacheMisses: Int = 0,
@@ -83,7 +82,7 @@ class OutputFormatter {
             |  Fetch: ${perf.fetchMs}ms (${perf.fetchMs * 100 / maxOf(perf.totalWallMs, 1)}%)
             |  Replay: ${perf.replayMs}ms (${perf.replayMs * 100 / maxOf(perf.totalWallMs, 1)}%)
             |  DB write: ${perf.dbWriteMs}ms (${perf.dbWriteMs * 100 / maxOf(perf.totalWallMs, 1)}%)
-            |  ResolveEvtID: ${perf.resolveEvtIdMs}ms
+
             |  Replayer created: ${perf.replayerCreatedCount}x
             |  Loader calls: ${perf.loaderCalls}
             |  Top 5 slowest batches:

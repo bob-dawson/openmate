@@ -33,11 +33,5 @@ class BridgeClient(private val baseUrl: String, token: String? = null) {
         return json.decodeFromString<SessionsResponseDto>(body)
     }
 
-    suspend fun resolveEvtId(sessionId: String, messageId: String): String? {
-        val body = client.get("$baseUrl/api/bridge/sync/session/$sessionId/resolve-evt-id?messageId=$messageId").bodyAsText()
-        val response = json.decodeFromString<ResolveEvtIdResponseDto>(body)
-        return response.evtID
-    }
-
     fun close() = client.close()
 }
