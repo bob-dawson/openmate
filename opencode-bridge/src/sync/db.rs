@@ -84,10 +84,13 @@ impl SyncDb {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, session_id, type, time_created, time_updated, data
-             FROM session_message
-             WHERE session_id = ?
-             ORDER BY time_created DESC
-             LIMIT ?"
+             FROM (
+                 SELECT id, session_id, type, time_created, time_updated, data
+                 FROM session_message
+                 WHERE session_id = ?
+                 ORDER BY time_created DESC
+                 LIMIT ?
+             ) ORDER BY time_created ASC"
         ).map_err(|e| format!("Prepare failed: {}", e))?;
 
         let messages: Vec<Value> = stmt.query_map(params![session_id, limit], |row| {
@@ -261,10 +264,13 @@ impl SyncDb {
         let conn = self.conn()?;
         let mut msg_stmt = conn.prepare(
             "SELECT id, session_id, time_created, time_updated, data
-             FROM message
-             WHERE session_id = ?
-             ORDER BY time_created DESC
-             LIMIT ?"
+             FROM (
+                 SELECT id, session_id, time_created, time_updated, data
+                 FROM message
+                 WHERE session_id = ?
+                 ORDER BY time_created DESC
+                 LIMIT ?
+             ) ORDER BY time_created ASC"
         ).map_err(|e| format!("Legacy prepare failed: {}", e))?;
 
         struct MsgRow {

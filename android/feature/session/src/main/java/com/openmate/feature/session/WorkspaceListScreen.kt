@@ -676,20 +676,19 @@ private fun SettingsContent(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = if (opencodeVersion?.hasUpdate == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            IconButton(
-                                onClick = { viewModel.checkVersion() },
-                                enabled = !isCheckingVersion && !isUpgrading && !isRestarting,
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                if (isCheckingVersion) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Filled.Refresh,
-                                        contentDescription = stringResource(R.string.check_for_updates),
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            if (isCheckingVersion) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            } else {
+                                Text(
+                                    text = stringResource(R.string.check_for_updates),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable(
+                                        enabled = !isUpgrading && !isRestarting,
+                                        onClick = { viewModel.checkVersion() }
+                                    ),
+                                )
                             }
                         }
                     },
@@ -720,17 +719,16 @@ private fun SettingsContent(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            IconButton(
-                                onClick = { showRestartDialog = true },
-                                enabled = !isRestarting && !isUpgrading,
-                                modifier = Modifier.size(32.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Refresh,
-                                    contentDescription = stringResource(R.string.restart_opencode),
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.restart_opencode),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable(
+                                    enabled = !isRestarting && !isUpgrading,
+                                    onClick = { showRestartDialog = true }
+                                ),
+                            )
                         }
                     },
                 )
