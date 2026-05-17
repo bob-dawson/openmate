@@ -49,7 +49,7 @@ function Set-BridgeVersion {
     param([string]$NewVersion)
     $tomlPath = "$BridgeRoot\Cargo.toml"
     $content = Get-Content $tomlPath -Raw
-    $content = $content -replace '(version\s*=\s*)"[^"]+"', "`$1`"$NewVersion`""
+    $content = $content -replace '(\[package\][^\[]*?version\s*=\s*)"[^"]+"', "`$1`"$NewVersion`""
     [System.IO.File]::WriteAllText($tomlPath, $content, [System.Text.UTF8Encoding]::new($false))
     Write-Host "  Cargo.toml version -> $NewVersion" -ForegroundColor Green
 }
@@ -58,8 +58,8 @@ function Set-AndroidVersion {
     param([string]$NewVersion, [int]$NewCode)
     $gradlePath = "$AndroidRoot\app\build.gradle.kts"
     $content = Get-Content $gradlePath -Raw
-    $content = $content -replace '(versionCode\s*=\s*)\d+', "`$1$NewCode"
-    $content = $content -replace '(versionName\s*=\s*)"[^"]+"', "`$1`"$NewVersion`""
+    $content = $content -replace 'versionCode\s*=\s*\d+', "versionCode = $NewCode"
+    $content = $content -replace 'versionName\s*=\s*"[^"]+"', "versionName = `"$NewVersion`""
     [System.IO.File]::WriteAllText($gradlePath, $content, [System.Text.UTF8Encoding]::new($false))
     Write-Host "  build.gradle.kts versionName -> $NewVersion, versionCode -> $NewCode" -ForegroundColor Green
 }
@@ -124,20 +124,8 @@ function Generate-Changelog {
 
 # --- Main ---
 
-# Step 0: Determine version and update version files
-$bridgeVer = Get-BridgeVersion
-$androidVer = Get-AndroidVersionName
-
-if ($Version -and $Version -ne $bridgeVer) {
-    Write-Host "Updating version: $bridgeVer -> $Version" -ForegroundColor Cyan
-    Set-BridgeVersion $Version
-    $newCode = (Get-AndroidVersionCode) + 1
-    Set-AndroidVersion $Version $newCode
-} elseif (-not $Version) {
-    $Version = $bridgeVer
-    Write-Host "Using version from Cargo.toml: $Version" -ForegroundColor Cyan
-} else {
-    Write-Host "Version already $Version, no update needed" -ForegroundColor Cyan
+if (-not $Version) {
+    $Version = Get-BridgeVersion
 }
 
 $ReleaseDir = "$ReleaseBase\$Version"
@@ -147,6 +135,19 @@ if ($DryRun) {
     Write-Host "[DRY RUN] Would create release $Version at $ReleaseDir" -ForegroundColor Yellow
     Write-Host "[DRY RUN] Components: Bridge=$( -not $SkipBridge), Android=$( -not $SkipAndroid), Linux=$( -not $SkipLinux), Tag=$( -not $SkipTag)"
     return
+}
+
+# Step 0: Update version numbers if specified
+$bridgeVer = Get-BridgeVersion
+$androidVer = Get-AndroidVersionName
+
+if ($Version -and $Version -ne $bridgeVer) {
+    Write-Host "Updating version: $bridgeVer -> $Version" -ForegroundColor Cyan
+    Set-BridgeVersion $Version
+    $newCode = (Get-AndroidVersionCode) + 1
+    Set-AndroidVersion $Version $newCode
+} elseif ($Version -eq $bridgeVer) {
+    Write-Host "Version already $Version, no update needed" -ForegroundColor Cyan
 }
 
 Write-Host ""
