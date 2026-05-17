@@ -3,6 +3,24 @@
 > 本文档定义移动端同步时各消息/工具类型的大字段截断策略。
 > 详见主文档 `2026-05-06-mobile-incremental-sync-design.md`
 
+## 原始事件类型级截断（增量同步）
+
+增量 replay 时，Bridge 对原始事件逐个应用 `truncate_event()` 后再返回。
+以下事件类型有额外截断规则，未列出的类型（如 `session.updated`、`session.next.step.started` 等）原样透传。
+
+| 事件类型 | 字段 | 截断策略 |
+|---------|------|---------|
+| `session.next.tool.success` / `session.next.tool.progress` | `content[]` 中的 `file`/`image` 项 | 移除 `data`, `content`, `source`；`attachments[]` 移除 `url` |
+| `session.next.tool.success` / `session.next.tool.progress` | `structured` | ＞500 字符时跳过 |
+| `session.next.tool.called` | `input` | 按工具类型保留输入字段（同 init 工具规则） |
+| `session.next.reasoning.ended` | `text` | 保留前后各 100 字符 |
+| `session.next.shell.ended` | `output` | 前 5 行 + 后 5 行 |
+| `session.next.prompted` | `prompt.files[].source.text` / `description` | 跳过 |
+| `session.next.compaction.ended` | `text` | 前 10 行 + 后 10 行；`include` 跳过 |
+| `message.part.updated` | `part.state` (type=tool) | 同 tool 截断规则；`attachments[]` 移除 `url` |
+| `message.updated` | `info.summary.diffs` | **移除**（opencode 可能在此字段写入大段 diff，实测可达 20MB） |
+| `message.updated` | `info.snapshot` / `metadata` / `diagnostics` | 跳过 |
+
 ## 截断执行位置
 
 - **Bridge 侧**：初始化快照（`/init`）时，Bridge 读取 SessionMessage 后应用截断规则再返回
@@ -95,6 +113,11 @@ fun truncateBashOutput(output: String, maxHead: Int = 5, maxTail: Int = 5): Stri
 `tool.success` / `tool.progress` 的 `content[]` 可能包含 `{type:"file", uri, mime, name}` 附件。
 截断时保留文件元信息（uri/name/mime），但跳过内嵌 base64 数据（如有）。
 
+### tool.state.attachments
+
+tool part 的 `state.attachments[]` 可能包含内嵌 base64 数据的文件附件（如 `{type:"file", mime:"image/png", url:"data:image/png;base64,..."}`）。
+截断时保留元信息字段（`type`, `mime`, `id`, `sessionID`, `messageID`），**移除 `url` 字段**（实测单条附件可 >960KB）。
+
 ### step.ended tokens.total 字段
 
 `step.ended` 的 `tokens` 含 `total` 字段（实际 DB 验证存在），截断规则中 tokens 类字段全量保留，包括 total。
@@ -107,3 +130,6 @@ fun truncateBashOutput(output: String, maxHead: Int = 5, maxTail: Int = 5): Stri
 - [x] glob/grep 前 10 条结果是否合适 → 只保留输入+匹配数量，不保留结果列表
 - [x] edit output 是否需要保留 diff 片段 → 只保留行数统计（additions/deletions）
 - [x] tool.state.content 文件附件 → 保留元信息，跳过内嵌数据
+- [x] tool.state.attachments → 保留元信息（type/mime/id/sessionID/messageID），移除 url（base64）
+- [x] message.updated info.summary.diffs → 移除（实测可达 20MB）
+- [x] message.updated info.snapshot/metadata/diagnostics → 跳过
