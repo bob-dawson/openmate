@@ -133,10 +133,8 @@ class SessionMessageRepositoryImplTest {
             ),
         )
 
-        val result = repository.incrementalSync(SESSION_ID)
+        repository.incrementalSync(SESSION_ID)
 
-        assertThat(result.changes.map { it.javaClass.simpleName }).containsExactly("Update", "Insert").inOrder()
-        assertThat(result.lastSeq).isEqualTo(8L)
         assertThat(dbProvider.getActive().sessionMessageDao().getById("m1")?.data).contains("updated text")
         assertThat(dbProvider.getActive().sessionMessageDao().getById("m3")?.data).contains("new prompt")
     }

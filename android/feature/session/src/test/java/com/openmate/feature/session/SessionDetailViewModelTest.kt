@@ -990,20 +990,13 @@ class SessionDetailViewModelTest {
 
         override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult = initSyncResult
 
-        override suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult {
+        override suspend fun incrementalSync(sessionId: String) {
             incrementalSyncCalls += sessionId
-            return if (incrementalSyncResults.isEmpty()) {
-                SessionMessageSyncResult(lastSeq ?: 0L, emptyList())
-            } else {
-                incrementalSyncResults.removeFirst()
-            }
         }
 
-        override suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult {
+        override suspend fun incrementalSyncAndNotify(sessionId: String) {
             incrementalSyncAndNotifyCalls += sessionId
-            val result = incrementalSync(sessionId)
-            syncEvents.emit(SessionMessageSyncEvent(sessionId = sessionId, result = result))
-            return result
+            incrementalSync(sessionId)
         }
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit

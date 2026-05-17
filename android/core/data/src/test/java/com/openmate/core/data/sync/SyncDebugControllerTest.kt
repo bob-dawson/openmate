@@ -118,9 +118,9 @@ class SyncDebugControllerTest {
 
         override suspend fun initSync(sessionId: String, limit: Int) = SessionMessageSyncResult(0L, emptyList())
 
-        override suspend fun incrementalSync(sessionId: String) = SessionMessageSyncResult(0L, emptyList())
+        override suspend fun incrementalSync(sessionId: String) {}
 
-        override suspend fun incrementalSyncAndNotify(sessionId: String) = SessionMessageSyncResult(0L, emptyList())
+        override suspend fun incrementalSyncAndNotify(sessionId: String) {}
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
 

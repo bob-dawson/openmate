@@ -218,6 +218,8 @@ class SessionDetailViewModel @Inject constructor(
     private var observeQuestionJob: Job? = null
     private var observePermissionJob: Job? = null
     private var observeSyncEventJob: Job? = null
+    private var observeMessageSyncJob: Job? = null
+    private var observeSessionErrorJob: Job? = null
     private var observeRetryStatusJob: Job? = null
     private var observeSyncLogsJob: Job? = null
 
@@ -431,7 +433,7 @@ class SessionDetailViewModel @Inject constructor(
         if (currentSessionID == sessionID) {
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
+                    sessionMessageRepository.incrementalSync(sessionID)
                 } catch (_: Exception) {}
             }
             return
@@ -441,6 +443,8 @@ class SessionDetailViewModel @Inject constructor(
         observeSessionJob?.cancel()
         observeTodoJob?.cancel()
         observeSyncEventJob?.cancel()
+        observeMessageSyncJob?.cancel()
+        observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
         pollJob?.cancel()
         _selectedModel.value = null
@@ -525,12 +529,11 @@ class SessionDetailViewModel @Inject constructor(
                 rebuildInitialWindow(sessionID)
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
                 val hasLocalMessages = messageWindowState.messages.isNotEmpty()
-                val syncResult = if (lastSeq != null && lastSeq > 0 && hasLocalMessages) {
+                if (lastSeq != null && lastSeq > 0 && hasLocalMessages) {
                     sessionMessageRepository.incrementalSync(sessionID)
                 } else {
-                    sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE)
+                    applySyncResult(sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE))
                 }
-                applySyncResult(syncResult)
             } catch (e: Exception) {
                 Log.e(TAG, "sync failed", e)
             }
@@ -562,7 +565,7 @@ class SessionDetailViewModel @Inject constructor(
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                applySyncResult(sessionMessageRepository.incrementalSync(sid))
+                sessionMessageRepository.incrementalSync(sid)
                 refreshRetryStatus(sid)
                 todoRepository.refreshTodos(sid)
                 questionRepository.refresh(currentDirectory.ifBlank { "/" })
@@ -578,7 +581,15 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionMessageRepository.rollbackSeq(sid, eventCount.toLong())
-                applySyncResult(sessionMessageRepository.incrementalSync(sid))
+                _messages.value = emptyList()
+                _hasOlderMessages.value = false
+                _isStreaming.value = false
+                messageWindowState = SessionMessageWindowManager.State(
+                    messages = emptyList(),
+                    loadedCount = 0,
+                    hasOlderMessages = false,
+                )
+                sessionMessageRepository.incrementalSync(sid)
                 refreshRetryStatus(sid)
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
@@ -612,6 +623,8 @@ class SessionDetailViewModel @Inject constructor(
                 dbProvider.clearActive()
                 pollJob?.cancel()
                 observeSyncEventJob?.cancel()
+                observeMessageSyncJob?.cancel()
+                observeSessionErrorJob?.cancel()
                 try {
                     for ((file, name) in files) {
                         if (!file.exists()) continue
@@ -645,7 +658,7 @@ class SessionDetailViewModel @Inject constructor(
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
                 try {
-                    applySyncResult(sessionMessageRepository.incrementalSync(sessionId))
+                    sessionMessageRepository.incrementalSync(sessionId)
                     refreshRetryStatus(sessionId)
                 } catch (e: Exception) {
                     Log.e(TAG, "poll sync failed", e)
@@ -672,6 +685,8 @@ class SessionDetailViewModel @Inject constructor(
         observeQuestionJob?.cancel()
         observePermissionJob?.cancel()
         observeSyncEventJob?.cancel()
+        observeMessageSyncJob?.cancel()
+        observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
         observeSyncLogsJob?.cancel()
         pollJob?.cancel()
@@ -708,7 +723,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
                 apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null }, variant)
-                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
+                sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
@@ -1297,7 +1312,7 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "observeSyncEvents failed", e)
             }
         }
-        observeSyncEventJob = viewModelScope.launch(Dispatchers.IO) {
+        observeMessageSyncJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 sseEventRepository.observeMessageSyncNeeded()
                     .conflate()
@@ -1305,7 +1320,7 @@ class SessionDetailViewModel @Inject constructor(
                     .collect { sid ->
                         if (sid == sessionId) {
                             try {
-                                applySyncResult(sessionMessageRepository.incrementalSync(sid))
+                                sessionMessageRepository.incrementalSync(sid)
                             } catch (e: Exception) {
                                 Log.e(TAG, "SSE-triggered incremental sync failed", e)
                             }
@@ -1315,13 +1330,13 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "observeMessageSyncNeeded failed", e)
             }
         }
-        observeSyncEventJob = viewModelScope.launch(Dispatchers.IO) {
+        observeSessionErrorJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 sseEventRepository.observeSessionErrors()
                     .collect { (sid, _) ->
                         if (sid == sessionId) {
                             try {
-                                applySyncResult(sessionMessageRepository.incrementalSync(sid))
+                                sessionMessageRepository.incrementalSync(sid)
                             } catch (e: Exception) {
                                 Log.e(TAG, "session.error-triggered incremental sync failed", e)
                             }
@@ -1418,7 +1433,7 @@ class SessionDetailViewModel @Inject constructor(
                 if (!promptText.isNullOrBlank()) {
                     _inputText.value = promptText
                 }
-                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
+                sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "revertToMessage failed", e)
                 syncDebugController.log(
@@ -1465,7 +1480,7 @@ class SessionDetailViewModel @Inject constructor(
                     message = "dir=${currentDirectory.ifBlank { "null" }}",
                 )
                 sessionRepository.unrevertSession(sessionID, directory = currentDirectory.ifBlank { null })
-                applySyncResult(sessionMessageRepository.incrementalSync(sessionID))
+                sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "unrevert failed", e)
                 syncDebugController.log(

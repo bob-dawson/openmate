@@ -15,18 +15,31 @@ object SessionMessageWindowManager {
 
         for (change in changes) {
             messages = when (change) {
-                is SessionMessageSyncChange.Insert ->
-                    (messages + change.message)
-                        .distinctBy(SessionMessage::id)
-                        .sortedWith(compareBy(SessionMessage::timeCreated, SessionMessage::id))
+                is SessionMessageSyncChange.Insert -> {
+                    messages + change.message
+                }
 
-                is SessionMessageSyncChange.Update ->
-                    messages.map { message ->
-                        if (message.id == change.message.id) change.message else message
+                is SessionMessageSyncChange.Update -> {
+                    val idx = messages.indexOfLast { it.id == change.message.id }
+                    if (idx < 0) {
+                        messages
+                    } else if (idx == messages.lastIndex) {
+                        messages.dropLast(1) + change.message
+                    } else {
+                        messages.subList(0, idx) + change.message + messages.subList(idx + 1, messages.size)
                     }
+                }
 
-                is SessionMessageSyncChange.Remove ->
-                    messages.filterNot { message -> message.id == change.messageId }
+                is SessionMessageSyncChange.Remove -> {
+                    val idx = messages.indexOfLast { it.id == change.messageId }
+                    if (idx < 0) {
+                        messages
+                    } else if (idx == messages.lastIndex) {
+                        messages.dropLast(1)
+                    } else {
+                        messages.subList(0, idx) + messages.subList(idx + 1, messages.size)
+                    }
+                }
             }
         }
 

@@ -117,9 +117,9 @@ class SubtaskDetailScreenRunningAnchorTest {
 
         override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult = SessionMessageSyncResult(0, emptyList())
 
-        override suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult = SessionMessageSyncResult(0, emptyList())
+        override suspend fun incrementalSync(sessionId: String) {}
 
-        override suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult = SessionMessageSyncResult(0, emptyList())
+        override suspend fun incrementalSyncAndNotify(sessionId: String) {}
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
 

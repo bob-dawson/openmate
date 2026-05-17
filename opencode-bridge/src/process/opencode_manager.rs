@@ -232,7 +232,14 @@ impl OpencodeManager {
     pub async fn restart(&self) -> Result<(), String> {
         if self.is_running().await {
             self.stop().await?;
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            for _ in 0..10 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                let client = reqwest::Client::new();
+                if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_err() {
+                    break;
+                }
+            }
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
         self.start().await
     }
@@ -247,6 +254,13 @@ impl OpencodeManager {
     }
 
     pub async fn get_latest_version(&self) -> Result<String, String> {
+        match self.npm_view_version().await {
+            Ok(v) => Ok(v),
+            Err(_) => self.registry_fetch_version().await,
+        }
+    }
+
+    async fn npm_view_version(&self) -> Result<String, String> {
         let output = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             tokio::process::Command::new("npm")
@@ -269,6 +283,31 @@ impl OpencodeManager {
             return Err("npm view returned empty version".to_string());
         }
         Ok(version)
+    }
+
+    async fn registry_fetch_version(&self) -> Result<String, String> {
+        let url = "https://registry.npmjs.org/opencode-ai/latest";
+        let resp = tokio::time::timeout(
+            std::time::Duration::from_secs(15),
+            reqwest::get(url),
+        )
+        .await
+        .map_err(|_| "registry fetch timed out (15s)".to_string())?
+        .map_err(|e| format!("registry fetch failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("registry returned status {}", resp.status()));
+        }
+
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("registry parse error: {}", e))?;
+
+        body.get("version")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| "registry response missing version field".to_string())
     }
 
     pub fn is_upgrade_in_progress(&self) -> bool {

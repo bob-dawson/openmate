@@ -53,6 +53,9 @@ class SettingsViewModel @Inject constructor(
     private val _isUpgrading = MutableStateFlow(false)
     val isUpgrading: StateFlow<Boolean> = _isUpgrading.asStateFlow()
 
+    private val _isCheckingVersion = MutableStateFlow(false)
+    val isCheckingVersion: StateFlow<Boolean> = _isCheckingVersion.asStateFlow()
+
     private val _isRestarting = MutableStateFlow(false)
     val isRestarting: StateFlow<Boolean> = _isRestarting.asStateFlow()
 
@@ -130,10 +133,13 @@ class SettingsViewModel @Inject constructor(
 
     fun checkVersion() {
         viewModelScope.launch(Dispatchers.IO) {
+            _isCheckingVersion.value = true
             try {
                 _opencodeVersion.value = apiClient.bridgeOpencodeVersion()
                 _upgradeError.value = null
-            } catch (_: Exception) {}
+            } catch (_: Exception) {} finally {
+                _isCheckingVersion.value = false
+            }
         }
     }
 

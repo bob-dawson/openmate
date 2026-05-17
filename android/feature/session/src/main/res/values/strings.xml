@@ -204,4 +204,9 @@
     <string name="restart_confirm">Restart opencode?</string>
     <string name="upgrading">Upgrading…</string>
     <string name="restarting">Restarting…</string>
+    <string name="check_for_updates">Check for updates</string>
+    <string name="checking">Checking…</string>
+    <string name="up_to_date">Up to date</string>
+    <string name="latest_version">Latest version</string>
+    <string name="current_version">Current version</string>
 </resources>

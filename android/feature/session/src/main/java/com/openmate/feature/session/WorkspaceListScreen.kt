@@ -36,6 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -62,6 +63,7 @@ import androidx.compose.ui.res.stringResource
 import com.openmate.feature.session.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -611,6 +613,7 @@ private fun SettingsContent(
             val opencodeVersion by viewModel.opencodeVersion.collectAsState()
             val isUpgrading by viewModel.isUpgrading.collectAsState()
             val isRestarting by viewModel.isRestarting.collectAsState()
+            val isCheckingVersion by viewModel.isCheckingVersion.collectAsState()
 
             var showUpgradeDialog by remember { mutableStateOf(false) }
             var showRestartDialog by remember { mutableStateOf(false) }
@@ -660,23 +663,41 @@ private fun SettingsContent(
             SectionHeader(title = stringResource(R.string.opencode_management))
             SettingsCard {
                 SettingsRow(
-                    title = stringResource(R.string.version),
+                    title = stringResource(R.string.latest_version),
                     subtitle = null,
                     trailing = {
-                        Text(
-                            text = if (isUpgrading) stringResource(R.string.upgrading)
-                                   else if (isRestarting) stringResource(R.string.restarting)
-                                   else opencodeVersion?.current ?: stringResource(R.string.opencode_not_connected),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = when {
+                                    isUpgrading -> stringResource(R.string.upgrading)
+                                    opencodeVersion?.latest != null -> "v${opencodeVersion?.latest}"
+                                    else -> stringResource(R.string.opencode_not_connected)
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (opencodeVersion?.hasUpdate == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            IconButton(
+                                onClick = { viewModel.checkVersion() },
+                                enabled = !isCheckingVersion && !isUpgrading && !isRestarting,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                if (isCheckingVersion) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.Refresh,
+                                        contentDescription = stringResource(R.string.check_for_updates),
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            }
+                        }
                     },
                 )
                 if (opencodeVersion?.hasUpdate == true && !isUpgrading && !isRestarting) {
                     SettingsRow(
                         title = stringResource(R.string.upgrade_to, opencodeVersion?.latest ?: ""),
                         subtitle = null,
-                        showDivider = false,
                         modifier = Modifier.clickable { showUpgradeDialog = true },
                         trailing = {
                             Text(
@@ -686,14 +707,33 @@ private fun SettingsContent(
                             )
                         },
                     )
-                } else {
-                    SettingsRow(
-                        title = stringResource(R.string.restart_opencode),
-                        subtitle = null,
-                        showDivider = false,
-                        modifier = Modifier.clickable(enabled = !isRestarting && !isUpgrading) { showRestartDialog = true },
-                    )
                 }
+                SettingsRow(
+                    title = stringResource(R.string.current_version),
+                    subtitle = null,
+                    showDivider = false,
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (isRestarting) stringResource(R.string.restarting)
+                                       else opencodeVersion?.current?.let { "v$it" } ?: stringResource(R.string.opencode_not_connected),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            IconButton(
+                                onClick = { showRestartDialog = true },
+                                enabled = !isRestarting && !isUpgrading,
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = stringResource(R.string.restart_opencode),
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        }
+                    },
+                )
             }
         }
 
@@ -704,8 +744,14 @@ private fun SettingsContent(
                     title = stringResource(R.string.version),
                     subtitle = null,
                     trailing = {
+                        val context = LocalContext.current
+                        val appVersion = remember {
+                            runCatching {
+                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
+                            }.getOrDefault("?")
+                        }
                         Text(
-                            text = "1.0.0",
+                            text = appVersion,
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

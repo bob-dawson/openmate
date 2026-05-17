@@ -150,24 +150,24 @@ class SessionMessageRepositoryImpl @Inject constructor(
         )
     }
 
-    override suspend fun incrementalSync(sessionId: String): SessionMessageSyncResult {
+    override suspend fun incrementalSync(sessionId: String) {
         if (syncingSessions.putIfAbsent(sessionId, Unit) != null) {
             Log.d("SyncRepo", "incrementalSync skip: already syncing $sessionId")
-            return SessionMessageSyncResult(lastSeq = 0L, changes = emptyList())
+            return
         }
         try {
-            return doIncrementalSync(sessionId)
+            doIncrementalSync(sessionId)
         } finally {
             syncingSessions.remove(sessionId)
         }
     }
 
-    private suspend fun doIncrementalSync(sessionId: String): SessionMessageSyncResult {
+    private suspend fun doIncrementalSync(sessionId: String) {
         val db = dbProvider.getActive()
         db.sessionMessageDao().fixRunningAssistantRoundMark()
         val syncState = db.syncStateDao().get(sessionId) ?: run {
             Log.w("SyncRepo", "incrementalSync skip: no sync state for $sessionId")
-            return SessionMessageSyncResult(lastSeq = 0L, changes = emptyList())
+            return
         }
         val t0 = System.currentTimeMillis()
         val traceId = "inc-${System.nanoTime()}"
@@ -187,7 +187,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
         try {
             var afterSeq = syncState.lastSeq
-            val allAppliedChanges = mutableListOf<SessionMessageSyncChange>()
             var totalEvents = 0
             var totalBytes = 0L
             var batchIndex = 0
@@ -231,15 +230,12 @@ class SessionMessageRepositoryImpl @Inject constructor(
                         category = SyncLogCategory.Sync,
                         sessionId = sessionId,
                         title = "增量同步结束",
-                        message = "incremental sync completed batches=$batchIndex applied=${allAppliedChanges.size} totalEvents=$totalEvents cost=${System.currentTimeMillis() - t0}ms totalBytes=$totalBytes",
+                        message = "incremental sync completed batches=$batchIndex totalEvents=$totalEvents cost=${System.currentTimeMillis() - t0}ms totalBytes=$totalBytes",
                         bytes = totalBytes.toInt(),
                         relatedSeq = lastSeq,
                         traceId = traceId,
                     )
-                    return SessionMessageSyncResult(
-                        lastSeq = lastSeq,
-                        changes = allAppliedChanges,
-                    )
+                    return
                 }
 
                 val eventCount = response.events.size
@@ -316,10 +312,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                         db.sessionMessageDao().upsert(entity)
                         if (pendingIsInsert) {
                             batchChanges += SessionMessageSyncChange.Insert(entity.toDomain())
-                            allAppliedChanges += SessionMessageSyncChange.Insert(entity.toDomain())
                         } else {
                             batchChanges += SessionMessageSyncChange.Update(entity.toDomain())
-                            allAppliedChanges += SessionMessageSyncChange.Update(entity.toDomain())
                         }
                     }
 
@@ -346,7 +340,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                 val toDelete = db.sessionMessageDao().getInRange(sessionId, fromId, toId)
                                 for (msg in toDelete) {
                                     batchChanges += SessionMessageSyncChange.Remove(msg.id)
-                                    allAppliedChanges += SessionMessageSyncChange.Remove(msg.id)
                                 }
                                 db.sessionMessageDao().deleteRange(sessionId, fromId, toId)
                                 logStore.log(
@@ -431,7 +424,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                     }
                                     db.sessionMessageDao().delete(change.id)
                                     batchChanges += SessionMessageSyncChange.Remove(change.id)
-                                    allAppliedChanges += SessionMessageSyncChange.Remove(change.id)
                                 }
                             }
                         }
@@ -507,8 +499,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun incrementalSyncAndNotify(sessionId: String): SessionMessageSyncResult {
-        return incrementalSync(sessionId)
+    override suspend fun incrementalSyncAndNotify(sessionId: String) {
+        incrementalSync(sessionId)
     }
 
     override suspend fun fetchFullMessage(sessionId: String, messageId: String) {

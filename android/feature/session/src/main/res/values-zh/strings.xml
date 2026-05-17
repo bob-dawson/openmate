@@ -201,4 +201,9 @@
     <string name="restart_confirm">确定重启 opencode？</string>
     <string name="upgrading">升级中…</string>
     <string name="restarting">重启中…</string>
+    <string name="check_for_updates">检查更新</string>
+    <string name="checking">检查中…</string>
+    <string name="up_to_date">已是最新</string>
+    <string name="latest_version">最新版本</string>
+    <string name="current_version">当前版本</string>
 </resources>
