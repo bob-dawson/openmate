@@ -33,6 +33,7 @@ pub fn truncate_event(event_type: &str, data: &Value) -> Value {
         "session.next.shell.ended" => truncate_event_shell_ended(data),
         "session.next.prompted" => truncate_event_prompted(data),
         "message.part.updated" => truncate_event_part_updated(data),
+        "message.updated" => truncate_event_message_updated(data),
         _ => data.clone(),
     }
 }
@@ -126,6 +127,14 @@ fn truncate_event_tool_result(data: &Value) -> Value {
         }
     }
 
+    if let Some(attachments) = obj.get_mut("attachments").and_then(|a| a.as_array_mut()) {
+        for att in attachments.iter_mut() {
+            if let Some(ao) = att.as_object_mut() {
+                ao.remove("url");
+            }
+        }
+    }
+
     result
 }
 
@@ -172,6 +181,18 @@ fn truncate_event_prompted(data: &Value) -> Value {
                         ao.remove("source");
                     }
                 }
+            }
+        }
+    }
+    result
+}
+
+fn truncate_event_message_updated(data: &Value) -> Value {
+    let mut result = data.clone();
+    if let Some(obj) = result.as_object_mut() {
+        if let Some(info) = obj.get_mut("info").and_then(|i| i.as_object_mut()) {
+            if let Some(summary) = info.get_mut("summary").and_then(|s| s.as_object_mut()) {
+                summary.remove("diffs");
             }
         }
     }
@@ -235,6 +256,15 @@ fn truncate_event_part_updated(data: &Value) -> Value {
                                         }
                                     }
                                     _ => {}
+                                }
+                            }
+                        }
+                        if let Some(attachments) =
+                            state.get_mut("attachments").and_then(|a| a.as_array_mut())
+                        {
+                            for att in attachments.iter_mut() {
+                                if let Some(ao) = att.as_object_mut() {
+                                    ao.remove("url");
                                 }
                             }
                         }
@@ -500,6 +530,11 @@ fn build_state(
         }
     }
 
+    if let Some(attachments) = state.get("attachments").and_then(|a| a.as_array()) {
+        let filtered: Vec<Value> = attachments.iter().map(truncate_attachment).collect();
+        result.insert(String::from("attachments"), Value::Array(filtered));
+    }
+
     Value::Object(result)
 }
 
@@ -510,6 +545,10 @@ enum ContentMode {
     Skip,
     TruncateBashOutput,
     KeepFileMetadata,
+}
+
+fn truncate_attachment(attachment: &Value) -> Value {
+    keep_fields(attachment, &["type", "mime", "id", "sessionID", "messageID"])
 }
 
 fn truncate_tool_bash(state: &Value) -> Value {
@@ -556,6 +595,11 @@ fn truncate_tool_apply_patch(state: &Value) -> Value {
             filtered.insert(String::from("files"), Value::Array(kept));
         }
         result.insert(String::from("structured"), Value::Object(filtered));
+    }
+
+    if let Some(attachments) = state.get("attachments").and_then(|a| a.as_array()) {
+        let filtered: Vec<Value> = attachments.iter().map(truncate_attachment).collect();
+        result.insert(String::from("attachments"), Value::Array(filtered));
     }
 
     Value::Object(result)

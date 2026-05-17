@@ -2,6 +2,11 @@ temp_db_dir/
 opencode-bridge/release/openmate.exe
 /android/.kotlin
 
+sync-debug.db
+sync-result.json
+tools/sync-debugger/opencode-groundtruth.json
+tools/sync-debugger/verify-result3.json
+
 .worktrees/
 .vs
 /.openmate
