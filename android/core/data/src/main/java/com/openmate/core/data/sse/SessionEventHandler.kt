@@ -16,6 +16,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 
 open class SessionEventHandler @Inject constructor(
@@ -25,16 +26,16 @@ open class SessionEventHandler @Inject constructor(
     private val syncApiClient: SyncApiClient,
     private val logStore: SyncLogStore,
 ) {
-    suspend fun handle(type: String, event: SseData) {
+    suspend fun handle(type: String, event: SseData): Pair<String, String>? {
         val props = event.properties
-        val sessionID = props["sessionID"]?.jsonPrimitive?.content ?: return
+        val sessionID = props["sessionID"]?.jsonPrimitive?.content ?: return null
 
         when (type) {
             "session.created" -> {
                 try {
                     val db = dbProvider.getActive()
                     val existing = db.sessionDao().getById(sessionID)
-                    if (existing != null) return
+                    if (existing != null) return null
                     val info = props["info"]?.jsonObject
                     val title = info?.get("title")?.jsonPrimitive?.content ?: ""
                     val directory = info?.get("directory")?.jsonPrimitive?.content ?: ""
@@ -61,7 +62,7 @@ open class SessionEventHandler @Inject constructor(
             "session.updated" -> {
                 try {
                     val db = dbProvider.getActive()
-                    val existing = db.sessionDao().getById(sessionID) ?: return
+                    val existing = db.sessionDao().getById(sessionID) ?: return null
                     val info = props["info"]?.jsonObject
                     val title = info?.get("title")?.jsonPrimitive?.content
                     val revertJson = info?.get("revert")
@@ -119,7 +120,7 @@ open class SessionEventHandler @Inject constructor(
                     Log.d("SessionEventHandler", "session.status: sessionID=$sessionID type=$statusType rawStatus=$statusObj")
                     if (statusType == null) {
                         Log.w("SessionEventHandler", "session.status: no type in status object")
-                        return
+                        return null
                     }
                     val db = dbProvider.getActive()
                     val status = when (statusType) {
@@ -155,7 +156,7 @@ open class SessionEventHandler @Inject constructor(
                     } else {
                         try {
                             val dto = api.getSession(sessionID)
-                            if (dto.parentID != null) return
+                            if (dto.parentID != null) return null
                             val domain = dto.toDomain()
                             db.sessionDao().upsert(domain.toEntity().copy(
                                 status = status,
@@ -169,6 +170,25 @@ open class SessionEventHandler @Inject constructor(
                     Log.w("SessionEventHandler", "session.status failed", e)
                 }
             }
+            "session.error" -> {
+                var errorMsg: String? = null
+                try {
+                    retryStateStore.update(sessionID, null)
+                    val db = dbProvider.getActive()
+                    val existing = db.sessionDao().getById(sessionID)
+                    if (existing != null) {
+                        db.sessionDao().updateStatusAndStartedAt(sessionID, SessionStatus.IDLE.name, null)
+                    }
+                    val errorObj = props["error"] as? JsonObject
+                    errorMsg = errorObj?.get("data")?.let { (it as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull }
+                        ?: errorObj?.get("message")?.jsonPrimitive?.contentOrNull
+                        ?: "Unknown error"
+                } catch (e: Exception) {
+                    Log.w("SessionEventHandler", "session.error failed", e)
+                }
+                return sessionID to (errorMsg ?: "Unknown error")
+            }
         }
+        return null
     }
 }

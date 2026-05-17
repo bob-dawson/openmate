@@ -31,7 +31,7 @@
     <string name="browse_files">浏览文件</string>
     <string name="refresh">刷新</string>
     <string name="resync">重新同步</string>
-    <string name="resync_desc">重新同步最近的事件以修复同步问题。选择回退事件数：</string>
+    <string name="resync_desc">当前 seq：%s\n重新同步最近的事件以修复同步问题。选择回退事件数：</string>
     <string name="rename">重命名</string>
     <string name="no_messages">暂无消息</string>
     <string name="rename_session">重命名</string>

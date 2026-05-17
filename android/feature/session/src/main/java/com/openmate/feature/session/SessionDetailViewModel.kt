@@ -43,6 +43,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1282,6 +1284,41 @@ class SessionDetailViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeSyncEvents failed", e)
+            }
+        }
+        observeSyncEventJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sseEventRepository.observeMessageSyncNeeded()
+                    .conflate()
+                    .debounce(300)
+                    .collect { sid ->
+                        if (sid == sessionId) {
+                            try {
+                                applySyncResult(sessionMessageRepository.incrementalSync(sid))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "SSE-triggered incremental sync failed", e)
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeMessageSyncNeeded failed", e)
+            }
+        }
+        observeSyncEventJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sseEventRepository.observeSessionErrors()
+                    .collect { (sid, errorMsg) ->
+                        if (sid == sessionId) {
+                            _errorMessage.value = errorMsg
+                            try {
+                                applySyncResult(sessionMessageRepository.incrementalSync(sid))
+                            } catch (e: Exception) {
+                                Log.e(TAG, "session.error-triggered incremental sync failed", e)
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeSessionErrors failed", e)
             }
         }
     }

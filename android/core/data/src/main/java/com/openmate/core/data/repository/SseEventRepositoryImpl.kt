@@ -63,6 +63,14 @@ class SseEventRepositoryImpl @Inject constructor(
         return sseClient.isConnectedTo(address, port)
     }
 
+    override fun observeMessageSyncNeeded(): Flow<String> {
+        return eventDispatcher.messageSyncNeeded
+    }
+
+    override fun observeSessionErrors(): Flow<Pair<String, String>> {
+        return eventDispatcher.sessionErrors
+    }
+
     override fun setActiveSessionScope(directory: String?, enabled: Boolean) {
         eventDispatcher.activeDirectory = directory.orEmpty()
         eventDispatcher.messageSyncEnabled = enabled

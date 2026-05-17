@@ -182,5 +182,7 @@ class SubtaskDetailScreenRunningAnchorTest {
         override fun observeConnectionStatus() = flowOf<com.openmate.core.domain.model.ConnectionStatus>()
         override fun isConnectedTo(address: String, port: Int): Boolean = false
         override fun setActiveSessionScope(directory: String?, enabled: Boolean) = Unit
+        override fun observeMessageSyncNeeded() = emptyFlow<String>()
+        override fun observeSessionErrors() = emptyFlow<Pair<String, String>>()
     }
 }

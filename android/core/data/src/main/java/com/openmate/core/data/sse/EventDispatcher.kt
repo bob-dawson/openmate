@@ -2,6 +2,10 @@ package com.openmate.core.data.sse
 
 import android.util.Log
 import com.openmate.core.network.SseData
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
 
 class EventDispatcher @Inject constructor(
@@ -10,6 +14,12 @@ class EventDispatcher @Inject constructor(
     private val questionHandler: QuestionEventHandler,
     private val todoHandler: TodoEventHandler,
 ) {
+    private val _messageSyncNeeded = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val messageSyncNeeded: SharedFlow<String> = _messageSyncNeeded
+
+    private val _sessionErrors = MutableSharedFlow<Pair<String, String>>(extraBufferCapacity = 16)
+    val sessionErrors: SharedFlow<Pair<String, String>> = _sessionErrors
+
     var activeDirectory: String = ""
         set(value) {
             field = value
@@ -41,11 +51,20 @@ class EventDispatcher @Inject constructor(
                 Log.d("EventDispatcher", "skipped: dir mismatch dir=$dir activeDir=$activeDirectory")
                 return
             }
+            val sessionId = event.properties["sessionID"]?.jsonPrimitive?.content
+            if (sessionId != null) {
+                _messageSyncNeeded.tryEmit(sessionId)
+            }
         }
 
         when {
-            type.startsWith("session.") -> sessionHandler.handle(type, event)
-            type.startsWith("message.") -> { /* handled by SessionMessageEventHandler via SessionMessageRepository */ }
+            type.startsWith("session.") -> {
+                val result = sessionHandler.handle(type, event)
+                if (result != null) {
+                    _sessionErrors.tryEmit(result)
+                }
+            }
+            type.startsWith("message.") -> {}
             type.startsWith("permission.") -> permissionHandler.handle(type, event)
             type.startsWith("question.") -> questionHandler.handle(type, event)
             type.startsWith("todo.") -> todoHandler.handle(type, event)

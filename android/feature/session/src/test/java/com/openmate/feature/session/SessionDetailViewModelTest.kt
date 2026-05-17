@@ -1216,6 +1216,10 @@ class SessionDetailViewModelTest {
         override fun isConnectedTo(address: String, port: Int): Boolean = false
 
         override fun setActiveSessionScope(directory: String?, enabled: Boolean) = Unit
+
+        override fun observeMessageSyncNeeded() = emptyFlow<String>()
+
+        override fun observeSessionErrors() = emptyFlow<Pair<String, String>>()
     }
 
     private fun message(id: String, timeCreated: Long, data: String = "{}") =

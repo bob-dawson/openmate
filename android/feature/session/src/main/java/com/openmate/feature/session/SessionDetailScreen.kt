@@ -78,6 +78,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.window.Dialog
@@ -402,32 +403,50 @@ fun SessionDetailScreen(
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         ConnectionDot(status = connectionStatus)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showRevertDialog = true }) {
-                        Icon(
-                            Icons.Default.Undo,
-                            contentDescription = "回滚",
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    IconButton(onClick = { showSearch = true }) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = stringResource(R.string.search_messages),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    IconButton(onClick = { onNavigateToBrowser(viewModel.getWorkingDirectory()) }) {
-                        Icon(
-                            Icons.Default.FolderOpen,
-                            contentDescription = stringResource(R.string.browse_files),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                        )
+                    Row(
+                        modifier = Modifier.offset(x = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy((-12).dp),
+                    ) {
+                        IconButton(
+                            onClick = { showRevertDialog = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Undo,
+                                contentDescription = "回滚",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(
+                            onClick = { showSearch = true },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = stringResource(R.string.search_messages),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        IconButton(
+                            onClick = { onNavigateToBrowser(viewModel.getWorkingDirectory()) },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.FolderOpen,
+                                contentDescription = stringResource(R.string.browse_files),
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
                     }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
