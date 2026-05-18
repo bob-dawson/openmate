@@ -123,6 +123,7 @@
     <string name="label_you">我</string>
     <string name="label_agent">助手</string>
     <string name="scroll_to_bottom">回到底部</string>
+    <string name="scroll_to_previous_user">上一条用户消息</string>
 
     <string name="attach">附件</string>
     <string name="from_gallery">从相册选取</string>

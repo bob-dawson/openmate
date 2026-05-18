@@ -30,6 +30,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Redo
@@ -554,6 +555,33 @@ fun SessionDetailScreen(
             )
         },
     ) { padding ->
+        val isBusy = currentBusyStart != null
+        val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
+            val revertFromId = sessionRevert?.from
+            val filtered = if (revertFromId != null) {
+                val revertTs = extractMsgTimestamp(revertFromId)
+                messages.filter { extractMsgTimestamp(it.id) < revertTs }
+            } else messages
+            if (!isBusy || queuedMessageIds.isEmpty()) filtered
+            else {
+                val queued = mutableListOf<SessionMessage>()
+                val rest = mutableListOf<SessionMessage>()
+                for (msg in filtered) {
+                    if (msg.id in queuedMessageIds) queued.add(msg)
+                    else rest.add(msg)
+                }
+                rest + queued
+            }
+        }
+
+        val previousUserMessageIndex by remember {
+            derivedStateOf {
+                val idx = listState.firstVisibleItemIndex
+                if (idx <= 0) -1
+                else displayMessages.subList(0, minOf(idx, displayMessages.size)).indexOfLast { it.type == "user" }
+            }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -579,24 +607,6 @@ fun SessionDetailScreen(
             } else {
                 if (todos.isNotEmpty()) {
                     TodoListCard(todos = todos)
-                }
-                val isBusy = currentBusyStart != null
-                val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
-                    val revertFromId = sessionRevert?.from
-                    val filtered = if (revertFromId != null) {
-                        val revertTs = extractMsgTimestamp(revertFromId)
-                        messages.filter { extractMsgTimestamp(it.id) < revertTs }
-                    } else messages
-                    if (!isBusy || queuedMessageIds.isEmpty()) filtered
-                    else {
-                        val queued = mutableListOf<SessionMessage>()
-                        val rest = mutableListOf<SessionMessage>()
-                        for (msg in filtered) {
-                            if (msg.id in queuedMessageIds) queued.add(msg)
-                            else rest.add(msg)
-                        }
-                        rest + queued
-                    }
                 }
                 LazyColumn(
                     state = listState,
@@ -809,6 +819,28 @@ fun SessionDetailScreen(
                 isBusy = currentBusyStart != null,
                 isUploading = isUploading,
             )
+        }
+
+        if (previousUserMessageIndex >= 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = if (showScrollToBottom) 140.dp else 96.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(previousUserMessageIndex)
+                        }
+                    }
+                    .padding(8.dp),
+            ) {
+                Icon(
+                    Icons.Default.KeyboardArrowUp,
+                    contentDescription = stringResource(R.string.scroll_to_previous_user),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (showScrollToBottom) {

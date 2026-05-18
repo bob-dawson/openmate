@@ -313,6 +313,25 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
                         val replayEvent = ReplayEvent(event.id, event.type.replace(Regex("\\.\\d+$"), ""), event.data)
                         val changes = replayer.processEvent(replayEvent, sessionId, loader)
+                        val keyTypes = setOf("session.next.step.started", "session.next.step.ended", "session.next.retried", "message.updated", "session.next.prompted", "session.next.step.failed")
+                        if (replayEvent.type in keyTypes && event.seq >= 100) {
+                            val changeSummaries = changes.map { c ->
+                                when (c) {
+                                    is ReplayChange.Insert -> "Insert(${c.entity.id.take(15)},${c.entity.type})"
+                                    is ReplayChange.Update -> "Update(${c.id.take(15)},${c.type},completed=${c.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull})"
+                                    is ReplayChange.Delete -> "Delete(${c.id.take(15)})"
+                                }
+                            }.joinToString("; ").ifEmpty { "empty" }
+                            logStore.log(
+                                level = SyncLogLevel.Info,
+                                category = SyncLogCategory.Sync,
+                                sessionId = sessionId,
+                                title = "REPLAY seq=${event.seq}",
+                                message = "type=${replayEvent.type} cache=[${replayer.cacheDebugInfo()}] changes=$changeSummaries",
+                                relatedSeq = event.seq,
+                                traceId = traceId,
+                            )
+                        }
                         for (change in changes) {
                             val changeId = when (change) {
                                 is ReplayChange.Insert -> change.entity.id
