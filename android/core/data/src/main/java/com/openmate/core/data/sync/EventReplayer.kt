@@ -632,7 +632,37 @@ suspend fun processEvent(
                         setCache(cached.first, "assistant", merged, cached.third)
                         return listOf(ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = completed))
                     }
-                    return emptyList()
+                    // 无缓存 assistant — 可能是中断场景（用户发送消息后立即中止）
+                    val messageId = info["id"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+                    val existing = loader(DbLoader.Action.LoadById(messageId))
+                    if (existing != null) return emptyList()
+                    val created = time["created"]?.jsonPrimitive?.longOrNull ?: completed
+                    val data = buildJsonObject {
+                        put("content", JsonArray(emptyList()))
+                        put("time", buildJsonObject {
+                            put("created", JsonPrimitive(created))
+                            put("completed", JsonPrimitive(completed))
+                        })
+                        put("finish", JsonPrimitive("error"))
+                        info["cost"]?.let { put("cost", it) }
+                        info["tokens"]?.let { put("tokens", it) }
+                        info["modelID"]?.let { put("modelID", it) }
+                        info["providerID"]?.let { put("providerID", it) }
+                        info["mode"]?.let { put("mode", it) }
+                        info["agent"]?.let { put("agent", it) }
+                    }
+                    setCache(messageId, "assistant", data, created, source = "msg.updated.insert")
+                    val entity = SessionMessageEntity(
+                        id = messageId,
+                        sessionId = sessionId,
+                        type = "assistant",
+                        data = data.toString(),
+                        timeCreated = created,
+                        timeUpdated = completed,
+                        roundMark = true,
+                        completedAt = completed,
+                    )
+                    return listOf(ReplayChange.Insert(entity))
                 }
 
                 "message.removed" -> {
