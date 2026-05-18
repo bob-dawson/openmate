@@ -95,7 +95,11 @@ suspend fun processEvent(
                 }
 
                 "session.next.retried" -> {
-                    val cached = getCachedAssistant()
+                    var cached = getCachedAssistant()
+                    if (cached == null) {
+                        ensureAssistantCache(sessionId, loader)
+                        cached = getCachedAssistant()
+                    }
                     android.util.Log.d("EventReplayer", "retried: eventId=${event.id.take(20)} cachedId=${cachedId?.take(20)} cachedType=$cachedType cachedAssistant=${cached != null}")
                     val errorMsg = props["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
                     val attempt = props["attempt"]?.jsonPrimitive?.contentOrNull

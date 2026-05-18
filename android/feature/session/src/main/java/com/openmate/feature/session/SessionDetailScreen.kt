@@ -555,7 +555,7 @@ fun SessionDetailScreen(
             )
         },
     ) { padding ->
-        val isBusy = currentBusyStart != null
+        val isBusy = currentBusyStart != null || sessionRetryStatus != null
         val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
             val revertFromId = sessionRevert?.from
             val filtered = if (revertFromId != null) {
@@ -574,7 +574,7 @@ fun SessionDetailScreen(
             }
         }
 
-        val previousUserMessageIndex by remember {
+        val previousUserMessageIndex by remember(displayMessages) {
             derivedStateOf {
                 val idx = listState.firstVisibleItemIndex
                 if (idx <= 0) -1
@@ -816,7 +816,7 @@ fun SessionDetailScreen(
                     viewModel.sendMessage(sessionID)
                 },
                 onAbort = { viewModel.abort(sessionID) },
-                isBusy = currentBusyStart != null,
+                isBusy = currentBusyStart != null || sessionRetryStatus != null,
                 isUploading = isUploading,
             )
         }
@@ -829,8 +829,15 @@ fun SessionDetailScreen(
                     .clip(RoundedCornerShape(50))
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable {
-                        coroutineScope.launch {
-                            listState.animateScrollToItem(previousUserMessageIndex)
+                        val idx = listState.firstVisibleItemIndex
+                        if (idx > 0 && displayMessages.isNotEmpty()) {
+                            val target = displayMessages.subList(0, minOf(idx, displayMessages.size))
+                                .indexOfLast { it.type == "user" }
+                            if (target >= 0) {
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(target)
+                                }
+                            }
                         }
                     }
                     .padding(8.dp),
