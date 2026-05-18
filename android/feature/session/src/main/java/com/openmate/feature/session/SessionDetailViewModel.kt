@@ -112,7 +112,6 @@ class SessionDetailViewModel @Inject constructor(
     val sessionRetryStatus: StateFlow<SessionRetryStatus?> = _sessionRetryStatus.asStateFlow()
 
     private var wasBusy = false
-    private var wasAborted = false
     private val _sessionStatus = MutableStateFlow("")
     val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
 
@@ -692,7 +691,6 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun sendMessage(sessionID: String) {
-        wasAborted = false
         val text = _inputText.value.ifBlank { return }
         syncDebugController.log(
             level = SyncLogLevel.Info,
@@ -728,10 +726,9 @@ class SessionDetailViewModel @Inject constructor(
     fun abort(sessionID: String) {
         _currentBusyStart.value = null
         _runningAnchors.value = emptyMap()
-        _sessionRetryStatus.value = null
-        wasAborted = true
         wasBusy = false
-        recalculateMessageDerivedState(messageWindowState.messages)
+        _sessionStatus.value = SessionStatus.IDLE.name
+        persistSessionStatus(SessionStatus.IDLE.name)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
@@ -1110,14 +1107,6 @@ class SessionDetailViewModel @Inject constructor(
         _queuedMessageIds.value = buildQueuedMessageIds(list)
         _userModelMap.value = buildUserModelMap(list)
 
-        if (_sessionRetryStatus.value != null) {
-            _currentBusyStart.value = null
-            _sessionStatus.value = SessionStatus.BUSY.name
-            wasBusy = false
-            persistSessionStatus(SessionStatus.BUSY.name)
-            return
-        }
-
         val localBusy = _isStreaming.value
         if (localBusy) {
             if (_currentBusyStart.value == null) {
@@ -1189,12 +1178,6 @@ class SessionDetailViewModel @Inject constructor(
 
     private suspend fun refreshRetryStatus(sessionId: String) {
         val latest = sessionRepository.getSessionRetryStatus(sessionId)
-        if (wasAborted) {
-            if (latest == null) {
-                wasAborted = false
-            }
-            return
-        }
         if (latest != null || _sessionRetryStatus.value != null) {
             _sessionRetryStatus.value = latest
             recalculateMessageDerivedState(messageWindowState.messages)
@@ -1205,13 +1188,6 @@ class SessionDetailViewModel @Inject constructor(
         observeRetryStatusJob?.cancel()
         observeRetryStatusJob = viewModelScope.launch(Dispatchers.IO) {
             sessionRepository.observeSessionRetryStatus(sessionId).collect { status ->
-                if (wasAborted) {
-                    if (status == null) {
-                        wasAborted = false
-                    } else {
-                        return@collect
-                    }
-                }
                 _sessionRetryStatus.value = status
                 recalculateMessageDerivedState(messageWindowState.messages)
             }
