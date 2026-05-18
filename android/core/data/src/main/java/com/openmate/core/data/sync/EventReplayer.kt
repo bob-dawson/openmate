@@ -630,13 +630,42 @@ suspend fun processEvent(
                         }
                         val merged = JsonObject(updated)
                         setCache(cached.first, "assistant", merged, cached.third)
-                        return listOf(ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = completed))
+                        val changes = mutableListOf<ReplayChange>(ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = completed))
+                        val afterUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third))
+                        if (afterUser != null) {
+                            val abortedId = afterUser.id + "_abort"
+                            if (loader(DbLoader.Action.LoadById(abortedId)) == null) {
+                                val abortedData = buildJsonObject {
+                                    put("content", JsonArray(emptyList()))
+                                    put("time", buildJsonObject {
+                                        put("created", JsonPrimitive(afterUser.timeCreated))
+                                        put("completed", JsonPrimitive(completed))
+                                    })
+                                    put("finish", JsonPrimitive("error"))
+                                }
+                                setCache(abortedId, "assistant", abortedData, afterUser.timeCreated, source = "msg.updated.abort_insert")
+                                changes += ReplayChange.Insert(SessionMessageEntity(
+                                    id = abortedId,
+                                    sessionId = sessionId,
+                                    type = "assistant",
+                                    data = abortedData.toString(),
+                                    timeCreated = afterUser.timeCreated,
+                                    timeUpdated = completed,
+                                    roundMark = true,
+                                    completedAt = completed,
+                                ))
+                            }
+                        }
+                        return changes
                     }
                     // 无缓存 assistant — 可能是中断场景（用户发送消息后立即中止）
                     val messageId = info["id"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
                     val existing = loader(DbLoader.Action.LoadById(messageId))
                     if (existing != null) return emptyList()
                     val created = time["created"]?.jsonPrimitive?.longOrNull ?: completed
+                    // 同样检查此时间之后是否有用户消息 -> 创建 abort 占位
+                    val afterUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, created))
+                    val abortedUser = afterUser?.takeIf { loader(DbLoader.Action.LoadById(it.id + "_abort")) == null }
                     val data = buildJsonObject {
                         put("content", JsonArray(emptyList()))
                         put("time", buildJsonObject {
@@ -652,7 +681,7 @@ suspend fun processEvent(
                         info["agent"]?.let { put("agent", it) }
                     }
                     setCache(messageId, "assistant", data, created, source = "msg.updated.insert")
-                    val entity = SessionMessageEntity(
+                    val changes = mutableListOf(ReplayChange.Insert(SessionMessageEntity(
                         id = messageId,
                         sessionId = sessionId,
                         type = "assistant",
@@ -661,8 +690,29 @@ suspend fun processEvent(
                         timeUpdated = completed,
                         roundMark = true,
                         completedAt = completed,
-                    )
-                    return listOf(ReplayChange.Insert(entity))
+                    )))
+                    if (abortedUser != null) {
+                        val abortedData = buildJsonObject {
+                            put("content", JsonArray(emptyList()))
+                            put("time", buildJsonObject {
+                                put("created", JsonPrimitive(abortedUser.timeCreated))
+                                put("completed", JsonPrimitive(completed))
+                            })
+                            put("finish", JsonPrimitive("error"))
+                        }
+                        setCache(abortedUser.id + "_abort", "assistant", abortedData, abortedUser.timeCreated, source = "msg.updated.abort_insert.2")
+                        changes += ReplayChange.Insert(SessionMessageEntity(
+                            id = abortedUser.id + "_abort",
+                            sessionId = sessionId,
+                            type = "assistant",
+                            data = abortedData.toString(),
+                            timeCreated = abortedUser.timeCreated,
+                            timeUpdated = completed,
+                            roundMark = true,
+                            completedAt = completed,
+                        ))
+                    }
+                    return changes
                 }
 
                 "message.removed" -> {
