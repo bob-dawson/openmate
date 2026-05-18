@@ -27,6 +27,17 @@ class JdbcDao(private val db: JdbcDb) {
         }
     }
 
+    fun getLatestAssistant(sessionId: String): SessionMessageEntity? {
+        val sql = "SELECT * FROM session_message WHERE sessionId = ? AND type = 'assistant' AND roundMark = 0 ORDER BY timeCreated DESC LIMIT 1"
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
+            ps.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                return readEntity(rs)
+            }
+        }
+    }
+
     fun getLatestIncompleteCompaction(sessionId: String): SessionMessageEntity? {
         val sql = "SELECT * FROM session_message WHERE sessionId = ? AND type = 'compaction' AND completedAt IS NULL ORDER BY timeCreated DESC LIMIT 1"
         db.connection.prepareStatement(sql).use { ps ->
@@ -43,6 +54,17 @@ class JdbcDao(private val db: JdbcDb) {
         db.connection.prepareStatement(sql).use { ps ->
             ps.setString(1, sessionId)
             ps.setLong(2, afterTimeCreated)
+            ps.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                return readEntity(rs)
+            }
+        }
+    }
+
+    fun findLatestUserMessage(sessionId: String): SessionMessageEntity? {
+        val sql = "SELECT * FROM session_message WHERE sessionId = ? AND type = 'user' ORDER BY timeCreated DESC LIMIT 1"
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
             ps.executeQuery().use { rs ->
                 if (!rs.next()) return null
                 return readEntity(rs)

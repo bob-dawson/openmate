@@ -199,6 +199,9 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
                         db.sessionMessageDao().getLatestIncompleteAssistant(action.sessionId)
 
+                    is EventReplayer.DbLoader.Action.LoadLatestAssistant ->
+                        db.sessionMessageDao().getLatestAssistant(action.sessionId)
+
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
                         db.sessionMessageDao().getLatestIncompleteCompaction(action.sessionId)
 
@@ -209,6 +212,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     is EventReplayer.DbLoader.Action.HasNewerUserMessageAfter ->
                         db.sessionMessageDao()
                             .findUserMessageAfter(action.sessionId, action.afterTimeCreated)
+
+                    is EventReplayer.DbLoader.Action.FindLatestUserMessage ->
+                        db.sessionMessageDao()
+                            .findLatestUserMessage(action.sessionId)
                 }
             }
             val replayer = EventReplayer()

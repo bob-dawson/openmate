@@ -98,6 +98,9 @@ interface SessionMessageDao {
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' AND roundMark = 0 AND completedAt IS NULL ORDER BY timeCreated DESC LIMIT 1")
     suspend fun getLatestIncompleteAssistant(sessionId: String): SessionMessageEntity?
 
+    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' AND roundMark = 0 ORDER BY timeCreated DESC LIMIT 1")
+    suspend fun getLatestAssistant(sessionId: String): SessionMessageEntity?
+
     @Query("""
         SELECT CASE
             WHEN EXISTS (
@@ -135,6 +138,9 @@ interface SessionMessageDao {
 
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'user' AND timeCreated > :afterTimeCreated ORDER BY timeCreated ASC LIMIT 1")
     suspend fun findUserMessageAfter(sessionId: String, afterTimeCreated: Long): SessionMessageEntity?
+
+    @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'user' ORDER BY timeCreated DESC LIMIT 1")
+    suspend fun findLatestUserMessage(sessionId: String): SessionMessageEntity?
 
     @Query("SELECT * FROM session_message WHERE sessionId = :sessionId AND type = 'assistant' AND data LIKE '%' || :callID || '%' ORDER BY timeCreated DESC LIMIT 1")
     suspend fun getAssistantByToolCallId(sessionId: String, callID: String): SessionMessageEntity?

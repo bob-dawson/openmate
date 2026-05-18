@@ -78,12 +78,17 @@ class SyncDebuggerCli : CliktCommand(name = "sync-debugger") {
                         dao.getById(action.id)
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant ->
                         dao.getLatestIncompleteAssistant(action.sessionId)
+                    is EventReplayer.DbLoader.Action.LoadLatestAssistant ->
+                        dao.getLatestAssistant(action.sessionId)
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction ->
                         dao.getLatestIncompleteCompaction(action.sessionId)
                     is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId ->
                         dao.getAssistantByToolCallId(action.sessionId, action.callID)
                     is EventReplayer.DbLoader.Action.HasNewerUserMessageAfter ->
                         dao.findUserMessageAfter(action.sessionId, action.afterTimeCreated)
+
+                    is EventReplayer.DbLoader.Action.FindLatestUserMessage ->
+                        dao.findLatestUserMessage(action.sessionId)
                 }
             }
 
