@@ -578,59 +578,7 @@ class EventReplayer {
                         }
                         return changes
                     }
-                    val messageId = info["id"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
-                    val existing = loader(DbLoader.Action.LoadById(messageId))
-                    if (existing != null) return emptyList()
-                    val created = time["created"]?.jsonPrimitive?.longOrNull ?: completed
-                    val afterUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, created))
-                    val abortedUser = afterUser?.takeIf { loader(DbLoader.Action.LoadById(it.id + "_abort")) == null }
-                    val data = buildJsonObject {
-                        put("content", JsonArray(emptyList()))
-                        put("time", buildJsonObject {
-                            put("created", JsonPrimitive(created))
-                            put("completed", JsonPrimitive(completed))
-                        })
-                        put("finish", JsonPrimitive("error"))
-                        info["cost"]?.let { put("cost", it) }
-                        info["tokens"]?.let { put("tokens", it) }
-                        info["modelID"]?.let { put("modelID", it) }
-                        info["providerID"]?.let { put("providerID", it) }
-                        info["mode"]?.let { put("mode", it) }
-                        info["agent"]?.let { put("agent", it) }
-                    }
-                    setCache(messageId, "assistant", data, created)
-                    val changes = mutableListOf<ReplayChange>(ReplayChange.Insert(SessionMessageEntity(
-                        id = messageId,
-                        sessionId = sessionId,
-                        type = "assistant",
-                        data = data.toString(),
-                        timeCreated = created,
-                        timeUpdated = completed,
-                        roundMark = true,
-                        completedAt = completed,
-                    )))
-                    if (abortedUser != null) {
-                        val abortedData = buildJsonObject {
-                            put("content", JsonArray(emptyList()))
-                            put("time", buildJsonObject {
-                                put("created", JsonPrimitive(abortedUser.timeCreated))
-                                put("completed", JsonPrimitive(completed))
-                            })
-                            put("finish", JsonPrimitive("error"))
-                        }
-                        setCache(abortedUser.id + "_abort", "assistant", abortedData, abortedUser.timeCreated)
-                        changes += ReplayChange.Insert(SessionMessageEntity(
-                            id = abortedUser.id + "_abort",
-                            sessionId = sessionId,
-                            type = "assistant",
-                            data = abortedData.toString(),
-                            timeCreated = abortedUser.timeCreated,
-                            timeUpdated = completed,
-                            roundMark = true,
-                            completedAt = completed,
-                        ))
-                    }
-                    return changes
+                    return emptyList()
                 }
 
                 "message.removed" -> {
