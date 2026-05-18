@@ -145,6 +145,8 @@ class EventReplayerTest {
                     is EventReplayer.DbLoader.Action.LoadById -> null
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant -> null
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction -> existing
+                    is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId -> null
+                    is EventReplayer.DbLoader.Action.HasNewerUserMessageAfter -> null
                 }
             },
         )
@@ -443,6 +445,55 @@ class EventReplayerTest {
         assertThat(state["metadata"]!!.jsonObject["model"]!!.jsonObject["modelID"]!!.jsonPrimitive.content)
             .isEqualTo("gpt-5.1")
         assertThat(state["title"]!!.jsonPrimitive.content).isEqualTo("My task")
+    }
+
+    @Test
+    fun messageUpdated_loadsFromDbWhenCacheEmpty() = runTest {
+        val replayer = EventReplayer()
+
+        val existing = SessionMessageEntity(
+            id = "existing-msg-id",
+            sessionId = "session-1",
+            type = "assistant",
+            data = """{"content":[{"type":"text","text":"test"}],"time":{"created":1000}}""",
+            timeCreated = 1_000L,
+            timeUpdated = 1_000L,
+            completedAt = null,
+        )
+
+        val changes = replayer.replay(
+            events = listOf(
+                replayEvent(
+                    id = "evt-msg-updated",
+                    type = "message.updated.1",
+                    timestamp = 2_000L,
+                    extra = buildJsonObject {
+                        put("info", buildJsonObject {
+                            put("id", JsonPrimitive("existing-msg-id"))
+                            put("role", JsonPrimitive("assistant"))
+                            put("time", buildJsonObject {
+                                put("created", JsonPrimitive(1_000L))
+                                put("completed", JsonPrimitive(2_000L))
+                            })
+                        })
+                    },
+                ),
+            ),
+            sessionId = "session-1",
+            loader = EventReplayer.DbLoader { action ->
+                when (action) {
+                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant -> existing
+                    else -> null
+                }
+            },
+        )
+
+        val update = changes.single() as ReplayChange.Update
+        assertThat(update.id).isEqualTo("existing-msg-id")
+        assertThat(update.type).isEqualTo("assistant")
+        assertThat(update.completedAt).isEqualTo(2_000L)
+        val completed = update.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
+        assertThat(completed).isEqualTo(2_000L)
     }
 
     private fun replayEvent(

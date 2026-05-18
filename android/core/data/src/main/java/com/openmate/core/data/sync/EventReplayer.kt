@@ -44,6 +44,7 @@ class EventReplayer {
             data class LoadLatestIncompleteAssistant(val sessionId: String) : Action()
             data class LoadLatestIncompleteCompaction(val sessionId: String) : Action()
             data class LoadAssistantByToolCallId(val sessionId: String, val callID: String) : Action()
+            data class HasNewerUserMessageAfter(val sessionId: String, val afterTimeCreated: Long) : Action()
         }
     }
 
@@ -108,16 +109,40 @@ suspend fun processEvent(
                     else
                         "模型调用失败：${errorMsg}"
                     if (cached != null) {
-                        val updated = cached.second.toMutableMap()
-                        updated["content"] = buildJsonArray {
-                            add(buildJsonObject {
-                                put("type", "text")
-                                put("text", text)
-                            })
+                        val crossedUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third)) != null
+                        if (crossedUser) {
+                            val timeObj = cached.second["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
+                            if (!timeObj.containsKey("completed")) {
+                                timeObj["completed"] = JsonPrimitive(timestamp)
+                            }
+                            val closeData = cached.second.toMutableMap().apply {
+                                put("time", JsonObject(timeObj))
+                                put("finish", JsonPrimitive("error"))
+                            }
+                            val closeChange = ReplayChange.Update(cached.first, "assistant", JsonObject(closeData), timestamp, completedAt = timestamp)
+                            val newData = buildJsonObject {
+                                put("content", buildJsonArray {
+                                    add(buildJsonObject {
+                                        put("type", "text")
+                                        put("text", text)
+                                    })
+                                })
+                                put("time", buildJsonObject { put("created", timestamp) })
+                            }
+                            setCache(event.id, "assistant", newData, timestamp, roundMark = false, source = "retried.insert")
+                            return listOf(closeChange, ReplayChange.Insert(entity(event.id, sessionId, "assistant", newData, timestamp, roundMark = false)))
+                        } else {
+                            val updated = cached.second.toMutableMap()
+                            updated["content"] = buildJsonArray {
+                                add(buildJsonObject {
+                                    put("type", "text")
+                                    put("text", text)
+                                })
+                            }
+                            val merged = JsonObject(updated)
+                            setCache(cached.first, "assistant", merged, cached.third, source = "retried.update")
+                            return listOf(ReplayChange.Update(cached.first, "assistant", merged, timestamp))
                         }
-                        val merged = JsonObject(updated)
-                        setCache(cached.first, "assistant", merged, cached.third, source = "retried.update")
-                        return listOf(ReplayChange.Update(cached.first, "assistant", merged, timestamp))
                     } else {
                         val data = buildJsonObject {
                             put("content", buildJsonArray {
@@ -589,7 +614,11 @@ suspend fun processEvent(
                     if (role != "assistant") return emptyList()
                     val time = info["time"]?.jsonObject ?: return emptyList()
                     val completed = time["completed"]?.jsonPrimitive?.longOrNull ?: return emptyList()
-                    val cached = getCachedAssistant()
+                    var cached = getCachedAssistant()
+                    if (cached == null) {
+                        ensureAssistantCache(sessionId, loader)
+                        cached = getCachedAssistant()
+                    }
                     android.util.Log.d("EventReplayer", "msg.updated: eventId=${event.id.take(20)} cachedId=${cachedId?.take(20)} cachedType=$cachedType cachedAssistant=${cached != null} completed=$completed")
                     if (cached != null) {
                         val timeObj = cached.second["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
@@ -690,6 +719,18 @@ suspend fun processEvent(
         return props["timestamp"]?.jsonPrimitive?.let { prim ->
             prim.longOrNull ?: runCatching { java.time.Instant.parse(prim.content).toEpochMilli() }.getOrNull()
         } ?: System.currentTimeMillis()
+    }
+
+    suspend fun replay(
+        events: List<ReplayEvent>,
+        sessionId: String,
+        loader: DbLoader,
+    ): List<ReplayChange> {
+        val allChanges = mutableListOf<ReplayChange>()
+        for (event in events) {
+            allChanges += processEvent(event, sessionId, loader)
+        }
+        return allChanges
     }
 
     private fun entity(id: String, sessionId: String, type: String, data: JsonObject, timeCreated: Long, roundMark: Boolean = true): SessionMessageEntity {

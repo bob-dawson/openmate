@@ -23,6 +23,7 @@ class EventReplayer {
             data class LoadLatestIncompleteAssistant(val sessionId: String) : Action()
             data class LoadLatestIncompleteCompaction(val sessionId: String) : Action()
             data class LoadAssistantByToolCallId(val sessionId: String, val callID: String) : Action()
+            data class HasNewerUserMessageAfter(val sessionId: String, val afterTimeCreated: Long) : Action()
         }
     }
 

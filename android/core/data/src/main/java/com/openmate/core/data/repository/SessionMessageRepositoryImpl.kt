@@ -205,6 +205,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId ->
                         db.sessionMessageDao()
                             .getAssistantByToolCallId(action.sessionId, action.callID)
+
+                    is EventReplayer.DbLoader.Action.HasNewerUserMessageAfter ->
+                        db.sessionMessageDao()
+                            .findUserMessageAfter(action.sessionId, action.afterTimeCreated)
                 }
             }
             val replayer = EventReplayer()
