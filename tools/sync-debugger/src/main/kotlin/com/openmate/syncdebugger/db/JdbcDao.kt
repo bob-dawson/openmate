@@ -38,6 +38,18 @@ class JdbcDao(private val db: JdbcDb) {
         }
     }
 
+    fun findUserMessageAfter(sessionId: String, afterTimeCreated: Long): SessionMessageEntity? {
+        val sql = "SELECT * FROM session_message WHERE sessionId = ? AND type = 'user' AND timeCreated > ? ORDER BY timeCreated ASC LIMIT 1"
+        db.connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, sessionId)
+            ps.setLong(2, afterTimeCreated)
+            ps.executeQuery().use { rs ->
+                if (!rs.next()) return null
+                return readEntity(rs)
+            }
+        }
+    }
+
     fun getAssistantByToolCallId(sessionId: String, callID: String): SessionMessageEntity? {
         val sql = "SELECT * FROM session_message WHERE sessionId = ? AND type = 'assistant' AND data LIKE '%' || ? || '%' ORDER BY timeCreated DESC LIMIT 1"
         db.connection.prepareStatement(sql).use { ps ->
