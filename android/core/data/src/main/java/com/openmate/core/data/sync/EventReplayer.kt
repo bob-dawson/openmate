@@ -97,11 +97,12 @@ suspend fun processEvent(
 
                 "session.next.retried" -> {
                     var cached = getCachedAssistant()
+                    val hadCachedAssistant = cached != null
                     if (cached == null) {
                         ensureAssistantCache(sessionId, loader)
                         cached = getCachedAssistant()
                     }
-                    android.util.Log.d("EventReplayer", "retried: eventId=${event.id.take(20)} cachedId=${cachedId?.take(20)} cachedType=$cachedType cachedAssistant=${cached != null}")
+                    android.util.Log.d("EventReplayer", "retried: eventId=${event.id.take(20)} cachedId=${cachedId?.take(20)} cachedType=$cachedType cachedAssistant=${cached != null} hadCached=$hadCachedAssistant")
                     val errorMsg = props["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
                     val attempt = props["attempt"]?.jsonPrimitive?.contentOrNull
                     val text = if (attempt != null)
@@ -109,7 +110,7 @@ suspend fun processEvent(
                     else
                         "模型调用失败：${errorMsg}"
                     if (cached != null) {
-                        val crossedUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third)) != null
+                        val crossedUser = !hadCachedAssistant && loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third)) != null
                         if (crossedUser) {
                             val timeObj = cached.second["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
                             if (!timeObj.containsKey("completed")) {
@@ -615,11 +616,12 @@ suspend fun processEvent(
                     val time = info["time"]?.jsonObject ?: return emptyList()
                     val completed = time["completed"]?.jsonPrimitive?.longOrNull ?: return emptyList()
                     var cached = getCachedAssistant()
+                    val hadCachedAssistant = cached != null
                     if (cached == null) {
                         ensureAssistantCache(sessionId, loader)
                         cached = getCachedAssistant()
                     }
-                    android.util.Log.d("EventReplayer", "msg.updated: eventId=${event.id.take(20)} cachedId=${cachedId?.take(20)} cachedType=$cachedType cachedAssistant=${cached != null} completed=$completed")
+                    android.util.Log.d("EventReplayer", "msg.updated: eventId=${event.id.take(20)} cachedId=${cachedId?.take(20)} cachedType=$cachedType cachedAssistant=${cached != null} hadCached=$hadCachedAssistant completed=$completed")
                     if (cached != null) {
                         val timeObj = cached.second["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf()
                         if (timeObj.containsKey("completed")) return emptyList()
@@ -631,29 +633,31 @@ suspend fun processEvent(
                         val merged = JsonObject(updated)
                         setCache(cached.first, "assistant", merged, cached.third)
                         val changes = mutableListOf<ReplayChange>(ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = completed))
-                        val afterUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third))
-                        if (afterUser != null) {
-                            val abortedId = afterUser.id + "_abort"
-                            if (loader(DbLoader.Action.LoadById(abortedId)) == null) {
-                                val abortedData = buildJsonObject {
-                                    put("content", JsonArray(emptyList()))
-                                    put("time", buildJsonObject {
-                                        put("created", JsonPrimitive(afterUser.timeCreated))
-                                        put("completed", JsonPrimitive(completed))
-                                    })
-                                    put("finish", JsonPrimitive("error"))
+                        if (!hadCachedAssistant) {
+                            val afterUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third))
+                            if (afterUser != null) {
+                                val abortedId = afterUser.id + "_abort"
+                                if (loader(DbLoader.Action.LoadById(abortedId)) == null) {
+                                    val abortedData = buildJsonObject {
+                                        put("content", JsonArray(emptyList()))
+                                        put("time", buildJsonObject {
+                                            put("created", JsonPrimitive(afterUser.timeCreated))
+                                            put("completed", JsonPrimitive(completed))
+                                        })
+                                        put("finish", JsonPrimitive("error"))
+                                    }
+                                    setCache(abortedId, "assistant", abortedData, afterUser.timeCreated, source = "msg.updated.abort_insert")
+                                    changes += ReplayChange.Insert(SessionMessageEntity(
+                                        id = abortedId,
+                                        sessionId = sessionId,
+                                        type = "assistant",
+                                        data = abortedData.toString(),
+                                        timeCreated = afterUser.timeCreated,
+                                        timeUpdated = completed,
+                                        roundMark = true,
+                                        completedAt = completed,
+                                    ))
                                 }
-                                setCache(abortedId, "assistant", abortedData, afterUser.timeCreated, source = "msg.updated.abort_insert")
-                                changes += ReplayChange.Insert(SessionMessageEntity(
-                                    id = abortedId,
-                                    sessionId = sessionId,
-                                    type = "assistant",
-                                    data = abortedData.toString(),
-                                    timeCreated = afterUser.timeCreated,
-                                    timeUpdated = completed,
-                                    roundMark = true,
-                                    completedAt = completed,
-                                ))
                             }
                         }
                         return changes
@@ -681,7 +685,7 @@ suspend fun processEvent(
                         info["agent"]?.let { put("agent", it) }
                     }
                     setCache(messageId, "assistant", data, created, source = "msg.updated.insert")
-                    val changes = mutableListOf(ReplayChange.Insert(SessionMessageEntity(
+                    val changes = mutableListOf<ReplayChange>(ReplayChange.Insert(SessionMessageEntity(
                         id = messageId,
                         sessionId = sessionId,
                         type = "assistant",

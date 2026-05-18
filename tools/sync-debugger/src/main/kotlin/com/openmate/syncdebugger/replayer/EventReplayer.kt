@@ -533,6 +533,7 @@ class EventReplayer {
                     val time = info["time"]?.jsonObject ?: return emptyList()
                     val completed = time["completed"]?.jsonPrimitive?.longOrNull ?: return emptyList()
                     var cached = getCachedAssistant()
+                    val hadCachedAssistant = cached != null
                     if (cached == null) {
                         ensureAssistantCache(sessionId, loader)
                         cached = getCachedAssistant()
@@ -548,29 +549,31 @@ class EventReplayer {
                         val merged = JsonObject(updated)
                         setCache(cached.first, "assistant", merged, cached.third)
                         val changes = mutableListOf<ReplayChange>(ReplayChange.Update(cached.first, "assistant", merged, timestamp, completedAt = completed))
-                        val afterUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third))
-                        if (afterUser != null) {
-                            val abortedId = afterUser.id + "_abort"
-                            if (loader(DbLoader.Action.LoadById(abortedId)) == null) {
-                                val abortedData = buildJsonObject {
-                                    put("content", JsonArray(emptyList()))
-                                    put("time", buildJsonObject {
-                                        put("created", JsonPrimitive(afterUser.timeCreated))
-                                        put("completed", JsonPrimitive(completed))
-                                    })
-                                    put("finish", JsonPrimitive("error"))
+                        if (!hadCachedAssistant) {
+                            val afterUser = loader(DbLoader.Action.HasNewerUserMessageAfter(sessionId, cached.third))
+                            if (afterUser != null) {
+                                val abortedId = afterUser.id + "_abort"
+                                if (loader(DbLoader.Action.LoadById(abortedId)) == null) {
+                                    val abortedData = buildJsonObject {
+                                        put("content", JsonArray(emptyList()))
+                                        put("time", buildJsonObject {
+                                            put("created", JsonPrimitive(afterUser.timeCreated))
+                                            put("completed", JsonPrimitive(completed))
+                                        })
+                                        put("finish", JsonPrimitive("error"))
+                                    }
+                                    setCache(abortedId, "assistant", abortedData, afterUser.timeCreated)
+                                    changes += ReplayChange.Insert(SessionMessageEntity(
+                                        id = abortedId,
+                                        sessionId = sessionId,
+                                        type = "assistant",
+                                        data = abortedData.toString(),
+                                        timeCreated = afterUser.timeCreated,
+                                        timeUpdated = completed,
+                                        roundMark = true,
+                                        completedAt = completed,
+                                    ))
                                 }
-                                setCache(abortedId, "assistant", abortedData, afterUser.timeCreated)
-                                changes += ReplayChange.Insert(SessionMessageEntity(
-                                    id = abortedId,
-                                    sessionId = sessionId,
-                                    type = "assistant",
-                                    data = abortedData.toString(),
-                                    timeCreated = afterUser.timeCreated,
-                                    timeUpdated = completed,
-                                    roundMark = true,
-                                    completedAt = completed,
-                                ))
                             }
                         }
                         return changes
