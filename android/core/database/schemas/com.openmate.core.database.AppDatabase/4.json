@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 4,
-    "identityHash": "0d2068c4937a2d5572fb7165d3e4a582",
+    "identityHash": "0256c34cbc86fec645dd9d6b60dfcc01",
     "entities": [
       {
         "tableName": "SessionEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `directory` TEXT NOT NULL, `projectID` TEXT NOT NULL, `workspaceID` TEXT, `parentID` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isCompacting` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `status` TEXT, `startedAt` INTEGER, `phoneStartedAt` INTEGER, `totalDuration` INTEGER, `modelProviderID` TEXT, `modelID` TEXT, `modelName` TEXT, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `directory` TEXT NOT NULL, `projectID` TEXT NOT NULL, `workspaceID` TEXT, `parentID` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `isCompacting` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `status` TEXT, `startedAt` INTEGER, `phoneStartedAt` INTEGER, `totalDuration` INTEGER, `modelProviderID` TEXT, `modelID` TEXT, `modelName` TEXT, `revertMessageID` TEXT, `revertPartID` TEXT, `revertFrom` TEXT, `revertTo` TEXT, `cost` REAL NOT NULL, `tokensInput` INTEGER NOT NULL, `tokensOutput` INTEGER NOT NULL, `tokensReasoning` INTEGER NOT NULL, `tokensCacheRead` INTEGER NOT NULL, `tokensCacheWrite` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -100,6 +100,62 @@
             "fieldPath": "modelName",
             "columnName": "modelName",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revertMessageID",
+            "columnName": "revertMessageID",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revertPartID",
+            "columnName": "revertPartID",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revertFrom",
+            "columnName": "revertFrom",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "revertTo",
+            "columnName": "revertTo",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cost",
+            "columnName": "cost",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokensInput",
+            "columnName": "tokensInput",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokensOutput",
+            "columnName": "tokensOutput",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokensReasoning",
+            "columnName": "tokensReasoning",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokensCacheRead",
+            "columnName": "tokensCacheRead",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tokensCacheWrite",
+            "columnName": "tokensCacheWrite",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -309,7 +365,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0d2068c4937a2d5572fb7165d3e4a582')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '0256c34cbc86fec645dd9d6b60dfcc01')"
     ]
   }
 }

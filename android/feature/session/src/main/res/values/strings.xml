@@ -127,6 +127,9 @@
     <string name="label_agent">Agent</string>
     <string name="scroll_to_bottom">Scroll to bottom</string>
     <string name="scroll_to_previous_user">Scroll to previous user message</string>
+    <string name="scroll_to_next_user">Scroll to next user message</string>
+    <string name="revert">Revert</string>
+    <string name="context_usage">Context usage</string>
 
     <string name="attach">Attach</string>
     <string name="from_gallery">From gallery</string>
