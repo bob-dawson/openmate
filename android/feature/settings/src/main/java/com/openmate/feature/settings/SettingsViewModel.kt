@@ -24,6 +24,7 @@ import javax.inject.Inject
 
 private const val PREFS_NAME = "settings"
 private const val KEY_SHOW_REASONING = "show_reasoning"
+private const val KEY_COMPACT_MODE = "compact_mode"
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -47,6 +48,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _showReasoning = MutableStateFlow(prefs.getBoolean(KEY_SHOW_REASONING, true))
     val showReasoning: StateFlow<Boolean> = _showReasoning.asStateFlow()
+
+    private val _compactMode = MutableStateFlow(prefs.getBoolean(KEY_COMPACT_MODE, false))
+    val compactMode: StateFlow<Boolean> = _compactMode.asStateFlow()
 
     private val _opencodeVersion = MutableStateFlow<OpencodeVersionResponse?>(null)
     val opencodeVersion: StateFlow<OpencodeVersionResponse?> = _opencodeVersion.asStateFlow()
@@ -130,6 +134,11 @@ class SettingsViewModel @Inject constructor(
     fun setShowReasoning(show: Boolean) {
         _showReasoning.value = show
         prefs.edit().putBoolean(KEY_SHOW_REASONING, show).apply()
+    }
+
+    fun setCompactMode(enabled: Boolean) {
+        _compactMode.value = enabled
+        prefs.edit().putBoolean(KEY_COMPACT_MODE, enabled).apply()
     }
 
     fun checkVersion() {

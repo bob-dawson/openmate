@@ -151,6 +151,8 @@
     <string name="display">Display</string>
     <string name="show_reasoning">Show reasoning</string>
     <string name="show_reasoning_subtitle">Display agent reasoning messages</string>
+    <string name="compact_mode">Compact mode</string>
+    <string name="compact_mode_subtitle">Hide tool calls and reasoning, show text only</string>
 
     <string name="download_and_open">Download and open</string>
     <string name="delete_file">Delete file</string>
