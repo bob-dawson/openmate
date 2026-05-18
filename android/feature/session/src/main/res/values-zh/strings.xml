@@ -148,6 +148,8 @@
     <string name="display">显示</string>
     <string name="show_reasoning">显示思考过程</string>
     <string name="show_reasoning_subtitle">显示 AI 助手的思考消息</string>
+    <string name="compact_mode">精简模式</string>
+    <string name="compact_mode_subtitle">隐藏工具调用和思考过程，仅显示文本</string>
 
     <string name="download_and_open">下载并打开</string>
     <string name="delete_file">删除文件</string>

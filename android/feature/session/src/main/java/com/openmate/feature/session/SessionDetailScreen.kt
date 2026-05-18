@@ -188,6 +188,7 @@ fun SessionDetailScreen(
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
     val showReasoning by remember { mutableStateOf(prefs.getBoolean("show_reasoning", true)) }
+    val compactMode by remember { mutableStateOf(prefs.getBoolean("compact_mode", false)) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -632,7 +633,8 @@ fun SessionDetailScreen(
                         val userModelName = if (entity.type == "user") userModelMap[entity.id] else null
                         SessionMessageRenderer(
                             entity = entity,
-                            showReasoning = showReasoning,
+                            showReasoning = showReasoning && !compactMode,
+                            compactMode = compactMode,
                             isQueued = entity.id in queuedMessageIds,
                             userModelName = userModelName,
                             onFullContentRequest = { messageId ->

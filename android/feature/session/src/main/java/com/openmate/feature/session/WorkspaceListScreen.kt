@@ -598,11 +598,22 @@ private fun SettingsContent(
                 SettingsRow(
                     title = stringResource(R.string.show_reasoning),
                     subtitle = stringResource(R.string.show_reasoning_subtitle),
-                    showDivider = false,
                     trailing = {
                         Switch(
                             checked = showReasoning,
                             onCheckedChange = { viewModel.setShowReasoning(it) },
+                        )
+                    },
+                )
+                val compactMode by viewModel.compactMode.collectAsState()
+                SettingsRow(
+                    title = stringResource(R.string.compact_mode),
+                    subtitle = stringResource(R.string.compact_mode_subtitle),
+                    showDivider = false,
+                    trailing = {
+                        Switch(
+                            checked = compactMode,
+                            onCheckedChange = { viewModel.setCompactMode(it) },
                         )
                     },
                 )

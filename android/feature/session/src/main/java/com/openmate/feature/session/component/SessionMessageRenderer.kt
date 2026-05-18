@@ -145,6 +145,7 @@ internal fun extractToolItems(data: JsonObject): List<DisplayItem.ToolItem> {
 fun SessionMessageRenderer(
     entity: SessionMessage,
     showReasoning: Boolean = true,
+    compactMode: Boolean = false,
     isQueued: Boolean = false,
     userModelName: String? = null,
     onFullContentRequest: (messageId: String) -> Unit,
@@ -191,10 +192,10 @@ fun SessionMessageRenderer(
                 val type = obj["type"]?.jsonPrimitive?.contentOrNull
                 when (type) {
                     "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
-                    "tool" -> true
-                    "reasoning" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                    "tool" -> !compactMode
+                    "reasoning" -> !compactMode && obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
                     "file" -> true
-                    "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> true
+                    "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> !compactMode
                     else -> false
                 }
             } == true || errorMessage != null
@@ -202,11 +203,12 @@ fun SessionMessageRenderer(
             val modelName = dataJson["model"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
             val finish = dataJson["finish"]?.jsonPrimitive?.contentOrNull
             val isStepRunning = entity.completedAt == null && finish == null
-            val toolCount = content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0
+            val toolCount = if (compactMode) 0 else content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0
             Column(modifier = Modifier.fillMaxWidth()) {
                 AssistantMessageItem(
                     data = dataJson,
                     showReasoning = showReasoning,
+                    compactMode = compactMode,
                     onNavigateToSubtask = onNavigateToSubtask,
                     pendingQuestions = pendingQuestions,
                     pendingPermissions = pendingPermissions,
@@ -461,6 +463,7 @@ fun UserMessageItem(
 fun AssistantMessageItem(
     data: JsonObject,
     showReasoning: Boolean = true,
+    compactMode: Boolean = false,
     onNavigateToSubtask: (String, String) -> Unit = { _, _ -> },
     pendingQuestions: List<QuestionRequest> = emptyList(),
     pendingPermissions: List<PermissionRequest> = emptyList(),
@@ -492,6 +495,12 @@ fun AssistantMessageItem(
                         ToolCallState.RUNNING -> "running"
                         ToolCallState.COMPLETED -> "completed"
                         ToolCallState.ERROR -> "error"
+                    }
+                    if (compactMode) {
+                        val isInteractiveQuestion = name == "question" && status == "running"
+                        val isPendingPermission = status in listOf("pending", "running") &&
+                            displayItem.callID?.let { cid -> pendingPermissions.any { it.tool?.callID == cid } } == true
+                        if (!isInteractiveQuestion && !isPendingPermission) continue
                     }
                     val input = displayItem.args
                     val resultText = displayItem.result
@@ -643,6 +652,7 @@ fun AssistantMessageItem(
                 "step-start" -> {}
                 "step-finish" -> {}
                 "agent" -> {
+                    if (compactMode) continue
                     val agentName = obj["name"]?.jsonPrimitive?.contentOrNull ?: ""
                     Text(
                         text = "▸ agent: $agentName",
@@ -652,6 +662,7 @@ fun AssistantMessageItem(
                     )
                 }
                 "subtask" -> {
+                    if (compactMode) continue
                     val desc = obj["description"]?.jsonPrimitive?.contentOrNull
                         ?: obj["prompt"]?.jsonPrimitive?.contentOrNull ?: ""
                     Text(
@@ -662,6 +673,7 @@ fun AssistantMessageItem(
                     )
                 }
                 "compaction" -> {
+                    if (compactMode) continue
                     Text(
                         text = "▸ compaction",
                         style = MaterialTheme.typography.bodySmall,
@@ -670,6 +682,7 @@ fun AssistantMessageItem(
                     )
                 }
                 "retry" -> {
+                    if (compactMode) continue
                     val attempt = obj["attempt"]?.jsonPrimitive?.intOrNull
                     val error = obj["error"]?.jsonPrimitive?.contentOrNull
                     val retryText = "▸ retry" + (attempt?.let { " #$it" } ?: "") + (error?.let { ": $it" } ?: "")
