@@ -111,18 +111,29 @@ pub async fn opencode_version(State(state): State<AppState>) -> impl IntoRespons
     }))
 }
 
+pub async fn opencode_upgrade_status(State(state): State<AppState>) -> impl IntoResponse {
+    Json(json!({
+        "upgrading": state.opencode_manager.is_upgrade_in_progress()
+    }))
+}
+
 pub async fn upgrade_opencode(
     State(state): State<AppState>,
-) -> Result<impl IntoResponse, AppError> {
+) -> impl IntoResponse {
     if state.opencode_manager.is_upgrade_in_progress() {
-        return Err(AppError::UpgradeInProgress);
+        return Json(json!({ "status": "in_progress" }));
     }
-    let result = state
-        .opencode_manager
-        .upgrade()
-        .await
-        .map_err(|e| AppError::UpgradeFailed(e))?;
-    Ok(Json(json!(result)))
+
+    let manager = state.opencode_manager.clone();
+    tokio::spawn(async move {
+        let result = manager.upgrade().await;
+        match result {
+            Ok(r) => tracing::info!("Upgrade completed: success={}", r.success),
+            Err(e) => tracing::error!("Upgrade failed: {}", e),
+        }
+    });
+
+    Json(json!({ "status": "started" }))
 }
 
 fn is_newer_version(new: &str, old: &str) -> bool {

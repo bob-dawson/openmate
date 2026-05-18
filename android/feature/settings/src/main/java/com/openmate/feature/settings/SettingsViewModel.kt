@@ -14,6 +14,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import com.openmate.feature.settings.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -145,31 +146,33 @@ class SettingsViewModel @Inject constructor(
 
     fun upgradeOpencode() {
         viewModelScope.launch(Dispatchers.IO) {
+            if (_isUpgrading.value) return@launch
             _isUpgrading.value = true
             _upgradeError.value = null
             try {
                 val result = apiClient.bridgeOpencodeUpgrade()
-                if (result.success) {
-                    _opencodeVersion.value = OpencodeVersionResponse(
-                        current = result.newVersion,
-                        latest = result.newVersion,
-                        hasUpdate = false,
-                    )
-                } else {
-                    if (result.recovered == true) {
-                        _opencodeVersion.value = OpencodeVersionResponse(
-                            current = result.currentVersion,
-                            latest = null,
-                            hasUpdate = false,
-                        )
-                    }
-                    _upgradeError.value = result.error ?: "Upgrade failed"
+                if (result.status == "in_progress") {
+                    _upgradeError.value = "Upgrade already in progress"
+                    _isUpgrading.value = false
+                    return@launch
                 }
+                repeat(40) {
+                    delay(3000)
+                    try {
+                        val status = apiClient.bridgeOpencodeUpgradeStatus()
+                        if (!status.upgrading) {
+                            _opencodeVersion.value = apiClient.bridgeOpencodeVersion()
+                            _upgradeError.value = null
+                            _isUpgrading.value = false
+                            return@launch
+                        }
+                    } catch (_: Exception) { }
+                }
+                _upgradeError.value = "Upgrade timed out"
             } catch (e: Exception) {
                 _upgradeError.value = e.message ?: "Upgrade failed"
-            } finally {
-                _isUpgrading.value = false
             }
+            _isUpgrading.value = false
         }
     }
 

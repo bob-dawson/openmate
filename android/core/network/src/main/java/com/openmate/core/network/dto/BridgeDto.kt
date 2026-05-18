@@ -132,13 +132,10 @@ data class OpencodeVersionResponse(
 
 @Serializable
 data class OpencodeUpgradeResponse(
-    val success: Boolean = false,
-    @SerialName("previousVersion")
-    val previousVersion: String? = null,
-    @SerialName("newVersion")
-    val newVersion: String? = null,
-    val error: String? = null,
-    val recovered: Boolean? = null,
-    @SerialName("currentVersion")
-    val currentVersion: String? = null,
+    val status: String = "",
+)
+
+@Serializable
+data class OpencodeUpgradeStatusResponse(
+    val upgrading: Boolean = false,
 )

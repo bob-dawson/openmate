@@ -21,30 +21,7 @@ if %errorlevel% neq 0 (
 )
 
 echo === Starting Bridge ===
-net start OpenMate >nul 2>&1
-if %errorlevel% equ 0 goto :bridge_ok
-
-sc.exe query OpenMate >nul 2>&1
-if %errorlevel% equ 0 (
-    echo Service installed but failed to start. Check services.msc for account configuration.
-    goto :bridge_fg
-)
-
-echo Service not installed, installing...
-"D:\openmate\opencode-bridge\release\openmate.exe" install
-if %errorlevel% equ 0 (
-    echo Service installed. Starting...
-    net start OpenMate >nul 2>&1
-    if %errorlevel% equ 0 goto :bridge_ok
-    echo Service start failed. Check services.msc for account configuration.
-    goto :bridge_fg
-)
-
-echo Install failed, starting in foreground...
-:bridge_fg
 start "" "D:\openmate\opencode-bridge\release\openmate.exe"
-
-:bridge_ok
 timeout /t 3 /nobreak >nul
 
 echo === Building APK (release) ===

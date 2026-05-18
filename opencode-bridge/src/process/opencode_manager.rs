@@ -143,6 +143,10 @@ impl OpencodeManager {
             }
 
             let current = *status_arc.read().await;
+            if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
+                tracing::info!("opencode was intentionally stopped during startup, not marking as crashed");
+                return;
+            }
             if current != OpencodeStatus::Running {
                 let mut s = status_arc.write().await;
                 *s = OpencodeStatus::Crashed;
@@ -157,6 +161,12 @@ impl OpencodeManager {
                 Err(e) => {
                     tracing::error!("opencode process wait error: {}", e);
                 }
+            }
+
+            let current = *status_arc.read().await;
+            if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
+                tracing::info!("opencode was intentionally stopped, not marking as crashed");
+                return;
             }
 
             let mut s = status_arc.write().await;
@@ -325,74 +335,95 @@ impl OpencodeManager {
 
     async fn do_upgrade_internal(&self) -> Result<UpgradeResult, String> {
         let previous_version = self.get_cached_version().await;
+        let prev_ver_clone = previous_version.clone();
 
-        if self.is_running().await {
-            self.stop().await?;
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        }
+        let upgrade_url = format!("{}/global/upgrade", self.opencode_url);
+        let client = reqwest::Client::new();
 
-        let npm_result = tokio::time::timeout(
+        let timeout_result = tokio::time::timeout(
             std::time::Duration::from_secs(300),
-            tokio::process::Command::new("npm")
-                .args(["install", "-g", "opencode-ai@latest"])
-                .output(),
+            client.post(&upgrade_url).json(&serde_json::json!({})).send(),
         )
         .await;
 
-        match npm_result {
-            Ok(Ok(output)) if output.status.success() => {
-                self.start().await?;
+        match timeout_result {
+            Ok(Ok(resp)) => {
+                if !resp.status().is_success() {
+                    let error = format!("Upgrade HTTP {}", resp.status());
+                    tracing::error!("{}", error);
+                    return Ok(UpgradeResult {
+                        success: false,
+                        previous_version,
+                        new_version: None,
+                        error: Some(error),
+                        recovered: Some(true),
+                        current_version: prev_ver_clone,
+                    });
+                }
+
+                let body: serde_json::Value = resp.json().await.map_err(|e| {
+                    format!("Failed to parse upgrade response: {}", e)
+                })?;
+
+                let upgrade_success = body.get("success").and_then(|s| s.as_bool()).unwrap_or(false);
+                if !upgrade_success {
+                    let error = body.get("error")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or("opencode upgrade returned failure")
+                        .to_string();
+                    tracing::error!("opencode upgrade API failed: {}", error);
+                    return Ok(UpgradeResult {
+                        success: false,
+                        previous_version,
+                        new_version: None,
+                        error: Some(error),
+                        recovered: Some(true),
+                        current_version: prev_ver_clone,
+                    });
+                }
+
+                let target_version = body.get("version").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                tracing::info!("opencode binary upgraded to {:?}, restarting...", target_version);
+
+                self.restart().await.map_err(|e| {
+                    format!("Upgrade succeeded but restart failed: {}", e)
+                })?;
+
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                let new_version = self.get_cached_version().await;
+                let current_version = self.get_cached_version().await;
+
                 Ok(UpgradeResult {
                     success: true,
                     previous_version,
-                    new_version,
+                    new_version: current_version.clone().or(target_version),
                     error: None,
                     recovered: None,
-                    current_version: None,
-                })
-            }
-            Ok(Ok(output)) => {
-                let error = String::from_utf8_lossy(&output.stderr).to_string();
-                let recovered = self.start().await.is_ok();
-                let current_version = if recovered {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                    self.get_cached_version().await
-                } else {
-                    None
-                };
-                Ok(UpgradeResult {
-                    success: false,
-                    previous_version,
-                    new_version: None,
-                    error: Some(error),
-                    recovered: Some(recovered),
                     current_version,
                 })
             }
             Ok(Err(e)) => {
-                let error = format!("Failed to run npm install: {}", e);
-                let recovered = self.start().await.is_ok();
+                let error = format!("Upgrade request failed: {}", e);
+                tracing::error!("{}", error);
                 Ok(UpgradeResult {
                     success: false,
                     previous_version,
                     new_version: None,
                     error: Some(error),
-                    recovered: Some(recovered),
-                    current_version: None,
+                    recovered: Some(true),
+                    current_version: prev_ver_clone,
                 })
             }
             Err(_) => {
-                let error = "npm install timed out (300s)".to_string();
-                let recovered = self.start().await.is_ok();
+                let error = "Upgrade timed out (300s)".to_string();
+                tracing::error!("{}", error);
                 Ok(UpgradeResult {
                     success: false,
                     previous_version,
                     new_version: None,
                     error: Some(error),
-                    recovered: Some(recovered),
-                    current_version: None,
+                    recovered: Some(true),
+                    current_version: prev_ver_clone,
                 })
             }
         }
@@ -468,6 +499,10 @@ async fn restart_loop(
                     OpencodeStatus::Starting => "starting",
                     _ => "",
                 });
+                return;
+            }
+            if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
+                tracing::info!("opencode was intentionally stopped, aborting restart loop");
                 return;
             }
         }

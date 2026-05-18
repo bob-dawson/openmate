@@ -90,6 +90,10 @@ pub async fn run_server(
             get(bridge::router::opencode_version),
         )
         .route(
+            "/api/bridge/opencode/upgrade-status",
+            get(bridge::router::opencode_upgrade_status),
+        )
+        .route(
             "/api/bridge/opencode/upgrade",
             post(bridge::router::upgrade_opencode),
         )
