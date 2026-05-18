@@ -12,6 +12,7 @@ import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.SessionRevert
+import com.openmate.core.domain.model.SessionTokens
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionMessageSyncResult
@@ -104,6 +105,22 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _sessionTotalDuration = MutableStateFlow<Long?>(null)
     val sessionTotalDuration: StateFlow<Long?> = _sessionTotalDuration.asStateFlow()
+
+    private val _sessionTokens = MutableStateFlow<SessionTokens?>(null)
+    val sessionTokens: StateFlow<SessionTokens?> = _sessionTokens.asStateFlow()
+
+    private val _sessionCost = MutableStateFlow(0.0)
+    val sessionCost: StateFlow<Double> = _sessionCost.asStateFlow()
+
+    private val _lastMessageTokens = MutableStateFlow<Long?>(null)
+    val lastMessageTokens: StateFlow<Long?> = _lastMessageTokens.asStateFlow()
+
+    private val _lastMessageCost = MutableStateFlow(0.0)
+    val lastMessageCost: StateFlow<Double> = _lastMessageCost.asStateFlow()
+
+    val contextLimit: StateFlow<Long?>
+        get() = _contextLimit
+    private val _contextLimit = MutableStateFlow<Long?>(null)
 
     private val _currentBusyStart = MutableStateFlow<Long?>(null)
     val currentBusyStart: StateFlow<Long?> = _currentBusyStart.asStateFlow()
@@ -472,10 +489,12 @@ class SessionDetailViewModel @Inject constructor(
                 _sessionTitle.value = session.title
             }
             currentDirectory = session?.directory ?: ""
-            loadCachedProviders()?.let { _providers.value = it }
             if (session?.totalDuration != null && _sessionTotalDuration.value == null) {
                 _sessionTotalDuration.value = session.totalDuration
             }
+            _sessionTokens.value = session?.tokens
+            _sessionCost.value = session?.cost ?: 0.0
+            session?.let { updateContextLimit(it) }
             sseEventRepository.setActiveSessionScope(currentDirectory.ifBlank { null }, enabled = true)
 
             val sPID = session?.modelProviderID
@@ -496,6 +515,11 @@ class SessionDetailViewModel @Inject constructor(
                 } else {
                     _sessionRevert.value = null
                 }
+                session?.let {
+                    _sessionTokens.value = it.tokens
+                    _sessionCost.value = it.cost
+                    updateContextLimit(it)
+                }
             }
         }
 
@@ -513,6 +537,7 @@ class SessionDetailViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                loadCachedProviders()?.let { _providers.value = it }
                 rebuildInitialWindow(sessionID)
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
                 val hasLocalMessages = messageWindowState.messages.isNotEmpty()
@@ -1101,6 +1126,32 @@ class SessionDetailViewModel @Inject constructor(
 
         val lastAssistantFinished = lastAssistantFinish == "stop" || lastAssistantFinish == "error" || lastAssistantFinish == "length" || lastAssistantFinish == "other" || lastAssistantError != null
 
+        var lastTotalFound: Long? = null
+        var lastCostFound = 0.0
+        for (i in list.indices.reversed()) {
+            val msg = list[i]
+            if (msg.type != "assistant") continue
+            val obj = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull() ?: continue
+            val t = obj["tokens"]?.jsonObject?.get("total")?.jsonPrimitive?.content?.toLongOrNull() ?: continue
+            lastTotalFound = t
+            lastCostFound = obj["cost"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
+            var msgPID = obj["providerID"]?.jsonPrimitive?.contentOrNull
+            var msgMID = obj["modelID"]?.jsonPrimitive?.contentOrNull
+            if (msgPID == null || msgMID == null) {
+                val modelObj = obj["model"]?.jsonObject
+                msgPID = modelObj?.get("providerID")?.jsonPrimitive?.contentOrNull
+                msgMID = modelObj?.get("id")?.jsonPrimitive?.contentOrNull
+            }
+            if (msgPID != null && msgMID != null) {
+                val limit = _providers.value?.all
+                    ?.find { it.id == msgPID }?.models?.get(msgMID)?.limit?.context
+                if (limit != null && limit > 0) _contextLimit.value = limit
+            }
+            break
+        }
+        _lastMessageTokens.value = lastTotalFound
+        _lastMessageCost.value = lastCostFound
+
         val isReverting = _sessionRevert.value != null
         val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting
         _isStreaming.value = lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting)
@@ -1482,6 +1533,14 @@ class SessionDetailViewModel @Inject constructor(
 
     private fun isSessionBusy(): Boolean {
         return _sessionStatus.value == SessionStatus.BUSY.name || _sessionStatus.value == SessionStatus.RUNNING.name
+    }
+
+    private fun updateContextLimit(session: Session) {
+        val pID = session.modelProviderID ?: return
+        val mID = session.modelID ?: return
+        val limit = _providers.value?.all
+            ?.find { it.id == pID }?.models?.get(mID)?.limit?.context ?: return
+        if (limit > 0) _contextLimit.value = limit
     }
 }
 

@@ -2,10 +2,25 @@ package com.openmate.core.network.dto
 
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.SessionRevert
+import com.openmate.core.domain.model.SessionTokens
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+
+@Serializable
+data class SessionCacheDto(
+    val read: Long = 0,
+    val write: Long = 0,
+)
+
+@Serializable
+data class SessionTokensDto(
+    val input: Long = 0,
+    val output: Long = 0,
+    val reasoning: Long = 0,
+    val cache: SessionCacheDto = SessionCacheDto(),
+)
 
 @Serializable
 data class SessionDto(
@@ -22,6 +37,8 @@ data class SessionDto(
     val share: SessionShareDto? = null,
     val revert: SessionRevertDto? = null,
     val permission: JsonElement? = null,
+    val cost: Double = 0.0,
+    val tokens: SessionTokensDto? = null,
 )
 
 @Serializable
@@ -65,6 +82,16 @@ fun SessionDto.toDomain(): Session {
         isCompacting = time.compacting != null,
         isArchived = time.archived != null,
         revert = revert?.let { SessionRevert(messageID = it.messageID ?: "", partID = it.partID) },
+        cost = cost,
+        tokens = tokens?.let {
+            SessionTokens(
+                input = it.input,
+                output = it.output,
+                reasoning = it.reasoning,
+                cacheRead = it.cache.read,
+                cacheWrite = it.cache.write,
+            )
+        },
     )
 }
 

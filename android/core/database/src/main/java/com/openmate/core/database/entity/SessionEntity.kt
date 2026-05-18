@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.SessionRevert
 import com.openmate.core.domain.model.SessionStatus
+import com.openmate.core.domain.model.SessionTokens
 
 @Entity(
     tableName = "SessionEntity",
@@ -36,6 +37,12 @@ data class SessionEntity(
     val revertPartID: String? = null,
     val revertFrom: String? = null,
     val revertTo: String? = null,
+    val cost: Double = 0.0,
+    val tokensInput: Long = 0,
+    val tokensOutput: Long = 0,
+    val tokensReasoning: Long = 0,
+    val tokensCacheRead: Long = 0,
+    val tokensCacheWrite: Long = 0,
 )
 
 fun SessionEntity.toDomain(): Session {
@@ -58,6 +65,9 @@ fun SessionEntity.toDomain(): Session {
         modelID = modelID,
         modelName = modelName,
         revert = revertMessageID?.let { SessionRevert(it, revertPartID, revertFrom, revertTo) },
+        cost = cost,
+        tokens = if (tokensInput == 0L && tokensOutput == 0L) null
+            else SessionTokens(tokensInput, tokensOutput, tokensReasoning, tokensCacheRead, tokensCacheWrite),
     )
 }
 
@@ -84,5 +94,11 @@ fun Session.toEntity(): SessionEntity {
         revertPartID = revert?.partID,
         revertFrom = revert?.from,
         revertTo = revert?.to,
+        cost = cost,
+        tokensInput = tokens?.input ?: 0,
+        tokensOutput = tokens?.output ?: 0,
+        tokensReasoning = tokens?.reasoning ?: 0,
+        tokensCacheRead = tokens?.cacheRead ?: 0,
+        tokensCacheWrite = tokens?.cacheWrite ?: 0,
     )
 }

@@ -7,6 +7,16 @@ data class SessionRevert(
     val to: String? = null,
 )
 
+data class SessionTokens(
+    val input: Long,
+    val output: Long,
+    val reasoning: Long,
+    val cacheRead: Long,
+    val cacheWrite: Long,
+) {
+    val total: Long get() = input + output + reasoning + cacheRead + cacheWrite
+}
+
 data class Session(
     val id: String,
     val title: String,
@@ -26,4 +36,6 @@ data class Session(
     val modelID: String? = null,
     val modelName: String? = null,
     val revert: SessionRevert? = null,
+    val cost: Double = 0.0,
+    val tokens: SessionTokens? = null,
 )

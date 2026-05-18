@@ -1,6 +1,7 @@
 package com.openmate.feature.session
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -30,11 +31,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,8 +49,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -55,14 +59,17 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +79,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -82,6 +90,7 @@ import com.openmate.feature.session.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.window.Dialog
@@ -413,43 +422,14 @@ fun SessionDetailScreen(
                     }
                 },
                 actions = {
-                    Row(
-                        modifier = Modifier.offset(x = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy((-12).dp),
+                    IconButton(
+                        onClick = { showSearch = true },
                     ) {
-                        IconButton(
-                            onClick = { showRevertDialog = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Undo,
-                                contentDescription = "回滚",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        IconButton(
-                            onClick = { showSearch = true },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = stringResource(R.string.search_messages),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
-                        IconButton(
-                            onClick = { onNavigateToBrowser(viewModel.getWorkingDirectory()) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = stringResource(R.string.browse_files),
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurface,
-                            )
-                        }
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = stringResource(R.string.search_messages),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                        )
                     }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
@@ -579,6 +559,39 @@ fun SessionDetailScreen(
                 val idx = listState.firstVisibleItemIndex
                 if (idx <= 0) -1
                 else displayMessages.subList(0, minOf(idx, displayMessages.size)).indexOfLast { it.type == "user" }
+            }
+        }
+
+        val nextUserMessageIndex by remember(displayMessages) {
+            derivedStateOf {
+                val idx = listState.firstVisibleItemIndex
+                if (idx < 0 || displayMessages.isEmpty()) -1
+                else {
+                    val searchFrom = minOf(idx + 1, displayMessages.size)
+                    val found = displayMessages.subList(searchFrom, displayMessages.size)
+                        .indexOfFirst { it.type == "user" }
+                    if (found < 0) -1 else searchFrom + found
+                }
+            }
+        }
+
+        val lastTotal by viewModel.lastMessageTokens.collectAsStateWithLifecycle()
+        val lastCost by viewModel.lastMessageCost.collectAsStateWithLifecycle()
+        val sessionCost by viewModel.sessionCost.collectAsStateWithLifecycle()
+        val contextLimit by viewModel.contextLimit.collectAsStateWithLifecycle()
+        val tokenDisplay = remember(lastTotal, contextLimit, lastCost, sessionCost) {
+            val total = lastTotal
+            if (total == null) ""
+            else {
+                val formatted = when {
+                    total >= 1_000_000 -> "${total / 1_000_000}.${(total % 1_000_000) / 100_000}M"
+                    total >= 1_000 -> "${total / 1000}.${(total % 1000) / 100}k"
+                    else -> "$total"
+                }
+                val pct = contextLimit?.let { if (it > 0) " (${total * 100 / it}%)" else "" } ?: ""
+                val effectiveCost = if (lastCost > 0) lastCost else sessionCost
+                val costStr = if (effectiveCost > 0) " · $${String.format("%.2f", effectiveCost)}" else ""
+                "$formatted$pct$costStr"
             }
         }
 
@@ -808,6 +821,111 @@ fun SessionDetailScreen(
                 }
             }
 
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    IconButton(
+                        onClick = {
+                            val idx = listState.firstVisibleItemIndex
+                            if (idx > 0 && displayMessages.isNotEmpty()) {
+                                val target = displayMessages.subList(0, minOf(idx, displayMessages.size))
+                                    .indexOfLast { it.type == "user" }
+                                if (target >= 0) {
+                                    coroutineScope.launch { listState.animateScrollToItem(target) }
+                                }
+                            }
+                        },
+                        enabled = previousUserMessageIndex >= 0,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.KeyboardArrowLeft,
+                            contentDescription = stringResource(R.string.scroll_to_previous_user),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (nextUserMessageIndex >= 0) {
+                                coroutineScope.launch { listState.animateScrollToItem(nextUserMessageIndex) }
+                            }
+                        },
+                        enabled = nextUserMessageIndex >= 0,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.KeyboardArrowRight,
+                            contentDescription = stringResource(R.string.scroll_to_next_user),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                autoFollowTracker.onRequestFollow()
+                                scrollToBottom()
+                            }
+                        },
+                        enabled = showScrollToBottom,
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            Icons.Default.SkipNext,
+                            contentDescription = stringResource(R.string.scroll_to_bottom),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                }
+                VerticalDivider(
+                    modifier = Modifier.height(20.dp).padding(horizontal = 4.dp),
+                    color = MaterialTheme.colorScheme.outline,
+                )
+                IconButton(
+                    onClick = { showRevertDialog = true },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Undo,
+                        contentDescription = stringResource(R.string.revert),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                IconButton(
+                    onClick = { onNavigateToBrowser(viewModel.getWorkingDirectory()) },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        Icons.Default.FolderOpen,
+                        contentDescription = stringResource(R.string.browse_files),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                if (tokenDisplay.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Text(
+                            text = tokenDisplay,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+
             ChatInputBar(
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
@@ -819,58 +937,6 @@ fun SessionDetailScreen(
                 isBusy = currentBusyStart != null || sessionRetryStatus != null,
                 isUploading = isUploading,
             )
-        }
-
-        if (previousUserMessageIndex >= 0) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = if (showScrollToBottom) 140.dp else 96.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable {
-                        val idx = listState.firstVisibleItemIndex
-                        if (idx > 0 && displayMessages.isNotEmpty()) {
-                            val target = displayMessages.subList(0, minOf(idx, displayMessages.size))
-                                .indexOfLast { it.type == "user" }
-                            if (target >= 0) {
-                                coroutineScope.launch {
-                                    listState.animateScrollToItem(target)
-                                }
-                            }
-                        }
-                    }
-                    .padding(8.dp),
-            ) {
-                Icon(
-                    Icons.Default.KeyboardArrowUp,
-                    contentDescription = stringResource(R.string.scroll_to_previous_user),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        if (showScrollToBottom) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 96.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable {
-                        coroutineScope.launch {
-                            autoFollowTracker.onRequestFollow()
-                            scrollToBottom()
-                        }
-                    }
-                    .padding(8.dp),
-            ) {
-                Icon(
-                    Icons.Default.KeyboardArrowDown,
-                    contentDescription = stringResource(R.string.scroll_to_bottom),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
     }

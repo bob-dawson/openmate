@@ -19,11 +19,19 @@ data class ProviderInfoDto(
 )
 
 @Serializable
+data class ModelLimitDto(
+    val context: Long = 0,
+    val input: Long? = null,
+    val output: Long = 0,
+)
+
+@Serializable
 data class ModelInfoDto(
     val id: String,
     val providerID: String = "",
     val name: String = "",
     val family: String? = null,
     val status: String = "active",
+    val limit: ModelLimitDto? = null,
     val variants: Map<String, JsonObject>? = null,
 )
