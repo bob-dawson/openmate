@@ -23,6 +23,14 @@ data class SessionTokensDto(
 )
 
 @Serializable
+data class SessionModelDto(
+    val id: String = "",
+    val providerID: String = "",
+    val name: String = "",
+    val variant: String? = null,
+)
+
+@Serializable
 data class SessionDto(
     val id: String,
     val slug: String = "",
@@ -39,6 +47,8 @@ data class SessionDto(
     val permission: JsonElement? = null,
     val cost: Double = 0.0,
     val tokens: SessionTokensDto? = null,
+    val model: SessionModelDto? = null,
+    val agent: String? = null,
 )
 
 @Serializable
@@ -92,6 +102,10 @@ fun SessionDto.toDomain(): Session {
                 cacheWrite = it.cache.write,
             )
         },
+        modelProviderID = model?.providerID?.ifBlank { null },
+        modelID = model?.id?.ifBlank { null },
+        modelName = model?.name?.ifBlank { null },
+        agent = agent,
     )
 }
 

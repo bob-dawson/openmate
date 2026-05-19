@@ -104,6 +104,8 @@ class SyncDebugControllerTest {
         override fun start() {
             startCalls += 1
         }
+
+        override fun setActiveSession(sessionId: String?) = Unit
     }
 
     private class FakeSessionMessageRepository : SessionMessageRepository {

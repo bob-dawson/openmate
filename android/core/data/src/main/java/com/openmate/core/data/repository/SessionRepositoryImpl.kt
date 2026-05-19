@@ -47,9 +47,10 @@ class SessionRepositoryImpl @Inject constructor(
                     startedAt = domain.startedAt ?: existing.startedAt,
                     phoneStartedAt = existing.phoneStartedAt,
                     totalDuration = existing.totalDuration,
-                    modelProviderID = existing.modelProviderID,
-                    modelID = existing.modelID,
-                    modelName = existing.modelName,
+                    agent = domain.agent ?: existing.agent,
+                    modelProviderID = domain.modelProviderID ?: existing.modelProviderID,
+                    modelID = domain.modelID ?: existing.modelID,
+                    modelName = domain.modelName ?: existing.modelName,
                 )
             } else {
                 domain.toEntity()
@@ -81,9 +82,10 @@ class SessionRepositoryImpl @Inject constructor(
                     startedAt = domain.startedAt ?: existing.startedAt,
                     phoneStartedAt = existing.phoneStartedAt,
                     totalDuration = existing.totalDuration,
-                    modelProviderID = existing.modelProviderID,
-                    modelID = existing.modelID,
-                    modelName = existing.modelName,
+                    agent = domain.agent ?: existing.agent,
+                    modelProviderID = domain.modelProviderID ?: existing.modelProviderID,
+                    modelID = domain.modelID ?: existing.modelID,
+                    modelName = domain.modelName ?: existing.modelName,
                 ))
             } else {
                 dao.upsert(domain.toEntity())
