@@ -3,6 +3,7 @@ use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use std::net::SocketAddr;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::state::AppState;
 use super::token::Token;
@@ -11,9 +12,18 @@ const PUBLIC_PATHS: &[&str] = &[
     "/api/bridge/status",
     "/api/bridge/pair/request",
     "/api/bridge/pair/confirm",
+    "/ui/download",
+    "/download/openmate.apk",
 ];
 
-const LOCALHOST_ONLY_PATHS: &[&str] = &["/api/bridge/pair/approve"];
+const LOCALHOST_ONLY_PATHS: &[&str] = &[
+    "/api/bridge/pair/approve",
+    "/api/bridge/open-ui",
+    "/api/bridge/logs",
+    "/api/bridge/logs/stream",
+    "/api/bridge/network/interfaces",
+    "/api/bridge/autostart",
+];
 
 pub async fn auth_middleware(
     State(state): State<AppState>,
@@ -36,7 +46,7 @@ pub async fn auth_middleware(
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ci| ci.0);
 
-    if LOCALHOST_ONLY_PATHS.iter().any(|p| path == *p) {
+    if LOCALHOST_ONLY_PATHS.iter().any(|p| path == *p) || path.starts_with("/ui/") {
         if let Some(addr) = addr {
             if addr.ip().is_loopback() {
                 return next.run(req).await;
@@ -52,9 +62,31 @@ pub async fn auth_middleware(
             .and_then(Token::extract_from_header)
         {
             if Token::validate(&state.secret_key, token_str) {
-                return next.run(req).await;
+                if let Some(device_id) = Token::extract_device_id(token_str) {
+                    let bridge_db = state.bridge_db.clone();
+                    let did = device_id.clone();
+                    let exists = tokio::task::spawn_blocking(move || {
+                        bridge_db.device_exists(&did).unwrap_or(false)
+                    })
+                    .await
+                    .unwrap_or(false);
+
+                    if exists {
+                        let bridge_db = state.bridge_db.clone();
+                        tokio::task::spawn_blocking(move || {
+                            let now = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64;
+                            let _ = bridge_db.update_last_seen(&device_id, now);
+                        });
+                        return next.run(req).await;
+                    }
+                    tracing::warn!("auth: unknown device {} for {} from {:?}", device_id, path, addr);
+                }
+            } else {
+                tracing::warn!("auth: INVALID token for {} from {:?}", path, addr);
             }
-            tracing::warn!("auth: INVALID token for {} from {:?}", path, addr);
         } else {
             tracing::warn!("auth: malformed auth header for {} from {:?}", path, addr);
         }

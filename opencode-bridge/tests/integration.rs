@@ -6,6 +6,7 @@ use tower::ServiceExt;
 
 use openmate::auth;
 use openmate::bridge;
+use openmate::bridge_db::PairedDevice;
 use openmate::config::Config;
 use openmate::files;
 use openmate::fs;
@@ -309,7 +310,17 @@ async fn test_path_not_found_returns_404() {
     let config = test_config_with_dir(&dir);
     let (app, state) = test_app(config);
 
-    let token = auth::token::Token::generate(&state.secret_key);
+    let device_id = "404testdevic0001";
+    let _ = state.bridge_db.insert_device(&PairedDevice {
+        device_id: device_id.to_string(),
+        ip: "127.0.0.1".to_string(),
+        name: String::new(),
+        user_agent: String::new(),
+        paired_at: 0,
+        last_seen: 0,
+    });
+
+    let token = auth::token::Token::generate(&state.secret_key, device_id);
 
     let nonexistent = dir.join("no_such_file.txt");
     let req = axum::http::Request::builder()
@@ -555,7 +566,17 @@ async fn test_valid_token_allows_access() {
     let config = test_config_with_dir(&dir);
     let (app, state) = test_app(config);
 
-    let token = auth::token::Token::generate(&state.secret_key);
+    let device_id = "tokntestdev00001";
+    let _ = state.bridge_db.insert_device(&PairedDevice {
+        device_id: device_id.to_string(),
+        ip: "127.0.0.1".to_string(),
+        name: String::new(),
+        user_agent: String::new(),
+        paired_at: 0,
+        last_seen: 0,
+    });
+
+    let token = auth::token::Token::generate(&state.secret_key, device_id);
 
     let req = axum::http::Request::builder()
         .uri(&format!(

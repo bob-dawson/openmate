@@ -3,8 +3,10 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::time::Instant;
 
+use crate::bridge_db::PairedDevice;
 use crate::error::AppError;
 use crate::state::AppState;
 use super::token::Token;
@@ -167,9 +169,32 @@ pub async fn pair_confirm(
     }
 
     pair_state.pending.remove(&pin);
-    let token = Token::generate(&state.secret_key);
 
-    tracing::info!("Pair confirmed for {}, token issued", ip);
+    let device_id_bytes = super::key::generate_random_bytes(8);
+    let device_id = super::key::hex_encode(&device_id_bytes);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let device = PairedDevice {
+        device_id: device_id.clone(),
+        ip: ip.clone(),
+        name: String::new(),
+        user_agent: String::new(),
+        paired_at: now,
+        last_seen: now,
+    };
+
+    if let Err(e) = state.bridge_db.insert_device(&device) {
+        tracing::error!("Failed to insert paired device: {}", e);
+        return Err(AppError::DatabaseError("Failed to register device".to_string()));
+    }
+
+    let token = Token::generate(&state.secret_key, &device_id);
+
+    tracing::info!("Pair confirmed for {}, device {}", ip, device_id);
     Ok(Json(PairConfirmResponse { token }))
 }
 
