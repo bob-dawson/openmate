@@ -1,0 +1,27 @@
+use axum::extract::{Query, State};
+use axum::response::{Html, IntoResponse};
+
+use crate::error::AppError;
+use crate::state::AppState;
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct QrCodeQuery {
+    pub ip: String,
+}
+
+pub async fn generate_qrcode(
+    State(state): State<AppState>,
+    Query(params): Query<QrCodeQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let port = state.config.bridge.port;
+    let content = format!("http://{}:{}/ui/download", params.ip, port);
+
+    let code = qrcode::QrCode::new(&content)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("QR generation failed: {}", e)))?;
+    let svg = code.render::<qrcode::render::svg::Color>()
+        .min_dimensions(256, 256)
+        .build();
+
+    Ok(Html(svg))
+}
