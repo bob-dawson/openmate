@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 pub mod files;
 pub mod fs;
+pub mod log_capture;
 pub mod process;
 pub mod proxy;
 pub mod server;
