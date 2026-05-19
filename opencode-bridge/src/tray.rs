@@ -42,6 +42,7 @@ fn run_tray_loop(port: u16, tx: mpsc::Sender<TrayEvent>) -> anyhow::Result<()> {
     let window_name: Vec<u16> = "OpenMateTray\0".encode_utf16().collect();
 
     let h_instance = unsafe { GetModuleHandleW(None)? };
+    let h_inst_icon = HINSTANCE(h_instance.0);
 
     let wnd_class = WNDCLASSW {
         lpfnWndProc: Some(tray_wnd_proc),
@@ -82,7 +83,18 @@ fn run_tray_loop(port: u16, tx: mpsc::Sender<TrayEvent>) -> anyhow::Result<()> {
         )?
     };
 
-    let icon = unsafe { LoadIconW(None, IDI_APPLICATION)? };
+    let icon = unsafe {
+        match LoadImageW(
+            Some(h_inst_icon),
+            PCWSTR(1 as *const u16),
+            IMAGE_ICON,
+            0, 0,
+            LR_DEFAULTSIZE | LR_SHARED,
+        ) {
+            Ok(handle) => HICON(handle.0),
+            Err(_) => LoadIconW(None, IDI_APPLICATION).unwrap(),
+        }
+    };
 
     let tip: Vec<u16> = "OpenMate Bridge\0".encode_utf16().collect();
     let mut nid = NOTIFYICONDATAW {
@@ -171,7 +183,7 @@ unsafe extern "system" fn tray_wnd_proc(
                     }
                     WM_LBUTTONDBLCLK => {
                         if let Some(ctx) = get_tray_ctx(hwnd) {
-                            let _ = open::that(format!("http://127.0.0.1:{}", ctx.port));
+                            let _ = crate::browser::open_browser(&format!("http://127.0.0.1:{}/ui/", ctx.port));
                         }
                     }
                     _ => {}
@@ -184,7 +196,7 @@ unsafe extern "system" fn tray_wnd_proc(
             match cmd_id {
                 IDM_OPEN_UI => {
                     if let Some(ctx) = get_tray_ctx(hwnd) {
-                        let _ = open::that(format!("http://127.0.0.1:{}", ctx.port));
+                        let _ = crate::browser::open_browser(&format!("http://127.0.0.1:{}/ui/", ctx.port));
                     }
                 }
                 IDM_AUTOSTART => {

@@ -106,7 +106,7 @@ async fn run_gui_mode(args: Args) -> anyhow::Result<()> {
         let port_copy = port;
         tokio::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            let url = format!("http://127.0.0.1:{}", port_copy);
+            let url = format!("http://127.0.0.1:{}/ui/", port_copy);
             tracing::info!("Opening browser: {}", url);
             let _ = open::that(&url);
         });
@@ -127,8 +127,8 @@ async fn run_gui_mode(args: Args) -> anyhow::Result<()> {
                         break;
                     }
                     openmate::tray::TrayEvent::OpenUi => {
-                        let url = format!("http://127.0.0.1:{}", port);
-                        let _ = open::that(&url);
+                        let url = format!("http://127.0.0.1:{}/ui/", port);
+            let _ = openmate::browser::open_browser(&url);
                     }
                     openmate::tray::TrayEvent::ToggleAutostart => {}
                 }

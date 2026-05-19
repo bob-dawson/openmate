@@ -296,11 +296,9 @@ async function loadOverview() {
     } else {
       verEl.textContent = '未知';
     }
-    if (versionRes.hasUpdate && versionRes.latest) {
-      verSub.innerHTML = '<span class="badge badge-update" id="upgrade-badge">&#x2191; 升级到 ' + versionRes.latest + '</span>';
-    } else {
-      verSub.innerHTML = '<span class="badge badge-ok">最新</span>';
-    }
+    verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
+
+    checkLatestVersion();
 
     const devices = devicesRes || [];
     document.getElementById('device-count').textContent = devices.length;
@@ -327,6 +325,21 @@ async function loadOverview() {
     console.error('loadOverview error:', e);
   }
   overviewTimer = setInterval(loadOverview, 5000);
+}
+
+async function checkLatestVersion() {
+  try {
+    const res = await api('/api/bridge/opencode/latest-version').then(r => r.json());
+    const verSub = document.getElementById('oc-version-sub');
+    if (res.hasUpdate && res.latest) {
+      verSub.innerHTML = '<span class="badge badge-update" id="upgrade-badge">&#x2191; 升级到 ' + esc(res.latest) + '</span>';
+    } else {
+      verSub.innerHTML = '<span class="badge badge-ok">最新</span>';
+    }
+  } catch(e) {
+    const verSub = document.getElementById('oc-version-sub');
+    if (verSub) verSub.innerHTML = '<span class="badge badge-ok">最新</span>';
+  }
 }
 
 function renderDevices(devices) {

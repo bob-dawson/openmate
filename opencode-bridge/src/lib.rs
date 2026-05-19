@@ -1,4 +1,5 @@
 pub mod api;
+pub mod browser;
 pub mod auth;
 pub mod bridge;
 pub mod bridge_db;

@@ -58,10 +58,14 @@ fn create_startup_shortcut(shortcut_path: &std::path::Path) -> Result<(), AppErr
         exe_str,
     );
 
-    let output = std::process::Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
-        .output()
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create shortcut: {}", e)))?;
+    let output = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .creation_flags(0x08000000)
+            .output()
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create shortcut: {}", e)))?
+    };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

@@ -1,5 +1,6 @@
 use axum::extract::{Query, State};
-use axum::response::{Html, IntoResponse};
+use axum::response::{IntoResponse, Response};
+use axum::http::{header, StatusCode};
 
 use crate::error::AppError;
 use crate::state::AppState;
@@ -23,5 +24,10 @@ pub async fn generate_qrcode(
         .min_dimensions(256, 256)
         .build();
 
-    Ok(Html(svg))
+    let body = axum::body::Body::from(svg);
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/svg+xml")
+        .body(body)
+        .unwrap())
 }

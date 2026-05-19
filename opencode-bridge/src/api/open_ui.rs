@@ -13,7 +13,7 @@ pub async fn open_ui(
     let port = state.config.bridge.port;
     let url = format!("http://localhost:{}/ui/", port);
 
-    open::that_detached(&url)
+    crate::browser::open_browser(&url)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to open browser: {}", e)))?;
 
     Ok(Json(serde_json::json!({ "success": true })))
