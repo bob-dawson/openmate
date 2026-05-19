@@ -36,3 +36,4 @@ windows-service = "0.8"
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
+tempfile = "3"

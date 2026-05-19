@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod bridge;
+pub mod bridge_db;
 pub mod config;
 pub mod error;
 pub mod files;
