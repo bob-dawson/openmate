@@ -200,7 +200,9 @@ fun SessionMessageRenderer(
                 }
             } == true || errorMessage != null
             if (!hasVisible) return
-            val modelName = dataJson["model"]?.jsonObject?.get("name")?.jsonPrimitive?.contentOrNull
+            val modelObj = dataJson["model"]?.jsonObject
+            val modelName = modelObj?.get("name")?.jsonPrimitive?.contentOrNull
+                ?: modelObj?.get("id")?.jsonPrimitive?.contentOrNull
             val finish = dataJson["finish"]?.jsonPrimitive?.contentOrNull
             val isStepRunning = entity.completedAt == null && finish == null
             val toolCount = if (compactMode) 0 else content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0

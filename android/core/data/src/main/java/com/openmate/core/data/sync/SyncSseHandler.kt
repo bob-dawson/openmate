@@ -21,6 +21,13 @@ class SyncSseHandler @Inject constructor(
     private var collectJob: Job? = null
     private val activeSyncs = ConcurrentHashMap<String, Boolean>()
 
+    @Volatile
+    private var activeSessionId: String? = null
+
+    override fun setActiveSession(sessionId: String?) {
+        activeSessionId = sessionId
+    }
+
     override fun start() {
         if (collectJob?.isActive == true) return
         Log.d("SyncSseHandler", "start: subscribing to notifications")
@@ -29,6 +36,10 @@ class SyncSseHandler @Inject constructor(
             .onEach { notification ->
                 val notifyTrace = "notify-${notification.sessionId}-${notification.seq}"
                 Log.d("SyncSseHandler", "received: session=${notification.sessionId} seq=${notification.seq}")
+                if (notification.sessionId != activeSessionId) {
+                    Log.d("SyncSseHandler", "skip: not active session (active=$activeSessionId)")
+                    return@onEach
+                }
                 logStore.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sse,

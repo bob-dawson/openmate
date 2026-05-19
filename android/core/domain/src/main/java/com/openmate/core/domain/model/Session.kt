@@ -38,4 +38,5 @@ data class Session(
     val revert: SessionRevert? = null,
     val cost: Double = 0.0,
     val tokens: SessionTokens? = null,
+    val agent: String? = null,
 )

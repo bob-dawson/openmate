@@ -1259,6 +1259,7 @@ class SessionDetailViewModelTest {
 
     private class FakeSyncSseStarter : SyncSseStarter {
         override fun start() = Unit
+        override fun setActiveSession(sessionId: String?) = Unit
     }
 
     private companion object {

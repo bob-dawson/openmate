@@ -43,6 +43,7 @@ data class SessionEntity(
     val tokensReasoning: Long = 0,
     val tokensCacheRead: Long = 0,
     val tokensCacheWrite: Long = 0,
+    val agent: String? = null,
 )
 
 fun SessionEntity.toDomain(): Session {
@@ -68,6 +69,7 @@ fun SessionEntity.toDomain(): Session {
         cost = cost,
         tokens = if (tokensInput == 0L && tokensOutput == 0L) null
             else SessionTokens(tokensInput, tokensOutput, tokensReasoning, tokensCacheRead, tokensCacheWrite),
+        agent = agent,
     )
 }
 
@@ -100,5 +102,6 @@ fun Session.toEntity(): SessionEntity {
         tokensReasoning = tokens?.reasoning ?: 0,
         tokensCacheRead = tokens?.cacheRead ?: 0,
         tokensCacheWrite = tokens?.cacheWrite ?: 0,
+        agent = agent,
     )
 }

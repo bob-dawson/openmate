@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.data.sync.SyncDebugController
 import com.openmate.core.data.sync.SyncLogCategory
+import com.openmate.core.data.sync.SyncSseStarter
 import com.openmate.core.data.sync.SyncLogEntry
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.domain.model.Session
@@ -74,6 +75,7 @@ class SessionDetailViewModel @Inject constructor(
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val syncDebugController: SyncDebugController,
+    private val syncSseStarter: SyncSseStarter,
     internal val apiClient: OpencodeApiClient,
     private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
@@ -195,6 +197,23 @@ class SessionDetailViewModel @Inject constructor(
 
     data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
 
+    private fun resolveModelName(providerID: String, modelID: String, fallback: String? = null): String {
+        val providers = _providers.value
+        val cached = providers?.all
+            ?.find { it.id == providerID }?.models?.get(modelID)?.name
+        val result = cached?.ifBlank { null } ?: fallback?.ifBlank { null } ?: modelID
+        return result
+    }
+
+    private fun refreshModelName() {
+        val cur = _selectedModel.value ?: return
+        val providers = _providers.value
+        val resolved = resolveModelName(cur.providerID, cur.modelID)
+        if (resolved != cur.modelName) {
+            _selectedModel.value = cur.copy(modelName = resolved)
+        }
+    }
+
     private val _providers = MutableStateFlow<ProviderListDto?>(null)
     val providers: StateFlow<ProviderListDto?> = _providers.asStateFlow()
 
@@ -212,6 +231,9 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _selectedAgent = MutableStateFlow("build")
     val selectedAgent: StateFlow<String> = _selectedAgent.asStateFlow()
+
+    private var isModelOverridden = false
+    private var isAgentOverridden = false
 
     private val _recentModels = MutableStateFlow<List<ModelRef>>(loadRecentModels())
     val recentModels: StateFlow<List<ModelRef>> = _recentModels.asStateFlow()
@@ -465,6 +487,9 @@ class SessionDetailViewModel @Inject constructor(
         observeRetryStatusJob?.cancel()
         pollJob?.cancel()
         _selectedModel.value = null
+        if (_providers.value == null) {
+            loadCachedProviders()?.let { _providers.value = it }
+        }
         messageWindowState = SessionMessageWindowManager.State(
             messages = emptyList(),
             loadedCount = MESSAGE_WINDOW_PAGE_SIZE,
@@ -482,6 +507,9 @@ class SessionDetailViewModel @Inject constructor(
         _hasOlderMessages.value = false
         _sessionRevert.value = null
         wasBusy = false
+        isModelOverridden = false
+        isAgentOverridden = false
+        syncSseStarter.setActiveSession(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
             val session = sessionRepository.getSession(sessionID)
@@ -499,8 +527,14 @@ class SessionDetailViewModel @Inject constructor(
 
             val sPID = session?.modelProviderID
             val sMID = session?.modelID
-            if (sPID != null && sMID != null && _selectedModel.value == null) {
-                applySelectedModel(ModelRef(sPID, sMID, session.modelName ?: sMID))
+            if (sPID != null && sMID != null && !isModelOverridden) {
+                val current = _selectedModel.value
+                if (current == null || current.providerID != sPID || current.modelID != sMID) {
+                    applySelectedModel(ModelRef(sPID, sMID, resolveModelName(sPID, sMID, session.modelName)))
+                }
+            }
+            if (!session?.agent.isNullOrBlank() && !isAgentOverridden) {
+                _selectedAgent.value = session.agent!!
             }
         }
 
@@ -519,6 +553,24 @@ class SessionDetailViewModel @Inject constructor(
                     _sessionTokens.value = it.tokens
                     _sessionCost.value = it.cost
                     updateContextLimit(it)
+                    if (it.modelProviderID != null && it.modelID != null) {
+                        val current = _selectedModel.value
+                        if (current != null && current.providerID == it.modelProviderID && current.modelID == it.modelID) {
+                            isModelOverridden = false
+                        } else if (!isModelOverridden) {
+                            val p = it.modelProviderID!!
+                            val m = it.modelID!!
+                            applySelectedModel(ModelRef(p, m, resolveModelName(p, m, it.modelName)))
+                        }
+                    }
+                    val sAgent = it.agent
+                    if (!sAgent.isNullOrBlank()) {
+                        if (_selectedAgent.value == sAgent) {
+                            isAgentOverridden = false
+                        } else if (!isAgentOverridden) {
+                            _selectedAgent.value = sAgent
+                        }
+                    }
                 }
             }
         }
@@ -703,6 +755,7 @@ class SessionDetailViewModel @Inject constructor(
         observeSyncLogsJob?.cancel()
         pollJob?.cancel()
         sseEventRepository.setActiveSessionScope(null, enabled = false)
+        syncSseStarter.setActiveSession(null)
         val sid = currentSessionID
         val start = _currentBusyStart.value
         if (sid != null && start != null) {
@@ -731,10 +784,13 @@ class SessionDetailViewModel @Inject constructor(
         val files = _attachedFiles.value
         _attachedFiles.value = emptyList()
         clearDraft(sessionID)
+        val sendModelPID = if (isModelOverridden) model?.providerID else null
+        val sendModelMID = if (isModelOverridden) model?.modelID else null
+        val sendAgent = if (isAgentOverridden) agent else null
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
-                apiClient.sendPrompt(sessionID, text, model?.providerID, model?.modelID, agent, apiFiles, currentDirectory.ifBlank { null }, variant)
+                apiClient.sendPrompt(sessionID, text, sendModelPID, sendModelMID, sendAgent, apiFiles, currentDirectory.ifBlank { null }, variant)
                 sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -823,6 +879,7 @@ class SessionDetailViewModel @Inject constructor(
             loadCachedProviders()?.let {
                 _providers.value = it
                 updateAvailableVariants()
+                refreshModelName()
                 return
             }
         }
@@ -833,6 +890,7 @@ class SessionDetailViewModel @Inject constructor(
                 _providers.value = result
                 saveCachedProviders(result)
                 updateAvailableVariants()
+                refreshModelName()
             } catch (e: Exception) {
                 Log.e(TAG, "loadProviders FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
             }
@@ -841,7 +899,11 @@ class SessionDetailViewModel @Inject constructor(
 
     fun selectModel(providerID: String, modelID: String, modelName: String) {
         val ref = ModelRef(providerID, modelID, modelName)
+        val current = _selectedModel.value
         applySelectedModel(ref)
+        if (current == null || current.providerID != providerID || current.modelID != modelID) {
+            isModelOverridden = true
+        }
         val updated = (listOf(ref) + _recentModels.value.filter {
             !(it.providerID == providerID && it.modelID == modelID)
         }).take(5)
@@ -884,7 +946,11 @@ class SessionDetailViewModel @Inject constructor(
     fun getWorkingDirectory(): String = currentDirectory
 
     fun setAgent(agent: String) {
+        val prev = _selectedAgent.value
         _selectedAgent.value = agent
+        if (prev != agent) {
+            isAgentOverridden = true
+        }
     }
 
     private val _skills = MutableStateFlow<List<SkillInfoDto>>(emptyList())
@@ -1146,11 +1212,35 @@ class SessionDetailViewModel @Inject constructor(
                 val limit = _providers.value?.all
                     ?.find { it.id == msgPID }?.models?.get(msgMID)?.limit?.context
                 if (limit != null && limit > 0) _contextLimit.value = limit
+                if (!isModelOverridden) {
+                    val cur = _selectedModel.value
+                    val resolved = resolveModelName(msgPID, msgMID)
+                    if (cur == null || cur.providerID != msgPID || cur.modelID != msgMID) {
+                        applySelectedModel(ModelRef(msgPID, msgMID, resolved))
+                    } else if (cur.modelName != resolved) {
+                        _selectedModel.value = cur.copy(modelName = resolved)
+                    }
+                }
             }
             break
         }
         _lastMessageTokens.value = lastTotalFound
         _lastMessageCost.value = lastCostFound
+
+        if (!isAgentOverridden) {
+            for (i in list.indices.reversed()) {
+                val msg = list[i]
+                if (msg.type != "assistant") continue
+                val obj = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull() ?: continue
+                val msgAgent = obj["agent"]?.jsonPrimitive?.contentOrNull
+                if (!msgAgent.isNullOrBlank()) {
+                    if (_selectedAgent.value != msgAgent) {
+                        _selectedAgent.value = msgAgent
+                    }
+                    break
+                }
+            }
+        }
 
         val isReverting = _sessionRevert.value != null
         val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting
@@ -1200,7 +1290,7 @@ class SessionDetailViewModel @Inject constructor(
             val pId = modelObj?.get("providerID")?.jsonPrimitive?.contentOrNull
             val mId = modelObj?.get("modelID")?.jsonPrimitive?.contentOrNull
             if (pId != null && mId != null) {
-                val ref = ModelRef(pId, mId, mId)
+                val ref = ModelRef(pId, mId, resolveModelName(pId, mId))
                 applySelectedModel(ref)
                 viewModelScope.launch(Dispatchers.IO) {
                     try {
