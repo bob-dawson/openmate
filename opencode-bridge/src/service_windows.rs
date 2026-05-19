@@ -13,6 +13,7 @@ use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 use windows_service::service_dispatcher;
 
 use crate::config::Config;
+use crate::log_capture::{LogCaptureLayer, create_shared_buffer};
 use crate::server::run_server;
 
 const SERVICE_NAME: &str = "OpenMate";
@@ -135,6 +136,19 @@ fn run_service_inner() -> anyhow::Result<()> {
     let config = Config::find_and_load(None)?;
     config.ensure_opencode_binary()?;
 
+    let log_buffer = create_shared_buffer();
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+        let capture_layer = LogCaptureLayer::new(log_buffer.clone());
+        let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(capture_layer)
+            .init();
+    }
+
     let rt = tokio::runtime::Runtime::new()?;
     let notify = Arc::new(Notify::new());
     let notify_clone = notify.clone();
@@ -144,7 +158,7 @@ fn run_service_inner() -> anyhow::Result<()> {
         notify_clone.notify_one();
     });
 
-    let result = rt.block_on(run_server(config, Some(notify)));
+    let result = rt.block_on(run_server(config, log_buffer, Some(notify)));
 
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,

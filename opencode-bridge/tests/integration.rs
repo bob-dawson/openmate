@@ -10,10 +10,11 @@ use openmate::bridge_db::PairedDevice;
 use openmate::config::Config;
 use openmate::files;
 use openmate::fs;
+use openmate::log_capture::create_shared_buffer;
 use openmate::state::create_app_state;
 
 fn test_app(config: Config) -> (Router, openmate::state::AppState) {
-    let state = create_app_state(config);
+    let state = create_app_state(config, create_shared_buffer());
     let router = Router::new()
         .route("/api/bridge/status", get(bridge::router::status))
         .route("/api/bridge/opencode/start", post(bridge::router::start_opencode))
@@ -38,7 +39,7 @@ fn test_app(config: Config) -> (Router, openmate::state::AppState) {
 }
 
 fn test_app_with_auth_disabled(config: Config) -> Router {
-    let state = create_app_state(config);
+    let state = create_app_state(config, create_shared_buffer());
     Router::new()
         .route("/api/bridge/status", get(bridge::router::status))
         .route("/api/bridge/pair/request", post(auth::pair::pair_request))

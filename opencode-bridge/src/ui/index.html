@@ -233,6 +233,7 @@ let logEventSource = null;
 let logsPaused = false;
 let activeLevels = new Set(['INFO','WARN','ERROR']);
 let logEntries = [];
+let latestVersionChecked = false;
 
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
@@ -298,7 +299,10 @@ async function loadOverview() {
     }
     verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
 
-    checkLatestVersion();
+    if (!latestVersionChecked) {
+      latestVersionChecked = true;
+      checkLatestVersion();
+    }
 
     const devices = devicesRes || [];
     document.getElementById('device-count').textContent = devices.length;
@@ -328,13 +332,16 @@ async function loadOverview() {
 }
 
 async function checkLatestVersion() {
+  const verSub = document.getElementById('oc-version-sub');
+  if (!verSub) return;
+  verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
   try {
     const res = await api('/api/bridge/opencode/latest-version').then(r => r.json());
     const verSub = document.getElementById('oc-version-sub');
     if (res.hasUpdate && res.latest) {
       verSub.innerHTML = '<span class="badge badge-update" id="upgrade-badge">&#x2191; 升级到 ' + esc(res.latest) + '</span>';
     } else {
-      verSub.innerHTML = '<span class="badge badge-ok">最新</span>';
+      verSub.innerHTML = '<span class="badge badge-ok" style="cursor:pointer" onclick="checkLatestVersion()" title="点击重新检测">最新</span>';
     }
   } catch(e) {
     const verSub = document.getElementById('oc-version-sub');
@@ -493,7 +500,7 @@ function renderLogs() {
   });
   const wasAtBottom = viewer.scrollTop + viewer.clientHeight >= viewer.scrollHeight - 20;
   viewer.innerHTML = filtered.map(e => {
-    const ts = e.timestamp ? e.timestamp.split('T')[1].split('.')[0] : '';
+    const ts = e.timestamp || '';
     return '<div class="log-line"><span class="log-time">' + esc(ts) + ' </span><span class="log-level-' + e.level.toLowerCase() + '">' + e.level.padEnd(5) + '</span><span class="log-msg">' + esc(e.message || '') + '</span></div>';
   }).join('');
   if (wasAtBottom) viewer.scrollTop = viewer.scrollHeight;

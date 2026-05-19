@@ -37,7 +37,7 @@ impl FromRef<AppState> for Config {
     }
 }
 
-pub fn create_app_state(config: Config) -> AppState {
+pub fn create_app_state(config: Config, log_buffer: SharedLogBuffer) -> AppState {
     let secret_key = auth::key::SecretKey::load_or_generate()
         .expect("Failed to load or generate secret key");
     let opencode_url = config.opencode_url();
@@ -51,7 +51,6 @@ pub fn create_app_state(config: Config) -> AppState {
     tracing::info!("opencode DB path: {}", sync_db.db_path().display());
 
     let bridge_db = BridgeDb::open().expect("Failed to open bridge database");
-    let log_buffer = create_shared_buffer();
 
     Arc::new(AppStateInner {
         config,

@@ -87,7 +87,7 @@ fn init_capture_logging() -> openmate::log_capture::SharedLogBuffer {
 }
 
 async fn run_gui_mode(args: Args) -> anyhow::Result<()> {
-    let _buffer = init_capture_logging();
+    let buffer = init_capture_logging();
 
     if is_already_running() {
         tracing::info!("Another instance is already running, notifying it to open UI");
@@ -143,7 +143,7 @@ async fn run_gui_mode(args: Args) -> anyhow::Result<()> {
         server_shutdown.notify_one();
     });
 
-    openmate::server::run_server(config, Some(shutdown_clone)).await
+    openmate::server::run_server(config, buffer, Some(shutdown_clone)).await
 }
 
 #[cfg(target_os = "windows")]
@@ -278,7 +278,8 @@ fn run_service_mode() -> anyhow::Result<()> {
 #[cfg(target_os = "linux")]
 async fn run_service_mode() -> anyhow::Result<()> {
     let config = Config::find_and_load(None)?;
-    openmate::server::run_server(config, None).await
+    let buffer = init_capture_logging();
+    openmate::server::run_server(config, buffer, None).await
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]

@@ -13,11 +13,13 @@ use crate::config::Config;
 use crate::files;
 use crate::fs;
 use crate::proxy;
+use crate::log_capture::SharedLogBuffer;
 use crate::state::create_app_state;
 use crate::sync;
 
 pub async fn run_server(
     config: Config,
+    log_buffer: SharedLogBuffer,
     shutdown_notify: Option<Arc<Notify>>,
 ) -> anyhow::Result<()> {
     tracing::info!("OpenCode Bridge starting");
@@ -30,7 +32,7 @@ pub async fn run_server(
     tracing::info!("Allowed paths: {:?}", config.effective_allowed_paths());
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 
-    let app_state = create_app_state(config.clone());
+    let app_state = create_app_state(config.clone(), log_buffer);
 
     {
         let state = app_state.clone();
