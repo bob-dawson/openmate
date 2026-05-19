@@ -146,6 +146,7 @@ impl FileWriter {
     fn write_line(&mut self, line: &str) {
         if let Some(ref mut file) = self.file {
             let _ = writeln!(file, "{}", line);
+            let _ = file.flush();
         }
     }
 }
