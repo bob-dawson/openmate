@@ -42,6 +42,14 @@ pub fn routes() -> Router<AppState> {
             post(crate::auth::pair::pair_reject),
         )
         .route(
+            "/api/bridge/pair/scan",
+            get(crate::auth::scan::scan_generate),
+        )
+        .route(
+            "/api/bridge/pair/scan-confirm",
+            post(crate::auth::scan::scan_confirm),
+        )
+        .route(
             "/api/bridge/reset-secret",
             post(reset_secret::reset_secret),
         )

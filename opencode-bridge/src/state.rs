@@ -1,4 +1,5 @@
 use axum::extract::FromRef;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -18,6 +19,12 @@ pub enum OpencodeStatus {
     Crashed,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanTokenEntry {
+    pub token: String,
+    pub expires_at: i64,
+}
+
 pub struct AppStateInner {
     pub config: Config,
     pub opencode_status: RwLock<OpencodeStatus>,
@@ -27,6 +34,7 @@ pub struct AppStateInner {
     pub sync_db: SyncDb,
     pub bridge_db: BridgeDb,
     pub log_buffer: SharedLogBuffer,
+    pub scan_token: RwLock<Option<ScanTokenEntry>>,
 }
 
 pub type AppState = Arc<AppStateInner>;
@@ -68,5 +76,6 @@ pub fn create_app_state(config: Config, log_buffer: SharedLogBuffer) -> AppState
         sync_db,
         bridge_db,
         log_buffer,
+        scan_token: RwLock::new(None),
     })
 }

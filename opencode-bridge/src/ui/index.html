@@ -234,6 +234,7 @@ let logsPaused = false;
 let activeLevels = new Set(['INFO','WARN','ERROR']);
 let logEntries = [];
 let latestVersionChecked = false;
+let qrRefreshTimer = null;
 
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
@@ -446,24 +447,31 @@ document.addEventListener('click', async e => {
 });
 
 async function loadQR() {
+  if (qrRefreshTimer) clearInterval(qrRefreshTimer);
   try {
     const ifaces = await api('/api/bridge/network/interfaces').then(r => r.json());
     const sel = document.getElementById('iface-select');
     sel.innerHTML = ifaces.map((iface, i) => '<option value="' + esc(iface.ip) + '"' + (i === 0 ? ' selected' : '') + '>' + esc(iface.name) + ' (' + esc(iface.ip) + ')</option>').join('');
-    updateQR();
+    sel.removeEventListener('change', updateQR);
     sel.addEventListener('change', updateQR);
+    updateQR();
   } catch(e) {
     console.error('loadQR error:', e);
   }
+  qrRefreshTimer = setInterval(updateQR, 60000);
 }
 
 async function updateQR() {
   const ip = document.getElementById('iface-select').value;
   if (!ip) return;
   try {
-    const statusRes = await api('/api/bridge/status').then(r => r.json());
+    const [statusRes, scanRes] = await Promise.all([
+      api('/api/bridge/status').then(r => r.json()),
+      api('/api/bridge/pair/scan').then(r => r.json()),
+    ]);
     const port = statusRes.bridge.port;
-    const url = 'http://' + ip + ':' + port + '/ui/download';
+    const st = scanRes.scan_token || '';
+    const url = 'http://' + ip + ':' + port + '/ui/download?name=' + encodeURIComponent(scanRes.machine_name || 'Bridge') + (st ? '&st=' + st : '');
     document.getElementById('qr-url').textContent = url;
     document.getElementById('qr-image').innerHTML = '<img src="/api/bridge/qrcode?ip=' + ip + '" alt="QR">';
   } catch(e) {
