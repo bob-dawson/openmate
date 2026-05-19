@@ -97,7 +97,15 @@ pub async fn restart_opencode(
 
 pub async fn opencode_version(State(state): State<AppState>) -> impl IntoResponse {
     let current = state.opencode_manager.get_cached_version().await;
+
+    Json(json!({
+        "current": current,
+    }))
+}
+
+pub async fn opencode_latest_version(State(state): State<AppState>) -> impl IntoResponse {
     let latest = state.opencode_manager.get_latest_version().await.ok();
+    let current = state.opencode_manager.get_cached_version().await;
 
     let has_update = match (&current, &latest) {
         (Some(c), Some(l)) => is_newer_version(l, c),

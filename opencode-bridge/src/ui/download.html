@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenMate - 连接 Bridge</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:32px;max-width:400px;width:100%;text-align:center}
+h1{font-size:20px;color:#60a5fa;margin-bottom:4px}
+.version{font-size:12px;color:#64748b;margin-bottom:24px}
+.url-box{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;font-family:monospace;font-size:13px;color:#60a5fa;word-break:break-all;margin-bottom:12px;position:relative}
+.btn{display:block;width:100%;padding:12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;margin-bottom:10px;text-decoration:none;text-align:center}
+.btn-primary{background:#3b82f6;color:white}
+.btn-primary:hover{background:#2563eb}
+.btn-ghost{background:transparent;color:#94a3b8;border:1px solid #334155}
+.btn-ghost:hover{background:#334155}
+.steps{text-align:left;margin-top:20px;padding-top:20px;border-top:1px solid #334155}
+.steps h2{font-size:13px;color:#94a3b8;margin-bottom:10px}
+.steps ol{font-size:12px;color:#cbd5e1;padding-left:18px;line-height:2.2}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 20px;font-size:13px;color:#e2e8f0;opacity:0;transition:opacity .3s;z-index:99}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>OpenMate</h1>
+  <div class="version">连接 Bridge</div>
+  <div class="url-box" id="bridge-url"></div>
+  <button class="btn btn-ghost" id="copy-btn">复制地址</button>
+  <a class="btn btn-primary" id="apk-btn" href="/download/openmate.apk">下载 OpenMate App</a>
+  <div class="steps">
+    <h2>使用步骤</h2>
+    <ol>
+      <li>点击上方按钮下载并安装 OpenMate App</li>
+      <li>打开 App，输入 Bridge 地址</li>
+      <li>在 Bridge 管理页面批准配对 PIN</li>
+    </ol>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const host = window.location.hostname;
+const port = window.location.port || '4097';
+const url = 'http://' + host + ':' + port;
+document.getElementById('bridge-url').textContent = url;
+
+document.getElementById('copy-btn').addEventListener('click', () => {
+  navigator.clipboard.writeText(url).then(() => {
+    const t = document.getElementById('toast');
+    t.textContent = '已复制';
+    t.className = 'toast show';
+    setTimeout(() => t.className = 'toast', 2000);
+  });
+});
+</script>
+</body>
+</html>

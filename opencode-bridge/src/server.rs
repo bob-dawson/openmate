@@ -13,11 +13,13 @@ use crate::config::Config;
 use crate::files;
 use crate::fs;
 use crate::proxy;
+use crate::log_capture::SharedLogBuffer;
 use crate::state::create_app_state;
 use crate::sync;
 
 pub async fn run_server(
     config: Config,
+    log_buffer: SharedLogBuffer,
     shutdown_notify: Option<Arc<Notify>>,
 ) -> anyhow::Result<()> {
     tracing::info!("OpenCode Bridge starting");
@@ -30,7 +32,7 @@ pub async fn run_server(
     tracing::info!("Allowed paths: {:?}", config.effective_allowed_paths());
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 
-    let app_state = create_app_state(config.clone());
+    let app_state = create_app_state(config.clone(), log_buffer);
 
     {
         let state = app_state.clone();
@@ -90,6 +92,10 @@ pub async fn run_server(
             get(bridge::router::opencode_version),
         )
         .route(
+            "/api/bridge/opencode/latest-version",
+            get(bridge::router::opencode_latest_version),
+        )
+        .route(
             "/api/bridge/opencode/upgrade-status",
             get(bridge::router::opencode_upgrade_status),
         )
@@ -115,6 +121,8 @@ pub async fn run_server(
         )
         .route("/api/bridge/fs/delete", post(fs::router::delete))
         .route("/api/bridge/fs/rename", post(fs::router::rename))
+        .merge(crate::api::routes())
+        .merge(crate::ui::routes())
         .route("/files/{*path}", get(files::router::serve_file))
         .route(
             "/api/opencode/global/event",

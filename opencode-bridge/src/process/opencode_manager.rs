@@ -215,6 +215,7 @@ impl OpencodeManager {
         {
             let output = tokio::process::Command::new("taskkill")
                 .args(["/F", "/IM", "opencode.exe"])
+                .creation_flags(0x08000000)
                 .output()
                 .await;
             if let Ok(out) = output {
@@ -458,6 +459,7 @@ fn spawn_opencode(
             .env("OPENCODE_EXPERIMENTAL", "true")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
+            .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| format!("Failed to spawn opencode: {}", e))?
     };

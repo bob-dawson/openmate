@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenMate Bridge</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;height:100vh}
+.sidebar{width:200px;background:#1e293b;border-right:1px solid #334155;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-logo{padding:20px;border-bottom:1px solid #334155}
+.sidebar-logo h1{font-size:15px;color:#60a5fa}
+.sidebar-logo span{font-size:11px;color:#64748b}
+.sidebar-nav{padding:12px 0;flex:1}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;cursor:pointer;color:#94a3b8;font-size:13px;transition:all .15s}
+.nav-item:hover{background:#334155;color:#e2e8f0}
+.nav-item.active{background:#1e3a5f;color:#60a5fa;border-right:3px solid #3b82f6}
+.nav-item .icon{font-size:16px;width:20px;text-align:center}
+.sidebar-footer{padding:14px 20px;border-top:1px solid #334155;font-size:11px;color:#64748b}
+.sidebar-footer .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;background:#22c55e}
+.sidebar-footer .dot.off{background:#ef4444}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:44px;background:#1e293b;border-bottom:1px solid #334155;display:flex;align-items:center;padding:0 24px;font-size:13px;color:#94a3b8}
+.content{flex:1;overflow-y:auto;padding:24px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:8px;margin-bottom:16px}
+.card-header{padding:14px 20px;border-bottom:1px solid #334155;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between}
+.card-body{padding:16px 20px}
+.status-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.status-card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:16px}
+.status-card .label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.status-card .value{font-size:18px;font-weight:600}
+.status-card .value.green{color:#22c55e}
+.status-card .value.red{color:#ef4444}
+.status-card .value.yellow{color:#eab308}
+.status-card .sub{font-size:11px;color:#64748b;margin-top:3px}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer}
+.badge-update{background:#1e3a5f;color:#60a5fa}
+.badge-ok{background:#14532d;color:#86efac}
+.device-item{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;border-radius:6px;border:1px solid #334155}
+.device-info{display:flex;align-items:center;gap:10px}
+.device-icon{width:32px;height:32px;background:#334155;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.device-name{font-size:13px;font-weight:500}
+.device-meta{font-size:11px;color:#64748b}
+.device-actions{display:flex;gap:6px}
+.btn{padding:5px 12px;border-radius:5px;border:none;cursor:pointer;font-size:12px;font-weight:500;transition:all .15s}
+.btn-primary{background:#3b82f6;color:white}
+.btn-primary:hover{background:#2563eb}
+.btn-primary:disabled{background:#1e3a5f;color:#64748b;cursor:not-allowed}
+.btn-danger{background:#7f1d1d;color:#fca5a5}
+.btn-danger:hover{background:#991b1b}
+.btn-ghost{background:transparent;color:#94a3b8;border:1px solid #334155}
+.btn-ghost:hover{background:#334155}
+.btn-ghost.active{border-color:#3b82f6;color:#60a5fa}
+.btn-sm{padding:3px 8px;font-size:11px}
+.qr-container{display:flex;gap:24px;align-items:flex-start}
+.qr-image{width:180px;height:180px;background:white;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.qr-image img{width:170px;height:170px}
+.qr-info{flex:1}
+.qr-url{font-family:monospace;background:#0f172a;padding:8px 12px;border-radius:6px;font-size:12px;margin:10px 0;border:1px solid #334155;color:#60a5fa;word-break:break-all}
+select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5px;padding:5px 10px;font-size:12px}
+.log-viewer{background:#0f172a;border:1px solid #334155;border-radius:6px;height:420px;overflow-y:auto;font-family:"Cascadia Code","Consolas",monospace;font-size:12px;line-height:1.6}
+.log-viewer .log-line{padding:2px 12px}
+.log-viewer .log-line:hover{background:#1e293b}
+.log-time{color:#64748b}
+.log-level-info{color:#3b82f6}
+.log-level-warn{color:#eab308}
+.log-level-error{color:#ef4444}
+.log-msg{color:#cbd5e1}
+.log-toolbar{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.log-toolbar input[type=text]{background:#0f172a;border:1px solid #334155;border-radius:5px;padding:5px 10px;color:#e2e8f0;font-size:12px;width:180px}
+.pair-pending{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;border-radius:6px;border:1px solid #334155;border-left:3px solid #eab308}
+.pair-pin{font-family:monospace;font-size:22px;font-weight:700;letter-spacing:4px;color:#eab308}
+.pair-timer{font-size:11px;color:#64748b}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #334155}
+.setting-row:last-child{border-bottom:none}
+.setting-label{font-size:13px}
+.setting-desc{font-size:11px;color:#64748b;margin-top:2px}
+.toggle{width:40px;height:22px;background:#475569;border-radius:11px;cursor:pointer;position:relative;transition:.2s}
+.toggle.on{background:#3b82f6}
+.toggle::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;background:white;border-radius:50%;transition:.2s}
+.toggle.on::after{left:20px}
+.empty-state{text-align:center;padding:24px;color:#64748b;font-size:12px}
+.toast{position:fixed;bottom:24px;right:24px;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 16px;font-size:12px;color:#e2e8f0;z-index:999;opacity:0;transition:opacity .3s}
+.toast.show{opacity:1}
+.toast.error{border-color:#ef4444}
+.rename-input{background:#0f172a;border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;color:#e2e8f0;font-size:12px;width:120px}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <h1>OpenMate</h1>
+    <span>Bridge <span id="bridge-version">...</span></span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active" data-page="overview"><span class="icon">&#x1F4CA;</span> 概览</div>
+    <div class="nav-item" data-page="qr"><span class="icon">&#x1F4F7;</span> 扫码连接</div>
+    <div class="nav-item" data-page="logs"><span class="icon">&#x1F4CB;</span> 日志</div>
+    <div class="nav-item" data-page="settings"><span class="icon">&#x2699;&#xFE0F;</span> 设置</div>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="dot" id="status-dot"></span> <span id="status-text">opencode: ...</span><br>
+    <span style="margin-left:12px;font-size:10px;color:#475569">Bridge :<span id="bridge-port">4097</span></span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar" id="topbar-text">概览</div>
+  <div class="content">
+
+    <div id="page-overview">
+      <div class="status-row" id="status-row">
+        <div class="status-card">
+          <div class="label">opencode</div>
+          <div class="value" id="oc-status">...</div>
+          <div class="sub" id="oc-sub"></div>
+        </div>
+        <div class="status-card">
+          <div class="label">opencode 版本</div>
+          <div class="value" id="oc-version">...</div>
+          <div class="sub" id="oc-version-sub"></div>
+        </div>
+        <div class="status-card">
+          <div class="label">已配对设备</div>
+          <div class="value" id="device-count">0</div>
+          <div class="sub" id="device-online-sub"></div>
+        </div>
+        <div class="status-card">
+          <div class="label">Bridge</div>
+          <div class="value" id="bridge-ver">...</div>
+          <div class="sub" id="bridge-port-sub"></div>
+        </div>
+      </div>
+
+      <div class="card" id="pending-card" style="display:none">
+        <div class="card-header">
+          待批准配对
+          <span style="font-size:11px;color:#eab308" id="pending-count">0 个</span>
+        </div>
+        <div class="card-body" id="pending-list" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">已配对设备</div>
+        <div class="card-body" id="device-list" style="display:flex;flex-direction:column;gap:6px">
+          <div class="empty-state">暂无配对设备</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-qr" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          扫码连接 / 下载 App
+          <div>
+            <label style="font-size:11px;color:#64748b;margin-right:6px">网卡:</label>
+            <select id="iface-select"></select>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="qr-container">
+            <div class="qr-image" id="qr-image">...</div>
+            <div class="qr-info">
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:2px">Bridge 地址</div>
+              <div class="qr-url" id="qr-url"></div>
+              <button class="btn btn-ghost btn-sm" id="copy-url-btn" style="margin-bottom:14px">复制</button>
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:6px">APK 下载</div>
+              <button class="btn btn-primary" id="download-apk-btn">下载 OpenMate</button>
+              <div style="font-size:11px;color:#64748b;margin-top:4px">openmate.apk</div>
+              <div style="margin-top:16px;font-size:12px;color:#94a3b8">使用步骤</div>
+              <ol style="font-size:11px;color:#cbd5e1;padding-left:16px;margin-top:6px;line-height:2">
+                <li>手机扫码打开页面</li>
+                <li>下载并安装 OpenMate App</li>
+                <li>打开 App，输入 Bridge 地址</li>
+                <li>在概览页批准配对 PIN</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="page-logs" style="display:none">
+      <div class="log-toolbar">
+        <input type="text" id="log-search" placeholder="搜索日志...">
+        <button class="btn btn-ghost btn-sm active" data-level="INFO">INFO</button>
+        <button class="btn btn-ghost btn-sm" data-level="WARN" style="border-color:#eab308;color:#eab308">WARN</button>
+        <button class="btn btn-ghost btn-sm" data-level="ERROR" style="border-color:#ef4444;color:#ef4444">ERROR</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost btn-sm" id="log-pause-btn">暂停</button>
+        <button class="btn btn-ghost btn-sm" id="log-download-btn">下载日志</button>
+      </div>
+      <div class="log-viewer" id="log-viewer"></div>
+    </div>
+
+    <div id="page-settings" style="display:none">
+      <div class="card">
+        <div class="card-header">通用</div>
+        <div class="card-body">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">开机自动启动</div>
+              <div class="setting-desc">Windows 启动时静默运行 Bridge</div>
+            </div>
+            <div class="toggle" id="autostart-toggle"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">危险操作</div>
+        <div class="card-body">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">重置密钥</div>
+              <div class="setting-desc">所有已配对设备需要重新配对</div>
+            </div>
+            <button class="btn btn-danger btn-sm" id="reset-key-btn">重置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PAGE_NAMES = {overview:'概览',qr:'扫码连接',logs:'日志',settings:'设置'};
+let overviewTimer = null;
+let logEventSource = null;
+let logsPaused = false;
+let activeLevels = new Set(['INFO','WARN','ERROR']);
+let logEntries = [];
+let latestVersionChecked = false;
+let qrRefreshTimer = null;
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+    const page = item.dataset.page;
+    document.querySelectorAll('[id^="page-"]').forEach(p => p.style.display = 'none');
+    document.getElementById('page-' + page).style.display = 'block';
+    document.getElementById('topbar-text').textContent = PAGE_NAMES[page];
+    if (page === 'overview') loadOverview();
+    if (page === 'qr') loadQR();
+    if (page === 'logs') { loadLogs(); connectLogStream(); }
+    if (page === 'settings') loadSettings();
+  });
+});
+
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(() => t.className = 'toast', 2500);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(r.status + ' ' + await r.text());
+  return r;
+}
+
+async function loadOverview() {
+  if (overviewTimer) clearInterval(overviewTimer);
+  try {
+    const [statusRes, devicesRes, versionRes, pendingRes] = await Promise.all([
+      api('/api/bridge/status').then(r => r.json()),
+      api('/api/bridge/devices').then(r => r.json()),
+      api('/api/bridge/opencode/version').then(r => r.json()),
+      fetch('/api/bridge/pair/pending').then(r => r.ok ? r.json() : []).catch(() => []),
+    ]);
+    const s = statusRes.bridge;
+    const oc = statusRes.opencode;
+    document.getElementById('bridge-version').textContent = 'v' + s.version;
+    document.getElementById('bridge-port').textContent = s.port;
+    document.getElementById('bridge-ver').textContent = 'v' + s.version;
+    document.getElementById('bridge-port-sub').textContent = '端口 ' + s.port;
+
+    const statusEl = document.getElementById('oc-status');
+    const dot = document.getElementById('status-dot');
+    const stxt = document.getElementById('status-text');
+    const map = {running:['Running','green','Running'],stopped:['Stopped','red','Stopped'],starting:['Starting...','yellow','Starting'],stopping:['Stopping...','yellow','Stopping'],crashed:['Crashed','red','Crashed']};
+    const m = map[oc.status] || ['Unknown','','Unknown'];
+    statusEl.textContent = m[0];
+    statusEl.className = 'value ' + m[1];
+    dot.className = 'dot' + (m[1] === 'green' ? '' : (' ' + m[1] === 'red' ? 'off' : ''));
+    if (m[1] === 'red') dot.classList.add('off');
+    stxt.textContent = 'opencode: ' + m[2];
+
+    const verEl = document.getElementById('oc-version');
+    const verSub = document.getElementById('oc-version-sub');
+    if (versionRes.current) {
+      verEl.textContent = versionRes.current;
+    } else {
+      verEl.textContent = '未知';
+    }
+    verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
+
+    if (!latestVersionChecked) {
+      latestVersionChecked = true;
+      checkLatestVersion();
+    }
+
+    const devices = devicesRes || [];
+    document.getElementById('device-count').textContent = devices.length;
+    document.getElementById('device-online-sub').textContent = devices.length + ' 台设备';
+
+    const pending = (pendingRes && pendingRes.pending) ? pendingRes.pending : [];
+    const pendingCard = document.getElementById('pending-card');
+    const pendingList = document.getElementById('pending-list');
+    if (pending.length > 0) {
+      pendingCard.style.display = 'block';
+      document.getElementById('pending-count').textContent = pending.length + ' 个';
+      pendingList.innerHTML = pending.map(p => {
+        const remaining = Math.max(0, 300 - Math.floor((Date.now() / 1000) - p.created_at));
+        const mins = Math.floor(remaining / 60);
+        const secs = remaining % 60;
+        return '<div class="pair-pending"><div><div class="pair-pin">' + p.pin.slice(0,3) + ' ' + p.pin.slice(3) + '</div><div class="pair-timer">' + p.ip + ' &middot; 剩余 ' + mins + ':' + String(secs).padStart(2,'0') + '</div></div><div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="approvePair(\'' + p.pin + '\')">批准</button><button class="btn btn-ghost" onclick="rejectPair(\'' + p.pin + '\')">拒绝</button></div></div>';
+      }).join('');
+    } else {
+      pendingCard.style.display = 'none';
+    }
+
+    renderDevices(devices);
+  } catch(e) {
+    console.error('loadOverview error:', e);
+  }
+  overviewTimer = setInterval(loadOverview, 5000);
+}
+
+async function checkLatestVersion() {
+  const verSub = document.getElementById('oc-version-sub');
+  if (!verSub) return;
+  verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
+  try {
+    const res = await api('/api/bridge/opencode/latest-version').then(r => r.json());
+    const verSub = document.getElementById('oc-version-sub');
+    if (res.hasUpdate && res.latest) {
+      verSub.innerHTML = '<span class="badge badge-update" id="upgrade-badge">&#x2191; 升级到 ' + esc(res.latest) + '</span>';
+    } else {
+      verSub.innerHTML = '<span class="badge badge-ok" style="cursor:pointer" onclick="checkLatestVersion()" title="点击重新检测">最新</span>';
+    }
+  } catch(e) {
+    const verSub = document.getElementById('oc-version-sub');
+    if (verSub) verSub.innerHTML = '<span class="badge badge-ok">最新</span>';
+  }
+}
+
+function renderDevices(devices) {
+  const el = document.getElementById('device-list');
+  if (!devices || devices.length === 0) {
+    el.innerHTML = '<div class="empty-state">暂无配对设备</div>';
+    return;
+  }
+  el.innerHTML = devices.map(d => {
+    const name = d.name || ('Device ' + d.device_id.slice(0,8));
+    const ago = timeAgo(d.last_seen);
+    const pairedAgo = timeAgo(d.paired_at);
+    return '<div class="device-item" id="dev-' + d.device_id + '"><div class="device-info"><div class="device-icon">&#x1F4F1;</div><div><div class="device-name">' + esc(name) + '</div><div class="device-meta">' + esc(d.ip) + ' &middot; ' + pairedAgo + '配对 &middot; ' + ago + '活跃</div></div></div><div class="device-actions"><button class="btn btn-ghost btn-sm" onclick="startRename(\'' + d.device_id + '\',\'' + esc(name) + '\')">改名</button><button class="btn btn-danger btn-sm" onclick="deleteDevice(\'' + d.device_id + '\')">删除</button></div></div>';
+  }).join('');
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const diff = Math.floor(Date.now() / 1000) - Math.floor(ts / 1000);
+  if (diff < 60) return '刚刚';
+  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
+  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
+  return Math.floor(diff/86400) + ' 天前';
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function approvePair(pin) {
+  try {
+    await api('/api/bridge/pair/approve', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    showToast('PIN ' + pin + ' 已批准');
+    loadOverview();
+  } catch(e) {
+    showToast('批准失败: ' + e.message, true);
+  }
+}
+
+async function rejectPair(pin) {
+  try {
+    await api('/api/bridge/pair/reject', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
+    showToast('PIN ' + pin + ' 已拒绝');
+    loadOverview();
+  } catch(e) {
+    showToast('拒绝失败: ' + e.message, true);
+  }
+}
+
+async function deleteDevice(id) {
+  if (!confirm('确定删除此设备？')) return;
+  try {
+    await api('/api/bridge/devices/' + id, {method:'DELETE'});
+    showToast('设备已删除');
+    loadOverview();
+  } catch(e) {
+    showToast('删除失败: ' + e.message, true);
+  }
+}
+
+function startRename(id, currentName) {
+  const item = document.getElementById('dev-' + id);
+  if (!item) return;
+  const actionsDiv = item.querySelector('.device-actions');
+  actionsDiv.innerHTML = '<input class="rename-input" value="' + esc(currentName) + '" id="rename-input-' + id + '"><button class="btn btn-primary btn-sm" onclick="doRename(\'' + id + '\')">确定</button><button class="btn btn-ghost btn-sm" onclick="loadOverview()">取消</button>';
+  const input = document.getElementById('rename-input-' + id);
+  input.focus();
+  input.select();
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doRename(id); if (e.key === 'Escape') loadOverview(); });
+}
+
+async function doRename(id) {
+  const input = document.getElementById('rename-input-' + id);
+  if (!input) return;
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await api('/api/bridge/devices/' + id + '/name', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+    showToast('设备已改名');
+    loadOverview();
+  } catch(e) {
+    showToast('改名失败: ' + e.message, true);
+  }
+}
+
+document.addEventListener('click', async e => {
+  if (e.target.id === 'upgrade-badge') {
+    try {
+      await api('/api/bridge/opencode/upgrade', {method:'POST'});
+      showToast('升级已开始');
+    } catch(err) {
+      showToast('升级失败: ' + err.message, true);
+    }
+  }
+});
+
+async function loadQR() {
+  if (qrRefreshTimer) clearInterval(qrRefreshTimer);
+  try {
+    const ifaces = await api('/api/bridge/network/interfaces').then(r => r.json());
+    const sel = document.getElementById('iface-select');
+    sel.innerHTML = ifaces.map((iface, i) => '<option value="' + esc(iface.ip) + '"' + (i === 0 ? ' selected' : '') + '>' + esc(iface.name) + ' (' + esc(iface.ip) + ')</option>').join('');
+    sel.removeEventListener('change', updateQR);
+    sel.addEventListener('change', updateQR);
+    updateQR();
+  } catch(e) {
+    console.error('loadQR error:', e);
+  }
+  qrRefreshTimer = setInterval(updateQR, 60000);
+}
+
+async function updateQR() {
+  const ip = document.getElementById('iface-select').value;
+  if (!ip) return;
+  try {
+    const [statusRes, scanRes] = await Promise.all([
+      api('/api/bridge/status').then(r => r.json()),
+      api('/api/bridge/pair/scan').then(r => r.json()),
+    ]);
+    const port = statusRes.bridge.port;
+    const st = scanRes.scan_token || '';
+    const url = 'http://' + ip + ':' + port + '/ui/download?name=' + encodeURIComponent(scanRes.machine_name || 'Bridge') + (st ? '&st=' + st : '');
+    document.getElementById('qr-url').textContent = url;
+    document.getElementById('qr-image').innerHTML = '<img src="/api/bridge/qrcode?ip=' + ip + '" alt="QR">';
+  } catch(e) {
+    console.error('updateQR error:', e);
+  }
+}
+
+document.getElementById('copy-url-btn').addEventListener('click', () => {
+  const url = document.getElementById('qr-url').textContent;
+  navigator.clipboard.writeText(url).then(() => showToast('已复制'));
+});
+
+document.getElementById('download-apk-btn').addEventListener('click', () => {
+  window.open('/download/openmate.apk', '_blank');
+});
+
+async function loadLogs() {
+  try {
+    const entries = await api('/api/bridge/logs').then(r => r.json());
+    logEntries = entries || [];
+    renderLogs();
+  } catch(e) {
+    console.error('loadLogs error:', e);
+  }
+}
+
+function renderLogs() {
+  const viewer = document.getElementById('log-viewer');
+  const search = document.getElementById('log-search').value.toLowerCase();
+  const filtered = logEntries.filter(e => {
+    if (!activeLevels.has(e.level)) return false;
+    if (search && !(e.message || '').toLowerCase().includes(search) && !(e.target || '').toLowerCase().includes(search)) return false;
+    return true;
+  });
+  const wasAtBottom = viewer.scrollTop + viewer.clientHeight >= viewer.scrollHeight - 20;
+  viewer.innerHTML = filtered.map(e => {
+    const ts = e.timestamp || '';
+    return '<div class="log-line"><span class="log-time">' + esc(ts) + ' </span><span class="log-level-' + e.level.toLowerCase() + '">' + e.level.padEnd(5) + '</span><span class="log-msg">' + esc(e.message || '') + '</span></div>';
+  }).join('');
+  if (wasAtBottom) viewer.scrollTop = viewer.scrollHeight;
+}
+
+function connectLogStream() {
+  if (logEventSource) { logEventSource.close(); logEventSource = null; }
+  logEventSource = new EventSource('/api/bridge/logs/stream');
+  logEventSource.onmessage = function(ev) {
+    if (logsPaused) return;
+    try {
+      const entry = JSON.parse(ev.data);
+      logEntries.push(entry);
+      if (logEntries.length > 5000) logEntries = logEntries.slice(-3000);
+      renderLogs();
+    } catch(e) {}
+  };
+  logEventSource.onerror = function() {
+    setTimeout(connectLogStream, 5000);
+  };
+}
+
+document.getElementById('log-search').addEventListener('input', renderLogs);
+
+document.querySelectorAll('[data-level]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const lvl = btn.dataset.level;
+    if (activeLevels.has(lvl)) {
+      activeLevels.delete(lvl);
+      btn.classList.remove('active');
+    } else {
+      activeLevels.add(lvl);
+      btn.classList.add('active');
+    }
+    renderLogs();
+  });
+});
+
+document.getElementById('log-pause-btn').addEventListener('click', function() {
+  logsPaused = !logsPaused;
+  this.textContent = logsPaused ? '继续' : '暂停';
+  this.classList.toggle('active', logsPaused);
+});
+
+document.getElementById('log-download-btn').addEventListener('click', () => {
+  const text = logEntries.map(e => {
+    const ts = e.timestamp || '';
+    return ts + ' ' + (e.level || '') + ' ' + (e.message || '');
+  }).join('\n');
+  const blob = new Blob([text], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'bridge-logs.txt';
+  a.click();
+});
+
+async function loadSettings() {
+  try {
+    const res = await api('/api/bridge/autostart').then(r => r.json());
+    const toggle = document.getElementById('autostart-toggle');
+    if (res.enabled) toggle.classList.add('on');
+    else toggle.classList.remove('on');
+  } catch(e) {
+    console.error('loadSettings error:', e);
+  }
+}
+
+document.getElementById('autostart-toggle').addEventListener('click', async function() {
+  const enabled = !this.classList.contains('on');
+  try {
+    await api('/api/bridge/autostart', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
+    if (enabled) this.classList.add('on');
+    else this.classList.remove('on');
+    showToast(enabled ? '已开启自动启动' : '已关闭自动启动');
+  } catch(e) {
+    showToast('设置失败: ' + e.message, true);
+  }
+});
+
+document.getElementById('reset-key-btn').addEventListener('click', async () => {
+  if (!confirm('确定要重置密钥？所有已配对设备需要重新配对。')) return;
+  try {
+    await api('/api/bridge/reset-secret', {method:'POST'});
+    showToast('密钥已重置，请重启 Bridge');
+  } catch(e) {
+    showToast('重置失败: ' + e.message, true);
+  }
+});
+
+loadOverview();
+</script>
+</body>
+</html>
