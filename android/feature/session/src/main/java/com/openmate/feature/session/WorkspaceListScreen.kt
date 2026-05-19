@@ -78,6 +78,7 @@ import com.openmate.core.domain.model.Workspace
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.theme.Success
+import com.openmate.feature.session.component.DirectoryPickerSheet
 import com.openmate.feature.settings.SettingsViewModel
 
 private data class TabItem(
@@ -287,6 +288,23 @@ fun WorkspaceListScreen(
                         label = { Text(stringResource(R.string.session_title_optional)) },
                         singleLine = true,
                     )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showDirPicker = true }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = if (newSessionDirectory.isBlank()) stringResource(R.string.select_directory) else
+                                newSessionDirectory,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (newSessionDirectory.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else
+                                MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             },
             confirmButton = {
@@ -307,6 +325,17 @@ fun WorkspaceListScreen(
                     Text(stringResource(R.string.cancel))
                 }
             },
+        )
+    }
+
+    if (showDirPicker) {
+        DirectoryPickerSheet(
+            apiClient = viewModel.apiClient,
+            onSelect = { path ->
+                newSessionDirectory = path
+                showDirPicker = false
+            },
+            onDismiss = { showDirPicker = false },
         )
     }
 }
