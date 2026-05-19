@@ -104,6 +104,7 @@ import com.openmate.feature.session.component.FileViewer
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
 import com.openmate.feature.session.component.SessionMessageSearchPanel
+import com.openmate.feature.session.component.AgentPickerSheet
 import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
@@ -126,7 +127,6 @@ internal fun shouldScrollToBottomOnInitialLoad(
 internal fun sessionDetailMenuItems(): List<String> = listOf(
     "Abort",
     "Model",
-    "Mode",
     "Skill",
     "同步日志",
     "Refresh",
@@ -163,6 +163,7 @@ fun SessionDetailScreen(
     val availableVariants by viewModel.availableVariants.collectAsState()
     val recentModels by viewModel.recentModels.collectAsState()
     val selectedAgent by viewModel.selectedAgent.collectAsState()
+    val agents by viewModel.agents.collectAsState()
     val sessionStatus by viewModel.sessionStatus.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val sessionRevert by viewModel.sessionRevert.collectAsState()
@@ -200,6 +201,7 @@ fun SessionDetailScreen(
     var showModelPicker by remember { mutableStateOf(false) }
     var showVariantPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
+    var showAgentPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showSyncLogs by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
@@ -459,15 +461,6 @@ fun SessionDetailScreen(
                                     showModelPicker = true
                                 },
                             )
-                            DropdownMenuItem(
-                                text = {
-                                    Text(if (selectedAgent == "plan") stringResource(R.string.mode_plan) else stringResource(R.string.mode_build))
-                                },
-                                onClick = {
-                                    viewModel.setAgent(if (selectedAgent == "plan") "build" else "plan")
-                                    menuExpanded = false
-                                },
-                            )
                             if (selectedModel != null) {
                                 DropdownMenuItem(
                                     text = { Text(compactActionLabel) },
@@ -694,27 +687,25 @@ fun SessionDetailScreen(
                 }
             }
 
-            if (selectedAgent != "build" || selectedModel != null || currentBusyStart != null || sessionTotalDuration != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (selectedAgent != "build") {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.tertiaryContainer)
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = selectedAgent.uppercase(),
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            )
-                        }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(MaterialTheme.colorScheme.tertiaryContainer)
+                            .clickable { showAgentPicker = true }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = selectedAgent.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
                     }
                     if (selectedModel != null) {
                         Box(
@@ -794,7 +785,6 @@ fun SessionDetailScreen(
                         }
                     }
                 }
-            }
 
             if (attachedFiles.isNotEmpty()) {
                 Row(
@@ -1129,6 +1119,18 @@ fun SessionDetailScreen(
             },
             onRefresh = { viewModel.loadProviders(forceRefresh = true) },
             onDismiss = { showModelPicker = false },
+        )
+    }
+
+    if (showAgentPicker) {
+        AgentPickerSheet(
+            agents = agents,
+            currentAgent = selectedAgent,
+            onSelect = { agent ->
+                viewModel.setAgent(agent)
+                showAgentPicker = false
+            },
+            onDismiss = { showAgentPicker = false },
         )
     }
 

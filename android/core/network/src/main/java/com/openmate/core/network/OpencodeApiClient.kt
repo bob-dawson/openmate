@@ -1,6 +1,7 @@
 package com.openmate.core.network
 
 import android.util.Log
+import com.openmate.core.network.dto.AgentDto
 import com.openmate.core.network.dto.BridgeDeleteRequest
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
@@ -246,6 +247,10 @@ class OpencodeApiClient(
 
     suspend fun getProviders(): ProviderListDto {
         return get("/provider")
+    }
+
+    suspend fun getAgents(): List<AgentDto> {
+        return getList("/agent")
     }
 
     suspend fun getSkills(): List<SkillInfoDto> {
