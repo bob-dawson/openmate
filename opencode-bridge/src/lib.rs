@@ -16,5 +16,7 @@ pub mod ui;
 
 #[cfg(target_os = "windows")]
 pub mod service_windows;
+#[cfg(target_os = "windows")]
+pub mod tray;
 #[cfg(target_os = "linux")]
 pub mod service_linux;
