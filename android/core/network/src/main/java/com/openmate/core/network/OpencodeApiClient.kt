@@ -22,6 +22,8 @@ import com.openmate.core.network.dto.OpencodeVersionResponse
 import com.openmate.core.network.dto.PairConfirmRequest
 import com.openmate.core.network.dto.PairConfirmResponse
 import com.openmate.core.network.dto.PairRequestResponse
+import com.openmate.core.network.dto.ScanPairConfirmRequest
+import com.openmate.core.network.dto.ScanPairConfirmResponse
 import com.openmate.core.network.dto.PermissionDto
 import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.network.dto.QuestionDto
@@ -394,6 +396,20 @@ class OpencodeApiClient(
         val jsonStr = json.encodeToString(PairConfirmRequest.serializer(), body)
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val url = buildUrl("/api/bridge/pair/confirm", emptyMap())
+        val request = Request.Builder().url(url).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
+        }
+        json.decodeFromString(responseBody)
+    }
+
+    suspend fun bridgeScanPairConfirm(scanToken: String, deviceName: String): ScanPairConfirmResponse = withContext(Dispatchers.IO) {
+        val body = ScanPairConfirmRequest(scanToken, deviceName)
+        val jsonStr = json.encodeToString(ScanPairConfirmRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = buildUrl("/api/bridge/pair/scan-confirm", emptyMap())
         val request = Request.Builder().url(url).post(requestBody).build()
         val response = client.newCall(request).execute()
         val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")

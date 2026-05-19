@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +58,7 @@ import com.openmate.core.ui.theme.TopBarBackground
 fun InstanceListScreen(
     onNavigateToAdd: () -> Unit,
     onNavigateToEdit: (String) -> Unit,
+    onNavigateToQrScan: () -> Unit,
     onNavigateToSessions: () -> Unit,
     viewModel: InstanceListViewModel = hiltViewModel(),
 ) {
@@ -66,8 +69,17 @@ fun InstanceListScreen(
             TopBar(title = stringResource(R.string.instances))
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onNavigateToAdd) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.content_desc_add_instance))
+            Column(horizontalAlignment = Alignment.End) {
+                FloatingActionButton(
+                    onClick = onNavigateToQrScan,
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                ) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = stringResource(R.string.content_desc_scan_qr))
+                }
+                FloatingActionButton(onClick = onNavigateToAdd) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.content_desc_add_instance))
+                }
             }
         },
     ) { padding ->

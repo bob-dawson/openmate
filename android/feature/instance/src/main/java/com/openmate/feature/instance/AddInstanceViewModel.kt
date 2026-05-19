@@ -194,6 +194,21 @@ class AddInstanceViewModel @Inject constructor(
         }
     }
 
+    fun applyScanResult(name: String, address: String, port: Int, token: String) {
+        val profileId = UUID.randomUUID().toString()
+        viewModelScope.launch(Dispatchers.IO) {
+            tokenStore.saveToken(profileId, token)
+            val profile = ServerProfile(
+                id = profileId,
+                name = name,
+                address = address,
+                port = port,
+                createdAt = System.currentTimeMillis(),
+            )
+            profileRepository.save(profile)
+        }
+    }
+
     private suspend fun completeSave(profileId: String, portNum: Int, onSaved: () -> Unit) {
         val profile = ServerProfile(
             id = profileId,
