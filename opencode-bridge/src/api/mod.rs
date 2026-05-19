@@ -9,6 +9,7 @@ mod logs;
 mod network;
 mod open_ui;
 mod qrcode;
+mod reset_secret;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -32,4 +33,16 @@ pub fn routes() -> Router<AppState> {
         .route("/api/bridge/autostart", post(autostart::set_autostart))
         .route("/api/bridge/open-ui", post(open_ui::open_ui))
         .route("/download/openmate.apk", get(open_ui::download_apk))
+        .route(
+            "/api/bridge/pair/pending",
+            get(crate::auth::pair::list_pending),
+        )
+        .route(
+            "/api/bridge/pair/reject",
+            post(crate::auth::pair::pair_reject),
+        )
+        .route(
+            "/api/bridge/reset-secret",
+            post(reset_secret::reset_secret),
+        )
 }

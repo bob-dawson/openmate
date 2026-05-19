@@ -116,6 +116,7 @@ pub async fn run_server(
         .route("/api/bridge/fs/delete", post(fs::router::delete))
         .route("/api/bridge/fs/rename", post(fs::router::rename))
         .merge(crate::api::routes())
+        .merge(crate::ui::routes())
         .route("/files/{*path}", get(files::router::serve_file))
         .route(
             "/api/opencode/global/event",

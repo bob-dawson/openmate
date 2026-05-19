@@ -23,6 +23,9 @@ const LOCALHOST_ONLY_PATHS: &[&str] = &[
     "/api/bridge/logs/stream",
     "/api/bridge/network/interfaces",
     "/api/bridge/autostart",
+    "/api/bridge/pair/pending",
+    "/api/bridge/pair/reject",
+    "/api/bridge/reset-secret",
 ];
 
 pub async fn auth_middleware(
@@ -45,14 +48,17 @@ pub async fn auth_middleware(
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ci| ci.0);
+    let is_localhost = addr.map(|a| a.ip().is_loopback()).unwrap_or(false);
 
     if LOCALHOST_ONLY_PATHS.iter().any(|p| path == *p) || path.starts_with("/ui/") {
-        if let Some(addr) = addr {
-            if addr.ip().is_loopback() {
-                return next.run(req).await;
-            }
+        if !is_localhost {
+            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
         }
-        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+        return next.run(req).await;
+    }
+
+    if is_localhost && path.starts_with("/api/bridge/") {
+        return next.run(req).await;
     }
 
     if let Some(auth_header) = req.headers().get("authorization") {

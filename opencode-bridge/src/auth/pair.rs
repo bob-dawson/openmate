@@ -47,6 +47,19 @@ pub struct PairRequestResponse {
 }
 
 #[derive(Serialize)]
+pub struct PendingPairInfo {
+    pub pin: String,
+    pub ip: String,
+    pub approved: bool,
+    pub created_at: u64,
+}
+
+#[derive(Serialize)]
+pub struct PendingListResponse {
+    pub pending: Vec<PendingPairInfo>,
+}
+
+#[derive(Serialize)]
 pub struct PairApproveResponse {
     pub approved: bool,
 }
@@ -98,6 +111,48 @@ pub async fn pair_request(
 
     tracing::info!("Pair request from {}, PIN: {}", ip, pin);
     Ok(Json(PairRequestResponse { pin }))
+}
+
+pub async fn list_pending(
+    State(state): State<AppState>,
+) -> Result<Json<PendingListResponse>, AppError> {
+    let pair_state = state.pending_pairs.read().await;
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let pending: Vec<PendingPairInfo> = pair_state
+        .pending
+        .iter()
+        .filter(|(_, v)| !is_expired(v))
+        .map(|(pin, v)| {
+            let elapsed = v.created_at.elapsed().as_secs() as u64;
+            PendingPairInfo {
+                pin: pin.clone(),
+                ip: v.ip.clone(),
+                approved: v.approved,
+                created_at: now_epoch.saturating_sub(elapsed),
+            }
+        })
+        .collect();
+    Ok(Json(PendingListResponse { pending }))
+}
+
+pub async fn pair_reject(
+    State(state): State<AppState>,
+    Json(body): Json<PairRequestBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let pin = body
+        .pin
+        .ok_or_else(|| AppError::BadRequest("PIN is required".to_string()))?;
+
+    let mut pair_state = state.pending_pairs.write().await;
+    if pair_state.pending.remove(&pin).is_some() {
+        tracing::info!("PIN {} rejected", pin);
+        Ok(Json(serde_json::json!({ "success": true })))
+    } else {
+        Err(AppError::PairNotFound)
+    }
 }
 
 pub async fn pair_approve(
