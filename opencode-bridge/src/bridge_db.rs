@@ -53,8 +53,11 @@ impl BridgeDb {
 
     fn migrate(&self) -> Result<(), String> {
         let conn = self.conn()?;
-        conn.execute_batch("PRAGMA journal_mode=WAL;")
-            .map_err(|e| format!("Failed to set WAL mode: {}", e))?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA busy_timeout=5000;",
+        )
+            .map_err(|e| format!("Failed to set pragmas: {}", e))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS paired_devices (
                 device_id TEXT PRIMARY KEY,
@@ -125,11 +128,15 @@ impl BridgeDb {
 
     pub fn update_last_seen(&self, device_id: &str, last_seen: i64) -> Result<(), String> {
         let conn = self.conn()?;
-        conn.execute(
-            "UPDATE paired_devices SET last_seen = ?1 WHERE device_id = ?2",
-            params![last_seen, device_id],
-        )
-        .map_err(|e| format!("Update failed: {}", e))?;
+        let rows = conn
+            .execute(
+                "UPDATE paired_devices SET last_seen = ?1 WHERE device_id = ?2",
+                params![last_seen, device_id],
+            )
+            .map_err(|e| format!("Update failed: {}", e))?;
+        if rows == 0 {
+            return Err("Device not found".to_string());
+        }
         Ok(())
     }
 
@@ -228,6 +235,14 @@ mod tests {
         db.update_last_seen("dev-1", 9999).unwrap();
         let devices = db.list_devices().unwrap();
         assert_eq!(devices[0].last_seen, 9999);
+    }
+
+    #[test]
+    fn test_update_last_seen_nonexistent_fails() {
+        let (db, _dir) = temp_db();
+        let result = db.update_last_seen("no-such-device", 9999);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Device not found"));
     }
 
     #[test]
