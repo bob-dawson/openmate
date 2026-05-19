@@ -10,6 +10,7 @@ import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncSseStarter
 import com.openmate.core.data.sync.SyncLogEntry
 import com.openmate.core.data.sync.SyncLogLevel
+import com.openmate.core.network.dto.AgentDto
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.SessionRevert
@@ -232,6 +233,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _selectedAgent = MutableStateFlow("build")
     val selectedAgent: StateFlow<String> = _selectedAgent.asStateFlow()
 
+    private val _agents = MutableStateFlow<List<AgentDto>>(emptyList())
+    val agents: StateFlow<List<AgentDto>> = _agents.asStateFlow()
+
     private var isModelOverridden = false
     private var isAgentOverridden = false
 
@@ -326,6 +330,19 @@ class SessionDetailViewModel @Inject constructor(
     private fun saveCachedProviders(providers: ProviderListDto) {
         val profileId = activeProfileKey() ?: return
         prefs.edit().putString(providerCacheKey(profileId), Json.encodeToString(providers)).apply()
+    }
+
+    private fun agentCacheKey(profileId: String): String = "agent_cache::$profileId"
+
+    private fun loadCachedAgents(): List<AgentDto>? {
+        val profileId = activeProfileKey() ?: return null
+        val raw = prefs.getString(agentCacheKey(profileId), null) ?: return null
+        return runCatching { Json.decodeFromString<List<AgentDto>>(raw) }.getOrNull()
+    }
+
+    private fun saveCachedAgents(agents: List<AgentDto>) {
+        val profileId = activeProfileKey() ?: return
+        prefs.edit().putString(agentCacheKey(profileId), Json.encodeToString(agents)).apply()
     }
 
     private fun saveVariantPreference(providerID: String, modelID: String, variant: String?) {
@@ -490,6 +507,9 @@ class SessionDetailViewModel @Inject constructor(
         if (_providers.value == null) {
             loadCachedProviders()?.let { _providers.value = it }
         }
+        if (_agents.value.isEmpty()) {
+            loadCachedAgents()?.let { _agents.value = it }
+        }
         messageWindowState = SessionMessageWindowManager.State(
             messages = emptyList(),
             loadedCount = MESSAGE_WINDOW_PAGE_SIZE,
@@ -621,6 +641,7 @@ class SessionDetailViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "refreshRetryStatus failed", e)
             }
+            loadAgents(forceRefresh = true)
             resolveDefaultModel()
         }
     }
@@ -893,6 +914,24 @@ class SessionDetailViewModel @Inject constructor(
                 refreshModelName()
             } catch (e: Exception) {
                 Log.e(TAG, "loadProviders FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
+            }
+        }
+    }
+
+    fun loadAgents(forceRefresh: Boolean = false) {
+        if (!forceRefresh) {
+            loadCachedAgents()?.let {
+                _agents.value = it
+                return
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val result = apiClient.getAgents()
+                _agents.value = result
+                saveCachedAgents(result)
+            } catch (e: Exception) {
+                Log.e(TAG, "loadAgents FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
             }
         }
     }
