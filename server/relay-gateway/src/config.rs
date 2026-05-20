@@ -33,24 +33,6 @@ impl Default for GatewayConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct AuthConfig {
-    #[serde(default = "default_secret_key_path")]
-    pub secret_key_path: String,
-}
-
-fn default_secret_key_path() -> String {
-    "secret.key".to_string()
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        AuthConfig {
-            secret_key_path: default_secret_key_path(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Clone)]
 pub struct TunnelConfig {
     #[serde(default = "default_heartbeat_interval")]
     pub heartbeat_interval: u64,
@@ -94,8 +76,6 @@ pub struct Config {
     #[serde(default)]
     pub gateway: GatewayConfig,
     #[serde(default)]
-    pub auth: AuthConfig,
-    #[serde(default)]
     pub tunnel: TunnelConfig,
 }
 
@@ -103,7 +83,6 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             gateway: GatewayConfig::default(),
-            auth: AuthConfig::default(),
             tunnel: TunnelConfig::default(),
         }
     }
@@ -167,9 +146,6 @@ mod tests {
 port = 3000
 hostname = "192.168.1.1"
 
-[auth]
-secret_key_path = "/etc/my.key"
-
 [tunnel]
 heartbeat_interval = 10
 heartbeat_timeout = 20
@@ -182,7 +158,6 @@ max_request_body = 5242880
         let config = Config::load_from(&path).unwrap();
         assert_eq!(config.gateway.port, 3000);
         assert_eq!(config.gateway.hostname, "192.168.1.1");
-        assert_eq!(config.auth.secret_key_path, "/etc/my.key");
         assert_eq!(config.tunnel.heartbeat_interval, 10);
         assert_eq!(config.tunnel.heartbeat_timeout, 20);
         assert_eq!(config.tunnel.request_timeout, 15);

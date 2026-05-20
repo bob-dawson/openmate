@@ -1,5 +1,4 @@
 use clap::Parser;
-use relay_gateway::auth::SecretKey;
 use relay_gateway::config::Config;
 use relay_gateway::server::run_server;
 use relay_gateway::state::{GatewayState, SharedState};
@@ -24,8 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let listen = config.listen_addr();
     tracing::info!("loaded config, will listen on {listen}");
 
-    let secret_key = SecretKey::load_from_file(&config.auth.secret_key_path)?;
-    let state: SharedState = Arc::new(GatewayState::new(config, secret_key));
+    let state: SharedState = Arc::new(GatewayState::new(config));
 
     run_server(state).await
 }

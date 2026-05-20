@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::auth::SecretKey;
 use crate::config::Config;
 use crate::tunnel::frame::TunnelFrame;
 
@@ -28,17 +27,15 @@ pub struct SseStream {
 
 pub struct GatewayState {
     pub config: Config,
-    pub secret_key: SecretKey,
     pub bridges: dashmap::DashMap<String, BridgeConn>,
     pub pending_requests: dashmap::DashMap<String, PendingRequest>,
     pub pending_sse: dashmap::DashMap<String, SseStream>,
 }
 
 impl GatewayState {
-    pub fn new(config: Config, secret_key: SecretKey) -> Self {
+    pub fn new(config: Config) -> Self {
         GatewayState {
             config,
-            secret_key,
             bridges: dashmap::DashMap::new(),
             pending_requests: dashmap::DashMap::new(),
             pending_sse: dashmap::DashMap::new(),

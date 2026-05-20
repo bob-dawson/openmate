@@ -80,13 +80,6 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
                     }
                 };
 
-                let token = frame.token.as_deref().unwrap_or("");
-                if !crate::auth::validate_token(token, &recv_state.secret_key) {
-                    tracing::warn!(instance_id = %instance_id, "bridge register with invalid token");
-                    let _ = tx.send(TunnelFrame::error(None, 401, "invalid token"));
-                    continue;
-                }
-
                 *instance_id_holder.lock().await = Some(instance_id.clone());
                 crate::tunnel::bridge::handle_register(&recv_state, instance_id, tx.clone());
 
@@ -137,22 +130,6 @@ async fn proxy_handler(
     let headers = req.headers().clone();
     let method = req.method().clone();
     let path = req.uri().path().to_string();
-
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or_else(|| {
-            crate::error::GatewayError::Unauthorized(
-                "Missing or invalid Authorization header".to_string(),
-            )
-        })?;
-
-    if !crate::auth::validate_token(token, &state.secret_key) {
-        return Err(crate::error::GatewayError::Unauthorized(
-            "Invalid token".to_string(),
-        ));
-    }
 
     let instance_id = headers
         .get("x-instance-id")
