@@ -22,11 +22,16 @@ pub struct TunnelResponse {
     pub body: String,
 }
 
+pub struct SseStream {
+    pub event_tx: mpsc::UnboundedSender<String>,
+}
+
 pub struct GatewayState {
     pub config: Config,
     pub secret_key: SecretKey,
     pub bridges: dashmap::DashMap<String, BridgeConn>,
     pub pending_requests: dashmap::DashMap<String, PendingRequest>,
+    pub pending_sse: dashmap::DashMap<String, SseStream>,
 }
 
 impl GatewayState {
@@ -36,6 +41,7 @@ impl GatewayState {
             secret_key,
             bridges: dashmap::DashMap::new(),
             pending_requests: dashmap::DashMap::new(),
+            pending_sse: dashmap::DashMap::new(),
         }
     }
 }
