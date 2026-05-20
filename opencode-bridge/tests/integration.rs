@@ -314,6 +314,7 @@ async fn test_path_not_found_returns_404() {
     let device_id = "404testdevic0001";
     let _ = state.bridge_db.insert_device(&PairedDevice {
         device_id: device_id.to_string(),
+        client_device_id: String::new(),
         ip: "127.0.0.1".to_string(),
         name: String::new(),
         user_agent: String::new(),
@@ -570,6 +571,7 @@ async fn test_valid_token_allows_access() {
     let device_id = "tokntestdev00001";
     let _ = state.bridge_db.insert_device(&PairedDevice {
         device_id: device_id.to_string(),
+        client_device_id: String::new(),
         ip: "127.0.0.1".to_string(),
         name: String::new(),
         user_agent: String::new(),

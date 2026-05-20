@@ -405,8 +405,8 @@ class OpencodeApiClient(
         json.decodeFromString(responseBody)
     }
 
-    suspend fun bridgeScanPairConfirm(scanToken: String, deviceName: String): ScanPairConfirmResponse = withContext(Dispatchers.IO) {
-        val body = ScanPairConfirmRequest(scanToken, deviceName)
+    suspend fun bridgeScanPairConfirm(scanToken: String, deviceName: String, clientDeviceId: String): ScanPairConfirmResponse = withContext(Dispatchers.IO) {
+        val body = ScanPairConfirmRequest(scanToken, deviceName, clientDeviceId)
         val jsonStr = json.encodeToString(ScanPairConfirmRequest.serializer(), body)
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val url = buildUrl("/api/bridge/pair/scan-confirm", emptyMap())
@@ -420,7 +420,7 @@ class OpencodeApiClient(
     }
 
     suspend fun bridgeOpencodeVersion(): OpencodeVersionResponse {
-        return get("/api/bridge/opencode/version")
+        return get("/api/bridge/opencode/latest-version")
     }
 
     suspend fun bridgeOpencodeUpgrade(): OpencodeUpgradeResponse {

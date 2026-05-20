@@ -8,6 +8,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PairedDevice {
     pub device_id: String,
+    pub client_device_id: String,
     pub ip: String,
     pub name: String,
     pub user_agent: String,
@@ -24,7 +25,7 @@ impl BridgeDb {
     pub fn open() -> Result<Self, String> {
         let db_dir = dirs::home_dir()
             .ok_or_else(|| "Cannot determine home directory".to_string())?
-            .join(".opencode");
+            .join(".openmate");
         std::fs::create_dir_all(&db_dir)
             .map_err(|e| format!("Failed to create DB directory: {}", e))?;
         let db_path = db_dir.join("bridge.db");
@@ -61,11 +62,18 @@ impl BridgeDb {
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS paired_devices (
                 device_id TEXT PRIMARY KEY,
+                client_device_id TEXT NOT NULL DEFAULT '',
                 ip TEXT NOT NULL,
                 name TEXT NOT NULL DEFAULT '',
                 user_agent TEXT NOT NULL DEFAULT '',
                 paired_at INTEGER NOT NULL,
                 last_seen INTEGER NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_paired_devices_client_device_id
+                ON paired_devices(client_device_id) WHERE client_device_id != '';
+            CREATE TABLE IF NOT EXISTS bridge_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );"
         ).map_err(|e| format!("Migration failed: {}", e))?;
         Ok(())
@@ -74,10 +82,11 @@ impl BridgeDb {
     pub fn insert_device(&self, device: &PairedDevice) -> Result<(), String> {
         let conn = self.conn()?;
         conn.execute(
-            "INSERT INTO paired_devices (device_id, ip, name, user_agent, paired_at, last_seen)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO paired_devices (device_id, client_device_id, ip, name, user_agent, paired_at, last_seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 device.device_id,
+                device.client_device_id,
                 device.ip,
                 device.name,
                 device.user_agent,
@@ -92,7 +101,7 @@ impl BridgeDb {
         let conn = self.conn()?;
         let mut stmt = conn
             .prepare(
-                "SELECT device_id, ip, name, user_agent, paired_at, last_seen
+                "SELECT device_id, client_device_id, ip, name, user_agent, paired_at, last_seen
                  FROM paired_devices ORDER BY paired_at DESC",
             )
             .map_err(|e| format!("Prepare failed: {}", e))?;
@@ -100,11 +109,12 @@ impl BridgeDb {
             .query_map([], |row| {
                 Ok(PairedDevice {
                     device_id: row.get(0)?,
-                    ip: row.get(1)?,
-                    name: row.get(2)?,
-                    user_agent: row.get(3)?,
-                    paired_at: row.get(4)?,
-                    last_seen: row.get(5)?,
+                    client_device_id: row.get(1)?,
+                    ip: row.get(2)?,
+                    name: row.get(3)?,
+                    user_agent: row.get(4)?,
+                    paired_at: row.get(5)?,
+                    last_seen: row.get(6)?,
                 })
             })
             .map_err(|e| format!("Query failed: {}", e))?
@@ -140,6 +150,40 @@ impl BridgeDb {
         Ok(())
     }
 
+    pub fn find_by_client_device_id(&self, client_device_id: &str) -> Result<Option<PairedDevice>, String> {
+        let conn = self.conn()?;
+        let result = conn.query_row(
+            "SELECT device_id, client_device_id, ip, name, user_agent, paired_at, last_seen
+             FROM paired_devices WHERE client_device_id = ?1",
+            params![client_device_id],
+            |row| {
+                Ok(PairedDevice {
+                    device_id: row.get(0)?,
+                    client_device_id: row.get(1)?,
+                    ip: row.get(2)?,
+                    name: row.get(3)?,
+                    user_agent: row.get(4)?,
+                    paired_at: row.get(5)?,
+                    last_seen: row.get(6)?,
+                })
+            },
+        );
+        match result {
+            Ok(dev) => Ok(Some(dev)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("Query failed: {}", e)),
+        }
+    }
+
+    pub fn update_device(&self, device: &PairedDevice) -> Result<(), String> {
+        let conn = self.conn()?;
+        conn.execute(
+            "UPDATE paired_devices SET ip = ?1, name = ?2, last_seen = ?3 WHERE device_id = ?4",
+            params![device.ip, device.name, device.last_seen, device.device_id],
+        ).map_err(|e| format!("Update failed: {}", e))?;
+        Ok(())
+    }
+
     pub fn rename_device(&self, device_id: &str, new_name: &str) -> Result<(), String> {
         let conn = self.conn()?;
         let rows = conn
@@ -151,6 +195,29 @@ impl BridgeDb {
         if rows == 0 {
             return Err(format!("Device not found: {}", device_id));
         }
+        Ok(())
+    }
+
+    pub fn get_bridge_id(&self) -> Result<Option<String>, String> {
+        let conn = self.conn()?;
+        let result = conn.query_row(
+            "SELECT value FROM bridge_config WHERE key = 'bridge_id'",
+            [],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(id) => Ok(Some(id)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("Query failed: {}", e)),
+        }
+    }
+
+    pub fn set_bridge_id(&self, id: &str) -> Result<(), String> {
+        let conn = self.conn()?;
+        conn.execute(
+            "INSERT OR REPLACE INTO bridge_config (key, value) VALUES ('bridge_id', ?1)",
+            params![id],
+        ).map_err(|e| format!("Insert failed: {}", e))?;
         Ok(())
     }
 
@@ -183,6 +250,7 @@ mod tests {
     fn sample_device(id: &str) -> PairedDevice {
         PairedDevice {
             device_id: id.to_string(),
+            client_device_id: String::new(),
             ip: "192.168.1.100".to_string(),
             name: "Test Device".to_string(),
             user_agent: "OpenMate/1.0".to_string(),
@@ -206,6 +274,7 @@ mod tests {
         let d1 = sample_device("dev-1");
         let d2 = PairedDevice {
             device_id: "dev-2".to_string(),
+            client_device_id: String::new(),
             ip: "10.0.0.1".to_string(),
             name: "Phone".to_string(),
             user_agent: "OpenMate/2.0".to_string(),

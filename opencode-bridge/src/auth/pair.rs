@@ -235,6 +235,7 @@ pub async fn pair_confirm(
 
     let device = PairedDevice {
         device_id: device_id.clone(),
+        client_device_id: String::new(),
         ip: ip.clone(),
         name: String::new(),
         user_agent: String::new(),

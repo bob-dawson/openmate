@@ -144,6 +144,7 @@ data class OpencodeUpgradeStatusResponse(
 data class ScanPairConfirmRequest(
     @SerialName("scan_token") val scanToken: String = "",
     @SerialName("device_name") val deviceName: String = "",
+    @SerialName("client_device_id") val clientDeviceId: String = "",
 )
 
 @Serializable

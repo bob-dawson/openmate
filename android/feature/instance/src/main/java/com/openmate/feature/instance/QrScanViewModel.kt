@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
+import com.openmate.core.network.InstallationIdProvider
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.TokenStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,6 +24,7 @@ class QrScanViewModel @Inject constructor(
     private val apiClient: OpencodeApiClient,
     private val tokenStore: TokenStore,
     private val profileRepository: ServerProfileRepository,
+    private val installationIdProvider: InstallationIdProvider,
 ) : ViewModel() {
 
     private val _scanState = MutableStateFlow<ScanUiState>(ScanUiIdle)
@@ -47,8 +49,10 @@ class QrScanViewModel @Inject constructor(
                 val baseUrl = "http://${parsed.address}:${parsed.port}"
                 val saved = apiClient.baseUrl
                 apiClient.baseUrl = baseUrl
+                val clientDeviceId = installationIdProvider.getInstallationId()
+                val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
                 val response = try {
-                    apiClient.bridgeScanPairConfirm(parsed.scanToken, parsed.name)
+                    apiClient.bridgeScanPairConfirm(parsed.scanToken, deviceName, clientDeviceId)
                 } finally {
                     apiClient.baseUrl = saved
                 }
@@ -61,6 +65,7 @@ class QrScanViewModel @Inject constructor(
                     scanToken = parsed.scanToken,
                     token = response.token,
                     deviceId = response.deviceId,
+                    bridgeId = parsed.bridgeId,
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Scan pair failed: ${e.message}", e)
@@ -79,17 +84,35 @@ class QrScanViewModel @Inject constructor(
         if (currentState !is ScanResult) return
 
         viewModelScope.launch(Dispatchers.IO) {
-            val profileId = java.util.UUID.randomUUID().toString()
-            tokenStore.saveToken(profileId, currentState.token)
-            profileRepository.save(
-                ServerProfile(
-                    id = profileId,
-                    name = name,
-                    address = address,
-                    port = port,
-                    createdAt = System.currentTimeMillis(),
+            val existingProfile = if (currentState.bridgeId.isNotEmpty()) {
+                profileRepository.getAll().find { it.bridgeId == currentState.bridgeId }
+            } else {
+                null
+            }
+
+            if (existingProfile != null) {
+                tokenStore.saveToken(existingProfile.id, currentState.token)
+                profileRepository.save(
+                    existingProfile.copy(
+                        name = name,
+                        address = address,
+                        port = port,
+                    )
                 )
-            )
+            } else {
+                val profileId = java.util.UUID.randomUUID().toString()
+                tokenStore.saveToken(profileId, currentState.token)
+                profileRepository.save(
+                    ServerProfile(
+                        id = profileId,
+                        name = name,
+                        address = address,
+                        port = port,
+                        bridgeId = currentState.bridgeId,
+                        createdAt = System.currentTimeMillis(),
+                    )
+                )
+            }
         }
     }
 
@@ -98,6 +121,7 @@ class QrScanViewModel @Inject constructor(
         val address: String,
         val port: Int,
         val scanToken: String,
+        val bridgeId: String,
     )
 
     private fun parseQrUrl(url: String): ParsedQrUrl? {
@@ -109,12 +133,14 @@ class QrScanViewModel @Inject constructor(
 
             val name = params["name"] ?: "Bridge"
             val scanToken = params["st"] ?: return null
+            val bridgeId = params["bid"] ?: ""
 
             ParsedQrUrl(
                 name = java.net.URLDecoder.decode(name, "UTF-8"),
                 address = parsed.host,
                 port = port,
                 scanToken = scanToken,
+                bridgeId = bridgeId,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse QR URL: $url", e)
@@ -146,4 +172,5 @@ data class ScanResult(
     val scanToken: String,
     val token: String,
     val deviceId: String,
+    val bridgeId: String,
 ) : ScanUiState

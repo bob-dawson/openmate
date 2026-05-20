@@ -37,11 +37,13 @@ pub async fn generate_qrcode(
         url.push_str("&st=");
         url.push_str(&scan_token);
     }
+    url.push_str("&bid=");
+    url.push_str(&state.bridge_id);
 
     let code = qrcode::QrCode::new(&url)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("QR generation failed: {}", e)))?;
     let svg = code.render::<qrcode::render::svg::Color>()
-        .min_dimensions(256, 256)
+        .min_dimensions(384, 384)
         .build();
 
     let body = Body::from(svg);

@@ -129,7 +129,7 @@ struct FileWriter {
 impl FileWriter {
     fn new() -> Self {
         let file = dirs::home_dir()
-            .map(|h| h.join(".opencode").join("bridge.log"))
+            .map(|h| h.join(".openmate").join("bridge.log"))
             .and_then(|path| {
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent).ok()?;

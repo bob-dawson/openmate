@@ -34,6 +34,7 @@ pub struct AppStateInner {
     pub sync_db: SyncDb,
     pub bridge_db: BridgeDb,
     pub log_buffer: SharedLogBuffer,
+    pub bridge_id: String,
     pub scan_token: RwLock<Option<ScanTokenEntry>>,
 }
 
@@ -60,6 +61,17 @@ pub fn create_app_state(config: Config, log_buffer: SharedLogBuffer) -> AppState
 
     let bridge_db = BridgeDb::open().expect("Failed to open bridge database");
 
+    let bridge_id = match bridge_db.get_bridge_id() {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            let id = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(8));
+            bridge_db.set_bridge_id(&id).expect("Failed to save bridge_id");
+            id
+        }
+        Err(e) => panic!("Failed to load bridge_id: {}", e),
+    };
+    tracing::info!("Bridge ID: {}", bridge_id);
+
     Arc::new(AppStateInner {
         config,
         opencode_status: RwLock::new(OpencodeStatus::Stopped),
@@ -77,5 +89,6 @@ pub fn create_app_state(config: Config, log_buffer: SharedLogBuffer) -> AppState
         bridge_db,
         log_buffer,
         scan_token: RwLock::new(None),
+        bridge_id,
     })
 }

@@ -15,6 +15,7 @@ const SCAN_TOKEN_TTL_SECS: i64 = 120;
 pub struct ScanConfirmRequest {
     pub scan_token: String,
     pub device_name: Option<String>,
+    pub client_device_id: Option<String>,
 }
 
 pub async fn scan_generate(
@@ -74,26 +75,61 @@ pub async fn scan_confirm(
     }
 
     let ip = addr.ip().to_string();
-    let device_id_bytes = super::key::generate_random_bytes(8);
-    let device_id = super::key::hex_encode(&device_id_bytes);
+    let device_name = body.device_name.unwrap_or_default();
 
-    let device = PairedDevice {
-        device_id: device_id.clone(),
-        ip: ip.clone(),
-        name: body.device_name.unwrap_or_default(),
-        user_agent: String::new(),
-        paired_at: now,
-        last_seen: now,
+    let (device_id, is_new) = match body.client_device_id {
+        Some(cid) if !cid.is_empty() => {
+            let existing = state.bridge_db.find_by_client_device_id(&cid)
+                .map_err(|e| AppError::DatabaseError(e))?;
+            if let Some(mut dev) = existing {
+                dev.ip = ip.clone();
+                dev.name = device_name;
+                dev.last_seen = now;
+                state.bridge_db.update_device(&dev)
+                    .map_err(|e| AppError::DatabaseError(e))?;
+                (dev.device_id, false)
+            } else {
+                let id_bytes = super::key::generate_random_bytes(8);
+                let id = super::key::hex_encode(&id_bytes);
+                let device = crate::bridge_db::PairedDevice {
+                    device_id: id.clone(),
+                    client_device_id: cid,
+                    ip: ip.clone(),
+                    name: device_name,
+                    user_agent: String::new(),
+                    paired_at: now,
+                    last_seen: now,
+                };
+                state.bridge_db.insert_device(&device)
+                    .map_err(|e| AppError::DatabaseError(e))?;
+                (id, true)
+            }
+        }
+        _ => {
+            let id_bytes = super::key::generate_random_bytes(8);
+            let id = super::key::hex_encode(&id_bytes);
+            let device = crate::bridge_db::PairedDevice {
+                device_id: id.clone(),
+                client_device_id: String::new(),
+                ip: ip.clone(),
+                name: device_name,
+                user_agent: String::new(),
+                paired_at: now,
+                last_seen: now,
+            };
+            state.bridge_db.insert_device(&device)
+                .map_err(|e| AppError::DatabaseError(e))?;
+            (id, true)
+        }
     };
-
-    state
-        .bridge_db
-        .insert_device(&device)
-        .map_err(|e| AppError::DatabaseError(e))?;
 
     let token = Token::generate(&state.secret_key, &device_id);
 
-    tracing::info!("Scan pair confirmed for {}, device {}", ip, device_id);
+    if is_new {
+        tracing::info!("Scan pair confirmed for {}, device {} (new)", ip, device_id);
+    } else {
+        tracing::info!("Scan pair re-confirmed for {}, device {} (existing)", ip, device_id);
+    }
 
     Ok(Json(serde_json::json!({
         "token": token,

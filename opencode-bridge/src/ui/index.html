@@ -298,9 +298,8 @@ async function loadOverview() {
     } else {
       verEl.textContent = '未知';
     }
-    verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
-
     if (!latestVersionChecked) {
+      verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
       latestVersionChecked = true;
       checkLatestVersion();
     }
