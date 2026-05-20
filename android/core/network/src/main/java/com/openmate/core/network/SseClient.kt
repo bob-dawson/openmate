@@ -87,9 +87,9 @@ class SseClient(
                         if (line.startsWith("data:")) {
                             android.util.Log.d("SseClient", "raw: ${line.take(200)}")
                         }
+                        lastEventTime.set(System.currentTimeMillis())
                         val sseData = SseParser.parseLine(line)
                         if (sseData != null) {
-                            lastEventTime.set(System.currentTimeMillis())
                             android.util.Log.d("SseClient", "parsed: type=${sseData.type}")
                             _events.emit(sseData)
                         }
