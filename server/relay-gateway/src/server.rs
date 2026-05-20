@@ -17,17 +17,15 @@ async fn ws_handler() -> impl IntoResponse {
     (StatusCode::OK, "ws placeholder")
 }
 
-async fn fallback() -> impl IntoResponse {
-    (StatusCode::NOT_FOUND, axum::Json(serde_json::json!({
-        "error": "not found"
-    })))
+async fn proxy_handler() -> impl IntoResponse {
+    (StatusCode::OK, "proxy placeholder")
 }
 
 pub fn build_app(state: SharedState) -> Router {
     Router::new()
         .route("/api/gateway/health", get(health))
         .route("/ws", get(ws_handler))
-        .fallback(fallback)
+        .fallback(proxy_handler)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         .with_state(state)
