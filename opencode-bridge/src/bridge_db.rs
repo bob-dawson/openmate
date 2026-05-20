@@ -294,7 +294,7 @@ impl BridgeDb {
     fn default_config_values() -> Vec<(&'static str, String)> {
         let db_path = crate::config::default_db_path();
         let secret_key = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(32));
-        let instance_id = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(8));
+        let instance_id = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(16));
         vec![
             ("bridge.port", "4097".to_string()),
             ("bridge.hostname", "0.0.0.0".to_string()),

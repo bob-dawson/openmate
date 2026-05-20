@@ -49,7 +49,9 @@ impl GatewayClient {
         let ws_url = format!("{}/ws", ws_url);
         tracing::info!("Connecting to gateway: {}", ws_url);
 
-        let (ws_stream, _) = connect_async(&ws_url).await?;
+        let (ws_stream, _) = tokio::time::timeout(Duration::from_secs(10), connect_async(&ws_url))
+            .await
+            .map_err(|_| anyhow::anyhow!("Gateway connection timed out after 10s"))??;
         let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
         tracing::info!("Gateway WebSocket connected");

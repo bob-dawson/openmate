@@ -29,6 +29,10 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls crypto provider");
+
     match args.command {
         Some(Commands::Approve { pin }) => {
             init_console_logging();

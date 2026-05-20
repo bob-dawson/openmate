@@ -75,7 +75,7 @@ pub fn create_app_state_with_db(log_buffer: SharedLogBuffer, external_db: Option
     let bridge_id = match bridge_db.get_bridge_id() {
         Ok(Some(id)) => id,
         Ok(None) => {
-            let id = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(8));
+            let id = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(16));
             bridge_db.set_bridge_id(&id).expect("Failed to save bridge_id");
             id
         }
