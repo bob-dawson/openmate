@@ -40,6 +40,7 @@ class AddInstanceViewModel @Inject constructor(
     private var editProfileId: String? = null
     private var pendingProfileId: String? = null
     private var pendingOnSaved: (() -> Unit)? = null
+    private var pendingInstanceId: String = ""
 
     fun loadProfileForEdit(profileId: String) {
         if (editProfileId != null) return
@@ -108,6 +109,7 @@ class AddInstanceViewModel @Inject constructor(
                 if (status.bridge.version.isBlank()) {
                     throw IllegalStateException("Not a Bridge server")
                 }
+                pendingInstanceId = status.bridge.instanceId
 
                 val profileId = editProfileId ?: UUID.randomUUID().toString()
                 pendingProfileId = profileId
@@ -186,6 +188,7 @@ class AddInstanceViewModel @Inject constructor(
         _pin.value = null
         pendingProfileId = null
         pendingOnSaved = null
+        pendingInstanceId = ""
     }
 
     fun dismissError() {
@@ -215,6 +218,7 @@ class AddInstanceViewModel @Inject constructor(
             name = name.value,
             address = address.value,
             port = portNum,
+            instanceId = pendingInstanceId,
             createdAt = editProfileId?.let {
                 profileRepository.getById(it)?.createdAt
             } ?: System.currentTimeMillis(),

@@ -16,7 +16,16 @@ object SessionMessageWindowManager {
         for (change in changes) {
             messages = when (change) {
                 is SessionMessageSyncChange.Insert -> {
-                    messages + change.message
+                    if (messages.any { it.id == change.message.id }) {
+                        val idx = messages.indexOfLast { it.id == change.message.id }
+                        if (idx == messages.lastIndex) {
+                            messages.dropLast(1) + change.message
+                        } else {
+                            messages.subList(0, idx) + change.message + messages.subList(idx + 1, messages.size)
+                        }
+                    } else {
+                        messages + change.message
+                    }
                 }
 
                 is SessionMessageSyncChange.Update -> {
@@ -43,7 +52,7 @@ object SessionMessageWindowManager {
             }
         }
 
-        return state.copy(messages = messages)
+        return state.copy(messages = messages.distinctBy { it.id })
     }
 
     fun prependOlderPage(state: State, olderPage: List<SessionMessage>, hasOlderMessages: Boolean): State {

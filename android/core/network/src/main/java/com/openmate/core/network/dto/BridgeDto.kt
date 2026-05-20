@@ -52,6 +52,8 @@ data class BridgeInfoDto(
     val port: Int = 0,
     @SerialName("auth_enabled")
     val authEnabled: Boolean = false,
+    @SerialName("instance_id")
+    val instanceId: String = "",
 )
 
 @Serializable

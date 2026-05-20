@@ -225,6 +225,7 @@ private fun InstanceCard(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         when (status) {
                             ConnectionStatus.CONNECTED -> StatusDot(stringResource(R.string.status_connected), Color(0xFF7fd88f))
+                            ConnectionStatus.GATEWAY_CONNECTED -> StatusDot(stringResource(R.string.status_gateway_connected), Color(0xFF5b9cf5))
                             ConnectionStatus.CONNECTING -> StatusDot(stringResource(R.string.status_connecting), Color(0xFFf5a742))
                             ConnectionStatus.ERROR -> StatusDot(stringResource(R.string.status_error), Color(0xFFe06c75))
                             ConnectionStatus.NOT_BRIDGE -> StatusDot(stringResource(R.string.status_not_bridge), Color(0xFFe06c75))

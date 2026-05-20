@@ -1,6 +1,7 @@
 package com.openmate.core.network
 
 import com.openmate.core.domain.model.ConnectionStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,24 +30,18 @@ class SseClient(
 
     private var connectJob: Job? = null
     private var heartbeatJob: Job? = null
-    private var currentBaseUrl: String? = null
-    private var reconnectAttempts = 0
+    @Volatile private var running = false
     private val lastEventTime = AtomicLong(0)
     private val scope = CoroutineScope(Dispatchers.IO)
-    @Volatile private var running = false
 
     companion object {
         private const val HEARTBEAT_TIMEOUT_MS = 30_000L
-        private const val MAX_RECONNECT_DELAY_MS = 30_000L
-        private const val BASE_RECONNECT_DELAY_MS = 1_000L
     }
 
     fun connect(address: String, port: Int, password: String?): Flow<SseData> {
         disconnect()
         _connectionStatus.value = ConnectionStatus.CONNECTING
         val baseUrl = "http://$address:$port"
-        currentBaseUrl = baseUrl
-        reconnectAttempts = 0
 
         startConnection(baseUrl)
         return events
@@ -55,8 +50,6 @@ class SseClient(
     fun connectViaGateway(baseUrl: String): Flow<SseData> {
         disconnect()
         _connectionStatus.value = ConnectionStatus.CONNECTING
-        currentBaseUrl = baseUrl
-        reconnectAttempts = 0
 
         startConnection(baseUrl)
         return events
@@ -83,7 +76,6 @@ class SseClient(
                 throw ServerUnavailableException("SSE connection failed: HTTP ${response.code}")
             }
             _connectionStatus.value = ConnectionStatus.CONNECTED
-            reconnectAttempts = 0
             lastEventTime.set(System.currentTimeMillis())
             startHeartbeatMonitor()
 
@@ -109,9 +101,8 @@ class SseClient(
             }
         } catch (e: Exception) {
             stopHeartbeatMonitor()
-            if (e is kotlinx.coroutines.CancellationException) throw e
+            if (e is CancellationException) throw e
             _connectionStatus.value = ConnectionStatus.ERROR
-            scheduleReconnect()
         }
     }
 
@@ -124,7 +115,6 @@ class SseClient(
                 if (elapsed > HEARTBEAT_TIMEOUT_MS) {
                     _connectionStatus.value = ConnectionStatus.ERROR
                     connectJob?.cancel()
-                    scheduleReconnect()
                     break
                 }
             }
@@ -136,32 +126,15 @@ class SseClient(
         heartbeatJob = null
     }
 
-    private fun scheduleReconnect() {
-        if (currentBaseUrl == null) return
-        val delayMs = (BASE_RECONNECT_DELAY_MS * (1L shl reconnectAttempts.coerceAtMost(4)))
-            .coerceAtMost(MAX_RECONNECT_DELAY_MS)
-        reconnectAttempts++
-
-        scope.launch {
-            delay(delayMs)
-            if (currentBaseUrl != null) {
-                _connectionStatus.value = ConnectionStatus.CONNECTING
-                startConnection(currentBaseUrl!!)
-            }
-        }
-    }
-
     fun disconnect() {
         running = false
         connectJob?.cancel()
         connectJob = null
         stopHeartbeatMonitor()
-        currentBaseUrl = null
-        reconnectAttempts = 0
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
     }
 
     fun isConnectedTo(address: String, port: Int): Boolean {
-        return currentBaseUrl == "http://$address:$port" && _connectionStatus.value == ConnectionStatus.CONNECTED
+        return _connectionStatus.value == ConnectionStatus.CONNECTED
     }
 }

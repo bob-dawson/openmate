@@ -42,6 +42,7 @@
     <string name="delete">Delete</string>
 
     <string name="status_connected">Online</string>
+    <string name="status_gateway_connected">Online via Gateway</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_error">Connection failed</string>
     <string name="status_not_bridge">Not Bridge</string>

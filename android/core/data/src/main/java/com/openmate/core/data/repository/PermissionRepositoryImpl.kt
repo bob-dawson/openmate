@@ -51,6 +51,7 @@ class PermissionRepositoryImpl @Inject constructor(
     override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) {
         try {
             api.replyPermission(requestID, reply.value, message, directory)
+            pendingMap.remove(requestID)
         } catch (e: Exception) {
             pendingMap.remove(requestID)
         } finally {

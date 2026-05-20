@@ -129,7 +129,8 @@ async fn proxy_handler(
 ) -> Result<Response, crate::error::GatewayError> {
     let headers = req.headers().clone();
     let method = req.method().clone();
-    let path = req.uri().path().to_string();
+    let path_only = req.uri().path().to_string();
+    let full_path = req.uri().path_and_query().map(|pq| pq.as_str().to_string()).unwrap_or_else(|| path_only.clone());
 
     let instance_id = headers
         .get("x-instance-id")
@@ -139,7 +140,7 @@ async fn proxy_handler(
         })?
         .to_string();
 
-    let is_sse = path == "/global/event"
+    let is_sse = path_only == "/global/event"
         || headers
             .get("accept")
             .and_then(|v| v.to_str().ok())
@@ -157,7 +158,7 @@ async fn proxy_handler(
         let _request_id = crate::proxy::sse::open_sse_tunnel(
             &state,
             &instance_id,
-            &path,
+            &full_path,
             Some(req_headers),
             event_tx,
         )?;
@@ -195,7 +196,7 @@ async fn proxy_handler(
             state,
             &instance_id,
             method.as_str(),
-            &path,
+            &full_path,
             Some(req_headers),
             body_str,
         )

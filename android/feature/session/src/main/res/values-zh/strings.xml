@@ -42,6 +42,7 @@
     <string name="delete">删除</string>
 
     <string name="status_connected">在线</string>
+    <string name="status_gateway_connected">通过网关在线</string>
     <string name="status_connecting">连接中…</string>
     <string name="status_error">连接失败</string>
     <string name="status_not_bridge">非 Bridge</string>

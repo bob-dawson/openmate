@@ -299,6 +299,7 @@ private fun SessionCard(
 internal fun ConnectionDot(status: ConnectionStatus) {
     val color = when (status) {
         ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
+        ConnectionStatus.GATEWAY_CONNECTED -> Color(0xFF5b9cf5)
         ConnectionStatus.CONNECTING -> Color(0xFFf5a742)
         ConnectionStatus.PAIRING -> Color(0xFFf5a742)
         ConnectionStatus.ERROR -> Color(0xFFe06c75)

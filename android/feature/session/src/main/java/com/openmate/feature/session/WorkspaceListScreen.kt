@@ -504,6 +504,7 @@ private fun WorkspaceBadge(text: String) {
 private fun ConnectionDotWithLabel(status: ConnectionStatus) {
     val color = when (status) {
         ConnectionStatus.CONNECTED -> Color(0xFF7fd88f)
+        ConnectionStatus.GATEWAY_CONNECTED -> Color(0xFF5b9cf5)
         ConnectionStatus.CONNECTING -> Color(0xFFf5a742)
         ConnectionStatus.PAIRING -> Color(0xFFf5a742)
         ConnectionStatus.ERROR -> Color(0xFFe06c75)
@@ -512,6 +513,7 @@ private fun ConnectionDotWithLabel(status: ConnectionStatus) {
     }
     val label = when (status) {
         ConnectionStatus.CONNECTED -> stringResource(R.string.status_connected)
+        ConnectionStatus.GATEWAY_CONNECTED -> stringResource(R.string.status_gateway_connected)
         ConnectionStatus.CONNECTING -> stringResource(R.string.status_connecting)
         ConnectionStatus.PAIRING -> stringResource(R.string.status_connecting)
         ConnectionStatus.ERROR -> stringResource(R.string.status_error)

@@ -574,20 +574,15 @@ class SessionDetailViewModel @Inject constructor(
                     _sessionCost.value = it.cost
                     updateContextLimit(it)
                     if (it.modelProviderID != null && it.modelID != null) {
-                        val current = _selectedModel.value
-                        if (current != null && current.providerID == it.modelProviderID && current.modelID == it.modelID) {
-                            isModelOverridden = false
-                        } else if (!isModelOverridden) {
+                        if (!isModelOverridden) {
                             val p = it.modelProviderID!!
                             val m = it.modelID!!
                             applySelectedModel(ModelRef(p, m, resolveModelName(p, m, it.modelName)))
                         }
                     }
                     val sAgent = it.agent
-                    if (!sAgent.isNullOrBlank()) {
-                        if (_selectedAgent.value == sAgent) {
-                            isAgentOverridden = false
-                        } else if (!isAgentOverridden) {
+                    if (!sAgent.isNullOrBlank() && !isAgentOverridden) {
+                        if (_selectedAgent.value != sAgent) {
                             _selectedAgent.value = sAgent
                         }
                     }
@@ -1259,6 +1254,8 @@ class SessionDetailViewModel @Inject constructor(
                     } else if (cur.modelName != resolved) {
                         _selectedModel.value = cur.copy(modelName = resolved)
                     }
+                } else if (_selectedModel.value?.providerID == msgPID && _selectedModel.value?.modelID == msgMID) {
+                    isModelOverridden = false
                 }
             }
             break
@@ -1275,6 +1272,19 @@ class SessionDetailViewModel @Inject constructor(
                 if (!msgAgent.isNullOrBlank()) {
                     if (_selectedAgent.value != msgAgent) {
                         _selectedAgent.value = msgAgent
+                    }
+                    break
+                }
+            }
+        } else {
+            for (i in list.indices.reversed()) {
+                val msg = list[i]
+                if (msg.type != "assistant") continue
+                val obj = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull() ?: continue
+                val msgAgent = obj["agent"]?.jsonPrimitive?.contentOrNull
+                if (!msgAgent.isNullOrBlank()) {
+                    if (_selectedAgent.value == msgAgent) {
+                        isAgentOverridden = false
                     }
                     break
                 }
@@ -1509,9 +1519,11 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun replyQuestion(requestID: String, answers: List<List<String>>) {
+        val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 questionRepository.reply(requestID, answers, currentDirectory.ifBlank { null })
+                sessionMessageRepository.incrementalSync(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "replyQuestion failed", e)
             }
@@ -1519,9 +1531,11 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun rejectQuestion(requestID: String) {
+        val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 questionRepository.reject(requestID, currentDirectory.ifBlank { null })
+                sessionMessageRepository.incrementalSync(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "rejectQuestion failed", e)
             }
@@ -1529,9 +1543,11 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun replyPermission(requestID: String, reply: PermissionReply, message: String? = null) {
+        val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 permissionRepository.reply(requestID, reply, message, currentDirectory.ifBlank { null })
+                sessionMessageRepository.incrementalSync(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "replyPermission failed", e)
             }

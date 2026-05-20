@@ -51,6 +51,7 @@ class QuestionRepositoryImpl @Inject constructor(
     override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) {
         try {
             api.replyQuestion(requestID, answers, directory)
+            pendingMap.remove(requestID)
         } catch (e: Exception) {
             pendingMap.remove(requestID)
         } finally {
@@ -61,6 +62,7 @@ class QuestionRepositoryImpl @Inject constructor(
     override suspend fun reject(requestID: String, directory: String?) {
         try {
             api.rejectQuestion(requestID, directory)
+            pendingMap.remove(requestID)
         } catch (e: Exception) {
             pendingMap.remove(requestID)
         } finally {

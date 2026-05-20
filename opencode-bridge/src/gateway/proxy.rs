@@ -40,7 +40,12 @@ pub async fn proxy_request_to_local(
                 .headers()
                 .iter()
                 .filter_map(|(k, v)| {
-                    v.to_str().ok().map(|s| (k.to_string(), s.to_string()))
+                    let key = k.to_string();
+                    let lower = key.to_lowercase();
+                    if lower == "content-encoding" || lower == "content-length" || lower == "transfer-encoding" {
+                        return None;
+                    }
+                    v.to_str().ok().map(|s| (key, s.to_string()))
                 })
                 .collect();
             let resp_body = resp.text().await.unwrap_or_default();

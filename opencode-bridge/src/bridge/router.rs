@@ -36,6 +36,7 @@ pub async fn status(State(state): State<AppState>) -> impl IntoResponse {
             "version": env!("CARGO_PKG_VERSION"),
             "port": state.config.bridge.port,
             "auth_enabled": state.config.bridge.auth_enabled,
+            "instance_id": state.config.gateway.instance_id,
         },
         "opencode": {
             "status": status_str,
