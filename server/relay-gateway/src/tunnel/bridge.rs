@@ -5,11 +5,17 @@ use tokio::sync::mpsc;
 use crate::state::{BridgeConn, SharedState};
 use crate::tunnel::frame::TunnelFrame;
 
-pub fn handle_register(state: &SharedState, instance_id: String, tx: mpsc::UnboundedSender<TunnelFrame>) {
+pub fn handle_register(
+    state: &SharedState,
+    instance_id: String,
+    tx: mpsc::UnboundedSender<TunnelFrame>,
+    binary_tx: mpsc::UnboundedSender<(String, Vec<u8>)>,
+) {
     if let Some(old) = state.bridges.insert(
         instance_id.clone(),
         BridgeConn {
             tx,
+            binary_tx,
             instance_id: instance_id.clone(),
             last_heartbeat: std::time::Instant::now(),
         },
@@ -38,6 +44,10 @@ pub fn is_bridge_online(state: &SharedState, instance_id: &str) -> bool {
 
 pub fn get_bridge_tx(state: &SharedState, instance_id: &str) -> Option<mpsc::UnboundedSender<TunnelFrame>> {
     state.bridges.get(instance_id).map(|c| c.tx.clone())
+}
+
+pub fn get_bridge_binary_tx(state: &SharedState, instance_id: &str) -> Option<mpsc::UnboundedSender<(String, Vec<u8>)>> {
+    state.bridges.get(instance_id).map(|c| c.binary_tx.clone())
 }
 
 pub fn cleanup_stale_bridges(state: &SharedState, timeout_secs: u64) {

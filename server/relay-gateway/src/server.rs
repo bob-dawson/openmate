@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -9,10 +10,12 @@ use axum::response::{IntoResponse, Response, Sse};
 use axum::routing::get;
 use axum::Router;
 use futures::{SinkExt, StreamExt};
+use http_body_util::BodyStream;
 use tokio::sync::mpsc;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
+use crate::error::GatewayError;
 use crate::state::SharedState;
 use crate::tunnel::frame::TunnelFrame;
 
@@ -27,18 +30,32 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
     let (mut sink, mut stream) = socket.split();
 
     let (tx, mut rx) = mpsc::unbounded_channel::<TunnelFrame>();
+    let (binary_tx, mut binary_rx) = mpsc::unbounded_channel::<(String, Vec<u8>)>();
 
     let send_task = tokio::spawn(async move {
-        while let Some(frame) = rx.recv().await {
-            let msg = match serde_json::to_string(&frame) {
-                Ok(json) => Message::Text(json.into()),
-                Err(e) => {
-                    tracing::error!("failed to serialize frame: {e}");
-                    continue;
+        loop {
+            tokio::select! {
+                Some(frame) = rx.recv() => {
+                    let msg = match serde_json::to_string(&frame) {
+                        Ok(json) => Message::Text(json.into()),
+                        Err(e) => {
+                            tracing::error!("failed to serialize frame: {e}");
+                            continue;
+                        }
+                    };
+                    if sink.send(msg).await.is_err() {
+                        break;
+                    }
                 }
-            };
-            if sink.send(msg).await.is_err() {
-                break;
+                Some((rid, data)) = binary_rx.recv() => {
+                    let mut msg = Vec::with_capacity(36 + data.len());
+                    msg.extend_from_slice(rid.as_bytes());
+                    msg.extend_from_slice(&data);
+                    if sink.send(Message::Binary(msg.into())).await.is_err() {
+                        break;
+                    }
+                }
+                else => break,
             }
         }
     });
@@ -77,7 +94,7 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
                         };
 
                         *instance_id_holder.lock().await = Some(instance_id.clone());
-                        crate::tunnel::bridge::handle_register(&recv_state, instance_id, tx.clone());
+                        crate::tunnel::bridge::handle_register(&recv_state, instance_id, tx.clone(), binary_tx.clone());
 
                         if tx.send(TunnelFrame::pong()).is_err() {
                             break;
@@ -157,8 +174,9 @@ async fn proxy_handler(
         })?
         .to_string();
 
-    let is_stream = path_only.starts_with("/api/bridge/fs/download")
-        || path_only.starts_with("/api/bridge/fs/upload")
+    let is_upload = path_only.starts_with("/api/bridge/fs/upload");
+
+    let is_download = path_only.starts_with("/api/bridge/fs/download")
         || path_only.starts_with("/files/");
 
     let is_sse = path_only == "/global/event"
@@ -196,7 +214,98 @@ async fn proxy_handler(
         );
 
         Ok(sse_response.into_response())
-    } else if is_stream {
+    } else if is_upload {
+        let binary_tx = crate::tunnel::bridge::get_bridge_binary_tx(&state, &instance_id)
+            .ok_or_else(|| {
+                GatewayError::BridgeOffline(format!("bridge '{}' is offline", instance_id))
+            })?;
+
+        let tx = crate::tunnel::bridge::get_bridge_tx(&state, &instance_id)
+            .ok_or_else(|| {
+                GatewayError::BridgeOffline(format!("bridge '{}' is offline", instance_id))
+            })?;
+
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let (start_tx, start_rx) = tokio::sync::oneshot::channel();
+        let (chunk_tx, chunk_rx) = mpsc::unbounded_channel();
+
+        state.pending_streams.insert(
+            request_id.clone(),
+            crate::state::PendingStream {
+                start_tx: Some(start_tx),
+                chunk_tx,
+            },
+        );
+
+        let req_headers: HashMap<String, String> = headers
+            .iter()
+            .filter_map(|(k, v)| v.to_str().ok().map(|s| (k.to_string(), s.to_string())))
+            .collect();
+
+        let start_frame = TunnelFrame::request_start(
+            &request_id, method.as_str(), &full_path, Some(req_headers),
+        );
+        if tx.send(start_frame).is_err() {
+            state.pending_streams.remove(&request_id);
+            return Err(GatewayError::BridgeOffline("bridge connection lost".into()));
+        }
+
+        let mut body_stream = BodyStream::new(req.into_body());
+        while let Some(frame_result) = body_stream.next().await {
+            let data = match frame_result {
+                Ok(frame) => {
+                    if let Ok(data) = frame.into_data() {
+                        data
+                    } else {
+                        continue;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Upload body read error: {}", e);
+                    let _ = tx.send(TunnelFrame::request_end(&request_id));
+                    state.pending_streams.remove(&request_id);
+                    return Err(GatewayError::BadRequest(format!("body read error: {e}")));
+                }
+            };
+            if binary_tx.send((request_id.clone(), data.to_vec())).is_err() {
+                state.pending_streams.remove(&request_id);
+                return Err(GatewayError::BridgeOffline("bridge connection lost".into()));
+            }
+        }
+
+        let _ = tx.send(TunnelFrame::request_end(&request_id));
+
+        let timeout = Duration::from_secs(state.config.tunnel.request_timeout);
+        let (status, resp_headers) = match tokio::time::timeout(timeout, start_rx).await {
+            Ok(Ok(r)) => r,
+            Ok(Err(_)) => {
+                state.pending_streams.remove(&request_id);
+                return Err(GatewayError::Internal("response channel dropped".into()));
+            }
+            Err(_) => {
+                state.pending_streams.remove(&request_id);
+                return Err(GatewayError::Timeout(format!(
+                    "upload request {} timed out", request_id
+                )));
+            }
+        };
+
+        let mut builder = axum::response::Response::builder().status(status);
+        for (k, v) in &resp_headers {
+            if let Ok(name) = axum::http::header::HeaderName::from_bytes(k.as_bytes()) {
+                if let Ok(val) = axum::http::header::HeaderValue::from_str(v) {
+                    builder = builder.header(name, val);
+                }
+            }
+        }
+
+        let body = Body::from_stream(
+            futures::stream::unfold(chunk_rx, |mut rx| async move {
+                rx.recv().await.map(|chunk| (Ok::<_, Infallible>(chunk), rx))
+            }),
+        );
+        Ok(builder.body(body).unwrap())
+    } else if is_download {
         let body_bytes = axum::body::to_bytes(req.into_body(), state.config.tunnel.max_request_body)
             .await
             .map_err(|e| crate::error::GatewayError::BadRequest(format!("body read error: {e}")))?;

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
@@ -80,6 +82,9 @@ impl GatewayClient {
 
         tracing::info!("Registered with gateway as {}", self.instance_id);
 
+        let pending_uploads: Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Vec<u8>>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
         let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
         heartbeat.tick().await;
 
@@ -117,11 +122,29 @@ impl GatewayClient {
                         Some(Ok(Message::Text(text))) => {
                             match serde_json::from_str::<TunnelFrame>(&text) {
                                 Ok(frame) => {
-                                    self.handle_incoming(frame).await;
+                                    self.handle_incoming(frame, &pending_uploads).await;
                                 }
                                 Err(e) => {
                                     tracing::warn!("Failed to parse tunnel frame: {}", e);
                                 }
+                            }
+                        }
+                        Some(Ok(Message::Binary(data))) => {
+                            if data.len() < 36 {
+                                continue;
+                            }
+                            let rid = std::str::from_utf8(&data[..36])
+                                .unwrap_or("")
+                                .to_string();
+                            if rid.is_empty() {
+                                continue;
+                            }
+                            let chunk = data[36..].to_vec();
+                            let maybe_tx = pending_uploads.lock().unwrap()
+                                .get(&rid)
+                                .cloned();
+                            if let Some(tx) = maybe_tx {
+                                let _ = tx.send(chunk);
                             }
                         }
                         Some(Ok(Message::Ping(data))) => {
@@ -144,7 +167,11 @@ impl GatewayClient {
         Ok(())
     }
 
-    async fn handle_incoming(&self, frame: TunnelFrame) {
+    async fn handle_incoming(
+        &self,
+        frame: TunnelFrame,
+        pending_uploads: &Arc<Mutex<HashMap<String, mpsc::UnboundedSender<Vec<u8>>>>>,
+    ) {
         match frame.frame_type.as_str() {
             "request" => {
                 let request_id = frame.request_id.clone().unwrap_or_default();
@@ -162,6 +189,29 @@ impl GatewayClient {
                     )
                     .await;
                 });
+            }
+            "request_start" => {
+                let request_id = frame.request_id.clone().unwrap_or_default();
+                let method = frame.method.clone().unwrap_or_default();
+                let path = frame.path.clone().unwrap_or_default();
+                let headers = frame.headers.clone();
+                let local_port = self.local_port;
+                let tunnel_tx = self.outbound_tx.clone();
+
+                let (chunk_tx, chunk_rx) = mpsc::unbounded_channel::<Vec<u8>>();
+                pending_uploads.lock().unwrap().insert(request_id.clone(), chunk_tx);
+
+                tokio::spawn(async move {
+                    proxy::proxy_upload_to_local(
+                        &method, local_port, &path, headers,
+                        &request_id, &tunnel_tx, chunk_rx,
+                    )
+                    .await;
+                });
+            }
+            "request_end" => {
+                let request_id = frame.request_id.clone().unwrap_or_default();
+                pending_uploads.lock().unwrap().remove(&request_id);
             }
             "response_start" | "response_chunk" | "response_end" => {
                 tracing::warn!("unexpected stream frame type from gateway: {}", frame.frame_type);

@@ -206,6 +206,30 @@ impl TunnelFrame {
         }
     }
 
+    pub fn request_start(
+        request_id: &str,
+        method: &str,
+        path: &str,
+        headers: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            frame_type: "request_start".to_string(),
+            request_id: Some(request_id.to_string()),
+            method: Some(method.to_string()),
+            path: Some(path.to_string()),
+            headers,
+            ..Default::default()
+        }
+    }
+
+    pub fn request_end(request_id: &str) -> Self {
+        Self {
+            frame_type: "request_end".to_string(),
+            request_id: Some(request_id.to_string()),
+            ..Default::default()
+        }
+    }
+
     pub fn error(request_id: Option<String>, code: u16, message: &str) -> Self {
         Self {
             frame_type: "error".to_string(),

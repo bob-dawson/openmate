@@ -1490,6 +1490,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "axum",
+ "bytes",
  "chrono",
  "clap",
  "dirs",

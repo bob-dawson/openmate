@@ -7,6 +7,7 @@ use crate::tunnel::frame::TunnelFrame;
 
 pub struct BridgeConn {
     pub tx: mpsc::UnboundedSender<TunnelFrame>,
+    pub binary_tx: mpsc::UnboundedSender<(String, Vec<u8>)>,
     pub instance_id: String,
     pub last_heartbeat: Instant,
 }
