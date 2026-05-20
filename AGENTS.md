@@ -33,6 +33,18 @@
 - 任何状态同步或数据展示都不能只依赖 SSE 获取数据，否则在断连、后台切换或重连期间可能丢失信息。
 - 需要实时性时，可使用 SSE 提升更新速度，但必须配合轮询与增量同步等现有补偿机制保证最终一致性与信息完整性。
 
+### 3. Bridge 测试 Token 生成
+
+```powershell
+# 从 bridge.db 读取密钥 + 插入测试设备 + 生成 HMAC token
+# 输出保存在 scripts/.bridge_token
+python D:\openmate\scripts\get_bridge_token.py --show
+
+# 通过网关测试（替换 token 变量）：
+$token = (Get-Content D:\openmate\scripts\.bridge_token).Trim()
+curl -s https://gateway.clawmate.net/api/bridge/status -H "X-Instance-Id: <instance_id>" -H "Authorization: Bearer $token"
+```
+
 ## Debug & Analysis Tools
 
 ### 0. opencode 事件数据库
