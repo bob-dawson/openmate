@@ -4,6 +4,7 @@ import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -256,8 +258,14 @@ private fun CrashDetailScreen(
                 actions = {
                     IconButton(onClick = onCopy) {
                         Icon(
-                            Icons.Default.Share,
+                            Icons.Filled.ContentCopy,
                             contentDescription = stringResource(R.string.copy),
+                        )
+                    }
+                    IconButton(onClick = onShare) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = stringResource(R.string.share),
                         )
                     }
                 },
@@ -268,14 +276,12 @@ private fun CrashDetailScreen(
             )
         },
     ) { padding ->
-        LazyColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
-            item {
-                Text(
-                    text = content,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+        SelectionContainer(modifier = Modifier.padding(padding).padding(16.dp)) {
+            Text(
+                text = content,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
