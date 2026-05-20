@@ -1,120 +1,78 @@
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+use crate::bridge_db::BridgeDb;
+
+#[derive(Debug, Clone)]
 pub struct Config {
-    #[serde(default = "default_bridge")]
     pub bridge: BridgeConfig,
-
-    #[serde(default = "default_opencode")]
     pub opencode: OpencodeConfig,
-
-    #[serde(default)]
     pub fs: FsConfig,
-
-    #[serde(default)]
     pub gateway: GatewayConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct BridgeConfig {
-    #[serde(default = "default_port")]
     pub port: u16,
-    #[serde(default = "default_hostname")]
     pub hostname: String,
-    #[serde(default = "default_true")]
     pub auth_enabled: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct OpencodeConfig {
-    #[serde(default = "default_binary")]
     pub binary: String,
-    #[serde(default = "default_oc_hostname")]
     pub hostname: String,
-    #[serde(default = "default_oc_port")]
     pub port: u16,
-    #[serde(default)]
     pub directory: String,
-    #[serde(default = "default_true")]
     pub auto_start: bool,
-    #[serde(default = "default_true")]
     pub auto_restart: bool,
-
-    #[serde(default = "default_db_path")]
     pub db_path: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct FsConfig {
-    #[serde(default)]
     pub allowed_paths: Vec<String>,
 }
 
-fn default_bridge() -> BridgeConfig {
-    BridgeConfig {
-        port: default_port(),
-        hostname: default_hostname(),
-        auth_enabled: true,
-    }
+#[derive(Debug, Clone, Default)]
+pub struct GatewayConfig {
+    pub url: String,
+    pub auto_connect: bool,
+    pub instance_id: String,
 }
 
-fn default_opencode() -> OpencodeConfig {
-    OpencodeConfig {
-        binary: default_binary(),
-        hostname: default_oc_hostname(),
-        port: default_oc_port(),
-        directory: String::new(),
-        auto_start: true,
-        auto_restart: true,
-        db_path: default_db_path(),
-    }
-}
-
-fn default_port() -> u16 {
-    4097
-}
-
-fn default_hostname() -> String {
-    "0.0.0.0".to_string()
-}
-
-fn default_binary() -> String {
-    "opencode".to_string()
-}
-
-fn default_oc_hostname() -> String {
-    "127.0.0.1".to_string()
-}
-
-fn default_oc_port() -> u16 {
-    4096
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_db_path() -> String {
+pub fn default_db_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
     let path = home.join(".local").join("share").join("opencode").join("opencode.db");
     path.to_string_lossy().to_string()
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
-pub struct GatewayConfig {
-    #[serde(default)]
-    pub url: String,
-    #[serde(default = "default_true")]
-    pub auto_connect: bool,
-    #[serde(default)]
-    pub instance_id: String,
 }
 
 impl Default for FsConfig {
     fn default() -> Self {
         FsConfig {
             allowed_paths: Vec::new(),
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            bridge: BridgeConfig {
+                port: 4097,
+                hostname: "0.0.0.0".to_string(),
+                auth_enabled: true,
+            },
+            opencode: OpencodeConfig {
+                binary: "opencode".to_string(),
+                hostname: "127.0.0.1".to_string(),
+                port: 4096,
+                directory: String::new(),
+                auto_start: true,
+                auto_restart: true,
+                db_path: default_db_path(),
+            },
+            fs: FsConfig::default(),
+            gateway: GatewayConfig::default(),
         }
     }
 }
@@ -139,71 +97,75 @@ impl Config {
         self.fs.allowed_paths.iter().map(PathBuf::from).collect()
     }
 
-    pub fn load_from(path: &PathBuf) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&content)?;
-        Ok(config)
+    pub fn load_from_db(db: &BridgeDb) -> anyhow::Result<Self> {
+        let configs: std::collections::HashMap<String, String> = db.get_all_configs()
+            .map_err(|e| anyhow::anyhow!("Failed to load config: {}", e))?
+            .into_iter().collect();
+
+        let get = |key: &str, default: &str| -> String {
+            configs.get(key).cloned().unwrap_or_else(|| default.to_string())
+        };
+        let get_bool = |key: &str, default: bool| -> bool {
+            configs.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+        };
+        let get_u16 = |key: &str, default: u16| -> u16 {
+            configs.get(key).and_then(|v| v.parse().ok()).unwrap_or(default)
+        };
+
+        let allowed_paths_str = get("fs.allowed_paths", "");
+        let allowed_paths = if allowed_paths_str.is_empty() {
+            vec![]
+        } else {
+            allowed_paths_str.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        };
+
+        Ok(Config {
+            bridge: BridgeConfig {
+                port: get_u16("bridge.port", 4097),
+                hostname: get("bridge.hostname", "0.0.0.0"),
+                auth_enabled: get_bool("bridge.auth_enabled", true),
+            },
+            opencode: OpencodeConfig {
+                binary: get("opencode.binary", "opencode"),
+                hostname: get("opencode.hostname", "127.0.0.1"),
+                port: get_u16("opencode.port", 4096),
+                directory: get("opencode.directory", ""),
+                auto_start: get_bool("opencode.auto_start", true),
+                auto_restart: get_bool("opencode.auto_restart", true),
+                db_path: get("opencode.db_path", &default_db_path()),
+            },
+            fs: FsConfig {
+                allowed_paths,
+            },
+            gateway: GatewayConfig {
+                url: get("gateway.url", ""),
+                auto_connect: get_bool("gateway.auto_connect", true),
+                instance_id: get("auth.instance_id", ""),
+            },
+        })
     }
 
-    pub fn find_and_load(config_path: Option<PathBuf>) -> anyhow::Result<Self> {
-        if let Some(path) = config_path {
-            return Self::load_from(&path);
-        }
-
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
-
-        let mut candidates = vec![PathBuf::from("bridge.toml")];
-        if let Some(dir) = exe_dir {
-            candidates.push(dir.join("bridge.toml"));
-        }
-        candidates.push(dirs_config_path());
-
-        for path in &candidates {
-            if path.exists() {
-                tracing::info!("Loading config from {}", path.display());
-                return Self::load_from(path);
-            }
-        }
-
-        tracing::info!("No config file found, using defaults");
-        Ok(Config::default())
-    }
-
-    pub fn find_config_path() -> Option<PathBuf> {
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
-
-        let mut candidates = vec![PathBuf::from("bridge.toml")];
-        if let Some(dir) = exe_dir {
-            candidates.push(dir.join("bridge.toml"));
-        }
-        candidates.push(dirs_config_path());
-
-        for path in &candidates {
-            if path.exists() {
-                return Some(path.clone());
-            }
-        }
-        None
-    }
-
-    pub fn find_or_create_config_path() -> PathBuf {
-        if let Some(path) = Self::find_config_path() {
-            return path;
-        }
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from("."));
-        exe_dir.join("bridge.toml")
-    }
-
-    pub fn save_to(&self, path: &PathBuf) -> anyhow::Result<()> {
-        let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
+    pub fn save_to_db(&self, db: &BridgeDb) -> anyhow::Result<()> {
+        let entries = vec![
+            ("bridge.port".to_string(), self.bridge.port.to_string()),
+            ("bridge.hostname".to_string(), self.bridge.hostname.clone()),
+            ("bridge.auth_enabled".to_string(), self.bridge.auth_enabled.to_string()),
+            ("opencode.binary".to_string(), self.opencode.binary.clone()),
+            ("opencode.hostname".to_string(), self.opencode.hostname.clone()),
+            ("opencode.port".to_string(), self.opencode.port.to_string()),
+            ("opencode.directory".to_string(), self.opencode.directory.clone()),
+            ("opencode.auto_start".to_string(), self.opencode.auto_start.to_string()),
+            ("opencode.auto_restart".to_string(), self.opencode.auto_restart.to_string()),
+            ("opencode.db_path".to_string(), self.opencode.db_path.clone()),
+            ("fs.allowed_paths".to_string(), self.fs.allowed_paths.join(",")),
+            ("gateway.url".to_string(), self.gateway.url.clone()),
+            ("gateway.auto_connect".to_string(), self.gateway.auto_connect.to_string()),
+        ];
+        db.set_configs_batch(&entries)
+            .map_err(|e| anyhow::anyhow!("Failed to save config: {}", e))?;
         Ok(())
     }
 
@@ -231,13 +193,6 @@ impl Config {
         }
         Ok(())
     }
-}
-
-fn dirs_config_path() -> PathBuf {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".openmate").join("bridge.toml")
 }
 
 fn which_opencode() -> anyhow::Result<PathBuf> {
@@ -271,20 +226,8 @@ fn which_opencode() -> anyhow::Result<PathBuf> {
 
     anyhow::bail!(
         "opencode not found in PATH. \
-         Install opencode first: https://opencode.ai \
-         Or set the full path in bridge.toml [opencode] binary"
+         Install opencode first: https://opencode.ai"
     )
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            bridge: default_bridge(),
-            opencode: default_opencode(),
-            fs: FsConfig::default(),
-            gateway: GatewayConfig::default(),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -332,64 +275,51 @@ mod tests {
     }
 
     #[test]
-    fn test_load_from_toml() {
-        let tmp = std::env::temp_dir().join("bridge_config_test.toml");
-        let content = r#"
-[bridge]
-port = 8080
-hostname = "127.0.0.1"
-
-[opencode]
-binary = "/usr/local/bin/opencode"
-hostname = "0.0.0.0"
-port = 3000
-directory = "/home/user/project"
-auto_start = false
-auto_restart = false
-
-[fs]
-allowed_paths = ["/home/user/project", "/tmp"]
-"#;
-        std::fs::write(&tmp, content).unwrap();
-        let config = Config::load_from(&tmp).unwrap();
-
-        assert_eq!(config.bridge.port, 8080);
-        assert_eq!(config.bridge.hostname, "127.0.0.1");
-        assert_eq!(config.opencode.binary, "/usr/local/bin/opencode");
-        assert_eq!(config.opencode.hostname, "0.0.0.0");
-        assert_eq!(config.opencode.port, 3000);
-        assert_eq!(config.opencode.directory, "/home/user/project");
-        assert!(!config.opencode.auto_start);
-        assert!(!config.opencode.auto_restart);
-        assert_eq!(config.fs.allowed_paths, vec!["/home/user/project", "/tmp"]);
-
-        let _ = std::fs::remove_file(&tmp);
-    }
-
-    #[test]
-    fn test_load_from_partial_toml_uses_defaults() {
-        let tmp = std::env::temp_dir().join("bridge_config_partial.toml");
-        let content = r#"
-[bridge]
-port = 9999
-"#;
-        std::fs::write(&tmp, content).unwrap();
-        let config = Config::load_from(&tmp).unwrap();
-
-        assert_eq!(config.bridge.port, 9999);
+    fn test_load_from_db_uses_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test_config.db");
+        let db = BridgeDb::open_at(&db_path).unwrap();
+        db.init_default_configs().unwrap();
+        let config = Config::load_from_db(&db).unwrap();
+        assert_eq!(config.bridge.port, 4097);
         assert_eq!(config.bridge.hostname, "0.0.0.0");
         assert_eq!(config.opencode.port, 4096);
         assert!(config.opencode.auto_start);
-
-        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
-    fn test_load_from_invalid_toml_fails() {
-        let tmp = std::env::temp_dir().join("bridge_config_bad.toml");
-        std::fs::write(&tmp, "not valid toml {{{").unwrap();
-        let result = Config::load_from(&tmp);
-        assert!(result.is_err());
-        let _ = std::fs::remove_file(&tmp);
+    fn test_save_and_load_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test_roundtrip.db");
+        let db = BridgeDb::open_at(&db_path).unwrap();
+
+        let mut config = Config::default();
+        config.bridge.port = 8080;
+        config.bridge.hostname = "127.0.0.1".to_string();
+        config.opencode.port = 3000;
+        config.opencode.directory = "/test".to_string();
+        config.fs.allowed_paths = vec!["/a".to_string(), "/b".to_string()];
+        config.gateway.url = "ws://gateway.test".to_string();
+
+        config.save_to_db(&db).unwrap();
+        let loaded = Config::load_from_db(&db).unwrap();
+
+        assert_eq!(loaded.bridge.port, 8080);
+        assert_eq!(loaded.bridge.hostname, "127.0.0.1");
+        assert_eq!(loaded.opencode.port, 3000);
+        assert_eq!(loaded.opencode.directory, "/test");
+        assert_eq!(loaded.fs.allowed_paths, vec!["/a", "/b"]);
+        assert_eq!(loaded.gateway.url, "ws://gateway.test");
+    }
+
+    #[test]
+    fn test_load_from_empty_db_uses_fallback_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("test_empty.db");
+        let db = BridgeDb::open_at(&db_path).unwrap();
+        let config = Config::load_from_db(&db).unwrap();
+        assert_eq!(config.bridge.port, 4097);
+        assert_eq!(config.opencode.auto_start, true);
+        assert!(config.fs.allowed_paths.is_empty());
     }
 }

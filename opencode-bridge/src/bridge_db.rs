@@ -74,6 +74,11 @@ impl BridgeDb {
             CREATE TABLE IF NOT EXISTS bridge_config (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
             );"
         ).map_err(|e| format!("Migration failed: {}", e))?;
         Ok(())
@@ -234,6 +239,92 @@ impl BridgeDb {
         }
         Ok(())
     }
+
+    pub fn get_config(&self, key: &str) -> Result<Option<String>, String> {
+        let conn = self.conn()?;
+        let result = conn.query_row(
+            "SELECT value FROM config WHERE key = ?1",
+            params![key],
+            |row| row.get::<_, String>(0),
+        );
+        match result {
+            Ok(val) => Ok(Some(val)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(format!("Query failed: {}", e)),
+        }
+    }
+
+    pub fn set_config(&self, key: &str, value: &str) -> Result<(), String> {
+        let conn = self.conn()?;
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?1, ?2, ?3)",
+            params![key, value, now],
+        ).map_err(|e| format!("Insert failed: {}", e))?;
+        Ok(())
+    }
+
+    pub fn get_all_configs(&self) -> Result<Vec<(String, String)>, String> {
+        let conn = self.conn()?;
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM config ORDER BY key")
+            .map_err(|e| format!("Prepare failed: {}", e))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| format!("Query failed: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    pub fn init_default_configs(&self) -> Result<(), String> {
+        let configs = self.get_all_configs()?;
+        if !configs.is_empty() {
+            return Ok(());
+        }
+        let defaults = Self::default_config_values();
+        for (key, value) in &defaults {
+            self.set_config(key, value)?;
+        }
+        Ok(())
+    }
+
+    fn default_config_values() -> Vec<(&'static str, String)> {
+        let db_path = crate::config::default_db_path();
+        let secret_key = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(32));
+        let instance_id = crate::auth::key::hex_encode(&crate::auth::key::generate_random_bytes(8));
+        vec![
+            ("bridge.port", "4097".to_string()),
+            ("bridge.hostname", "0.0.0.0".to_string()),
+            ("bridge.auth_enabled", "true".to_string()),
+            ("opencode.binary", "opencode".to_string()),
+            ("opencode.hostname", "127.0.0.1".to_string()),
+            ("opencode.port", "4096".to_string()),
+            ("opencode.directory", String::new()),
+            ("opencode.auto_start", "true".to_string()),
+            ("opencode.auto_restart", "true".to_string()),
+            ("opencode.db_path", db_path),
+            ("fs.allowed_paths", String::new()),
+            ("gateway.url", String::new()),
+            ("gateway.auto_connect", "true".to_string()),
+            ("auth.secret_key", secret_key),
+            ("auth.instance_id", instance_id),
+        ]
+    }
+
+    pub fn set_configs_batch(&self, entries: &[(String, String)]) -> Result<(), String> {
+        let conn = self.conn()?;
+        let now = chrono::Utc::now().timestamp();
+        for (key, value) in entries {
+            conn.execute(
+                "INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?1, ?2, ?3)",
+                params![key, value, now],
+            ).map_err(|e| format!("Insert failed for key '{}': {}", key, e))?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -378,5 +469,75 @@ mod tests {
         let db2 = db.clone();
         db.insert_device(&sample_device("dev-1")).unwrap();
         assert!(db2.device_exists("dev-1").unwrap());
+    }
+
+    #[test]
+    fn test_get_config_missing_key() {
+        let (db, _dir) = temp_db();
+        assert!(db.get_config("nonexistent").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_set_and_get_config() {
+        let (db, _dir) = temp_db();
+        db.set_config("test.key", "test_value").unwrap();
+        assert_eq!(db.get_config("test.key").unwrap(), Some("test_value".to_string()));
+    }
+
+    #[test]
+    fn test_set_config_overwrite() {
+        let (db, _dir) = temp_db();
+        db.set_config("test.key", "v1").unwrap();
+        db.set_config("test.key", "v2").unwrap();
+        assert_eq!(db.get_config("test.key").unwrap(), Some("v2".to_string()));
+    }
+
+    #[test]
+    fn test_get_all_configs_empty() {
+        let (db, _dir) = temp_db();
+        let configs = db.get_all_configs().unwrap();
+        assert!(configs.is_empty());
+    }
+
+    #[test]
+    fn test_get_all_configs_multiple() {
+        let (db, _dir) = temp_db();
+        db.set_config("b.key", "2").unwrap();
+        db.set_config("a.key", "1").unwrap();
+        let configs = db.get_all_configs().unwrap();
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0], ("a.key".to_string(), "1".to_string()));
+        assert_eq!(configs[1], ("b.key".to_string(), "2".to_string()));
+    }
+
+    #[test]
+    fn test_init_default_configs_populates() {
+        let (db, _dir) = temp_db();
+        db.init_default_configs().unwrap();
+        let configs = db.get_all_configs().unwrap();
+        assert!(!configs.is_empty());
+        assert!(db.get_config("bridge.port").unwrap().is_some());
+        assert!(db.get_config("auth.secret_key").unwrap().is_some());
+    }
+
+    #[test]
+    fn test_init_default_configs_idempotent() {
+        let (db, _dir) = temp_db();
+        db.init_default_configs().unwrap();
+        db.set_config("bridge.port", "9999").unwrap();
+        db.init_default_configs().unwrap();
+        assert_eq!(db.get_config("bridge.port").unwrap(), Some("9999".to_string()));
+    }
+
+    #[test]
+    fn test_set_configs_batch() {
+        let (db, _dir) = temp_db();
+        let entries = vec![
+            ("k1".to_string(), "v1".to_string()),
+            ("k2".to_string(), "v2".to_string()),
+        ];
+        db.set_configs_batch(&entries).unwrap();
+        assert_eq!(db.get_config("k1").unwrap(), Some("v1".to_string()));
+        assert_eq!(db.get_config("k2").unwrap(), Some("v2".to_string()));
     }
 }

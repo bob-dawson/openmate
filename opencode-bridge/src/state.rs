@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 use crate::auth;
 use crate::bridge_db::BridgeDb;
 use crate::config::Config;
-use crate::log_capture::{SharedLogBuffer, create_shared_buffer};
+use crate::log_capture::SharedLogBuffer;
 use crate::process::OpencodeManager;
 use crate::sync::db::SyncDb;
 
@@ -46,9 +46,22 @@ impl FromRef<AppState> for Config {
     }
 }
 
-pub fn create_app_state(config: Config, log_buffer: SharedLogBuffer) -> AppState {
-    let secret_key = auth::key::SecretKey::load_or_generate()
-        .expect("Failed to load or generate secret key");
+pub fn create_app_state(log_buffer: SharedLogBuffer) -> AppState {
+    create_app_state_with_db(log_buffer, None)
+}
+
+pub fn create_app_state_with_db(log_buffer: SharedLogBuffer, external_db: Option<BridgeDb>) -> AppState {
+    let bridge_db = external_db.unwrap_or_else(|| BridgeDb::open().expect("Failed to open bridge database"));
+    bridge_db.init_default_configs().expect("Failed to initialize default configs");
+
+    let config = Config::load_from_db(&bridge_db).expect("Failed to load config from DB");
+
+    let key_hex = bridge_db.get_config("auth.secret_key")
+        .expect("Failed to load secret key")
+        .expect("secret key not initialized");
+    let key_bytes = auth::key::hex_to_bytes(&key_hex).expect("Invalid secret key hex");
+    let secret_key = auth::key::SecretKey::from_bytes(key_bytes);
+
     let opencode_url = config.opencode_url();
     let binary = config.opencode.binary.clone();
     let hostname = config.opencode.hostname.clone();
@@ -58,8 +71,6 @@ pub fn create_app_state(config: Config, log_buffer: SharedLogBuffer) -> AppState
 
     let sync_db = SyncDb::new(&config);
     tracing::info!("opencode DB path: {}", sync_db.db_path().display());
-
-    let bridge_db = BridgeDb::open().expect("Failed to open bridge database");
 
     let bridge_id = match bridge_db.get_bridge_id() {
         Ok(Some(id)) => id,

@@ -1,17 +1,12 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 use clap::{Parser, Subcommand};
-use openmate::config::Config;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Notify;
 
 #[derive(Parser, Debug)]
 #[command(name = "openmate", about = "OpenMate Bridge")]
 struct Args {
-    #[arg(short, long)]
-    config: Option<PathBuf>,
-
     #[arg(long)]
     tray: bool,
 
@@ -86,23 +81,24 @@ fn init_capture_logging() -> openmate::log_capture::SharedLogBuffer {
     buffer
 }
 
-async fn run_gui_mode(args: Args) -> anyhow::Result<()> {
+async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
     let buffer = init_capture_logging();
+
+    let bridge_db = openmate::bridge_db::BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
+    bridge_db.init_default_configs().map_err(|e| anyhow::anyhow!("{}", e))?;
+    let config = openmate::config::Config::load_from_db(&bridge_db)?;
+    let port = config.bridge.port;
 
     if is_already_running() {
         tracing::info!("Another instance is already running, notifying it to open UI");
-        let config = Config::find_and_load(args.config.clone()).unwrap_or_default();
-        let _ = notify_existing_instance(config.bridge.port);
+        let _ = notify_existing_instance(port);
         return Ok(());
     }
-
-    let config = Config::find_and_load(args.config)?;
-    let port = config.bridge.port;
 
     let shutdown = Arc::new(Notify::new());
     let shutdown_clone = shutdown.clone();
 
-    if !args.tray {
+    if !_args.tray {
         let port_copy = port;
         tokio::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -128,7 +124,7 @@ async fn run_gui_mode(args: Args) -> anyhow::Result<()> {
                     }
                     openmate::tray::TrayEvent::OpenUi => {
                         let url = format!("http://127.0.0.1:{}/ui/", port);
-            let _ = openmate::browser::open_browser(&url);
+                        let _ = open::that(&url);
                     }
                     openmate::tray::TrayEvent::ToggleAutostart => {}
                 }
@@ -143,7 +139,7 @@ async fn run_gui_mode(args: Args) -> anyhow::Result<()> {
         server_shutdown.notify_one();
     });
 
-    openmate::server::run_server(config, buffer, Some(shutdown_clone)).await
+    openmate::server::run_server(buffer, Some(shutdown_clone)).await
 }
 
 #[cfg(target_os = "windows")]
@@ -185,7 +181,9 @@ async fn notify_existing_instance(port: u16) -> anyhow::Result<()> {
 }
 
 async fn run_approve(pin: &str) -> anyhow::Result<()> {
-    let config = Config::find_and_load(None)?;
+    let bridge_db = openmate::bridge_db::BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
+    bridge_db.init_default_configs().map_err(|e| anyhow::anyhow!("{}", e))?;
+    let config = openmate::config::Config::load_from_db(&bridge_db)?;
     let bridge_url = format!("http://127.0.0.1:{}", config.bridge.port);
 
     let client = reqwest::Client::new();
@@ -207,45 +205,41 @@ async fn run_approve(pin: &str) -> anyhow::Result<()> {
 }
 
 async fn run_reset_token() -> anyhow::Result<()> {
-    openmate::auth::key::SecretKey::delete_key_file()?;
+    let bridge_db = openmate::bridge_db::BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
+    let new_key = openmate::auth::key::hex_encode(&openmate::auth::key::generate_random_bytes(32));
+    bridge_db.set_config("auth.secret_key", &new_key).map_err(|e| anyhow::anyhow!("{}", e))?;
     tracing::info!(
-        "Secret key deleted. All tokens are now invalid. A new key will be generated on next start."
+        "Secret key reset. All tokens are now invalid. A new key will be used on next start."
     );
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
 fn run_install() -> anyhow::Result<()> {
-    let config_path = Config::find_or_create_config_path();
-    let mut config = if config_path.exists() {
-        Config::load_from(&config_path)?
-    } else {
-        Config::default()
-    };
+    let bridge_db = openmate::bridge_db::BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
+    bridge_db.init_default_configs().map_err(|e| anyhow::anyhow!("{}", e))?;
+    let mut config = openmate::config::Config::load_from_db(&bridge_db)?;
 
     config.resolve_opencode_binary()?;
     println!("opencode binary resolved: {}", config.opencode.binary);
 
-    config.save_to(&config_path)?;
-    println!("Config saved to {}", config_path.display());
+    config.save_to_db(&bridge_db)?;
+    println!("Config saved to database");
 
     openmate::service_windows::install()
 }
 
 #[cfg(target_os = "linux")]
 fn run_install() -> anyhow::Result<()> {
-    let config_path = Config::find_or_create_config_path();
-    let mut config = if config_path.exists() {
-        Config::load_from(&config_path)?
-    } else {
-        Config::default()
-    };
+    let bridge_db = openmate::bridge_db::BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
+    bridge_db.init_default_configs().map_err(|e| anyhow::anyhow!("{}", e))?;
+    let mut config = openmate::config::Config::load_from_db(&bridge_db)?;
 
     config.resolve_opencode_binary()?;
     println!("opencode binary resolved: {}", config.opencode.binary);
 
-    config.save_to(&config_path)?;
-    println!("Config saved to {}", config_path.display());
+    config.save_to_db(&bridge_db)?;
+    println!("Config saved to database");
 
     openmate::service_linux::install()
 }
@@ -277,9 +271,8 @@ fn run_service_mode() -> anyhow::Result<()> {
 
 #[cfg(target_os = "linux")]
 async fn run_service_mode() -> anyhow::Result<()> {
-    let config = Config::find_and_load(None)?;
     let buffer = init_capture_logging();
-    openmate::server::run_server(config, buffer, None).await
+    openmate::server::run_server(buffer, None).await
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]

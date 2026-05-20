@@ -12,6 +12,7 @@ use windows_service::service_control_handler::{self, ServiceControlHandlerResult
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 use windows_service::service_dispatcher;
 
+use crate::bridge_db::BridgeDb;
 use crate::config::Config;
 use crate::log_capture::{LogCaptureLayer, create_shared_buffer};
 use crate::server::run_server;
@@ -133,7 +134,9 @@ fn run_service_inner() -> anyhow::Result<()> {
         process_id: None,
     })?;
 
-    let config = Config::find_and_load(None)?;
+    let bridge_db = BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
+    bridge_db.init_default_configs().map_err(|e| anyhow::anyhow!("{}", e))?;
+    let config = Config::load_from_db(&bridge_db)?;
     config.ensure_opencode_binary()?;
 
     let log_buffer = create_shared_buffer();
@@ -158,7 +161,7 @@ fn run_service_inner() -> anyhow::Result<()> {
         notify_clone.notify_one();
     });
 
-    let result = rt.block_on(run_server(config, log_buffer, Some(notify)));
+    let result = rt.block_on(run_server(log_buffer, Some(notify)));
 
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,

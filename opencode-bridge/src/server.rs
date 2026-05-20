@@ -9,7 +9,6 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth;
 use crate::bridge;
-use crate::config::Config;
 use crate::files;
 use crate::fs;
 use crate::proxy;
@@ -18,11 +17,14 @@ use crate::state::create_app_state;
 use crate::sync;
 
 pub async fn run_server(
-    config: Config,
     log_buffer: SharedLogBuffer,
     shutdown_notify: Option<Arc<Notify>>,
 ) -> anyhow::Result<()> {
     tracing::info!("OpenCode Bridge starting");
+
+    let app_state = create_app_state(log_buffer);
+    let config = &app_state.config;
+
     tracing::info!(
         "Bridge listen: {}:{}",
         config.bridge.hostname,
@@ -31,8 +33,6 @@ pub async fn run_server(
     tracing::info!("OpenCode target: {}", config.opencode_url());
     tracing::info!("Allowed paths: {:?}", config.effective_allowed_paths());
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
-
-    let app_state = create_app_state(config.clone(), log_buffer);
 
     {
         let state = app_state.clone();
@@ -65,6 +65,12 @@ pub async fn run_server(
             tracing::warn!("Auto-start failed: {}", e);
         }
     }
+
+    let listen_addr = config.bridge_listen_addr();
+    let port = config.bridge.port;
+    let gateway_url = config.gateway.url.clone();
+    let gateway_auto_connect = config.gateway.auto_connect;
+    let gateway_instance_id = config.gateway.instance_id.clone();
 
     let app = Router::new()
         .route("/api/bridge/sync/sessions", get(sync::router::sessions))
@@ -142,18 +148,22 @@ pub async fn run_server(
         .layer(TraceLayer::new_for_http())
         .with_state(app_state.clone());
 
-    let listener = tokio::net::TcpListener::bind(config.bridge_listen_addr()).await?;
-    tracing::info!("Bridge listening on {}", config.bridge_listen_addr());
+    let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
+    tracing::info!("Bridge listening on {}", listen_addr);
 
-    if !config.gateway.url.is_empty() {
-        let gw_config = config.gateway.clone();
-        let local_port = config.bridge.port;
+    if !gateway_url.is_empty() && gateway_auto_connect {
         let secret_key = app_state.secret_key.clone();
+        let gw_url = gateway_url.clone();
+        let gw_instance_id = gateway_instance_id.clone();
         tokio::spawn(async move {
             let mut client = crate::gateway::client::GatewayClient::new(
-                &gw_config,
-                &gw_config.instance_id,
-                local_port,
+                &crate::config::GatewayConfig {
+                    url: gw_url,
+                    auto_connect: true,
+                    instance_id: gw_instance_id,
+                },
+                &gateway_instance_id,
+                port,
             );
             client.connect(&secret_key).await;
         });
