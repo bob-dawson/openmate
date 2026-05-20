@@ -1,5 +1,5 @@
 [gateway]
-port = 8080
+port = 6200
 hostname = "0.0.0.0"
 
 [auth]
