@@ -47,6 +47,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.HttpURLConnection
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 class OpencodeApiClient(
     private val client: OkHttpClient,
@@ -97,8 +100,9 @@ class OpencodeApiClient(
         params["limit"] = limit.toString()
         before?.let { params["before"] = it }
         directory?.let { params["directory"] = it }
-        val url = buildUrl("/session/$sessionID/message", params)
-        val request = Request.Builder().url(url).get().build()
+        val request = requestBuilder("GET", "/session/$sessionID/message", params)
+            .get()
+            .build()
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: return MessageHeadersPage(emptyList(), null)
         if (!response.isSuccessful) {
@@ -472,15 +476,13 @@ class OpencodeApiClient(
     }
 
     private suspend inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
-        val url = buildUrl(path, params)
-        val request = Request.Builder().url(url).get().build()
+        val request = requestBuilder("GET", path, params).get().build()
         val response = client.newCall(request).execute()
         handleResponse(response)
     }
 
     private suspend inline fun <reified T> getList(path: String, params: Map<String, String> = emptyMap()): List<T> = withContext(Dispatchers.IO) {
-        val url = buildUrl(path, params)
-        val request = Request.Builder().url(url).get().build()
+        val request = requestBuilder("GET", path, params).get().build()
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: return@withContext emptyList()
         if (!response.isSuccessful) {
@@ -495,8 +497,9 @@ class OpencodeApiClient(
             else -> json.encodeToString(JsonElement.serializer(), mapToJson(body as Map<*, *>))
         }
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
-        val url = buildUrl(path, params)
-        val request = Request.Builder().url(url).post(requestBody).build()
+        val request = requestBuilder("POST", path, params)
+            .post(requestBody)
+            .build()
         val response = client.newCall(request).execute()
         handleResponse(response)
     }
@@ -507,14 +510,15 @@ class OpencodeApiClient(
             is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body))
             else -> json.encodeToString(JsonElement.serializer(), JsonPrimitive(body.toString()))
         }
-        val url = buildUrl(path, params)
-        Log.d("OpencodeApiClient", "POST $url body=$jsonStr")
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
-        val request = Request.Builder().url(url).post(requestBody).build()
+        val request = requestBuilder("POST", path, params)
+            .post(requestBody)
+            .build()
+        runCatching { Log.d("OpencodeApiClient", "POST ${request.url} body=$jsonStr") }
         val response = client.newCall(request).execute()
         if (!response.isSuccessful) {
             val respBody = response.body?.string()?.take(500) ?: ""
-            Log.e("OpencodeApiClient", "POST $url failed: HTTP ${response.code} body=$respBody")
+            runCatching { Log.e("OpencodeApiClient", "POST ${request.url} failed: HTTP ${response.code} body=$respBody") }
             throw ServerUnavailableException("HTTP ${response.code}: $respBody")
         }
     }
@@ -587,12 +591,29 @@ class OpencodeApiClient(
         json.decodeFromString(body)
     }
 
+    private fun requestBuilder(method: String, path: String, params: Map<String, String> = emptyMap()): Request.Builder {
+        val isReadOnly = method == "GET" || method == "HEAD"
+        val directory = params["directory"]
+        val queryParams = if (isReadOnly) params else params - "directory"
+        return Request.Builder()
+            .url(buildUrl(path, queryParams))
+            .apply {
+                if (!isReadOnly && directory != null) {
+                    header("x-opencode-directory", encodeDirectory(directory))
+                }
+            }
+    }
+
+    private fun encodeDirectory(directory: String): String {
+        return URLEncoder.encode(directory, StandardCharsets.UTF_8.toString())
+            .replace("+", "%20")
+    }
+
     private fun buildUrl(path: String, params: Map<String, String>): String {
-        val builder = StringBuilder("$baseUrl$path")
-        if (params.isNotEmpty()) {
-            builder.append("?")
-            params.entries.joinTo(builder, "&") { "${it.key}=${it.value}" }
+        val builder = "$baseUrl$path".toHttpUrl().newBuilder()
+        params.forEach { (key, value) ->
+            builder.addQueryParameter(key, value)
         }
-        return builder.toString()
+        return builder.build().toString()
     }
 }

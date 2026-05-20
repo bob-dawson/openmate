@@ -66,7 +66,7 @@ pub async fn proxy_request_to_local(
         .filter_map(|(k, v)| {
             let key = k.to_string();
             let lower = key.to_lowercase();
-            if lower == "content-encoding" || lower == "content-length" || lower == "transfer-encoding" {
+            if lower == "content-encoding" || lower == "transfer-encoding" {
                 return None;
             }
             v.to_str().ok().map(|s| (key, s.to_string()))
@@ -166,7 +166,7 @@ pub async fn proxy_upload_to_local(
         .filter_map(|(k, v)| {
             let key = k.to_string();
             let lower = key.to_lowercase();
-            if lower == "content-encoding" || lower == "content-length" || lower == "transfer-encoding" {
+            if lower == "content-encoding" || lower == "transfer-encoding" {
                 return None;
             }
             v.to_str().ok().map(|s| (key, s.to_string()))
@@ -201,4 +201,52 @@ pub async fn proxy_upload_to_local(
 
     let end = TunnelFrame::response_end(request_id);
     let _ = tunnel_tx.send(GatewayOutgoing::Json(end));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{routing::get, Router};
+    use tokio::net::TcpListener;
+    use tokio::time::{timeout, Duration};
+
+    #[tokio::test]
+    async fn proxy_request_to_local_preserves_content_length() {
+        let app = Router::new().route(
+            "/",
+            get(|| async {
+                axum::response::Response::builder()
+                    .status(200)
+                    .header("content-type", "text/plain")
+                    .header("content-length", "5")
+                    .body(axum::body::Body::from("hello"))
+                    .unwrap()
+            }),
+        );
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        proxy_request_to_local("GET", port, "/", None, None, "req-1", &tx).await;
+
+        let first = timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        match first {
+            GatewayOutgoing::Json(frame) => {
+                assert_eq!(frame.frame_type, "response_start");
+                let headers = frame.headers.unwrap();
+                assert_eq!(headers.get("content-length").map(String::as_str), Some("5"));
+            }
+            GatewayOutgoing::Binary { .. } => panic!("expected response_start frame"),
+        }
+
+        server.abort();
+    }
 }

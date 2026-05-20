@@ -81,6 +81,20 @@ Base URL: `http://{address}:{port}`
 - SSE 格式: `data: {"type":"event.type","properties":{...}}`，**没有** `directory`/`payload` 包裹层
 - SSE `/global/event` 路径（非 `/event`），但解析器已处理
 
+## API Consistency Check
+- 当 Android 调用 opencode API 出现“Web 正常、Android 异常”时，先检查 **请求构造是否与 Web SDK 一致**，不要先怀疑 bridge/gateway
+- Web SDK 源码：`D:\github\opencode\packages\sdk\js\src\client.ts` 和 `...\v2\client.ts`
+- 当前 Web 规则：
+  - **非 GET/HEAD**：发送 `x-opencode-directory: encodeURIComponent(directory)` header
+  - **GET/HEAD**：把目录改写到 query `?directory=...`，同时移除 `x-opencode-directory`
+- Android 改请求层时，优先在 `core/network/OpencodeApiClient.kt` 的公共构造逻辑里统一处理，不要在单个 API 上各自拼接
+- 检查步骤：
+  1. 先看 Web 调用入口是否经过 `sdk.client.*`
+  2. 再看 JS SDK 是否对 header/query 做了 rewrite
+  3. 用 `MockWebServer` 给 Android `OpencodeApiClient` 补单测，锁定最终发出的 URL、query、header、body
+  4. 再用 `curl` 直打 `4096` 验证同一请求是否成功，确认是不是服务端行为变化
+- 已知案例：`revert/unrevert` 在当前 opencode 版本下依赖 `x-opencode-directory`；仅传 query `directory` 可能失败，而 `prompt_async` 对 query 更宽容
+
 ## SSE Event Types
 - `server.connected` / `server.heartbeat` / `server.instance.disposed`
 - `session.created` / `session.updated` / `session.deleted` / `session.status` / `session.error` / `session.diff`
@@ -97,5 +111,4 @@ Base fields: `{id, sessionID, messageID, type}`
 
 ## Current Status
 - **Phase 1** (直连 LAN opencode) 已完成，Phase 2 (Cloud Relay + Bridge Agent) Bridge开发已完成， Cloud Relay未开始
-
 
