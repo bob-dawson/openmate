@@ -171,8 +171,7 @@ async fn proxy_handler(
 
         let sse_response = Sse::new(stream).keep_alive(
             axum::response::sse::KeepAlive::new()
-                .interval(std::time::Duration::from_secs(15))
-                .text("ping"),
+                .interval(std::time::Duration::from_secs(15)),
         );
 
         Ok(sse_response.into_response())
