@@ -152,7 +152,6 @@ pub async fn run_server(
     tracing::info!("Bridge listening on {}", listen_addr);
 
     if !gateway_url.is_empty() && gateway_auto_connect {
-        let secret_key = app_state.secret_key.clone();
         let gw_url = gateway_url.clone();
         let gw_instance_id = gateway_instance_id.clone();
         tokio::spawn(async move {
@@ -165,7 +164,7 @@ pub async fn run_server(
                 &gateway_instance_id,
                 port,
             );
-            client.connect(&secret_key).await;
+            client.connect().await;
         });
     }
 

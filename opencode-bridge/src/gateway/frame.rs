@@ -28,7 +28,7 @@ pub struct TunnelFrame {
 }
 
 impl TunnelFrame {
-    pub fn register(instance_id: &str, token: &str) -> Self {
+    pub fn register(instance_id: &str) -> Self {
         Self {
             frame_type: "register".to_string(),
             request_id: None,
@@ -39,7 +39,7 @@ impl TunnelFrame {
             status: None,
             data: None,
             instance_id: Some(instance_id.to_string()),
-            token: Some(token.to_string()),
+            token: None,
             error_message: None,
         }
     }
@@ -194,12 +194,12 @@ mod tests {
 
     #[test]
     fn test_register_frame_roundtrip() {
-        let frame = TunnelFrame::register("inst-1", "tok-abc");
+        let frame = TunnelFrame::register("inst-1");
         let json = serde_json::to_string(&frame).unwrap();
         let parsed: TunnelFrame = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.frame_type, "register");
         assert_eq!(parsed.instance_id.as_deref(), Some("inst-1"));
-        assert_eq!(parsed.token.as_deref(), Some("tok-abc"));
+        assert!(parsed.token.is_none());
         assert!(parsed.request_id.is_none());
     }
 

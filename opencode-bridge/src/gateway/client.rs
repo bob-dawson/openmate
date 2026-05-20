@@ -4,8 +4,6 @@ use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 
-use crate::auth::key::SecretKey;
-use crate::auth::token::Token;
 use crate::config::GatewayConfig;
 use crate::gateway::frame::TunnelFrame;
 use crate::gateway::{proxy, sse_proxy};
@@ -34,9 +32,9 @@ impl GatewayClient {
         self.outbound_tx.clone()
     }
 
-    pub async fn connect(&mut self, secret_key: &SecretKey) {
+    pub async fn connect(&mut self) {
         loop {
-            if let Err(e) = self.connect_once(secret_key).await {
+            if let Err(e) = self.connect_once().await {
                 tracing::error!("Gateway connection error: {}", e);
             }
             tracing::info!("Gateway disconnected, reconnecting in 5s...");
@@ -44,7 +42,7 @@ impl GatewayClient {
         }
     }
 
-    async fn connect_once(&mut self, secret_key: &SecretKey) -> anyhow::Result<()> {
+    async fn connect_once(&mut self) -> anyhow::Result<()> {
         let ws_url = format!("{}/ws", self.config.url);
         tracing::info!("Connecting to gateway: {}", ws_url);
 
@@ -53,8 +51,7 @@ impl GatewayClient {
 
         tracing::info!("Gateway WebSocket connected");
 
-        let token = Token::generate(secret_key, &self.instance_id);
-        let register_frame = TunnelFrame::register(&self.instance_id, &token);
+        let register_frame = TunnelFrame::register(&self.instance_id);
         let register_json = serde_json::to_string(&register_frame)?;
         ws_sink.send(Message::Text(register_json.into())).await?;
 
