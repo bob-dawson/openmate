@@ -59,7 +59,7 @@ pub async fn auth_middleware(
         return next.run(req).await;
     }
 
-    if is_localhost && path.starts_with("/api/bridge/") {
+    if is_localhost {
         return next.run(req).await;
     }
 
