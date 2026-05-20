@@ -1,0 +1,12 @@
+[gateway]
+port = 8080
+hostname = "0.0.0.0"
+
+[auth]
+secret_key_path = "secret.key"
+
+[tunnel]
+heartbeat_interval = 30
+heartbeat_timeout = 60
+request_timeout = 30
+max_request_body = 10485760
