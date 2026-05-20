@@ -43,7 +43,10 @@ impl GatewayClient {
     }
 
     async fn connect_once(&mut self) -> anyhow::Result<()> {
-        let ws_url = format!("{}/ws", self.config.url);
+        let ws_url = self.config.url
+            .replace("https://", "wss://")
+            .replace("http://", "ws://");
+        let ws_url = format!("{}/ws", ws_url);
         tracing::info!("Connecting to gateway: {}", ws_url);
 
         let (ws_stream, _) = connect_async(&ws_url).await?;
