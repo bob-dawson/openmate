@@ -25,11 +25,17 @@ pub struct SseStream {
     pub event_tx: mpsc::UnboundedSender<String>,
 }
 
+pub struct PendingStream {
+    pub start_tx: Option<oneshot::Sender<(u16, Vec<(String, String)>)>>,
+    pub chunk_tx: mpsc::UnboundedSender<Vec<u8>>,
+}
+
 pub struct GatewayState {
     pub config: Config,
     pub bridges: dashmap::DashMap<String, BridgeConn>,
     pub pending_requests: dashmap::DashMap<String, PendingRequest>,
     pub pending_sse: dashmap::DashMap<String, SseStream>,
+    pub pending_streams: dashmap::DashMap<String, PendingStream>,
 }
 
 impl GatewayState {
@@ -39,6 +45,7 @@ impl GatewayState {
             bridges: dashmap::DashMap::new(),
             pending_requests: dashmap::DashMap::new(),
             pending_sse: dashmap::DashMap::new(),
+            pending_streams: dashmap::DashMap::new(),
         }
     }
 }

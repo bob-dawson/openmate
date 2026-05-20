@@ -57,7 +57,7 @@ fn default_request_timeout() -> u64 {
 }
 
 fn default_max_request_body() -> usize {
-    10 * 1024 * 1024
+    100 * 1024 * 1024
 }
 
 impl Default for TunnelConfig {

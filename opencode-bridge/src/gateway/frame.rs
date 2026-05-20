@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Serialize, Deserialize)]
+pub enum GatewayOutgoing {
+    Json(TunnelFrame),
+    Binary { request_id: String, data: Vec<u8> },
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct TunnelFrame {
     #[serde(rename = "type")]
     pub frame_type: String,
@@ -168,6 +173,36 @@ impl TunnelFrame {
             instance_id: None,
             token: None,
             error_message: None,
+        }
+    }
+
+    pub fn response_start(
+        request_id: &str,
+        status: u16,
+        headers: Option<HashMap<String, String>>,
+    ) -> Self {
+        Self {
+            frame_type: "response_start".to_string(),
+            request_id: Some(request_id.to_string()),
+            status: Some(status),
+            headers,
+            ..Default::default()
+        }
+    }
+
+    pub fn response_chunk(request_id: &str) -> Self {
+        Self {
+            frame_type: "response_chunk".to_string(),
+            request_id: Some(request_id.to_string()),
+            ..Default::default()
+        }
+    }
+
+    pub fn response_end(request_id: &str) -> Self {
+        Self {
+            frame_type: "response_end".to_string(),
+            request_id: Some(request_id.to_string()),
+            ..Default::default()
         }
     }
 

@@ -56,60 +56,77 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
             }
         };
 
-        let text = match msg {
-            Message::Text(t) => t,
-            Message::Close(_) => break,
-            _ => continue,
-        };
-
-        let frame: TunnelFrame = match serde_json::from_str(&text) {
-            Ok(f) => f,
-            Err(e) => {
-                tracing::warn!("failed to parse ws frame: {e}");
-                continue;
-            }
-        };
-
-        match frame.frame_type.as_str() {
-            "register" => {
-                let instance_id = match &frame.instance_id {
-                    Some(id) => id.clone(),
-                    None => {
-                        tracing::warn!("register frame without instance_id");
+        match msg {
+            Message::Text(text) => {
+                let frame: TunnelFrame = match serde_json::from_str(&text) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        tracing::warn!("failed to parse ws frame: {e}");
                         continue;
                     }
                 };
 
-                *instance_id_holder.lock().await = Some(instance_id.clone());
-                crate::tunnel::bridge::handle_register(&recv_state, instance_id, tx.clone());
+                match frame.frame_type.as_str() {
+                    "register" => {
+                        let instance_id = match &frame.instance_id {
+                            Some(id) => id.clone(),
+                            None => {
+                                tracing::warn!("register frame without instance_id");
+                                continue;
+                            }
+                        };
 
-                if tx.send(TunnelFrame::pong()).is_err() {
-                    break;
-                }
-            }
-            "ping" => {
-                let holder = instance_id_holder.lock().await;
-                if let Some(ref iid) = *holder {
-                    crate::tunnel::bridge::handle_heartbeat(&recv_state, iid);
-                }
-                drop(holder);
+                        *instance_id_holder.lock().await = Some(instance_id.clone());
+                        crate::tunnel::bridge::handle_register(&recv_state, instance_id, tx.clone());
 
-                if tx.send(TunnelFrame::pong()).is_err() {
-                    break;
+                        if tx.send(TunnelFrame::pong()).is_err() {
+                            break;
+                        }
+                    }
+                    "ping" => {
+                        let holder = instance_id_holder.lock().await;
+                        if let Some(ref iid) = *holder {
+                            crate::tunnel::bridge::handle_heartbeat(&recv_state, iid);
+                        }
+                        drop(holder);
+
+                        if tx.send(TunnelFrame::pong()).is_err() {
+                            break;
+                        }
+                    }
+                    "response" => {
+                        crate::proxy::http::handle_tunnel_response(&recv_state, frame);
+                    }
+                    "response_start" => {
+                        crate::proxy::http::handle_response_start(&recv_state, frame);
+                    }
+                    "response_chunk" => {}
+                    "response_end" => {
+                        crate::proxy::http::handle_response_end(&recv_state, frame);
+                    }
+                    "sse_event" => {
+                        crate::proxy::sse::handle_sse_event(&recv_state, &frame);
+                    }
+                    "sse_close" => {
+                        crate::proxy::sse::handle_sse_close(&recv_state, &frame);
+                    }
+                    other => {
+                        tracing::warn!(frame_type = %other, "unknown frame type");
+                    }
                 }
             }
-            "response" => {
-                crate::proxy::http::handle_tunnel_response(&recv_state, frame);
+            Message::Binary(data) => {
+                if data.len() < 36 {
+                    tracing::warn!("binary ws message too short, ignoring");
+                    continue;
+                }
+                let rid_bytes = &data[..36];
+                let chunk = data[36..].to_vec();
+                let request_id = String::from_utf8_lossy(rid_bytes);
+                crate::proxy::http::handle_stream_chunk(&recv_state, &request_id, chunk);
             }
-            "sse_event" => {
-                crate::proxy::sse::handle_sse_event(&recv_state, &frame);
-            }
-            "sse_close" => {
-                crate::proxy::sse::handle_sse_close(&recv_state, &frame);
-            }
-            other => {
-                tracing::warn!(frame_type = %other, "unknown frame type");
-            }
+            Message::Close(_) => break,
+            _ => {}
         }
     }
 
@@ -139,6 +156,10 @@ async fn proxy_handler(
             crate::error::GatewayError::BadRequest("Missing X-Instance-Id header".to_string())
         })?
         .to_string();
+
+    let is_stream = path_only.starts_with("/api/bridge/fs/download")
+        || path_only.starts_with("/api/bridge/fs/upload")
+        || path_only.starts_with("/files/");
 
     let is_sse = path_only == "/global/event"
         || headers
@@ -175,6 +196,47 @@ async fn proxy_handler(
         );
 
         Ok(sse_response.into_response())
+    } else if is_stream {
+        let body_bytes = axum::body::to_bytes(req.into_body(), state.config.tunnel.max_request_body)
+            .await
+            .map_err(|e| crate::error::GatewayError::BadRequest(format!("body read error: {e}")))?;
+
+        let body_str = if body_bytes.is_empty() {
+            None
+        } else {
+            Some(String::from_utf8_lossy(&body_bytes).to_string())
+        };
+
+        let req_headers: HashMap<String, String> = headers
+            .iter()
+            .filter_map(|(k, v)| v.to_str().ok().map(|s| (k.to_string(), s.to_string())))
+            .collect();
+
+        let (status, resp_headers, chunk_rx) = crate::proxy::http::proxy_http_request_streaming(
+            state,
+            &instance_id,
+            method.as_str(),
+            &full_path,
+            Some(req_headers),
+            body_str,
+        )
+        .await?;
+
+        let mut builder = axum::response::Response::builder().status(status);
+        for (k, v) in &resp_headers {
+            if let Ok(name) = axum::http::header::HeaderName::from_bytes(k.as_bytes()) {
+                if let Ok(val) = axum::http::header::HeaderValue::from_str(v) {
+                    builder = builder.header(name, val);
+                }
+            }
+        }
+
+        let body = Body::from_stream(
+            futures::stream::unfold(chunk_rx, |mut rx| async move {
+                rx.recv().await.map(|chunk| (Ok::<_, Infallible>(chunk), rx))
+            }),
+        );
+        Ok(builder.body(body).unwrap())
     } else {
         let body_bytes = axum::body::to_bytes(req.into_body(), state.config.tunnel.max_request_body)
             .await

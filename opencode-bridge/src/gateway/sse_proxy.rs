@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::gateway::frame::TunnelFrame;
+use crate::gateway::frame::{GatewayOutgoing, TunnelFrame};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
@@ -9,7 +9,7 @@ pub async fn proxy_sse_to_tunnel(
     path: &str,
     headers: Option<HashMap<String, String>>,
     request_id: &str,
-    tunnel_tx: mpsc::UnboundedSender<TunnelFrame>,
+    tunnel_tx: mpsc::UnboundedSender<GatewayOutgoing>,
 ) {
     let url = format!("http://127.0.0.1:{}{}", local_port, path);
 
@@ -30,12 +30,12 @@ pub async fn proxy_sse_to_tunnel(
         Ok(r) => r,
         Err(e) => {
             tracing::error!("SSE proxy connect failed: {}", e);
-            let _ = tunnel_tx.send(TunnelFrame::error(
+            let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::error(
                 Some(request_id.to_string()),
                 502,
                 &format!("SSE connect error: {}", e),
-            ));
-            let _ = tunnel_tx.send(TunnelFrame::sse_close(request_id));
+            )));
+            let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::sse_close(request_id)));
             return;
         }
     };
@@ -43,12 +43,12 @@ pub async fn proxy_sse_to_tunnel(
     if !resp.status().is_success() {
         let status = resp.status().as_u16();
         let body = resp.text().await.unwrap_or_default();
-        let _ = tunnel_tx.send(TunnelFrame::error(
+        let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::error(
             Some(request_id.to_string()),
             status,
             &body,
-        ));
-        let _ = tunnel_tx.send(TunnelFrame::sse_close(request_id));
+        )));
+        let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::sse_close(request_id)));
         return;
     }
 
@@ -63,7 +63,7 @@ pub async fn proxy_sse_to_tunnel(
                     let event = buffer[..pos + 2].to_string();
                     buffer = buffer[pos + 2..].to_string();
                     if tunnel_tx
-                        .send(TunnelFrame::sse_event(request_id, &event))
+                        .send(GatewayOutgoing::Json(TunnelFrame::sse_event(request_id, &event)))
                         .is_err()
                     {
                         return;
@@ -78,8 +78,8 @@ pub async fn proxy_sse_to_tunnel(
     }
 
     if !buffer.trim().is_empty() {
-        let _ = tunnel_tx.send(TunnelFrame::sse_event(request_id, &buffer));
+        let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::sse_event(request_id, &buffer)));
     }
 
-    let _ = tunnel_tx.send(TunnelFrame::sse_close(request_id));
+    let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::sse_close(request_id)));
 }

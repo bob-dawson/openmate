@@ -5,15 +5,15 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream};
 
 use crate::config::GatewayConfig;
-use crate::gateway::frame::TunnelFrame;
+use crate::gateway::frame::{GatewayOutgoing, TunnelFrame};
 use crate::gateway::{proxy, sse_proxy};
 
 pub struct GatewayClient {
     config: GatewayConfig,
     instance_id: String,
     local_port: u16,
-    outbound_tx: mpsc::UnboundedSender<TunnelFrame>,
-    outbound_rx: mpsc::UnboundedReceiver<TunnelFrame>,
+    outbound_tx: mpsc::UnboundedSender<GatewayOutgoing>,
+    outbound_rx: mpsc::UnboundedReceiver<GatewayOutgoing>,
 }
 
 impl GatewayClient {
@@ -28,7 +28,7 @@ impl GatewayClient {
         }
     }
 
-    pub fn sender(&self) -> mpsc::UnboundedSender<TunnelFrame> {
+    pub fn sender(&self) -> mpsc::UnboundedSender<GatewayOutgoing> {
         self.outbound_tx.clone()
     }
 
@@ -94,11 +94,21 @@ impl GatewayClient {
                     }
                 }
 
-                Some(frame) = self.outbound_rx.recv() => {
-                    let json = serde_json::to_string(&frame)?;
-                    if ws_sink.send(Message::Text(json.into())).await.is_err() {
-                        tracing::warn!("Failed to send outbound frame, connection lost");
-                        break;
+                Some(outgoing) = self.outbound_rx.recv() => {
+                    match outgoing {
+                        GatewayOutgoing::Json(frame) => {
+                            let json = serde_json::to_string(&frame)?;
+                            ws_sink.send(Message::Text(json.into())).await?;
+                        }
+                        GatewayOutgoing::Binary { request_id, data } => {
+                            let mut msg = Vec::with_capacity(36 + data.len());
+                            msg.extend_from_slice(request_id.as_bytes());
+                            msg.extend_from_slice(&data);
+                            if ws_sink.send(Message::Binary(msg.into())).await.is_err() {
+                                tracing::warn!("Failed to send binary frame, connection lost");
+                                break;
+                            }
+                        }
                     }
                 }
 
@@ -146,13 +156,15 @@ impl GatewayClient {
                 let tunnel_tx = self.outbound_tx.clone();
 
                 tokio::spawn(async move {
-                    let mut response = proxy::proxy_request_to_local(
+                    proxy::proxy_request_to_local(
                         &method, local_port, &path, headers, body,
+                        &request_id, &tunnel_tx,
                     )
                     .await;
-                    response.request_id = Some(request_id);
-                    let _ = tunnel_tx.send(response);
                 });
+            }
+            "response_start" | "response_chunk" | "response_end" => {
+                tracing::warn!("unexpected stream frame type from gateway: {}", frame.frame_type);
             }
             "sse_open" => {
                 let request_id = frame.request_id.clone().unwrap_or_default();

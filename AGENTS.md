@@ -4,6 +4,7 @@
 
 - **Android 客户端**: `D:\openmate\android` — 详见 [`android/AGENTS.md`](android/AGENTS.md)（架构、构建、约定、API 等）
 - **Bridge Agent**: `D:\openmate\opencode-bridge` — 详见 [`opencode-bridge/AGENTS.md`](opencode-bridge/AGENTS.md)（Rust 代理/进程管理/文件服务，端口 4097）
+- **Relay Gateway**: `D:\openmate\server\relay-gateway` — 详见 [`server/relay-gateway/AGENTS.md`](server/relay-gateway/AGENTS.md)（Rust 中继网关，部署在 `gateway.clawmate.net`，端口 6200）
 - **opencode 源码**: `D:\github\opencode` — 排查服务端事件流、`prompt_async`、`session.next.*` 相关逻辑时优先查看该仓库及其 `AGENTS.md`
 - **调试脚本**: `D:\openmate\scripts\`
 - **sync-debugger**: `D:\openmate\tools\sync-debugger` — 详见 [`tools/sync-debugger/AGENTS.md`](tools/sync-debugger/AGENTS.md)（纯 Kotlin/JVM CLI，重放 EventReplayer 增量同步排查 bug）
