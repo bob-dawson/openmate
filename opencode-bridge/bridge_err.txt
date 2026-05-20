@@ -1,0 +1,8 @@
+
+thread 'tokio-rt-worker' (60940) panicked at C:\Users\bob_d\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\rustls-0.23.40\src\crypto\mod.rs:249:14:
+
+Could not automatically determine the process-level CryptoProvider from Rustls crate features.
+Call CryptoProvider::install_default() before this point to select a provider manually, or make sure exactly one of the 'aws-lc-rs' and 'ring' features is enabled.
+See the documentation of the CryptoProvider type for more information.
+            
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

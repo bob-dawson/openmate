@@ -27,6 +27,28 @@ class SseEventRepositoryImpl @Inject constructor(
     private var isSubscribed = false
 
     override fun connect(address: String, port: Int, password: String?): Flow<SseEvent> {
+        ensureSubscribed()
+        sseClient.connect(address, port, password)
+        return sseClient.events.map { sseData ->
+            SseEvent(
+                type = sseData.type,
+                payload = sseData.properties.toString(),
+            )
+        }
+    }
+
+    override fun connectViaGateway(baseUrl: String): Flow<SseEvent> {
+        ensureSubscribed()
+        sseClient.connectViaGateway(baseUrl)
+        return sseClient.events.map { sseData ->
+            SseEvent(
+                type = sseData.type,
+                payload = sseData.properties.toString(),
+            )
+        }
+    }
+
+    private fun ensureSubscribed() {
         if (!isSubscribed) {
             isSubscribed = true
             eventJob = CoroutineScope(Dispatchers.IO).launch {
@@ -34,15 +56,6 @@ class SseEventRepositoryImpl @Inject constructor(
                     eventDispatcher.dispatch(sseData)
                 }
             }
-        }
-
-        sseClient.connect(address, port, password)
-
-        return sseClient.events.map { sseData ->
-            SseEvent(
-                type = sseData.type,
-                payload = sseData.properties.toString(),
-            )
         }
     }
 

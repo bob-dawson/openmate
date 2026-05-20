@@ -67,6 +67,7 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:network"))
     implementation(project(":core:common"))
+    implementation(libs.okhttp)
 
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)

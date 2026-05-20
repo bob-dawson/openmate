@@ -10,6 +10,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.data.sync.SyncSseHandler
+import com.openmate.core.network.GatewayInterceptor
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.TokenStore
@@ -105,18 +106,49 @@ class InstanceListViewModel @Inject constructor(
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
+            val directUrl = "http://${profile.address}:${profile.port}"
+            apiClient.baseUrl = directUrl
+
+            var useGateway = false
+            try {
+                apiClient.bridgeStatus()
+            } catch (e: Exception) {
+                if (profile.instanceId.isNotEmpty() && isGatewayOnline(profile.instanceId)) {
+                    useGateway = true
+                    apiClient.baseUrl = "https://gateway.clawmate.net"
+                }
+            }
+
             try {
                 tokenStore.setActiveProfileId(profile.id)
                 dbProvider.setActive(profile.id)
-                apiClient.baseUrl = "http://${profile.address}:${profile.port}"
-                sseEventRepository.connect(profile.address, profile.port, profile.password)
+                if (useGateway) {
+                    sseEventRepository.connectViaGateway(apiClient.baseUrl)
+                } else {
+                    sseEventRepository.connect(profile.address, profile.port, profile.password)
+                }
                 syncSseHandler.start()
+                syncSseClient.instanceId = if (useGateway) profile.instanceId else null
                 syncSseClient.connect(apiClient.baseUrl)
                 val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
                 profileRepository.save(updated)
             } catch (e: Exception) {
                 Log.w("InstanceListVM", "connect failed", e)
             }
+        }
+    }
+
+    private fun isGatewayOnline(instanceId: String): Boolean {
+        return try {
+            val url = java.net.URL("https://gateway.clawmate.net/api/gateway/status?instance_id=$instanceId")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            val success = conn.responseCode == 200
+            conn.disconnect()
+            success
+        } catch (e: Exception) {
+            false
         }
     }
 

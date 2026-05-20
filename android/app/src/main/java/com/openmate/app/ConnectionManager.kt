@@ -8,6 +8,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.data.sync.SyncSseHandler
+import com.openmate.core.network.GatewayInterceptor
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.TokenStore
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.net.URL
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -32,7 +34,11 @@ class ConnectionManager @Inject constructor(
     private val tokenStore: TokenStore,
     private val syncSseClient: SyncSseClient,
     private val syncSseHandler: SyncSseHandler,
+    private val gatewayInterceptor: GatewayInterceptor,
 ) {
+    companion object {
+        private const val GATEWAY_URL = "https://gateway.clawmate.net"
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var syncSseJob: Job? = null
 
@@ -74,11 +80,15 @@ class ConnectionManager @Inject constructor(
             _errorMessage.value = null
             _needsRepairing.value = null
             _activeProfile.value = profile
-            
-            tokenStore.setActiveProfileId(profile.id)
 
+            tokenStore.setActiveProfileId(profile.id)
             dbProvider.setActive(profile.id)
-            apiClient.baseUrl = "http://${profile.address}:${profile.port}"
+
+            val directUrl = "http://${profile.address}:${profile.port}"
+            apiClient.baseUrl = directUrl
+            gatewayInterceptor.instanceId = null
+
+            var useGateway = false
 
             try {
                 val status = apiClient.bridgeStatus()
@@ -98,17 +108,27 @@ class ConnectionManager @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
-                _errorMessage.value = "Bridge not reachable: ${e.message}"
-                clearConnection()
-                return@launch
+                if (profile.instanceId.isNotEmpty() && isGatewayOnline(profile.instanceId)) {
+                    useGateway = true
+                    apiClient.baseUrl = GATEWAY_URL
+                    gatewayInterceptor.instanceId = profile.instanceId
+                } else {
+                    _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
+                    _errorMessage.value = "Bridge not reachable: ${e.message}"
+                    clearConnection()
+                    return@launch
+                }
             }
 
             val updated = profile.copy(lastConnectedAt = System.currentTimeMillis())
             profileRepository.save(updated)
 
             try {
-                sseEventRepository.connect(profile.address, profile.port, profile.password)
+                if (useGateway) {
+                    sseEventRepository.connectViaGateway(GATEWAY_URL)
+                } else {
+                    sseEventRepository.connect(profile.address, profile.port, profile.password)
+                }
             } catch (e: Exception) {
                 _connectionStatus.value = ConnectionStatus.ERROR
                 _errorMessage.value = e.message ?: "Connection failed"
@@ -118,11 +138,26 @@ class ConnectionManager @Inject constructor(
                 syncSseHandler.start()
                 syncSseJob?.cancel()
                 syncSseJob = scope.launch {
+                    syncSseClient.instanceId = if (useGateway) profile.instanceId else null
                     syncSseClient.connect(apiClient.baseUrl)
                 }
             } catch (e: Exception) {
                 Log.e("ConnectionManager", "Sync SSE start failed", e)
             }
+        }
+    }
+
+    private suspend fun isGatewayOnline(instanceId: String): Boolean {
+        return try {
+            val url = URL("$GATEWAY_URL/api/gateway/status?instance_id=$instanceId")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            val success = conn.responseCode == 200
+            conn.disconnect()
+            success
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -146,6 +181,7 @@ class ConnectionManager @Inject constructor(
         sseEventRepository.disconnect()
         syncSseJob?.cancel()
         syncSseClient.disconnect()
+        gatewayInterceptor.instanceId = null
         scope.launch { clearConnection() }
     }
 

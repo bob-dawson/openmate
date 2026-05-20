@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话详情 UI v2 — 底部工具栏细化</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 24px;
+  }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  .subtitle { color: #888; margin-bottom: 32px; }
+  h2 { font-size: 18px; margin: 32px 0 16px; color: #aad; }
+  .phone { background: #0f0f23; border-radius: 20px; padding: 10px; border: 2px solid #333; max-width: 360px; margin: 0 auto; }
+  .screen { background: #1a1a2e; border-radius: 12px; min-height: 620px; overflow: hidden; display: flex; flex-direction: column; }
+  .topbar { display: flex; align-items: center; padding: 8px 12px; background: #16213e; border-bottom: 1px solid #2a2a4a; gap: 6px; }
+  .topbar .back { width: 28px; height: 28px; border-radius: 50%; background: #2a2a4a; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .topbar .title { flex: 1; font-size: 14px; font-weight: bold; margin-left: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; margin-right: 4px; flex-shrink: 0; }
+  .topbar .icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
+  .topbar .icon:hover { background: #2a2a4a; }
+  .msgs { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 12px; min-height: 340px; }
+  .msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 12px; line-height: 1.4; }
+  .msg.user { align-self: flex-end; background: #1a3a5c; }
+  .msg.assistant { align-self: flex-start; background: #2a2a4a; }
+  .msg.system { align-self: center; color: #666; font-size: 11px; }
+  .msg.tool { align-self: flex-start; background: #232340; font-size: 11px; color: #aaa; border: 1px solid #333; width: 100%; }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
+    background: #16213e;
+    border-top: 1px solid #2a2a4a;
+    border-bottom: 1px solid #2a2a4a;
+    gap: 4px;
+  }
+  .toolbar .group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .toolbar .group .sep {
+    width: 1px;
+    height: 20px;
+    background: #333;
+    margin: 0 4px;
+  }
+  .toolbar .btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .toolbar .btn:hover { background: #2a2a4a; }
+  .toolbar .btn.primary { color: #8af; }
+  .toolbar .chip {
+    font-size: 11px;
+    color: #aaa;
+    background: #232340;
+    padding: 4px 10px;
+    border-radius: 16px;
+    border: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .toolbar .chip .pct { color: #8af; font-weight: bold; }
+  .toolbar .chip .cost { color: #8f8; }
+
+  .input-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #16213e; border-top: 1px solid #2a2a4a; }
+  .input-field { flex: 1; height: 36px; border-radius: 18px; background: #2a2a4a; border: none; padding: 0 16px; color: #e0e0e0; font-size: 13px; }
+  .send-btn { width: 36px; height: 36px; border-radius: 50%; background: #4a7aff; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+
+  .callout { background: #16213e; border-radius: 12px; padding: 20px; border: 1px solid #2a2a4a; margin-top: 24px; max-width: 720px; }
+  .callout .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px; }
+  .callout ul { list-style: none; font-size: 13px; line-height: 1.8; }
+  .callout ul li::before { content: "• "; color: #8af; }
+  .files { font-family: monospace; font-size: 12px; background: #0f0f23; padding: 16px; border-radius: 8px; line-height: 1.6; margin-top: 12px; }
+  .files .fn { color: #8af; }
+  .files .arrow { color: #888; }
+</style>
+</head>
+<body>
+<h1>📱 会话详情 UI — 方案 A 细化</h1>
+<p class="subtitle">底部工具栏整合：消息导航 + 回滚 + 文件浏览器 + Context 信息</p>
+
+<div class="phone">
+  <div class="screen">
+    <!-- Top Bar: 只有搜索 + 菜单 -->
+    <div class="topbar">
+      <div class="back">←</div>
+      <div class="title">实现用户登录</div>
+      <div class="dot"></div>
+      <div class="icon" style="font-size:18px;">⌕</div>
+      <div class="icon" style="font-size:20px;font-weight:bold;">⋯</div>
+    </div>
+
+    <!-- Messages -->
+    <div class="msgs">
+      <div class="msg system">— 今天 —</div>
+      <div class="msg user">帮我实现用户登录功能</div>
+      <div class="msg assistant">好的，我来设计用户登录系统...</div>
+      <div class="msg tool">[tool: 创建文件 auth.dart]</div>
+      <div class="msg assistant">我们需要以下几个文件...</div>
+    </div>
+
+    <!-- Bottom Toolbar: 导航 + 操作 + Token -->
+    <div class="toolbar">
+      <div class="group">
+        <div class="btn primary" title="上一条用户消息">‹</div>
+        <div class="btn" title="下一条用户消息">›</div>
+        <div class="btn" title="滚动到底部">⟁</div>
+        <div class="sep"></div>
+        <div class="btn" title="回滚到此处">↶</div>
+        <div class="btn" title="浏览文件">📂</div>
+      </div>
+      <div class="chip">
+        <span>12.4k</span>
+        <span class="pct">(6%)</span>
+        <span>·</span>
+        <span class="cost">$0.04</span>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-row">
+      <div class="input-field">输入消息...</div>
+      <div class="send-btn">➤</div>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <h2 style="margin:0;font-size:16px;color:#aad;">布局说明</h2>
+  <div class="grid">
+    <ul>
+      <li><strong>顶栏</strong>：← + 标题 + 搜索 + 菜单</li>
+      <li><strong>底部工具栏左</strong>：‹ › ⟁ 导航 + ↶ 回滚 + 📂 文件</li>
+      <li><strong>底部工具栏右</strong>：token chip（12.4k · 6% · $0.04）</li>
+      <li><strong>消息导航</strong>：‹ 上一条 user，› 下一条 user，⟁ 到底部</li>
+      <li><strong>回滚</strong>：点击回滚到当前视图位置</li>
+      <li><strong>文件</strong>：打开工作区文件浏览器</li>
+    </ul>
+    <ul>
+      <li><strong>回滚/文件移出顶栏</strong>后顶栏更清爽</li>
+      <li><strong>6 个按钮 + chip</strong>，360dp 宽度足够</li>
+      <li><strong>分组线</strong>区分导航与操作</li>
+      <li><strong>Token</strong> 显示最后一条 assistant 的用量</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout">
+  <h2 style="margin:0;font-size:16px;color:#aad;">待改文件清单（讨论确认后列出）</h2>
+  <div class="files">
+    <span class="fn">SessionDetailScreen.kt</span> <span class="arrow">→</span> 删浮动按钮，加底部工具栏<br>
+    <span class="fn">SessionDetailScreen.kt</span> <span class="arrow">→</span> 顶栏删 ↶/📂，只留搜索+菜单<br>
+    <span class="fn">SessionDto.kt</span> <span class="arrow">→</span> 加 cost + tokens 字段<br>
+    <span class="fn">Session.kt</span> <span class="arrow">→</span> 加对应 domain 字段<br>
+    <span class="fn">ProviderDto.kt</span> <span class="arrow">→</span> ModelInfoDto 加 limit 字段<br>
+    <span class="fn">SessionDetailViewModel.kt</span> <span class="arrow">→</span> 提供 token + context limit 计算<br>
+    <span class="fn">strings.xml</span> <span class="arrow">→</span> 新按钮的 contentDescription
+  </div>
+</div>
+
+<p style="margin-top:24px;color:#888;font-size:13px;">看看这个布局怎么样？确认后我就开始写实现计划。</p>
+</body>
+</html>

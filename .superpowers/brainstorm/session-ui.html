@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话详情 UI 设计方案</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 24px;
+  }
+  h1 { font-size: 24px; margin-bottom: 8px; }
+  .subtitle { color: #888; margin-bottom: 32px; }
+  h2 { font-size: 18px; margin: 32px 0 16px; color: #aad; border-bottom: 1px solid #333; padding-bottom: 8px; }
+  .layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 24px; margin-bottom: 40px; }
+  .card { background: #16213e; border-radius: 12px; padding: 16px; border: 1px solid #2a2a4a; }
+  .card h3 { font-size: 14px; color: #88aaff; margin-bottom: 12px; }
+  .phone { background: #0f0f23; border-radius: 20px; padding: 10px; border: 2px solid #333; width: 100%; max-width: 360px; margin: 0 auto; }
+  .phone-screen { background: #1a1a2e; border-radius: 12px; min-height: 600px; overflow: hidden; display: flex; flex-direction: column; }
+  .topbar { display: flex; align-items: center; padding: 8px 12px; background: #16213e; border-bottom: 1px solid #2a2a4a; gap: 6px; }
+  .topbar .back { width: 28px; height: 28px; border-radius: 50%; background: #2a2a4a; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .topbar .title { flex: 1; font-size: 14px; font-weight: bold; margin-left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; margin-right: 8px; }
+  .topbar .actions { display: flex; gap: 2px; }
+  .topbar .icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; background: transparent; }
+  .msgs { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 12px; min-height: 350px; position: relative; }
+  .msg { max-width: 85%; padding: 8px 12px; border-radius: 12px; font-size: 12px; line-height: 1.4; }
+  .msg.user { align-self: flex-end; background: #1a3a5c; }
+  .msg.assistant { align-self: flex-start; background: #2a2a4a; }
+  .msg.system { align-self: center; color: #666; font-size: 11px; }
+  .msg.tool { align-self: flex-start; background: #232340; font-size: 11px; color: #aaa; border: 1px solid #333; width: 100%; }
+  .input-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #16213e; border-top: 1px solid #2a2a4a; }
+  .input-field { flex: 1; height: 36px; border-radius: 18px; background: #2a2a4a; border: none; padding: 0 16px; color: #e0e0e0; font-size: 13px; }
+  .send-btn { width: 36px; height: 36px; border-radius: 50%; background: #4a7aff; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .toolbar-a { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: #16213e; border-top: 1px solid #2a2a4a; }
+  .toolbar-a .nav-group { display: flex; gap: 4px; }
+  .toolbar-a .nav-btn { width: 30px; height: 30px; border-radius: 8px; background: #2a2a4a; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .toolbar-a .nav-btn:last-child { background: #3a3a5a; }
+  .toolbar-a .token-chip { font-size: 11px; color: #aaa; background: #232340; padding: 4px 10px; border-radius: 20px; border: 1px solid #333; display: flex; align-items: center; gap: 6px; }
+  .toolbar-a .token-chip .pct { color: #8af; font-weight: bold; }
+  .toolbar-a .token-chip .cost { color: #8f8; }
+  .toolbar-b { display: flex; flex-direction: column; background: #16213e; border-top: 1px solid #2a2a4a; }
+  .toolbar-b .row1 { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; }
+  .toolbar-b .nav-group { display: flex; gap: 4px; }
+  .toolbar-b .nav-btn { width: 30px; height: 30px; border-radius: 8px; background: #2a2a4a; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .toolbar-b .row2 { display: flex; align-items: center; justify-content: space-between; padding: 4px 12px 6px; font-size: 11px; color: #aaa; background: #1e1e38; border-top: 1px solid #2a2a4a; }
+  .toolbar-b .row2 .pct { color: #8af; font-weight: bold; }
+  .float-group { position: absolute; bottom: 12px; right: 12px; display: flex; gap: 4px; }
+  .float-btn { width: 34px; height: 34px; border-radius: 50%; background: #2a2a4a; display: flex; align-items: center; justify-content: center; font-size: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+  .float-btn.down { background: #3a3a5a; }
+  .float-chip { position: absolute; bottom: 56px; right: 12px; font-size: 10px; color: #888; background: #1e1e38; padding: 4px 10px; border-radius: 12px; border: 1px solid #333; white-space: nowrap; }
+  .topbar-d { display: flex; flex-direction: column; background: #16213e; border-bottom: 1px solid #2a2a4a; }
+  .topbar-d .row1 { display: flex; align-items: center; padding: 6px 12px; gap: 6px; }
+  .topbar-d .row2 { display: flex; align-items: center; justify-content: space-between; padding: 3px 12px 5px; font-size: 11px; color: #aaa; background: #1e1e38; border-top: 1px solid #2a2a4a; }
+  .topbar-d .row2 .token-info { display: flex; gap: 8px; }
+  .topbar-d .row2 .nav-group { display: flex; gap: 4px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-top: 8px; }
+  .tag.recommended { background: #1a3a5c; color: #8af; border: 1px solid #2a5a8c; }
+  .pros { font-size: 12px; color: #aaa; margin-top: 8px; padding-left: 16px; }
+  .pros li { margin-bottom: 4px; }
+  .pros li.good { color: #8f8; }
+  .pros li.bad { color: #f88; }
+  .phone-container { display: flex; flex-direction: column; align-items: center; }
+  .phone-label { font-size: 13px; color: #aaa; margin-top: 8px; text-align: center; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>📱 会话详情 UI 设计</h1>
+<p class="subtitle">4 种布局方案对比 — 底部工具栏 + Token/Context 信息 + 导航按钮</p>
+<div class="layout-grid">
+  <div class="card">
+    <div class="phone-container">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="topbar"><div class="back">←</div><div class="title">实现用户登录</div><div class="dot"></div><div class="actions"><div class="icon">🔍</div><div class="icon">📂</div><div class="icon">⋮</div></div></div>
+          <div class="msgs">
+            <div class="msg system">— 今天 —</div>
+            <div class="msg user">帮我实现用户登录功能</div>
+            <div class="msg assistant">好的，我来设计用户登录系统...</div>
+            <div class="msg tool">[tool: 创建文件 auth.dart]</div>
+            <div class="msg assistant">我们需要以下几个文件...</div>
+          </div>
+          <div class="toolbar-a">
+            <div class="nav-group">
+              <div class="nav-btn" title="上一条用户消息">‹</div>
+              <div class="nav-btn" title="下一条用户消息">›</div>
+              <div class="nav-btn" title="滚动到底部">⟁</div>
+            </div>
+            <div class="token-chip"><span>12.4k</span><span class="pct">(6%)</span><span>·</span><span class="cost">$0.04</span></div>
+          </div>
+          <div class="input-row"><div class="input-field">输入消息...</div><div class="send-btn">➤</div></div>
+        </div>
+      </div>
+      <div class="phone-label">A: 底部工具栏 <span class="tag" style="background:#1a3a5c;color:#8af;border:1px solid #2a5a8c;">推荐</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="phone-container">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="topbar"><div class="back">←</div><div class="title">实现用户登录</div><div class="dot"></div><div class="actions"><div class="icon">🔍</div><div class="icon">📂</div><div class="icon">⋮</div></div></div>
+          <div class="msgs">
+            <div class="msg system">— 今天 —</div>
+            <div class="msg user">帮我实现用户登录功能</div>
+            <div class="msg assistant">好的，我来设计用户登录系统...</div>
+            <div class="msg tool">[tool: 创建文件 auth.dart]</div>
+            <div class="msg assistant">我们需要以下几个文件...</div>
+          </div>
+          <div class="toolbar-b">
+            <div class="row1">
+              <div class="nav-group">
+                <div class="nav-btn" title="上一条用户消息">‹</div>
+                <div class="nav-btn" title="下一条用户消息">›</div>
+                <div class="nav-btn" title="滚动到底部">⟁</div>
+              </div>
+              <div style="font-size:11px;color:#888;">▼ 详情</div>
+            </div>
+            <div class="row2"><span>Input: 8.2k · Output: 4.2k</span><span class="pct">200k ctx · 6%</span></div>
+          </div>
+          <div class="input-row"><div class="input-field">输入消息...</div><div class="send-btn">➤</div></div>
+        </div>
+      </div>
+      <div class="phone-label">B: 可折叠（点按展开详情）</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="phone-container">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="topbar"><div class="back">←</div><div class="title">实现用户登录</div><div class="dot"></div><div class="actions"><div class="icon">🔍</div><div class="icon">📂</div><div class="icon">⋮</div></div></div>
+          <div class="msgs" style="min-height:430px;">
+            <div class="msg system">— 今天 —</div>
+            <div class="msg user">帮我实现用户登录功能</div>
+            <div class="msg assistant">好的，我来设计用户登录系统...</div>
+            <div class="msg tool">[tool: 创建文件 auth.dart]</div>
+            <div class="msg assistant">我们需要以下几个文件...</div>
+            <div class="float-chip">12.4k · 6% · $0.04</div>
+            <div class="float-group">
+              <div class="float-btn" title="上一条用户消息">‹</div>
+              <div class="float-btn" title="下一条用户消息">›</div>
+              <div class="float-btn down" title="滚动到底部">↓</div>
+            </div>
+          </div>
+          <div class="input-row"><div class="input-field">输入消息...</div><div class="send-btn">➤</div></div>
+        </div>
+      </div>
+      <div class="phone-label">C: 浮动按钮组（当前方式的改进版）</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="phone-container">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="topbar-d">
+            <div class="row1">
+              <div class="back">←</div>
+              <div class="title">实现用户登录</div>
+              <div class="dot"></div>
+              <div class="actions"><div class="icon">🔍</div><div class="icon">⋮</div></div>
+            </div>
+            <div class="row2">
+              <div class="token-info"><span>12.4k</span><span class="pct">(6%)</span><span style="color:#8f8;">$0.04</span></div>
+              <div class="nav-group">
+                <div class="nav-btn" style="width:24px;height:24px;font-size:12px;">‹</div>
+                <div class="nav-btn" style="width:24px;height:24px;font-size:12px;">›</div>
+                <div class="nav-btn" style="width:24px;height:24px;font-size:12px;">⟁</div>
+              </div>
+            </div>
+          </div>
+          <div class="msgs">
+            <div class="msg system">— 今天 —</div>
+            <div class="msg user">帮我实现用户登录功能</div>
+            <div class="msg assistant">好的，我来设计用户登录系统...</div>
+            <div class="msg tool">[tool: 创建文件 auth.dart]</div>
+            <div class="msg assistant">我们需要以下几个文件...</div>
+          </div>
+          <div class="input-row"><div class="input-field">输入消息...</div><div class="send-btn">➤</div></div>
+        </div>
+      </div>
+      <div class="phone-label">D: 顶栏双行集成</div>
+    </div>
+  </div>
+</div>
+<h2>推荐: 方案 A (底部工具栏)</h2>
+<div style="background:#16213e;border-radius:12px;padding:20px;border:1px solid #2a2a4a;">
+  <p><strong>理由：</strong></p>
+  <ul class="pros">
+    <li class="good">✅ 三个导航按钮水平排列，拇指自然触及</li>
+    <li class="good">✅ Token 信息显示在右侧，随时可见</li>
+    <li class="good">✅ 固定在输入框上方，不遮挡消息</li>
+    <li class="good">✅ 类似 Telegram 底部工具栏，用户熟悉</li>
+    <li class="good">✅ 移除浮动按钮，统一交互</li>
+    <li class="bad">⚠️ 输入框上方新增 ~40px</li>
+  </ul>
+  <p style="margin-top:16px;"><strong>改动清单：</strong></p>
+  <ul class="pros">
+    <li>顶栏简化：回滚/文件夹移入 ⋮ 菜单，只保留搜索 + ⋮</li>
+    <li>新建底部工具栏（~40px），位于 LazyColumn 和 ChatInputBar 之间</li>
+    <li>左侧：‹ › ⟁ 导航按钮组</li>
+    <li>右侧：token chip "12.4k (6%) · $0.04"</li>
+    <li>删除旧的浮动按钮（↑ / ↓）</li>
+    <li>导航按钮可见逻辑：‹ 有上一条 user 时亮，› 有下一条 user 时亮，⟁ 同现有 showScrollToBottom</li>
+    <li>Token 从 session API 获取累计值 + cached provider context limit 算百分比</li>
+  </ul>
+</div>
+<p style="margin-top:32px;color:#888;font-size:12px;">打开这个 HTML 文件即可看到 4 种布局对比。告诉我你的想法~</p>
+</body>
+</html>

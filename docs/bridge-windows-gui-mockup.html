@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenMate Bridge - 管理界面 Mockup v3</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #e2e8f0; display: flex; height: 100vh; }
+  .sidebar { width: 200px; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; flex-shrink: 0; }
+  .sidebar-logo { padding: 20px; border-bottom: 1px solid #334155; }
+  .sidebar-logo h1 { font-size: 15px; color: #60a5fa; }
+  .sidebar-logo span { font-size: 11px; color: #64748b; }
+  .sidebar-nav { padding: 12px 0; flex: 1; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 20px; cursor: pointer; color: #94a3b8; font-size: 13px; transition: all .15s; }
+  .nav-item:hover { background: #334155; color: #e2e8f0; }
+  .nav-item.active { background: #1e3a5f; color: #60a5fa; border-right: 3px solid #3b82f6; }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+  .sidebar-footer { padding: 14px 20px; border-top: 1px solid #334155; font-size: 11px; color: #64748b; }
+  .sidebar-footer .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: #22c55e; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { height: 44px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; padding: 0 24px; font-size: 13px; color: #94a3b8; }
+  .content { flex: 1; overflow-y: auto; padding: 24px; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; margin-bottom: 16px; }
+  .card-header { padding: 14px 20px; border-bottom: 1px solid #334155; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+  .card-body { padding: 16px 20px; }
+  .status-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 18px; }
+  .status-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; }
+  .status-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .status-card .value { font-size: 18px; font-weight: 600; }
+  .status-card .value.green { color: #22c55e; }
+  .status-card .sub { font-size: 11px; color: #64748b; margin-top: 3px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; cursor: pointer; }
+  .badge-update { background: #1e3a5f; color: #60a5fa; }
+  .badge-ok { background: #14532d; color: #86efac; }
+  .device-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #0f172a; border-radius: 6px; border: 1px solid #334155; }
+  .device-info { display: flex; align-items: center; gap: 10px; }
+  .device-icon { width: 32px; height: 32px; background: #334155; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .device-name { font-size: 13px; font-weight: 500; }
+  .device-meta { font-size: 11px; color: #64748b; }
+  .device-actions { display: flex; gap: 6px; }
+  .btn { padding: 5px 12px; border-radius: 5px; border: none; cursor: pointer; font-size: 12px; font-weight: 500; transition: all .15s; }
+  .btn-primary { background: #3b82f6; color: white; }
+  .btn-primary:hover { background: #2563eb; }
+  .btn-danger { background: #7f1d1d; color: #fca5a5; }
+  .btn-danger:hover { background: #991b1b; }
+  .btn-ghost { background: transparent; color: #94a3b8; border: 1px solid #334155; }
+  .btn-ghost:hover { background: #334155; }
+  .btn-sm { padding: 3px 8px; font-size: 11px; }
+  .qr-container { display: flex; gap: 24px; align-items: flex-start; }
+  .qr-image { width: 180px; height: 180px; background: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .qr-info { flex: 1; }
+  .qr-url { font-family: monospace; background: #0f172a; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin: 10px 0; border: 1px solid #334155; color: #60a5fa; }
+  select { background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 5px; padding: 5px 10px; font-size: 12px; }
+  .log-viewer { background: #0f172a; border: 1px solid #334155; border-radius: 6px; height: 420px; overflow-y: auto; font-family: "Cascadia Code","Consolas",monospace; font-size: 12px; line-height: 1.6; }
+  .log-viewer .log-line { padding: 2px 12px; }
+  .log-viewer .log-line:hover { background: #1e293b; }
+  .log-time { color: #64748b; }
+  .log-level-info { color: #3b82f6; }
+  .log-level-warn { color: #eab308; }
+  .log-level-error { color: #ef4444; }
+  .log-msg { color: #cbd5e1; }
+  .log-toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  .log-toolbar input[type=text] { background: #0f172a; border: 1px solid #334155; border-radius: 5px; padding: 5px 10px; color: #e2e8f0; font-size: 12px; width: 180px; }
+  .pair-pending { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #0f172a; border-radius: 6px; border: 1px solid #334155; border-left: 3px solid #eab308; }
+  .pair-pin { font-family: monospace; font-size: 22px; font-weight: 700; letter-spacing: 4px; color: #eab308; }
+  .pair-timer { font-size: 11px; color: #64748b; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #334155; }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-label { font-size: 13px; }
+  .setting-desc { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .toggle { width: 40px; height: 22px; background: #475569; border-radius: 11px; cursor: pointer; position: relative; transition: .2s; }
+  .toggle.on { background: #3b82f6; }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; background: white; border-radius: 50%; transition: .2s; }
+  .toggle.on::after { left: 20px; }
+  .mock-qr { display: grid; grid-template-columns: repeat(15,1fr); grid-template-rows: repeat(15,1fr); gap: 1px; width: 160px; height: 160px; }
+  .mock-qr .cell { background: #000; border-radius: 1px; }
+  .mock-qr .cell.w { background: #fff; }
+  .empty-state { text-align: center; padding: 24px; color: #64748b; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <h1>OpenMate</h1>
+    <span>Bridge v0.1.2</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active"><span class="icon">📊</span> 概览</div>
+    <div class="nav-item"><span class="icon">📷</span> 扫码连接</div>
+    <div class="nav-item"><span class="icon">📋</span> 日志</div>
+    <div class="nav-item"><span class="icon">⚙️</span> 设置</div>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="dot"></span> opencode: Running<br>
+    <span style="margin-left:12px;font-size:10px;color:#475569">Bridge :4097</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="topbar">概览</div>
+  <div class="content">
+
+    <!-- ===== 概览 ===== -->
+    <div id="page-overview">
+      <div class="status-row">
+        <div class="status-card">
+          <div class="label">opencode</div>
+          <div class="value green">Running</div>
+          <div class="sub">PID 12345 · 2h 15m</div>
+        </div>
+        <div class="status-card">
+          <div class="label">opencode 版本</div>
+          <div class="value">v1.2.3</div>
+          <div class="sub"><span class="badge badge-update">↑ 升级到 v1.3.0</span></div>
+        </div>
+        <div class="status-card">
+          <div class="label">已配对设备</div>
+          <div class="value">2</div>
+          <div class="sub">1 在线</div>
+        </div>
+        <div class="status-card">
+          <div class="label">Bridge</div>
+          <div class="value">v0.1.2</div>
+          <div class="sub">端口 4097</div>
+        </div>
+      </div>
+
+      <!-- 待批准配对 -->
+      <div class="card">
+        <div class="card-header">
+          待批准配对
+          <span style="font-size:11px;color:#eab308">1 个</span>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+          <div class="pair-pending">
+            <div>
+              <div class="pair-pin">482 913</div>
+              <div class="pair-timer">192.168.1.55 · 剩余 4:23</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary">批准</button>
+              <button class="btn btn-ghost">拒绝</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已配对设备 -->
+      <div class="card">
+        <div class="card-header">已配对设备</div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:6px">
+          <div class="device-item">
+            <div class="device-info">
+              <div class="device-icon">📱</div>
+              <div>
+                <div class="device-name">Pixel 8 Pro</div>
+                <div class="device-meta">192.168.1.55 · 2h 前配对 · 刚刚活跃</div>
+              </div>
+            </div>
+            <div class="device-actions">
+              <button class="btn btn-ghost btn-sm">改名</button>
+              <button class="btn btn-danger btn-sm">删除</button>
+            </div>
+          </div>
+          <div class="device-item">
+            <div class="device-info">
+              <div class="device-icon">📱</div>
+              <div>
+                <div class="device-name">Samsung S24</div>
+                <div class="device-meta">192.168.1.78 · 3 天前配对 · 1 天前活跃</div>
+              </div>
+            </div>
+            <div class="device-actions">
+              <button class="btn btn-ghost btn-sm">改名</button>
+              <button class="btn btn-danger btn-sm">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 扫码连接 ===== -->
+    <div id="page-qr" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          扫码连接 / 下载 App
+          <div>
+            <label style="font-size:11px;color:#64748b;margin-right:6px">网卡:</label>
+            <select>
+              <option>Wi-Fi (192.168.1.100)</option>
+              <option>以太网 (10.0.0.5)</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="qr-container">
+            <div class="qr-image">
+              <div class="mock-qr">
+                <script>
+                  for(let i=0;i<225;i++){
+                    const r=Math.floor(i/15),c=i%15;
+                    const isCorner=(r<4&&c<4)||(r<4&&c>10)||(r>10&&c<4);
+                    const isBorder=r===0||r===14||c===0||c===14;
+                    const w=isCorner?false:(isBorder?false:Math.random()>0.45);
+                    document.write(`<div class="cell${w?' w':''}"></div>`);
+                  }
+                </script>
+              </div>
+            </div>
+            <div class="qr-info">
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:2px">Bridge 地址</div>
+              <div class="qr-url">http://192.168.1.100:4097/ui/download</div>
+              <button class="btn btn-ghost btn-sm" style="margin-bottom:14px">复制</button>
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:6px">APK 下载</div>
+              <button class="btn btn-primary">下载 OpenMate v0.1.2</button>
+              <div style="font-size:11px;color:#64748b;margin-top:4px">openmate-v0.1.2.apk · 12.3 MB</div>
+              <div style="margin-top:16px;font-size:12px;color:#94a3b8">使用步骤</div>
+              <ol style="font-size:11px;color:#cbd5e1;padding-left:16px;margin-top:6px;line-height:2">
+                <li>手机扫码打开页面</li>
+                <li>下载并安装 OpenMate App</li>
+                <li>打开 App，输入 Bridge 地址</li>
+                <li>在概览页批准配对 PIN</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 日志 ===== -->
+    <div id="page-logs" style="display:none">
+      <div class="log-toolbar">
+        <input type="text" placeholder="搜索日志...">
+        <button class="btn btn-ghost btn-sm">INFO</button>
+        <button class="btn btn-ghost btn-sm" style="border-color:#eab308;color:#eab308">WARN</button>
+        <button class="btn btn-ghost btn-sm" style="border-color:#ef4444;color:#ef4444">ERROR</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost btn-sm">暂停</button>
+        <button class="btn btn-ghost btn-sm">下载日志</button>
+      </div>
+      <div class="log-viewer">
+        <div class="log-line"><span class="log-time">14:23:01 </span><span class="log-level-info">INFO  </span><span class="log-msg">Bridge listening on 0.0.0.0:4097</span></div>
+        <div class="log-line"><span class="log-time">14:23:01 </span><span class="log-level-info">INFO  </span><span class="log-msg">Auto-starting opencode...</span></div>
+        <div class="log-line"><span class="log-time">14:23:03 </span><span class="log-level-info">INFO  </span><span class="log-msg">opencode process started (PID 12345)</span></div>
+        <div class="log-line"><span class="log-time">14:23:05 </span><span class="log-level-info">INFO  </span><span class="log-msg">opencode health check passed</span></div>
+        <div class="log-line"><span class="log-time">14:25:12 </span><span class="log-level-info">INFO  </span><span class="log-msg">Pair request from 192.168.1.55, PIN: 482913</span></div>
+        <div class="log-line"><span class="log-time">14:25:30 </span><span class="log-level-info">INFO  </span><span class="log-msg">PIN 482913 approved</span></div>
+        <div class="log-line"><span class="log-time">14:25:31 </span><span class="log-level-info">INFO  </span><span class="log-msg">Pair confirmed for 192.168.1.55, token issued</span></div>
+        <div class="log-line"><span class="log-time">14:30:45 </span><span class="log-level-error">ERROR </span><span class="log-msg">opencode process exited unexpectedly (code 1)</span></div>
+        <div class="log-line"><span class="log-time">14:30:48 </span><span class="log-level-info">INFO  </span><span class="log-msg">Auto-restarting opencode...</span></div>
+        <div class="log-line"><span class="log-time">14:30:50 </span><span class="log-level-info">INFO  </span><span class="log-msg">opencode process started (PID 12401)</span></div>
+      </div>
+    </div>
+
+    <!-- ===== 设置 ===== -->
+    <div id="page-settings" style="display:none">
+      <div class="card">
+        <div class="card-header">通用</div>
+        <div class="card-body">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">开机自动启动</div>
+              <div class="setting-desc">Windows 启动时静默运行 Bridge</div>
+            </div>
+            <div class="toggle on"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">危险操作</div>
+        <div class="card-body">
+          <div class="setting-row">
+            <div>
+              <div class="setting-label">重置密钥</div>
+              <div class="setting-desc">所有已配对设备需要重新配对</div>
+            </div>
+            <button class="btn btn-danger btn-sm">重置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.nav-item').forEach((item, idx) => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+    const pages = ['overview','qr','logs','settings'];
+    const labels = ['概览','扫码连接','日志','设置'];
+    document.querySelectorAll('[id^="page-"]').forEach(p => p.style.display = 'none');
+    document.getElementById('page-' + pages[idx]).style.display = 'block';
+    document.querySelector('.topbar').textContent = labels[idx];
+  });
+});
+document.querySelectorAll('.toggle').forEach(t => {
+  t.addEventListener('click', () => t.classList.toggle('on'));
+});
+</script>
+</body>
+</html>

@@ -65,7 +65,7 @@ class QrScanViewModel @Inject constructor(
                     scanToken = parsed.scanToken,
                     token = response.token,
                     deviceId = response.deviceId,
-                    bridgeId = parsed.bridgeId,
+                    instanceId = parsed.instanceId,
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "Scan pair failed: ${e.message}", e)
@@ -84,8 +84,8 @@ class QrScanViewModel @Inject constructor(
         if (currentState !is ScanResult) return
 
         viewModelScope.launch(Dispatchers.IO) {
-            val existingProfile = if (currentState.bridgeId.isNotEmpty()) {
-                profileRepository.getAll().find { it.bridgeId == currentState.bridgeId }
+            val existingProfile = if (currentState.instanceId.isNotEmpty()) {
+                profileRepository.getAll().find { it.instanceId == currentState.instanceId }
             } else {
                 null
             }
@@ -108,7 +108,7 @@ class QrScanViewModel @Inject constructor(
                         name = name,
                         address = address,
                         port = port,
-                        bridgeId = currentState.bridgeId,
+                        instanceId = currentState.instanceId,
                         createdAt = System.currentTimeMillis(),
                     )
                 )
@@ -121,7 +121,7 @@ class QrScanViewModel @Inject constructor(
         val address: String,
         val port: Int,
         val scanToken: String,
-        val bridgeId: String,
+        val instanceId: String,
     )
 
     private fun parseQrUrl(url: String): ParsedQrUrl? {
@@ -133,14 +133,14 @@ class QrScanViewModel @Inject constructor(
 
             val name = params["name"] ?: "Bridge"
             val scanToken = params["st"] ?: return null
-            val bridgeId = params["bid"] ?: ""
+            val instanceId = params["iid"] ?: ""
 
             ParsedQrUrl(
                 name = java.net.URLDecoder.decode(name, "UTF-8"),
                 address = parsed.host,
                 port = port,
                 scanToken = scanToken,
-                bridgeId = bridgeId,
+                instanceId = instanceId,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse QR URL: $url", e)
@@ -172,5 +172,5 @@ data class ScanResult(
     val scanToken: String,
     val token: String,
     val deviceId: String,
-    val bridgeId: String,
+    val instanceId: String,
 ) : ScanUiState

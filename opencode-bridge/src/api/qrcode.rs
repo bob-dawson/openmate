@@ -37,8 +37,8 @@ pub async fn generate_qrcode(
         url.push_str("&st=");
         url.push_str(&scan_token);
     }
-    url.push_str("&bid=");
-    url.push_str(&state.bridge_id);
+    url.push_str("&iid=");
+    url.push_str(&state.config.gateway.instance_id);
 
     let code = qrcode::QrCode::new(&url)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("QR generation failed: {}", e)))?;

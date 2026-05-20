@@ -52,6 +52,16 @@ class SseClient(
         return events
     }
 
+    fun connectViaGateway(baseUrl: String): Flow<SseData> {
+        disconnect()
+        _connectionStatus.value = ConnectionStatus.CONNECTING
+        currentBaseUrl = baseUrl
+        reconnectAttempts = 0
+
+        startConnection(baseUrl)
+        return events
+    }
+
     private fun startConnection(baseUrl: String) {
         connectJob?.cancel()
         connectJob = scope.launch {

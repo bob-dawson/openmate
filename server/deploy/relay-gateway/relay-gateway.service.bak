@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenMate Relay Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/relay-gateway
+ExecStart=/opt/relay-gateway/relay-gateway
+Restart=always
+RestartSec=5
+Environment=RUST_LOG=relay_gateway=info
+
+[Install]
+WantedBy=multi-user.target

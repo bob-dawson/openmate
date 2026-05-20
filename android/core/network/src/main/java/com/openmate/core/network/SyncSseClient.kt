@@ -38,6 +38,9 @@ class SyncSseClient @Inject constructor(
     override var currentBaseUrl: String? = null
         private set
 
+    @Volatile
+    var instanceId: String? = null
+
     private val activeCall = AtomicReference<Call?>(null)
 
     override suspend fun connect(baseUrl: String) {
@@ -60,6 +63,10 @@ class SyncSseClient @Inject constructor(
                         val urlBuilder = Request.Builder().url("$baseUrl/api/bridge/sync/events").get()
                         if (token != null) {
                             urlBuilder.header("Authorization", "Bearer $token")
+                        }
+                        val iid = instanceId
+                        if (iid != null) {
+                            urlBuilder.header("X-Instance-Id", iid)
                         }
                         val call = client.newCall(urlBuilder.build())
                         activeCall.set(call)

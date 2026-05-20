@@ -17,11 +17,13 @@ object NetworkModule {
     @Named("sse")
     fun provideSseOkHttpClient(
         tokenStore: TokenStore,
+        gatewayInterceptor: GatewayInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
             .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .addInterceptor(BearerTokenInterceptor(tokenStore))
+            .addInterceptor(gatewayInterceptor)
             .build()
     }
 
@@ -30,11 +32,13 @@ object NetworkModule {
     @Named("api")
     fun provideApiOkHttpClient(
         tokenStore: TokenStore,
+        gatewayInterceptor: GatewayInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
             .addInterceptor(BearerTokenInterceptor(tokenStore))
+            .addInterceptor(gatewayInterceptor)
             .build()
     }
 
@@ -43,11 +47,13 @@ object NetworkModule {
     @Named("download")
     fun provideDownloadOkHttpClient(
         tokenStore: TokenStore,
+        gatewayInterceptor: GatewayInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
             .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
             .addInterceptor(BearerTokenInterceptor(tokenStore))
+            .addInterceptor(gatewayInterceptor)
             .build()
     }
 
