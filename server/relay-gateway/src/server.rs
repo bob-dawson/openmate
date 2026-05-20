@@ -111,9 +111,6 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
                             break;
                         }
                     }
-                    "response" => {
-                        crate::proxy::http::handle_tunnel_response(&recv_state, frame);
-                    }
                     "response_start" => {
                         crate::proxy::http::handle_response_start(&recv_state, frame);
                     }
@@ -362,7 +359,7 @@ async fn proxy_handler(
             .filter_map(|(k, v)| v.to_str().ok().map(|s| (k.to_string(), s.to_string())))
             .collect();
 
-        let response = crate::proxy::http::proxy_http_request(
+        let (status, resp_headers, chunk_rx) = crate::proxy::http::proxy_http_request_streaming(
             state,
             &instance_id,
             method.as_str(),
@@ -372,8 +369,8 @@ async fn proxy_handler(
         )
         .await?;
 
-        let mut builder = axum::response::Response::builder().status(response.status);
-        for (k, v) in &response.headers {
+        let mut builder = axum::response::Response::builder().status(status);
+        for (k, v) in &resp_headers {
             if let Ok(name) = axum::http::header::HeaderName::from_bytes(k.as_bytes()) {
                 if let Ok(val) = axum::http::header::HeaderValue::from_str(v) {
                     builder = builder.header(name, val);
@@ -381,7 +378,11 @@ async fn proxy_handler(
             }
         }
 
-        let body = Body::from(response.body);
+        let body = Body::from_stream(
+            futures::stream::unfold(chunk_rx, |mut rx| async move {
+                rx.recv().await.map(|chunk| (Ok::<_, Infallible>(chunk), rx))
+            }),
+        );
         Ok(builder.body(body).unwrap())
     }
 }
