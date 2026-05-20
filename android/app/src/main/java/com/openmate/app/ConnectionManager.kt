@@ -110,8 +110,13 @@ class ConnectionManager @Inject constructor(
             tokenStore.setActiveProfileId(profile.id)
             dbProvider.setActive(profile.id)
 
-            val alreadyOnGateway = useGateway
-            if (!alreadyOnGateway) {
+            val hasIid = profile.instanceId.isNotEmpty()
+            if (hasIid) {
+                useGateway = true
+                apiClient.baseUrl = GATEWAY_URL
+                gatewayInterceptor.instanceId = profile.instanceId
+                logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "优先网关", message = "instance=${profile.instanceId}")
+            } else if (!useGateway) {
                 val directUrl = "http://${profile.address}:${profile.port}"
                 apiClient.baseUrl = directUrl
                 gatewayInterceptor.instanceId = null
@@ -142,18 +147,9 @@ class ConnectionManager @Inject constructor(
                 } catch (e: Exception) {
                     Log.w(TAG, "Direct connect failed: ${e.message}")
                     logStore.log(SyncLogLevel.Warn, SyncLogCategory.Gateway, title = "直连失败", message = e.message ?: "")
-                    val hasIid = profile.instanceId.isNotEmpty()
-                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "检查网关回退", message = "instanceId='${profile.instanceId}' hasIid=$hasIid")
-                    if (hasIid && isGatewayOnline(profile.instanceId)) {
-                        useGateway = true
-                        apiClient.baseUrl = GATEWAY_URL
-                        gatewayInterceptor.instanceId = profile.instanceId
-                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "切换网关", message = "instance=${profile.instanceId}")
-                    } else {
-                        _connectionStatus.value = ConnectionStatus.ERROR
-                        _errorMessage.value = "Bridge not reachable: ${e.message}"
-                        return@launch
-                    }
+                    _connectionStatus.value = ConnectionStatus.ERROR
+                    _errorMessage.value = "Bridge not reachable: ${e.message}"
+                    return@launch
                 }
             } else {
                 apiClient.baseUrl = GATEWAY_URL

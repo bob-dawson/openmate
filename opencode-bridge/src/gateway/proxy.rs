@@ -25,6 +25,10 @@ pub async fn proxy_request_to_local(
 
     if let Some(ref hdrs) = headers {
         for (k, v) in hdrs {
+            let lower = k.to_lowercase();
+            if matches!(lower.as_str(), "host" | "connection" | "transfer-encoding" | "authorization" | "x-instance-id") {
+                continue;
+            }
             builder = builder.header(k.as_str(), v.as_str());
         }
     }
