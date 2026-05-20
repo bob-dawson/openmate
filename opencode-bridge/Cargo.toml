@@ -35,6 +35,7 @@ open = "5"
 hostname = "0.4"
 urlencoding = "2.1"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+socket2 = "0.5"
 rustls = { version = "0.23", features = ["ring"] }
 uuid = { version = "1", features = ["v4"] }
 
