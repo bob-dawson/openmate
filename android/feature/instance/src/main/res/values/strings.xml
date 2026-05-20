@@ -33,4 +33,13 @@
     <string name="pairing_instruction">Run: opencode-bridge approve %1$s</string>
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
+
+    <string name="crash_log">Crash Log</string>
+    <string name="no_crash_logs">No crash logs</string>
+    <string name="crash_count">%1$d crash logs</string>
+    <string name="clear_all">Clear All</string>
+    <string name="copy">Copy</string>
+    <string name="share">Share</string>
+    <string name="crash_detail">Crash Detail</string>
+    <string name="delete_confirm">Are you sure to clear all crash logs?</string>
 </resources>

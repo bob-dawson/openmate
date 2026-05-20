@@ -10,6 +10,7 @@ object InstanceRoutes {
     const val ADD_INSTANCE = "add_instance"
     const val QR_SCAN = "qr_scan"
     const val EDIT_INSTANCE = "edit_instance/{profileId}"
+    const val CRASH_LOG = "crash_log"
     fun editInstance(profileId: String) = "edit_instance/$profileId"
 }
 
@@ -26,6 +27,7 @@ fun NavGraphBuilder.instanceScreens(
                     popUpTo(InstanceRoutes.INSTANCE_LIST) { saveState = true }
                 }
             },
+            onNavigateToCrashLog = { navController.navigate(InstanceRoutes.CRASH_LOG) },
         )
     }
     composable(InstanceRoutes.ADD_INSTANCE) {
@@ -49,6 +51,11 @@ fun NavGraphBuilder.instanceScreens(
         AddInstanceScreen(
             onBack = { navController.popBackStack() },
             editProfileId = profileId,
+        )
+    }
+    composable(InstanceRoutes.CRASH_LOG) {
+        CrashLogScreen(
+            onBack = { navController.popBackStack() },
         )
     }
 }

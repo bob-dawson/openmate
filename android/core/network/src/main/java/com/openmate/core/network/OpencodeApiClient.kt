@@ -453,15 +453,16 @@ class OpencodeApiClient(
             destFile.outputStream().buffered(64 * 1024).use { output ->
                 val buffer = ByteArray(64 * 1024)
                 var downloaded = 0L
-                var lastProgress = 0L
+                var lastProgressTime = System.currentTimeMillis()
                 while (true) {
                     val read = input.read(buffer)
                     if (read == -1) break
                     output.write(buffer, 0, read)
                     downloaded += read
-                    if (onProgress != null && downloaded - lastProgress >= 512 * 1024) {
+                    val now = System.currentTimeMillis()
+                    if (onProgress != null && now - lastProgressTime >= 1000) {
                         onProgress.invoke(downloaded, if (contentLength > 0) contentLength else downloaded)
-                        lastProgress = downloaded
+                        lastProgressTime = now
                     }
                 }
                 output.flush()

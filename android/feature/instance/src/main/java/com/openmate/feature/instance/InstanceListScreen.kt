@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -41,11 +40,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.openmate.core.common.crash.CrashLogManager
 import com.openmate.feature.instance.R
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
@@ -60,13 +61,64 @@ fun InstanceListScreen(
     onNavigateToEdit: (String) -> Unit,
     onNavigateToQrScan: () -> Unit,
     onNavigateToSessions: () -> Unit,
+    onNavigateToCrashLog: () -> Unit,
     viewModel: InstanceListViewModel = hiltViewModel(),
 ) {
     val profiles by viewModel.profiles.collectAsState()
+    val context = LocalContext.current
+    val crashLogManager = remember { CrashLogManager(context) }
+    val unreadCount = remember { crashLogManager.getUnreadCount() }
+    var menuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopBar(title = stringResource(R.string.instances))
+            TopBar(
+                title = stringResource(R.string.instances),
+                actions = {
+                    Box {
+                        IconButton(onClick = { menuExpanded = true }) {
+                            Icon(
+                                Icons.Default.MoreVert,
+                                contentDescription = stringResource(R.string.content_desc_more),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuExpanded,
+                            onDismissRequest = { menuExpanded = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(stringResource(R.string.crash_log))
+                                        if (unreadCount > 0) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(18.dp)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.error),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    text = if (unreadCount > 9) "9+" else unreadCount.toString(),
+                                                    color = MaterialTheme.colorScheme.onError,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    menuExpanded = false
+                                    onNavigateToCrashLog()
+                                },
+                            )
+                        }
+                    }
+                },
+            )
         },
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End) {
