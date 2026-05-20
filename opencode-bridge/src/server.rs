@@ -140,10 +140,24 @@ pub async fn run_server(
         ))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(app_state);
+        .with_state(app_state.clone());
 
     let listener = tokio::net::TcpListener::bind(config.bridge_listen_addr()).await?;
     tracing::info!("Bridge listening on {}", config.bridge_listen_addr());
+
+    if !config.gateway.url.is_empty() {
+        let gw_config = config.gateway.clone();
+        let local_port = config.bridge.port;
+        let secret_key = app_state.secret_key.clone();
+        tokio::spawn(async move {
+            let mut client = crate::gateway::client::GatewayClient::new(
+                &gw_config,
+                &gw_config.instance_id,
+                local_port,
+            );
+            client.connect(&secret_key).await;
+        });
+    }
 
     let server = axum::serve(
         listener,

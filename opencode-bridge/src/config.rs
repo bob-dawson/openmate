@@ -11,6 +11,9 @@ pub struct Config {
 
     #[serde(default)]
     pub fs: FsConfig,
+
+    #[serde(default)]
+    pub gateway: GatewayConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -96,6 +99,16 @@ fn default_db_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
     let path = home.join(".local").join("share").join("opencode").join("opencode.db");
     path.to_string_lossy().to_string()
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct GatewayConfig {
+    #[serde(default)]
+    pub url: String,
+    #[serde(default = "default_true")]
+    pub auto_connect: bool,
+    #[serde(default)]
+    pub instance_id: String,
 }
 
 impl Default for FsConfig {
@@ -269,6 +282,7 @@ impl Default for Config {
             bridge: default_bridge(),
             opencode: default_opencode(),
             fs: FsConfig::default(),
+            gateway: GatewayConfig::default(),
         }
     }
 }
