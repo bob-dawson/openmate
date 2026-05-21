@@ -36,17 +36,6 @@ class InstanceListViewModel @Inject constructor(
 
     init {
         observeCombined()
-        autoReconnect()
-    }
-
-    private fun autoReconnect() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val profiles = profileRepository.getAll()
-            if (profiles.size != 1) return@launch
-            val profile = profiles.first()
-            if (connectionManager.isConnected.value) return@launch
-            connectionManager.connect(profile)
-        }
     }
 
     private fun observeCombined() {
