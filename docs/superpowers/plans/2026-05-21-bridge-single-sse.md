@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current Android dual-SSE runtime with one Bridge-backed SSE stream, add a new trimmed Bridge events endpoint, and retire the old split event/sync path without changing the existing seq-based message source of truth.
 
-**Architecture:** Bridge will maintain one upstream connection to opencode `/global/event`, apply an allowlist plus payload trimming, and expose the retained events at `/api/bridge/events`. Android will replace the current `SseClient` + `SyncSseClient` split with a single Bridge SSE client and one dispatch path that drives connection state, sync triggers, session errors, and permission/question/todo updates.
+**Architecture:** Bridge will add a new trimmed Android-facing events endpoint at `/api/bridge/events`, applying an allowlist plus payload trimming while leaving the existing raw `/global/event` proxy behavior unchanged. Android will replace the current `SseClient` + `SyncSseClient` split with a single Bridge SSE client and one dispatch path that drives connection state, sync triggers, session errors, and permission/question/todo updates.
 
 **Tech Stack:** Rust, Axum, Tokio, reqwest SSE forwarding, Kotlin, Coroutines, StateFlow, Hilt, Room, JUnit4, Robolectric, Google Truth, Gradle `--no-daemon`
 
@@ -25,7 +25,7 @@
 - Modify: `opencode-bridge/src/server.rs`
   - Register `/api/bridge/events`.
 - Modify: `opencode-bridge/src/sync/sse.rs`
-  - Reuse shared upstream event parsing or reduce to compatibility-only role.
+  - Reuse trimmed-event parsing for the compatibility sync endpoint without changing raw `/global/event` proxy semantics.
 - Modify: `android/core/network/src/main/java/com/openmate/core/network/SyncSseClient.kt`
   - Convert from seq-only client to unified Bridge events client.
 - Create: `android/core/network/src/main/java/com/openmate/core/network/BridgeEvent.kt`
@@ -232,7 +232,7 @@ pub fn trim_properties(event_type: &str, mut properties: Map<String, Value>) -> 
 }
 ```
 
-- [ ] **Step 4: Add the new router handler that forwards filtered events from one upstream stream**
+- [ ] **Step 4: Add the new router handler that forwards filtered events to the Android-facing Bridge endpoint**
 
 ```rust
 use axum::extract::State;
@@ -704,7 +704,7 @@ git commit -m "refactor: unify bridge and android sse path"
 
 - Spec coverage:
   - single Bridge endpoint -> Tasks 1-2
-  - one upstream Bridge SSE connection -> Tasks 2 and 8
+  - one Android business Bridge SSE endpoint and event source -> Tasks 2 and 8
   - one Android business SSE client -> Tasks 4-6
   - keep opencode-compatible event shape -> Tasks 2 and 4
   - subtraction-first allowlist -> Tasks 1-2

@@ -8,9 +8,9 @@ After this change:
 
 - Android keeps exactly one business SSE connection.
 - That connection only connects to Bridge.
-- Bridge keeps exactly one upstream SSE connection to opencode `/global/event`.
 - Bridge exposes a new Android-facing SSE endpoint that preserves opencode event structure where possible, while removing large unused payloads.
 - Missing events currently relied on by Android are restored through Bridge instead of keeping a second Android SSE path.
+- Existing raw `/global/event` proxy behavior remains unchanged and is not part of this consolidation.
 
 This design does not address slow fallback from direct to gateway. That is explicitly deferred until after the single-connection architecture is complete.
 
@@ -47,12 +47,12 @@ This duplicates traffic and spreads connection behavior across multiple owners a
 
 ### Bridge
 
-- Keep one upstream connection to opencode `/global/event`.
-- Parse incoming opencode SSE events once.
-- Apply an allowlist of currently-needed events.
-- Trim large mobile-unused payload fields from retained events.
+- Add a new Android-facing Bridge events source derived from opencode `/global/event`.
+- Apply an allowlist of currently-needed events for the Android-facing path.
+- Trim large mobile-unused payload fields from retained events on that path.
 - Broadcast the retained trimmed events to a new endpoint:
   - `GET /api/bridge/events`
+- Keep existing raw `/global/event` and `/api/opencode/global/event` proxy semantics unchanged.
 
 ### Android
 
@@ -74,6 +74,8 @@ This duplicates traffic and spreads connection behavior across multiple owners a
 - `GET /api/bridge/events`
 
 This is the only Android business SSE endpoint after migration.
+
+It does not replace the raw proxy contract of Bridge `/global/event`; it replaces the Android business use of raw `/global/event`.
 
 ### Event Shape
 
@@ -326,7 +328,8 @@ These risks must be controlled through targeted event-by-event tests.
 ### Integration
 
 - verify Android runtime has only one business SSE connection
-- verify Bridge runtime has only one upstream `/global/event` connection
+- verify Android business SSE connects only to `/api/bridge/events`
+- verify raw `/global/event` proxy behavior remains available and unchanged
 - verify session create/update/delete/status flows still update UI
 - verify session errors still surface
 - verify permission/question/todo realtime behavior does not regress
@@ -337,7 +340,7 @@ These risks must be controlled through targeted event-by-event tests.
 The design is successful when all of the following are true:
 
 - Android uses one business SSE connection only.
-- Bridge uses one upstream opencode SSE connection only.
+- Android business SSE uses `/api/bridge/events` only.
 - current realtime behavior needed by Android is preserved.
 - traffic is lower than the current two-SSE design.
 - code ownership is clearer: one connection owner, one event stream, one dispatch path.
