@@ -6,5 +6,5 @@ interface SyncSseLogger {
     fun logDisconnected(traceId: String?, currentBaseUrl: String?)
     fun logConnectFailure(traceId: String, error: Throwable)
     fun logStreamClosed(traceId: String)
-    fun logNotification(sessionId: String, seq: Long, traceId: String)
+    fun logNotification(event: BridgeEvent, traceId: String)
 }

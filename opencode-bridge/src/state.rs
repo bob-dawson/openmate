@@ -7,6 +7,7 @@ use crate::auth;
 use crate::bridge_db::BridgeDb;
 use crate::config::Config;
 use crate::log_capture::SharedLogBuffer;
+use crate::events::source::SharedEventSource;
 use crate::process::OpencodeManager;
 use crate::sync::db::SyncDb;
 
@@ -36,6 +37,7 @@ pub struct AppStateInner {
     pub log_buffer: SharedLogBuffer,
     pub bridge_id: String,
     pub scan_token: RwLock<Option<ScanTokenEntry>>,
+    pub event_source: Arc<SharedEventSource>,
 }
 
 pub type AppState = Arc<AppStateInner>;
@@ -51,6 +53,14 @@ pub fn create_app_state(log_buffer: SharedLogBuffer) -> AppState {
 }
 
 pub fn create_app_state_with_db(log_buffer: SharedLogBuffer, external_db: Option<BridgeDb>) -> AppState {
+    create_app_state_with_db_and_event_source(log_buffer, external_db, None)
+}
+
+pub fn create_app_state_with_db_and_event_source(
+    log_buffer: SharedLogBuffer,
+    external_db: Option<BridgeDb>,
+    event_source: Option<Arc<SharedEventSource>>,
+) -> AppState {
     let bridge_db = external_db.unwrap_or_else(|| BridgeDb::open().expect("Failed to open bridge database"));
     bridge_db.init_default_configs().expect("Failed to initialize default configs");
 
@@ -101,5 +111,6 @@ pub fn create_app_state_with_db(log_buffer: SharedLogBuffer, external_db: Option
         log_buffer,
         scan_token: RwLock::new(None),
         bridge_id,
+        event_source: event_source.unwrap_or_else(|| Arc::new(SharedEventSource::new())),
     })
 }

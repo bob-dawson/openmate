@@ -1,5 +1,6 @@
 package com.openmate.core.data.sync
 
+import com.openmate.core.network.BridgeEvent
 import com.openmate.core.network.SyncSseLogger
 import javax.inject.Inject
 
@@ -11,7 +12,7 @@ class SyncSseLoggerImpl @Inject constructor(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sse,
             title = "发起SSE连接",
-            message = "connecting to /api/bridge/sync/events token=$hasToken",
+            message = "connecting to /api/bridge/events token=$hasToken",
             traceId = traceId,
         )
     }
@@ -56,14 +57,13 @@ class SyncSseLoggerImpl @Inject constructor(
         )
     }
 
-    override fun logNotification(sessionId: String, seq: Long, traceId: String) {
+    override fun logNotification(event: BridgeEvent, traceId: String) {
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sse,
-            sessionId = sessionId,
-            title = "收到同步通知",
-            message = "session sync notification received",
-            relatedSeq = seq,
+            sessionId = event.sessionId,
+            title = "收到Bridge事件",
+            message = "type=${event.type} messageId=${event.messageId} partId=${event.partId}",
             traceId = traceId,
         )
     }

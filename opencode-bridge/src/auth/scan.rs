@@ -4,7 +4,6 @@ use serde::Deserialize;
 use std::net::SocketAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::bridge_db::PairedDevice;
 use crate::error::AppError;
 use crate::state::AppState;
 use super::token::Token;

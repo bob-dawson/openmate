@@ -5,6 +5,7 @@ pub mod bridge;
 pub mod bridge_db;
 pub mod config;
 pub mod error;
+pub mod events;
 pub mod files;
 pub mod fs;
 pub mod gateway;

@@ -91,6 +91,6 @@ class SyncSseClientTest {
         override fun logDisconnected(traceId: String?, currentBaseUrl: String?) = Unit
         override fun logConnectFailure(traceId: String, error: Throwable) = Unit
         override fun logStreamClosed(traceId: String) = Unit
-        override fun logNotification(sessionId: String, seq: Long, traceId: String) = Unit
+        override fun logNotification(event: BridgeEvent, traceId: String) = Unit
     }
 }

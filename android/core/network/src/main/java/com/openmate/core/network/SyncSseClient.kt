@@ -1,16 +1,15 @@
 package com.openmate.core.network
 
 import android.util.Log
+import com.openmate.core.domain.model.ConnectionStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.longOrNull
 import java.util.concurrent.atomic.AtomicReference
 import okhttp3.Call
 import okhttp3.Request
@@ -19,20 +18,15 @@ import java.io.InputStreamReader
 import javax.inject.Inject
 import javax.inject.Named
 
-data class SyncNotification(
-    val sessionId: String,
-    val seq: Long,
-)
-
 class SyncSseClient @Inject constructor(
     @Named("sse") private val client: Call.Factory,
     private val tokenStore: TokenStore,
     private val logger: SyncSseLogger,
 ) : SyncSseConnection {
-    private val json = Json { ignoreUnknownKeys = true }
-
-    private val _notifications = MutableSharedFlow<SyncNotification>(extraBufferCapacity = 64)
-    val notifications: SharedFlow<SyncNotification> = _notifications
+    private val _notifications = MutableSharedFlow<BridgeEvent>(extraBufferCapacity = 64)
+    val notifications: SharedFlow<BridgeEvent> = _notifications
+    private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
+    val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
     @Volatile
     override var currentBaseUrl: String? = null
@@ -51,6 +45,7 @@ class SyncSseClient @Inject constructor(
         Log.d("SyncSseClient", "connect: new=$baseUrl old=$currentBaseUrl")
         disconnect()
         currentBaseUrl = baseUrl
+        _connectionStatus.value = ConnectionStatus.CONNECTING
         try {
             withContext(Dispatchers.IO) {
                 while (currentBaseUrl == baseUrl) {
@@ -60,7 +55,7 @@ class SyncSseClient @Inject constructor(
                         val token = tokenStore.activeToken
                         logger.logConnectStart(traceId = traceId, hasToken = token != null)
                         Log.d("SyncSseClient", "attempting SSE connection, token=${token != null}")
-                        val urlBuilder = Request.Builder().url("$baseUrl/api/bridge/sync/events").get()
+                        val urlBuilder = Request.Builder().url("$baseUrl/api/bridge/events").get()
                         if (token != null) {
                             urlBuilder.header("Authorization", "Bearer $token")
                         }
@@ -72,12 +67,14 @@ class SyncSseClient @Inject constructor(
                         activeCall.set(call)
                         val response = call.execute()
                         if (!response.isSuccessful) {
+                            _connectionStatus.value = ConnectionStatus.ERROR
                             logger.logConnectFailure(traceId, IllegalStateException("http ${response.code}"))
                             Log.w("SyncSseClient", "SSE connect returned ${response.code}")
                             response.close()
                             Thread.sleep(5000)
                             continue
                         }
+                        _connectionStatus.value = ConnectionStatus.CONNECTED
                         logger.logConnectSuccess(traceId = traceId, costMs = System.currentTimeMillis() - startAt)
                         Log.d("SyncSseClient", "SSE connected successfully")
                         val bodyStream = response.body?.byteStream()
@@ -94,17 +91,15 @@ class SyncSseClient @Inject constructor(
                                 val trimmed = line.trim()
                                 if (trimmed.startsWith("data:")) {
                                     val data = trimmed.removePrefix("data:").trim()
-                                    try {
-                                        val jsonObj = json.parseToJsonElement(data).jsonObject
-                                        val sessionId = jsonObj["sessionID"]?.jsonPrimitive?.contentOrNull ?: continue
-                                        val seq = jsonObj["seq"]?.jsonPrimitive?.longOrNull ?: continue
-                                        logger.logNotification(
-                                            sessionId = sessionId,
-                                            seq = seq,
-                                            traceId = "notify-${sessionId}-${seq}",
+                                    val event = BridgeEventParser.parse(data)
+                                    if (event != null) {
+                                        val traceId = "notify-${event.type}-${event.sessionId ?: "unknown"}"
+                                        logger.logNotification(event = event, traceId = traceId)
+                                        Log.d(
+                                            "SyncSseClient",
+                                            "notification: type=${event.type} session=${event.sessionId} message=${event.messageId} part=${event.partId} emitted=${_notifications.tryEmit(event)}"
                                         )
-                                        Log.d("SyncSseClient", "notification: session=$sessionId seq=$seq emitted=${_notifications.tryEmit(SyncNotification(sessionId, seq))}")
-                                    } catch (e: Exception) {
+                                    } else {
                                         Log.w("SyncSseClient", "parse error: $data")
                                     }
                                 }
@@ -122,6 +117,7 @@ class SyncSseClient @Inject constructor(
                         Log.d("SyncSseClient", "connect cancelled, propagating")
                         throw e
                     } catch (e: Exception) {
+                        _connectionStatus.value = ConnectionStatus.ERROR
                         logger.logConnectFailure(traceId, e)
                         Log.w("SyncSseClient", "SSE error: ${e.javaClass.simpleName}: ${e.message}")
                     }
@@ -139,6 +135,7 @@ class SyncSseClient @Inject constructor(
         Log.d("SyncSseClient", "disconnect: currentBaseUrl=$currentBaseUrl")
         logger.logDisconnected(traceId = traceId, currentBaseUrl = currentBaseUrl)
         currentBaseUrl = null
+        _connectionStatus.value = ConnectionStatus.DISCONNECTED
         activeCall.getAndSet(null)?.cancel()
     }
 }

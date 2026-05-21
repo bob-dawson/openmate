@@ -33,23 +33,26 @@ class SyncSseHandler @Inject constructor(
         Log.d("SyncSseHandler", "start: subscribing to notifications")
 
         collectJob = syncSseClient.notifications
-            .onEach { notification ->
-                val notifyTrace = "notify-${notification.sessionId}-${notification.seq}"
-                Log.d("SyncSseHandler", "received: session=${notification.sessionId} seq=${notification.seq}")
-                if (notification.sessionId != activeSessionId) {
+            .onEach { event ->
+                val sessionId = event.sessionId ?: run {
+                    Log.d("SyncSseHandler", "skip: event without sessionId type=${event.type}")
+                    return@onEach
+                }
+                val notifyTrace = "notify-${event.type}-$sessionId"
+                Log.d("SyncSseHandler", "received: type=${event.type} session=$sessionId")
+                if (sessionId != activeSessionId) {
                     Log.d("SyncSseHandler", "skip: not active session (active=$activeSessionId)")
                     return@onEach
                 }
                 logStore.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sse,
-                    sessionId = notification.sessionId,
-                    title = "同步通知",
-                    message = "seq=${notification.seq}",
-                    relatedSeq = notification.seq,
+                    sessionId = sessionId,
+                    title = "Bridge事件触发同步",
+                    message = "type=${event.type} messageId=${event.messageId} partId=${event.partId}",
                     traceId = notifyTrace,
                 )
-                performSync(notification.sessionId)
+                performSync(sessionId)
             }
             .launchIn(scope)
     }
