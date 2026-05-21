@@ -1,8 +1,8 @@
-use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::extract::State;
 use axum::response::IntoResponse;
-use futures::stream::Stream;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use futures::StreamExt;
+use futures::stream::Stream;
 use std::convert::Infallible;
 use std::pin::Pin;
 use tokio::sync::mpsc;
@@ -11,9 +11,7 @@ use crate::state::AppState;
 
 type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + 'static>>;
 
-pub async fn sse_proxy(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn sse_proxy(State(state): State<AppState>) -> impl IntoResponse {
     let opencode_url = state.config.opencode_url();
     let stream = create_sse_stream(opencode_url);
     Sse::new(stream).keep_alive(KeepAlive::default())

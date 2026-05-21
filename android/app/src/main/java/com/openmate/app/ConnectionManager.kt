@@ -264,22 +264,10 @@ class ConnectionManager @Inject constructor(
         Log.i(TAG, "switching to gateway")
         logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "切换网关", message = "instance=${profile.instanceId}")
 
-        sseEventRepository.disconnect()
-        sseEventRepository.connectViaGateway(GATEWAY_URL)
         startSyncSse()
     }
 
     private fun startSseConnections(profile: ServerProfile) {
-        try {
-            if (useGateway) {
-                sseEventRepository.connectViaGateway(GATEWAY_URL)
-            } else {
-                sseEventRepository.connect(profile.address, profile.port, profile.password)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "SSE connect failed", e)
-        }
-
         syncSseHandler.start()
         startSyncSse()
 
@@ -326,9 +314,6 @@ class ConnectionManager @Inject constructor(
         apiClient.baseUrl = "http://${profile.address}:${profile.port}"
         gatewayInterceptor.instanceId = null
         stopDirectCheckLoop()
-
-        sseEventRepository.disconnect()
-        sseEventRepository.connect(profile.address, profile.port, profile.password)
 
         startSyncSse()
         profileRepository.save(profile.copy(lastConnectedAt = System.currentTimeMillis()))

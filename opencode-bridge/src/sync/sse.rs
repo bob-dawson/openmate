@@ -1,12 +1,9 @@
 use axum::extract::State;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
-use futures::StreamExt;
+use async_stream::stream;
 use std::convert::Infallible;
 use std::pin::Pin;
-use std::time::Duration;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 
 use crate::state::AppState;
 
@@ -15,114 +12,119 @@ type BoxStream<T> = Pin<Box<dyn tokio_stream::Stream<Item = T> + Send + 'static>
 pub async fn sync_sse(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    let opencode_url = state.config.opencode_url();
-    let stream = create_sync_sse_stream(opencode_url);
+    let stream = create_sync_sse_stream(state);
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
-fn create_sync_sse_stream(opencode_url: String) -> BoxStream<Result<Event, Infallible>> {
-    let (tx, rx) = mpsc::channel(32);
-
-    tokio::spawn(async move {
-        let sse_url = format!("{}/global/event", opencode_url);
-        tracing::info!("Starting sync SSE stream to {}", sse_url);
+fn create_sync_sse_stream(state: AppState) -> BoxStream<Result<Event, Infallible>> {
+    Box::pin(stream! {
+        let mut rx = state.event_source.subscribe(&state).await;
 
         loop {
-            match forward_sync_events(&sse_url, &tx).await {
-                Ok(()) => {
-                    tracing::warn!("opencode SSE stream ended, reconnecting in 3s...");
-                    tokio::time::sleep(Duration::from_secs(3)).await;
+            match rx.recv().await {
+                Ok(event) => {
+                    if let Some(notification) = project_sync_notification(&event) {
+                        yield Ok(Event::default().data(notification.to_string()));
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("sync SSE error: {}, reconnecting in 5s...", e);
-                    tokio::time::sleep(Duration::from_secs(5)).await;
-                }
-            }
-
-            if tx.is_closed() {
-                tracing::info!("Sync SSE client disconnected, stopping");
-                break;
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }
-    });
-
-    let stream = ReceiverStream::new(rx);
-    Box::pin(stream)
+    })
 }
 
-async fn forward_sync_events(
-    sse_url: &str,
-    tx: &mpsc::Sender<Result<Event, Infallible>>,
-) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(sse_url)
-        .send()
-        .await
-        .map_err(|e| format!("Connect failed: {}", e))?;
+#[cfg(test)]
+fn filter_bridge_event(input: &serde_json::Value) -> Option<serde_json::Value> {
+    crate::events::filter::filter_event(input)
+}
 
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
+fn project_sync_notification(event: &crate::events::filter::SharedEvent) -> Option<serde_json::Value> {
+    event.sync_notification.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    #[test]
+    fn retains_session_error_events_for_android_consumers() {
+        let input = json!({
+            "type": "session.error",
+            "properties": {
+                "sessionID": "ses_1",
+                "error": {
+                    "message": "boom",
+                    "code": "E_FAIL"
+                }
+            }
+        });
+
+        let output = super::filter_bridge_event(&input).expect("session.error should be retained");
+
+        assert_eq!(
+            output,
+            json!({
+                "type": "session.error",
+                "properties": {
+                    "sessionID": "ses_1",
+                    "error": {
+                        "message": "boom",
+                        "code": "E_FAIL"
+                    }
+                }
+            })
+        );
     }
 
-    let mut stream = resp.bytes_stream();
-    let mut buffer = String::new();
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Read error: {}", e))?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        while let Some(pos) = buffer.find('\n') {
-            let line = buffer[..pos].to_string();
-            buffer = buffer[pos + 1..].to_string();
-
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
+    #[test]
+    fn drops_high_volume_message_part_delta_events() {
+        let input = json!({
+            "type": "message.part.delta",
+            "properties": {
+                "sessionID": "ses_1",
+                "messageID": "msg_1",
+                "partID": "part_1",
+                "delta": "streamed text"
             }
+        });
 
-            let data = match trimmed.strip_prefix("data:") {
-                Some(d) => d.trim(),
-                None => continue,
-            };
+        let output = super::filter_bridge_event(&input);
 
-            let json = match serde_json::from_str::<serde_json::Value>(data) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let payload = match json.get("payload") {
-                Some(p) => p,
-                None => continue,
-            };
-
-            if payload["type"] != "sync" {
-                continue;
-            }
-
-            let sync_event = match payload.get("syncEvent") {
-                Some(e) => e,
-                None => continue,
-            };
-
-            let session_id = sync_event["aggregateID"].as_str().unwrap_or("");
-            let seq = sync_event["seq"].as_i64().unwrap_or(0);
-
-            if session_id.is_empty() {
-                continue;
-            }
-
-            let notification = serde_json::json!({
-                "sessionID": session_id,
-                "seq": seq,
-            });
-            let event = Event::default().data(notification.to_string());
-
-            if tx.send(Ok(event)).await.is_err() {
-                return Ok(());
-            }
-        }
+        assert!(output.is_none());
     }
 
-    Ok(())
+    #[test]
+    fn trims_message_updated_events_to_identifier_only_shape() {
+        let input = json!({
+            "type": "message.updated",
+            "properties": {
+                "sessionID": "ses_1",
+                "messageID": "msg_1",
+                "message": {
+                    "id": "msg_1",
+                    "parts": [
+                        {
+                            "type": "text",
+                            "text": "large payload"
+                        }
+                    ]
+                },
+                "unused": "drop me"
+            }
+        });
+
+        let output = super::filter_bridge_event(&input).expect("message.updated should be retained");
+
+        assert_eq!(
+            output,
+            json!({
+                "type": "message.updated",
+                "properties": {
+                    "sessionID": "ses_1",
+                    "messageID": "msg_1"
+                }
+            })
+        );
+    }
 }

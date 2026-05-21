@@ -17,6 +17,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
+import com.openmate.core.network.BridgeEvent
 import com.openmate.core.network.GatewayInterceptor
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncSseClient
@@ -68,13 +69,14 @@ class ConnectionManagerTest {
 
         env.manager.connect(profile)
 
-        waitUntil { env.sseEventRepository.directConnectCount == 1 }
+        waitUntil { env.syncSseCallFactory.requestCount == 1 }
 
         assertThat(env.manager.activeProfile.value?.id).isEqualTo(profile.id)
         assertThat(env.apiClient.baseUrl).isEqualTo("http://${profile.address}:${profile.port}")
         assertThat(env.gatewayInterceptor.instanceId).isNull()
-        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(1)
+        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(0)
         assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
+        assertThat(env.syncSseCallFactory.requests.single().url.toString()).isEqualTo("http://${profile.address}:${profile.port}/api/bridge/events")
         assertThat(env.profileRepository.savedProfiles).hasSize(1)
     }
 
@@ -85,13 +87,14 @@ class ConnectionManagerTest {
 
         env.manager.connect(profile)
 
-        waitUntil { env.sseEventRepository.gatewayConnectCount == 1 }
+        waitUntil { env.syncSseCallFactory.requestCount == 1 }
 
         assertThat(env.manager.activeProfile.value?.id).isEqualTo(profile.id)
         assertThat(env.apiClient.baseUrl).isEqualTo("https://gateway.clawmate.net")
         assertThat(env.gatewayInterceptor.instanceId).isEqualTo(profile.instanceId)
         assertThat(env.sseEventRepository.directConnectCount).isEqualTo(0)
-        assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(1)
+        assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
+        assertThat(env.syncSseCallFactory.requests.single().url.toString()).isEqualTo("https://gateway.clawmate.net/api/bridge/events")
     }
 
     @Test
@@ -107,13 +110,29 @@ class ConnectionManagerTest {
         val profile = profile(name = "dup", instanceId = "iid-dup")
 
         env.manager.connect(profile)
-        waitUntil { env.sseEventRepository.directConnectCount == 1 }
+        waitUntil { env.syncSseCallFactory.requestCount == 1 }
 
         env.manager.connect(profile)
         Thread.sleep(200)
 
-        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(1)
+        assertThat(env.syncSseCallFactory.requestCount).isEqualTo(1)
+        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(0)
         assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
+    }
+
+    @Test
+    fun connect_startsOnlyBridgeBusinessSse() {
+        val env = createEnvironment()
+        val profile = profile(name = "single-sse", instanceId = "iid-single")
+
+        env.manager.connect(profile)
+
+        waitUntil { env.syncSseCallFactory.requestCount == 1 }
+
+        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(0)
+        assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
+        assertThat(env.syncSseCallFactory.requestCount).isEqualTo(1)
+        assertThat(env.syncSseCallFactory.requests.single().url.encodedPath).isEqualTo("/api/bridge/events")
     }
 
     private fun createEnvironment(
@@ -164,8 +183,9 @@ class ConnectionManagerTest {
                 .build(),
         )
         val tokenStore = TokenStore(RuntimeEnvironment.getApplication())
+        val syncSseCallFactory = RecordingCancellationCallFactory()
         val syncSseClient = SyncSseClient(
-            client = ImmediateCancellationCallFactory(),
+            client = syncSseCallFactory,
             tokenStore = tokenStore,
             logger = NoOpSyncSseLogger,
         )
@@ -193,6 +213,7 @@ class ConnectionManagerTest {
             sseEventRepository = sseEventRepository,
             apiClient = apiClient,
             gatewayInterceptor = gatewayInterceptor,
+            syncSseCallFactory = syncSseCallFactory,
         )
     }
 
@@ -228,6 +249,7 @@ class ConnectionManagerTest {
         val sseEventRepository: FakeSseEventRepository,
         val apiClient: OpencodeApiClient,
         val gatewayInterceptor: GatewayInterceptor,
+        val syncSseCallFactory: RecordingCancellationCallFactory,
     )
 
     private class FakeServerProfileRepository : ServerProfileRepository {
@@ -362,8 +384,16 @@ class ConnectionManagerTest {
         override suspend fun deleteMessage(sessionId: String, messageId: String) = Unit
     }
 
-    private class ImmediateCancellationCallFactory : Call.Factory {
-        override fun newCall(request: Request): Call = ImmediateCancellationCall(request)
+    private class RecordingCancellationCallFactory : Call.Factory {
+        val requests = mutableListOf<Request>()
+
+        val requestCount: Int
+            get() = requests.size
+
+        override fun newCall(request: Request): Call {
+            requests += request
+            return ImmediateCancellationCall(request)
+        }
     }
 
     private class ImmediateCancellationCall(
@@ -399,6 +429,6 @@ class ConnectionManagerTest {
 
         override fun logStreamClosed(traceId: String) = Unit
 
-        override fun logNotification(sessionId: String, seq: Long, traceId: String) = Unit
+        override fun logNotification(event: BridgeEvent, traceId: String) = Unit
     }
 }

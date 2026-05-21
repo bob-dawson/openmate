@@ -9,6 +9,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth;
 use crate::bridge;
+use crate::events;
 use crate::files;
 use crate::fs;
 use crate::proxy;
@@ -79,6 +80,7 @@ pub async fn run_server(
         .route("/api/bridge/sync/session/{sessionID}/message/{messageID}/full", get(sync::router::full))
         .route("/api/bridge/sync/session/{sessionID}/resolve-message-id", get(sync::router::resolve_message_id))
         .route("/api/bridge/sync/session/{sessionID}/resolve-evt-id", get(sync::router::resolve_evt_id))
+        .route("/api/bridge/events", get(events::router::events_sse))
         .route("/api/bridge/sync/events", get(sync::sse::sync_sse))
         .route("/api/bridge/status", get(bridge::router::status))
         .route(

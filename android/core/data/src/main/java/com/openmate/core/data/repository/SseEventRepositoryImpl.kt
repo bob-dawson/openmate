@@ -5,75 +5,65 @@ import com.openmate.core.data.sse.EventDispatcher
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.SseEvent
 import com.openmate.core.domain.repository.SseEventRepository
-import com.openmate.core.network.SseClient
+import com.openmate.core.network.BridgeEvent
+import com.openmate.core.network.SseData
+import com.openmate.core.network.SyncSseClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class SseEventRepositoryImpl @Inject constructor(
-    private val sseClient: SseClient,
+    private val syncSseClient: SyncSseClient,
     private val eventDispatcher: EventDispatcher,
 ) : SseEventRepository {
 
     private var eventJob: Job? = null
     private var isSubscribed = false
 
+    init {
+        ensureSubscribed()
+    }
+
     override fun connect(address: String, port: Int, password: String?): Flow<SseEvent> {
         ensureSubscribed()
-        sseClient.connect(address, port, password)
-        return sseClient.events.map { sseData ->
-            SseEvent(
-                type = sseData.type,
-                payload = sseData.properties.toString(),
-            )
-        }
+        return emptyFlow()
     }
 
     override fun connectViaGateway(baseUrl: String): Flow<SseEvent> {
         ensureSubscribed()
-        sseClient.connectViaGateway(baseUrl)
-        return sseClient.events.map { sseData ->
-            SseEvent(
-                type = sseData.type,
-                payload = sseData.properties.toString(),
-            )
-        }
+        return emptyFlow()
     }
 
     private fun ensureSubscribed() {
         if (!isSubscribed) {
             isSubscribed = true
             eventJob = CoroutineScope(Dispatchers.IO).launch {
-                sseClient.events.collect { sseData ->
-                    eventDispatcher.dispatch(sseData)
+                syncSseClient.notifications.collect { event ->
+                    eventDispatcher.dispatch(event.toSseData())
                 }
             }
         }
     }
 
     override fun disconnect() {
-        eventJob?.cancel()
-        eventJob = null
-        isSubscribed = false
         eventDispatcher.activeDirectory = ""
         eventDispatcher.messageSyncEnabled = false
-        sseClient.disconnect()
+        syncSseClient.disconnect("sse-repository")
     }
 
     override fun observeConnectionStatus(): Flow<ConnectionStatus> {
-        return sseClient.connectionStatus
+        return syncSseClient.connectionStatus
     }
 
     override fun isConnectedTo(address: String, port: Int): Boolean {
-        return sseClient.isConnectedTo(address, port)
+        return syncSseClient.currentBaseUrl == "http://$address:$port" &&
+            syncSseClient.connectionStatus.value == ConnectionStatus.CONNECTED
     }
 
     override fun observeMessageSyncNeeded(): Flow<String> {
@@ -88,5 +78,13 @@ class SseEventRepositoryImpl @Inject constructor(
         eventDispatcher.activeDirectory = directory.orEmpty()
         eventDispatcher.messageSyncEnabled = enabled
         Log.d("SseEventRepo", "setActiveSessionScope: dir=${directory.orEmpty()} enabled=$enabled")
+    }
+
+    private fun BridgeEvent.toSseData(): SseData {
+        return SseData(
+            type = type,
+            properties = properties,
+            directory = directory,
+        )
     }
 }
