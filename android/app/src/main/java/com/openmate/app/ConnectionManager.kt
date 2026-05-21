@@ -193,12 +193,7 @@ class ConnectionManager @Inject constructor(
         dbProvider.setActive(profile.id)
 
         val hasIid = profile.instanceId.isNotEmpty()
-        if (hasIid) {
-            useGateway = true
-            apiClient.baseUrl = GATEWAY_URL
-            gatewayInterceptor.instanceId = profile.instanceId
-            logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "优先网关", message = "instance=${profile.instanceId}")
-        } else if (!useGateway) {
+        if (!useGateway) {
             val directUrl = "http://${profile.address}:${profile.port}"
             apiClient.baseUrl = directUrl
             gatewayInterceptor.instanceId = null
@@ -225,13 +220,21 @@ class ConnectionManager @Inject constructor(
                         return
                     }
                 }
+                useGateway = false
                 logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "直连成功", message = directUrl)
             } catch (e: Exception) {
                 Log.w(TAG, "Direct connect failed: ${e.message}")
                 logStore.log(SyncLogLevel.Warn, SyncLogCategory.Gateway, title = "直连失败", message = e.message ?: "")
-                _connectionStatus.value = ConnectionStatus.ERROR
-                _errorMessage.value = "Bridge not reachable: ${e.message}"
-                return
+                if (hasIid) {
+                    useGateway = true
+                    apiClient.baseUrl = GATEWAY_URL
+                    gatewayInterceptor.instanceId = profile.instanceId
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "回退网关", message = "instance=${profile.instanceId}")
+                } else {
+                    _connectionStatus.value = ConnectionStatus.ERROR
+                    _errorMessage.value = "Bridge not reachable: ${e.message}"
+                    return
+                }
             }
         } else {
             apiClient.baseUrl = GATEWAY_URL

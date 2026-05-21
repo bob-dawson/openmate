@@ -15,6 +15,7 @@ import com.openmate.core.network.SyncSseConnection
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
+import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionMessageSyncEvent
@@ -24,6 +25,8 @@ import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.model.Workspace
+import com.openmate.core.domain.model.ServerProfile
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
@@ -46,6 +49,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -709,6 +714,19 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun connectionStatus_usesConnectionRepositoryStatus() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(),
+            connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
+            sseEventRepository = FakeSseEventRepository(status = ConnectionStatus.CONNECTED),
+        )
+
+        advanceUntilIdle()
+
+        assertThat(viewModel.connectionStatus.value).isEqualTo(ConnectionStatus.GATEWAY_CONNECTED)
+    }
+
+    @Test
     fun abort_stopsBusyTimerImmediatelyBeforeSyncCatchesUp() = runTest(dispatcher) {
         val repository = FakeSessionMessageRepository(
             recentWindow = listOf(
@@ -767,7 +785,7 @@ class SessionDetailViewModelTest {
         assertThat(viewModel.currentBusyStart.value).isNull()
         assertThat(viewModel.runningAnchors.value).isEmpty()
         assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.IDLE.name)
-        assertThat(viewModel.messages.value.first { it.id == "m-running" }.completedAt).isNotNull()
+        assertThat(viewModel.messages.value.first { it.id == "m-running" }.completedAt).isNull()
     }
 
     @Test
@@ -801,6 +819,13 @@ class SessionDetailViewModelTest {
 
         viewModel.loadSession(SESSION_ID)
         advanceUntilIdle()
+
+        assertThat(viewModel.currentBusyStart.value).isEqualTo(500L)
+        assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.BUSY.name)
+
+        viewModel.abort(SESSION_ID)
+        waitUntil { sessionRepository.abortCalls == 1 }
+        waitUntil { viewModel.currentBusyStart.value == null }
 
         assertThat(viewModel.currentBusyStart.value).isNull()
         assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.IDLE.name)
@@ -895,6 +920,7 @@ class SessionDetailViewModelTest {
         questionRepository: QuestionRepository = FakeQuestionRepository(),
         permissionRepository: PermissionRepository = FakePermissionRepository(),
         sseEventRepository: SseEventRepository = FakeSseEventRepository(),
+        connectionRepository: ConnectionRepository = FakeConnectionRepository(ConnectionStatus.DISCONNECTED),
         syncDebugController: SyncDebugController = SyncDebugController(
             syncSseConnection = FakeSyncSseConnection(),
             syncSseStarter = FakeSyncSseStarter(),
@@ -921,9 +947,15 @@ class SessionDetailViewModelTest {
             questionRepository = questionRepository,
             permissionRepository = permissionRepository,
             sseEventRepository = sseEventRepository,
+            connectionRepository = connectionRepository,
             syncDebugController = syncDebugController,
             dbProvider = dbProvider,
+            syncSseStarter = FakeSyncSseStarter(),
             apiClient = apiClient,
+            bridgeFileOpener = BridgeFileOpener(
+                appContext = appContext(),
+                apiClient = apiClient,
+            ),
         )
     }
 
@@ -956,6 +988,7 @@ class SessionDetailViewModelTest {
         private val observedMessages = MutableStateFlow(emptyList<SessionMessage>())
         private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 16)
         private var recentWindowMessages = recentWindow
+        private var syncedMessages = recentWindow
 
         var observeMessagesCalls = 0
         val getRecentWindowCalls = mutableListOf<Pair<String, Int>>()
@@ -988,10 +1021,26 @@ class SessionDetailViewModelTest {
             return if (olderPages.isEmpty()) emptyList() else olderPages.removeFirst()
         }
 
+        override suspend fun getOlderPageByUserTurns(
+            sessionId: String,
+            beforeTimeCreated: Long,
+            beforeId: String,
+            userTurns: Int,
+        ): List<SessionMessage> = emptyList()
+
+        override suspend fun findBusyStartTime(sessionId: String): Long? = null
+
         override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult = initSyncResult
 
         override suspend fun incrementalSync(sessionId: String) {
             incrementalSyncCalls += sessionId
+            val result = if (incrementalSyncResults.isEmpty()) {
+                SessionMessageSyncResult(lastSeq = lastSeq ?: 0, changes = emptyList())
+            } else {
+                incrementalSyncResults.removeFirst()
+            }
+            applyChanges(result.changes)
+            syncEvents.emit(SessionMessageSyncEvent(sessionId = sessionId, result = result))
         }
 
         override suspend fun incrementalSyncAndNotify(sessionId: String) {
@@ -1003,8 +1052,33 @@ class SessionDetailViewModelTest {
 
         override suspend fun getLastSeq(sessionId: String): Long? = lastSeq
 
+        override suspend fun rollbackSeq(sessionId: String, count: Long) = Unit
+
+        override suspend fun deleteMessage(sessionId: String, messageId: String) = Unit
+
         fun emitSyncEvent(event: SessionMessageSyncEvent) {
             syncEvents.tryEmit(event)
+        }
+
+        private fun applyChanges(changes: List<SessionMessageSyncChange>) {
+            var updated = syncedMessages
+            for (change in changes) {
+                updated = when (change) {
+                    is SessionMessageSyncChange.Insert -> {
+                        (updated + change.message).sortedBy(SessionMessage::timeCreated)
+                    }
+                    is SessionMessageSyncChange.Update -> {
+                        updated.map { existing ->
+                            if (existing.id == change.message.id) change.message else existing
+                        }
+                    }
+                    is SessionMessageSyncChange.Remove -> {
+                        updated.filterNot { existing -> existing.id == change.messageId }
+                    }
+                }
+            }
+            syncedMessages = updated
+            observedMessages.value = updated
         }
     }
 
@@ -1150,7 +1224,7 @@ class SessionDetailViewModelTest {
             abortCalls += 1
         }
 
-        override suspend fun refreshSessionStatuses() = Unit
+        override suspend fun refreshSessionStatuses(directory: String?) = Unit
 
         override suspend fun syncSessionStatusFromRemote(sessionID: String) = Unit
 
@@ -1169,6 +1243,14 @@ class SessionDetailViewModelTest {
         override suspend fun updateSessionStatus(id: String, status: String) = Unit
 
         override suspend fun getSessionRetryStatus(id: String): SessionRetryStatus? = retryStatusFlow.value
+
+        override suspend fun revertSession(sessionID: String, messageID: String, partID: String?, directory: String?) = Unit
+
+        override suspend fun unrevertSession(sessionID: String, directory: String?) = Unit
+
+        override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? = null
+
+        override suspend fun resolveEvtID(sessionID: String, messageID: String): String? = null
 
         fun emitRetryStatus(status: SessionRetryStatus?) {
             retryStatusFlow.value = status
@@ -1199,19 +1281,33 @@ class SessionDetailViewModelTest {
         override fun observePending(): Flow<List<PermissionRequest>> = flowOf(emptyList())
     }
 
-    private class FakeSseEventRepository : SseEventRepository {
-        override fun connect(address: String, port: Int, password: String?) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
+    private class FakeConnectionRepository(
+        status: ConnectionStatus,
+    ) : ConnectionRepository {
+        override val connectionStatus = MutableStateFlow(status).asStateFlow()
+        override val activeProfile = MutableStateFlow<ServerProfile?>(null).asStateFlow()
+        override val isConnected = MutableStateFlow(status == ConnectionStatus.CONNECTED || status == ConnectionStatus.GATEWAY_CONNECTED).asStateFlow()
+        override val errorMessage = MutableStateFlow<String?>(null).asStateFlow()
+        override val needsRepairing = MutableStateFlow<String?>(null).asStateFlow()
 
+        override fun connect(profile: ServerProfile) = Unit
+        override fun reconnect() = Unit
         override fun disconnect() = Unit
+        override fun confirmRepairing(profileId: String, token: String) = Unit
+        override fun clearNeedsRepairing() = Unit
+        override fun clearError() = Unit
+    }
 
-        override fun observeConnectionStatus() = flowOf<com.openmate.core.domain.model.ConnectionStatus>()
-
+    private class FakeSseEventRepository(
+        private val status: ConnectionStatus = ConnectionStatus.DISCONNECTED,
+    ) : SseEventRepository {
+        override fun connect(address: String, port: Int, password: String?) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
+        override fun connectViaGateway(baseUrl: String) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
+        override fun disconnect() = Unit
+        override fun observeConnectionStatus() = flowOf(status)
         override fun isConnectedTo(address: String, port: Int): Boolean = false
-
         override fun setActiveSessionScope(directory: String?, enabled: Boolean) = Unit
-
         override fun observeMessageSyncNeeded() = emptyFlow<String>()
-
         override fun observeSessionErrors() = emptyFlow<Pair<String, String>>()
     }
 

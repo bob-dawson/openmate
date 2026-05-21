@@ -22,6 +22,9 @@ import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.SyncSseLogger
 import com.openmate.core.network.TokenStore
+import com.openmate.core.network.dto.BridgeInfoDto
+import com.openmate.core.network.dto.BridgeOpencodeInfoDto
+import com.openmate.core.network.dto.BridgeStatusResponse
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -33,7 +36,10 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Timeout
 import org.junit.After
 import org.junit.Test
@@ -53,9 +59,29 @@ class ConnectionManagerTest {
     }
 
     @Test
-    fun connect_gatewayProfile_startsGatewaySseAndMarksProfileActive() {
-        val env = createEnvironment()
+    fun connect_profileWithInstanceId_prefersDirectWhenDirectBridgeReachable() {
         val profile = profile(name = "gateway", instanceId = "iid-gateway")
+        val env = createEnvironment(
+            directBridgeReachable = true,
+            directBridgeInstanceId = profile.instanceId,
+        )
+
+        env.manager.connect(profile)
+
+        waitUntil { env.sseEventRepository.directConnectCount == 1 }
+
+        assertThat(env.manager.activeProfile.value?.id).isEqualTo(profile.id)
+        assertThat(env.apiClient.baseUrl).isEqualTo("http://${profile.address}:${profile.port}")
+        assertThat(env.gatewayInterceptor.instanceId).isNull()
+        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(1)
+        assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
+        assertThat(env.profileRepository.savedProfiles).hasSize(1)
+    }
+
+    @Test
+    fun connect_profileWithInstanceId_fallsBackToGatewayWhenDirectBridgeUnreachable() {
+        val env = createEnvironment(directBridgeReachable = false)
+        val profile = profile(name = "gateway-fallback", instanceId = "iid-fallback")
 
         env.manager.connect(profile)
 
@@ -64,8 +90,8 @@ class ConnectionManagerTest {
         assertThat(env.manager.activeProfile.value?.id).isEqualTo(profile.id)
         assertThat(env.apiClient.baseUrl).isEqualTo("https://gateway.clawmate.net")
         assertThat(env.gatewayInterceptor.instanceId).isEqualTo(profile.instanceId)
+        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(0)
         assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(1)
-        assertThat(env.profileRepository.savedProfiles).hasSize(1)
     }
 
     @Test
@@ -81,21 +107,62 @@ class ConnectionManagerTest {
         val profile = profile(name = "dup", instanceId = "iid-dup")
 
         env.manager.connect(profile)
-        waitUntil { env.sseEventRepository.gatewayConnectCount == 1 }
+        waitUntil { env.sseEventRepository.directConnectCount == 1 }
 
         env.manager.connect(profile)
         Thread.sleep(200)
 
-        assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(1)
+        assertThat(env.sseEventRepository.directConnectCount).isEqualTo(1)
+        assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
     }
 
-    private fun createEnvironment(): TestEnvironment {
+    private fun createEnvironment(
+        directBridgeReachable: Boolean = true,
+        directBridgeInstanceId: String = "iid-direct",
+    ): TestEnvironment {
         val profileRepository = FakeServerProfileRepository()
         val sseEventRepository = FakeSseEventRepository()
         val sessionRepository = FakeSessionRepository()
         val databaseProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication()))
         val gatewayInterceptor = GatewayInterceptor()
-        val apiClient = OpencodeApiClient(OkHttpClient.Builder().addInterceptor(gatewayInterceptor).build())
+        val apiClient = OpencodeApiClient(
+            OkHttpClient.Builder()
+                .addInterceptor(gatewayInterceptor)
+                .addInterceptor { chain ->
+                    val request = chain.request()
+                    if (request.url.encodedPath == "/api/bridge/status") {
+                        val isGatewayRequest = request.url.host == "gateway.clawmate.net"
+                        if (!isGatewayRequest && !directBridgeReachable) {
+                            throw java.io.IOException("direct bridge unreachable")
+                        }
+                        val body = """
+                            {
+                                "bridge": {
+                                  "version": "1.0.0",
+                                  "port": 4097,
+                                  "auth_enabled": false,
+                                  "instance_id": "$directBridgeInstanceId"
+                                },
+                              "opencode": {
+                                "status": "online",
+                                "version": "1.15.5",
+                                "url": "http://127.0.0.1:4098",
+                                "directory": "D:/openmate"
+                              }
+                            }
+                        """.trimIndent()
+                        return@addInterceptor Response.Builder()
+                            .request(request)
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(200)
+                            .message("OK")
+                            .body(body.toResponseBody())
+                            .build()
+                    }
+                    chain.proceed(request)
+                }
+                .build(),
+        )
         val tokenStore = TokenStore(RuntimeEnvironment.getApplication())
         val syncSseClient = SyncSseClient(
             client = ImmediateCancellationCallFactory(),

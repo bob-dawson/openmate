@@ -6,9 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.Workspace
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
-import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.network.OpencodeApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,7 +23,7 @@ import javax.inject.Inject
 @HiltViewModel
 class WorkspaceListViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
-    private val sseEventRepository: SseEventRepository,
+    private val connectionRepository: ConnectionRepository,
     private val profileRepository: ServerProfileRepository,
     private val dbProvider: ActiveDatabaseProvider,
     val apiClient: OpencodeApiClient,
@@ -125,7 +125,7 @@ class WorkspaceListViewModel @Inject constructor(
 
     private fun observeConnection() {
         viewModelScope.launch {
-            sseEventRepository.observeConnectionStatus().collect { status ->
+            connectionRepository.connectionStatus.collect { status ->
                 _connectionStatus.value = status
             }
         }

@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SessionRepository
-import com.openmate.core.domain.repository.SseEventRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,7 +22,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SessionListViewModel @Inject constructor(
     private val sessionRepository: SessionRepository,
-    private val sseEventRepository: SseEventRepository,
+    private val connectionRepository: ConnectionRepository,
 ) : ViewModel() {
 
     private val _sessions = MutableStateFlow<List<Session>>(emptyList())
@@ -105,7 +105,7 @@ class SessionListViewModel @Inject constructor(
 
     private fun observeConnection() {
         viewModelScope.launch {
-            sseEventRepository.observeConnectionStatus().collect { status ->
+            connectionRepository.connectionStatus.collect { status ->
                 _connectionStatus.value = status
             }
         }
