@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.Workspace
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
@@ -27,6 +28,7 @@ class WorkspaceListViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
     private val dbProvider: ActiveDatabaseProvider,
     val apiClient: OpencodeApiClient,
+    private val connectionRepository: ConnectionRepository,
 ) : ViewModel() {
 
     private val _workspaces = MutableStateFlow<List<Workspace>>(emptyList())
@@ -125,7 +127,7 @@ class WorkspaceListViewModel @Inject constructor(
 
     private fun observeConnection() {
         viewModelScope.launch {
-            sseEventRepository.observeConnectionStatus().collect { status ->
+            connectionRepository.connectionStatus.collect { status ->
                 _connectionStatus.value = status
             }
         }

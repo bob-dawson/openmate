@@ -23,6 +23,7 @@ import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.repository.FileAttachment
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.domain.repository.PermissionRepository
@@ -78,6 +79,7 @@ class SessionDetailViewModel @Inject constructor(
     private val syncDebugController: SyncDebugController,
     private val syncSseStarter: SyncSseStarter,
     internal val apiClient: OpencodeApiClient,
+    private val connectionRepository: ConnectionRepository,
     private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
@@ -287,7 +289,7 @@ class SessionDetailViewModel @Inject constructor(
 
     private fun observeConnectionStatus() {
         viewModelScope.launch {
-            sseEventRepository.observeConnectionStatus().collect { status ->
+            connectionRepository.connectionStatus.collect { status ->
                 _connectionStatus.value = status
             }
         }
