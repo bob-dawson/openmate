@@ -16,7 +16,6 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.ConnectionStatus
-import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionMessageSyncEvent
@@ -26,6 +25,7 @@ import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.model.Workspace
+import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.PermissionRepository
 import com.openmate.core.domain.repository.QuestionRepository
@@ -49,6 +49,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -564,19 +565,6 @@ class SessionDetailViewModelTest {
     }
 
     @Test
-    fun connectionStatus_usesConnectionRepositoryStatus() = runTest(dispatcher) {
-        val viewModel = createViewModel(
-            sessionMessageRepository = FakeSessionMessageRepository(),
-            sseEventRepository = FakeSseEventRepository(),
-            connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
-        )
-
-        advanceUntilIdle()
-
-        assertThat(viewModel.connectionStatus.value).isEqualTo(ConnectionStatus.GATEWAY_CONNECTED)
-    }
-
-    @Test
     fun loadProviders_andVariantPreference_areScopedByProfileId_notDirectoryOrName() = runTest(dispatcher) {
         val prefs = appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
         val profileOneProviders = ProviderListDto(
@@ -726,6 +714,19 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun connectionStatus_usesConnectionRepositoryStatus() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(),
+            connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
+            sseEventRepository = FakeSseEventRepository(status = ConnectionStatus.CONNECTED),
+        )
+
+        advanceUntilIdle()
+
+        assertThat(viewModel.connectionStatus.value).isEqualTo(ConnectionStatus.GATEWAY_CONNECTED)
+    }
+
+    @Test
     fun abort_stopsBusyTimerImmediatelyBeforeSyncCatchesUp() = runTest(dispatcher) {
         val repository = FakeSessionMessageRepository(
             recentWindow = listOf(
@@ -784,7 +785,7 @@ class SessionDetailViewModelTest {
         assertThat(viewModel.currentBusyStart.value).isNull()
         assertThat(viewModel.runningAnchors.value).isEmpty()
         assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.IDLE.name)
-        assertThat(viewModel.messages.value.first { it.id == "m-running" }.completedAt).isNotNull()
+        assertThat(viewModel.messages.value.first { it.id == "m-running" }.completedAt).isNull()
     }
 
     @Test
@@ -818,6 +819,13 @@ class SessionDetailViewModelTest {
 
         viewModel.loadSession(SESSION_ID)
         advanceUntilIdle()
+
+        assertThat(viewModel.currentBusyStart.value).isEqualTo(500L)
+        assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.BUSY.name)
+
+        viewModel.abort(SESSION_ID)
+        waitUntil { sessionRepository.abortCalls == 1 }
+        waitUntil { viewModel.currentBusyStart.value == null }
 
         assertThat(viewModel.currentBusyStart.value).isNull()
         assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.IDLE.name)
@@ -912,7 +920,7 @@ class SessionDetailViewModelTest {
         questionRepository: QuestionRepository = FakeQuestionRepository(),
         permissionRepository: PermissionRepository = FakePermissionRepository(),
         sseEventRepository: SseEventRepository = FakeSseEventRepository(),
-        connectionRepository: ConnectionRepository = FakeConnectionRepository(),
+        connectionRepository: ConnectionRepository = FakeConnectionRepository(ConnectionStatus.DISCONNECTED),
         syncDebugController: SyncDebugController = SyncDebugController(
             syncSseConnection = FakeSyncSseConnection(),
             syncSseStarter = FakeSyncSseStarter(),
@@ -939,12 +947,15 @@ class SessionDetailViewModelTest {
             questionRepository = questionRepository,
             permissionRepository = permissionRepository,
             sseEventRepository = sseEventRepository,
-            dbProvider = dbProvider,
+            connectionRepository = connectionRepository,
             syncDebugController = syncDebugController,
+            dbProvider = dbProvider,
             syncSseStarter = FakeSyncSseStarter(),
             apiClient = apiClient,
-            connectionRepository = connectionRepository,
-            bridgeFileOpener = BridgeFileOpener(appContext(), apiClient),
+            bridgeFileOpener = BridgeFileOpener(
+                appContext = appContext(),
+                apiClient = apiClient,
+            ),
         )
     }
 
@@ -977,6 +988,7 @@ class SessionDetailViewModelTest {
         private val observedMessages = MutableStateFlow(emptyList<SessionMessage>())
         private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 16)
         private var recentWindowMessages = recentWindow
+        private var syncedMessages = recentWindow
 
         var observeMessagesCalls = 0
         val getRecentWindowCalls = mutableListOf<Pair<String, Int>>()
@@ -1022,14 +1034,13 @@ class SessionDetailViewModelTest {
 
         override suspend fun incrementalSync(sessionId: String) {
             incrementalSyncCalls += sessionId
-            if (incrementalSyncResults.isNotEmpty()) {
-                syncEvents.emit(
-                    SessionMessageSyncEvent(
-                        sessionId = sessionId,
-                        result = incrementalSyncResults.removeFirst(),
-                    )
-                )
+            val result = if (incrementalSyncResults.isEmpty()) {
+                SessionMessageSyncResult(lastSeq = lastSeq ?: 0, changes = emptyList())
+            } else {
+                incrementalSyncResults.removeFirst()
             }
+            applyChanges(result.changes)
+            syncEvents.emit(SessionMessageSyncEvent(sessionId = sessionId, result = result))
         }
 
         override suspend fun incrementalSyncAndNotify(sessionId: String) {
@@ -1047,6 +1058,27 @@ class SessionDetailViewModelTest {
 
         fun emitSyncEvent(event: SessionMessageSyncEvent) {
             syncEvents.tryEmit(event)
+        }
+
+        private fun applyChanges(changes: List<SessionMessageSyncChange>) {
+            var updated = syncedMessages
+            for (change in changes) {
+                updated = when (change) {
+                    is SessionMessageSyncChange.Insert -> {
+                        (updated + change.message).sortedBy(SessionMessage::timeCreated)
+                    }
+                    is SessionMessageSyncChange.Update -> {
+                        updated.map { existing ->
+                            if (existing.id == change.message.id) change.message else existing
+                        }
+                    }
+                    is SessionMessageSyncChange.Remove -> {
+                        updated.filterNot { existing -> existing.id == change.messageId }
+                    }
+                }
+            }
+            syncedMessages = updated
+            observedMessages.value = updated
         }
     }
 
@@ -1249,21 +1281,16 @@ class SessionDetailViewModelTest {
         override fun observePending(): Flow<List<PermissionRequest>> = flowOf(emptyList())
     }
 
-    private class FakeSseEventRepository : SseEventRepository {
+    private class FakeSseEventRepository(
+        private val status: ConnectionStatus = ConnectionStatus.DISCONNECTED,
+    ) : SseEventRepository {
         override fun connect(address: String, port: Int, password: String?) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
-
         override fun connectViaGateway(baseUrl: String) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
-
         override fun disconnect() = Unit
-
-        override fun observeConnectionStatus() = flowOf<com.openmate.core.domain.model.ConnectionStatus>()
-
+        override fun observeConnectionStatus() = flowOf(status)
         override fun isConnectedTo(address: String, port: Int): Boolean = false
-
         override fun setActiveSessionScope(directory: String?, enabled: Boolean) = Unit
-
         override fun observeMessageSyncNeeded() = emptyFlow<String>()
-
         override fun observeSessionErrors() = emptyFlow<Pair<String, String>>()
     }
 

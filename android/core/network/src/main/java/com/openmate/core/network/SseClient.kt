@@ -32,6 +32,7 @@ class SseClient(
     private var heartbeatJob: Job? = null
     @Volatile private var running = false
     private val lastEventTime = AtomicLong(0)
+    private val connectionGeneration = AtomicLong(0)
     private val scope = CoroutineScope(Dispatchers.IO)
 
     companion object {
@@ -39,30 +40,35 @@ class SseClient(
     }
 
     fun connect(address: String, port: Int, password: String?): Flow<SseData> {
-        disconnect()
-        _connectionStatus.value = ConnectionStatus.CONNECTING
+        val generation = beginNewConnection()
         val baseUrl = "http://$address:$port"
 
-        startConnection(baseUrl)
+        startConnection(baseUrl, generation)
         return events
     }
 
     fun connectViaGateway(baseUrl: String): Flow<SseData> {
-        disconnect()
-        _connectionStatus.value = ConnectionStatus.CONNECTING
+        val generation = beginNewConnection()
 
-        startConnection(baseUrl)
+        startConnection(baseUrl, generation)
         return events
     }
 
-    private fun startConnection(baseUrl: String) {
+    private fun beginNewConnection(): Long {
+        val generation = connectionGeneration.incrementAndGet()
+        disconnectInternal(generation)
+        updateStatus(ConnectionStatus.CONNECTING, generation)
+        return generation
+    }
+
+    private fun startConnection(baseUrl: String, generation: Long) {
         connectJob?.cancel()
         connectJob = scope.launch {
-            establishConnection(baseUrl)
+            establishConnection(baseUrl, generation)
         }
     }
 
-    private suspend fun establishConnection(baseUrl: String) {
+    private suspend fun establishConnection(baseUrl: String, generation: Long) {
         running = true
         val request = Request.Builder()
             .url("$baseUrl/global/event")
@@ -72,12 +78,12 @@ class SseClient(
         try {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                _connectionStatus.value = ConnectionStatus.ERROR
+                updateStatus(ConnectionStatus.ERROR, generation)
                 throw ServerUnavailableException("SSE connection failed: HTTP ${response.code}")
             }
-            _connectionStatus.value = ConnectionStatus.CONNECTED
+            updateStatus(ConnectionStatus.CONNECTED, generation)
             lastEventTime.set(System.currentTimeMillis())
-            startHeartbeatMonitor()
+            startHeartbeatMonitor(generation)
 
             val reader = BufferedReader(InputStreamReader(response.body?.byteStream()))
             try {
@@ -102,18 +108,18 @@ class SseClient(
         } catch (e: Exception) {
             stopHeartbeatMonitor()
             if (e is CancellationException) throw e
-            _connectionStatus.value = ConnectionStatus.ERROR
+            updateStatus(ConnectionStatus.ERROR, generation)
         }
     }
 
-    private fun startHeartbeatMonitor() {
+    private fun startHeartbeatMonitor(generation: Long) {
         stopHeartbeatMonitor()
         heartbeatJob = scope.launch {
             while (coroutineContext[Job]?.isActive == true) {
                 delay(HEARTBEAT_TIMEOUT_MS)
                 val elapsed = System.currentTimeMillis() - lastEventTime.get()
                 if (elapsed > HEARTBEAT_TIMEOUT_MS) {
-                    _connectionStatus.value = ConnectionStatus.ERROR
+                    updateStatus(ConnectionStatus.ERROR, generation)
                     connectJob?.cancel()
                     break
                 }
@@ -127,11 +133,21 @@ class SseClient(
     }
 
     fun disconnect() {
+        connectionGeneration.incrementAndGet()
+        disconnectInternal(connectionGeneration.get())
+    }
+
+    private fun disconnectInternal(generation: Long) {
         running = false
         connectJob?.cancel()
         connectJob = null
         stopHeartbeatMonitor()
-        _connectionStatus.value = ConnectionStatus.DISCONNECTED
+        updateStatus(ConnectionStatus.DISCONNECTED, generation)
+    }
+
+    private fun updateStatus(status: ConnectionStatus, generation: Long) {
+        if (generation != connectionGeneration.get()) return
+        _connectionStatus.value = status
     }
 
     fun isConnectedTo(address: String, port: Int): Boolean {

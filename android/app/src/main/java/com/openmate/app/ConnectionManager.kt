@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.net.URL
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,6 +53,7 @@ class ConnectionManager @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var syncSseJob: Job? = null
     private var directCheckJob: Job? = null
+    private val connectRequestId = AtomicLong(0)
 
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     override val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
@@ -71,11 +73,23 @@ class ConnectionManager @Inject constructor(
     @Volatile
     private var useGateway = false
 
+    @Volatile
+    private var activeConnectRequestId = 0L
+
+    @Volatile
+    private var pendingProfileId: String? = null
+
+    @Volatile
+    private var restoreStarted = false
+
     val client: OpencodeApiClient get() = apiClient
 
     init {
         scope.launch {
             sseEventRepository.observeConnectionStatus().collect { status ->
+                if (_activeProfile.value == null) {
+                    return@collect
+                }
                 val mapped = if (status == ConnectionStatus.CONNECTED && useGateway) {
                     ConnectionStatus.GATEWAY_CONNECTED
                 } else {
@@ -99,67 +113,47 @@ class ConnectionManager @Inject constructor(
         }
     }
 
-    override fun connect(profile: ServerProfile) {
+    fun restoreLastConnection() {
+        if (restoreStarted) return
+        restoreStarted = true
         scope.launch {
-            _connectionStatus.value = ConnectionStatus.CONNECTING
-            _errorMessage.value = null
-            _needsRepairing.value = null
-            _activeProfile.value = profile
-            logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "开始连接", message = "id=${profile.id} instanceId='${profile.instanceId}' len=${profile.instanceId.length}")
+            val profile = profileRepository.getAll()
+                .filter { it.lastConnectedAt != null }
+                .maxByOrNull { it.lastConnectedAt ?: Long.MIN_VALUE }
+                ?: return@launch
+            connect(profile)
+        }
+    }
 
-            tokenStore.setActiveProfileId(profile.id)
-            dbProvider.setActive(profile.id)
+    override fun connect(profile: ServerProfile) {
+        val currentProfile = _activeProfile.value
+        val currentStatus = _connectionStatus.value
+        val sameProfile = currentProfile?.id == profile.id
+        val alreadyActive = sameProfile && currentStatus in setOf(
+            ConnectionStatus.CONNECTING,
+            ConnectionStatus.CONNECTED,
+            ConnectionStatus.GATEWAY_CONNECTED,
+        )
+        if (alreadyActive || pendingProfileId == profile.id) {
+            return
+        }
 
-            val hasIid = profile.instanceId.isNotEmpty()
-            if (hasIid) {
-                useGateway = true
-                apiClient.baseUrl = GATEWAY_URL
-                gatewayInterceptor.instanceId = profile.instanceId
-                logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "优先网关", message = "instance=${profile.instanceId}")
-            } else if (!useGateway) {
-                val directUrl = "http://${profile.address}:${profile.port}"
-                apiClient.baseUrl = directUrl
-                gatewayInterceptor.instanceId = null
+        val requestId = connectRequestId.incrementAndGet()
+        activeConnectRequestId = requestId
+        pendingProfileId = profile.id
 
-                try {
-                    val status = apiClient.bridgeStatus()
-                    if (status.bridge.version.isBlank()) {
-                        _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
-                        _errorMessage.value = "Not a Bridge server."
-                        return@launch
-                    }
-                    val iid = status.bridge.instanceId
-                    if (iid.isNotEmpty() && iid != profile.instanceId) {
-                        val updated = profile.copy(instanceId = iid)
-                        profileRepository.save(updated)
-                        _activeProfile.value = updated
-                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "更新 instanceId", message = "old='${profile.instanceId}' new='$iid'")
-                    }
-                    if (status.bridge.authEnabled) {
-                        val token = tokenStore.getToken(profile.id)
-                        if (token == null) {
-                            _needsRepairing.value = profile.id
-                            _connectionStatus.value = ConnectionStatus.DISCONNECTED
-                            return@launch
-                        }
-                    }
-                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "直连成功", message = directUrl)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Direct connect failed: ${e.message}")
-                    logStore.log(SyncLogLevel.Warn, SyncLogCategory.Gateway, title = "直连失败", message = e.message ?: "")
-                    _connectionStatus.value = ConnectionStatus.ERROR
-                    _errorMessage.value = "Bridge not reachable: ${e.message}"
-                    return@launch
+        scope.launch {
+            try {
+                val previousProfile = currentProfile
+                if (previousProfile?.id != null && previousProfile.id != profile.id) {
+                    teardownCurrentConnection(clearActiveProfile = false)
                 }
-            } else {
-                apiClient.baseUrl = GATEWAY_URL
-                gatewayInterceptor.instanceId = profile.instanceId
-                logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "跳过直连", message = "已在网关模式, instance=${profile.instanceId}")
+                startConnection(profile, requestId)
+            } finally {
+                if (isCurrentRequest(requestId)) {
+                    pendingProfileId = null
+                }
             }
-
-            startSseConnections(profile)
-            val savedProfile = _activeProfile.value ?: profile
-            profileRepository.save(savedProfile.copy(lastConnectedAt = System.currentTimeMillis()))
         }
     }
 
@@ -167,6 +161,94 @@ class ConnectionManager @Inject constructor(
         val profile = _activeProfile.value ?: return
         Log.i(TAG, "reconnect: instance=${profile.instanceId}")
         connect(profile)
+    }
+
+    private fun isCurrentRequest(requestId: Long): Boolean = activeConnectRequestId == requestId
+
+    private fun teardownCurrentConnection(clearActiveProfile: Boolean) {
+        useGateway = false
+        stopDirectCheckLoop()
+        sseEventRepository.disconnect()
+        syncSseJob?.cancel()
+        syncSseClient.disconnect()
+        gatewayInterceptor.instanceId = null
+        if (clearActiveProfile) {
+            scope.launch { clearConnection() }
+        }
+    }
+
+    private suspend fun startConnection(profile: ServerProfile, requestId: Long) {
+        if (!isCurrentRequest(requestId)) {
+            return
+        }
+
+        _connectionStatus.value = ConnectionStatus.CONNECTING
+        _isConnected.value = false
+        _errorMessage.value = null
+        _needsRepairing.value = null
+        _activeProfile.value = profile
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "开始连接", message = "id=${profile.id} instanceId='${profile.instanceId}' len=${profile.instanceId.length}")
+
+        tokenStore.setActiveProfileId(profile.id)
+        dbProvider.setActive(profile.id)
+
+        val hasIid = profile.instanceId.isNotEmpty()
+        if (!useGateway) {
+            val directUrl = "http://${profile.address}:${profile.port}"
+            apiClient.baseUrl = directUrl
+            gatewayInterceptor.instanceId = null
+
+            try {
+                val status = apiClient.bridgeStatus()
+                if (status.bridge.version.isBlank()) {
+                    _connectionStatus.value = ConnectionStatus.NOT_BRIDGE
+                    _errorMessage.value = "Not a Bridge server."
+                    return
+                }
+                val iid = status.bridge.instanceId
+                if (iid.isNotEmpty() && iid != profile.instanceId) {
+                    val updated = profile.copy(instanceId = iid)
+                    profileRepository.save(updated)
+                    _activeProfile.value = updated
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "更新 instanceId", message = "old='${profile.instanceId}' new='$iid'")
+                }
+                if (status.bridge.authEnabled) {
+                    val token = tokenStore.getToken(profile.id)
+                    if (token == null) {
+                        _needsRepairing.value = profile.id
+                        _connectionStatus.value = ConnectionStatus.DISCONNECTED
+                        return
+                    }
+                }
+                useGateway = false
+                logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "直连成功", message = directUrl)
+            } catch (e: Exception) {
+                Log.w(TAG, "Direct connect failed: ${e.message}")
+                logStore.log(SyncLogLevel.Warn, SyncLogCategory.Gateway, title = "直连失败", message = e.message ?: "")
+                if (hasIid) {
+                    useGateway = true
+                    apiClient.baseUrl = GATEWAY_URL
+                    gatewayInterceptor.instanceId = profile.instanceId
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "回退网关", message = "instance=${profile.instanceId}")
+                } else {
+                    _connectionStatus.value = ConnectionStatus.ERROR
+                    _errorMessage.value = "Bridge not reachable: ${e.message}"
+                    return
+                }
+            }
+        } else {
+            apiClient.baseUrl = GATEWAY_URL
+            gatewayInterceptor.instanceId = profile.instanceId
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "跳过直连", message = "已在网关模式, instance=${profile.instanceId}")
+        }
+
+        if (!isCurrentRequest(requestId)) {
+            return
+        }
+
+        startSseConnections(profile)
+        val savedProfile = _activeProfile.value ?: profile
+        profileRepository.save(savedProfile.copy(lastConnectedAt = System.currentTimeMillis()))
     }
 
     private suspend fun attemptGatewayFallback(profile: ServerProfile) {
@@ -302,13 +384,10 @@ class ConnectionManager @Inject constructor(
     }
 
     override fun disconnect() {
-        useGateway = false
-        stopDirectCheckLoop()
+        activeConnectRequestId = 0L
+        pendingProfileId = null
         logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "断开连接", message = "")
-        sseEventRepository.disconnect()
-        syncSseJob?.cancel()
-        syncSseClient.disconnect()
-        gatewayInterceptor.instanceId = null
+        teardownCurrentConnection(clearActiveProfile = false)
         scope.launch { clearConnection() }
     }
 

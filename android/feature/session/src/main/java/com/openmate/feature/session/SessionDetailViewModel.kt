@@ -75,11 +75,11 @@ class SessionDetailViewModel @Inject constructor(
     private val questionRepository: QuestionRepository,
     private val permissionRepository: PermissionRepository,
     private val sseEventRepository: SseEventRepository,
+    private val connectionRepository: ConnectionRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val syncDebugController: SyncDebugController,
     private val syncSseStarter: SyncSseStarter,
     internal val apiClient: OpencodeApiClient,
-    private val connectionRepository: ConnectionRepository,
     private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)

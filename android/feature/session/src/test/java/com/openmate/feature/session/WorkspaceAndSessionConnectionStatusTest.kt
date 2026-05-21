@@ -13,14 +13,12 @@ import com.openmate.core.domain.model.Workspace
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
-import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.network.OpencodeApiClient
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -60,11 +58,10 @@ class WorkspaceAndSessionConnectionStatusTest {
     fun workspaceListViewModel_usesConnectionRepositoryStatus() = runTest(dispatcher) {
         val viewModel = WorkspaceListViewModel(
             sessionRepository = FakeSessionRepository(),
-            sseEventRepository = FakeSseEventRepository(ConnectionStatus.ERROR),
+            connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
             profileRepository = FakeServerProfileRepository(),
             dbProvider = dbProvider(),
             apiClient = apiClient(),
-            connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
         )
 
         advanceUntilIdle()
@@ -76,7 +73,6 @@ class WorkspaceAndSessionConnectionStatusTest {
     fun sessionListViewModel_usesConnectionRepositoryStatus() = runTest(dispatcher) {
         val viewModel = SessionListViewModel(
             sessionRepository = FakeSessionRepository(),
-            sseEventRepository = FakeSseEventRepository(ConnectionStatus.ERROR),
             connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
         )
 
@@ -105,19 +101,6 @@ class WorkspaceAndSessionConnectionStatusTest {
         override fun confirmRepairing(profileId: String, token: String) = Unit
         override fun clearNeedsRepairing() = Unit
         override fun clearError() = Unit
-    }
-
-    private class FakeSseEventRepository(status: ConnectionStatus) : SseEventRepository {
-        private val statuses = MutableStateFlow(status)
-
-        override fun connect(address: String, port: Int, password: String?) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
-        override fun connectViaGateway(baseUrl: String) = emptyFlow<com.openmate.core.domain.model.SseEvent>()
-        override fun disconnect() = Unit
-        override fun observeConnectionStatus(): Flow<ConnectionStatus> = statuses
-        override fun isConnectedTo(address: String, port: Int): Boolean = false
-        override fun setActiveSessionScope(directory: String?, enabled: Boolean) = Unit
-        override fun observeMessageSyncNeeded(): Flow<String> = emptyFlow()
-        override fun observeSessionErrors(): Flow<Pair<String, String>> = emptyFlow()
     }
 
     private class FakeSessionRepository : SessionRepository {
