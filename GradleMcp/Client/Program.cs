@@ -4,7 +4,10 @@ using ModelContextProtocol.Protocol;
 
 var start = DateTimeOffset.Now;
 Console.WriteLine($"[{start:O}] Starting MCP client debug run");
-var transport = new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri("http://localhost:5099/mcp") });
+var transport = new HttpClientTransport(new HttpClientTransportOptions
+{
+    Endpoint = new Uri("http://localhost:5099/mcp")
+});
 
 try
 {
