@@ -80,7 +80,7 @@ class SyncDebugControllerTest {
         var disconnectCalls = 0
         val connectBaseUrls = mutableListOf<String>()
 
-        override suspend fun connect(baseUrl: String) {
+        override suspend fun connect(baseUrl: String, forceRestart: Boolean) {
             connectBaseUrls += baseUrl
             currentBaseUrl = baseUrl
         }

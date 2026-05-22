@@ -1,0 +1,17 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "GradleMcp\\GradleMcp.csproj",
+        "Action": "Start",
+        "DebugTarget": "http"
+      },
+      {
+        "Path": "Client\\Client.csproj",
+        "Action": "Start",
+        "DebugTarget": "Client"
+      }
+    ]
+  }
+]

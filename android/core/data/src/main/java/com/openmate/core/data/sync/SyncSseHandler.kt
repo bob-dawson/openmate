@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import java.util.concurrent.ConcurrentHashMap
@@ -16,7 +17,7 @@ class SyncSseHandler @Inject constructor(
     private val syncSseClient: SyncSseClient,
     private val repository: SessionMessageRepository,
     private val logStore: SyncLogStore,
-) : SyncSseStarter {
+) : SyncSseStarter, SyncRecoveryTrigger {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var collectJob: Job? = null
     private val activeSyncs = ConcurrentHashMap<String, Boolean>()
@@ -55,6 +56,13 @@ class SyncSseHandler @Inject constructor(
                 performSync(sessionId)
             }
             .launchIn(scope)
+    }
+
+    override fun requestCatchUpSync(sessionId: String?) {
+        val targetSessionId = sessionId ?: activeSessionId ?: return
+        scope.launch {
+            performSync(targetSessionId)
+        }
     }
 
     private suspend fun performSync(sessionId: String) {

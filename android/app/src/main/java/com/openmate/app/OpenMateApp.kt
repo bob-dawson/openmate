@@ -14,5 +14,6 @@ class OpenMateApp : Application() {
         super.onCreate()
         CrashHandler.install(this)
         connectionManager.restoreLastConnection()
+        connectionManager.startRuntimeMonitoring()
     }
 }

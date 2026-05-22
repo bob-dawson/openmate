@@ -45,6 +45,12 @@ class SessionTest {
     @Test
     fun sessionStatus_values() {
         assertThat(SessionStatus.values()).asList()
-            .containsExactly(SessionStatus.IDLE, SessionStatus.BUSY, SessionStatus.COMPACTING)
+            .containsExactly(
+                SessionStatus.IDLE,
+                SessionStatus.RUNNING,
+                SessionStatus.BUSY,
+                SessionStatus.COMPACTING,
+                SessionStatus.ERROR,
+            )
     }
 }

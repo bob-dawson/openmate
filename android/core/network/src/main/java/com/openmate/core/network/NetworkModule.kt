@@ -68,8 +68,10 @@ object NetworkModule {
     fun provideOpencodeApiClient(
         @Named("api") client: OkHttpClient,
         @Named("download") downloadClient: OkHttpClient,
+        gatewayInterceptor: GatewayInterceptor,
+        routeEvidenceReporter: RouteEvidenceReporter,
     ): OpencodeApiClient {
-        return OpencodeApiClient(client, downloadClient)
+        return OpencodeApiClient(client, downloadClient, gatewayInterceptor = gatewayInterceptor, routeEvidenceReporter = routeEvidenceReporter)
     }
 
     @Provides

@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.DatabaseFactory
 import com.openmate.core.domain.model.ConnectionStatus
+import com.openmate.core.domain.model.ConnectionSnapshot
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
@@ -106,6 +107,7 @@ class InstanceListViewModelTest {
     private class RecordingConnectionRepository : ConnectionRepository {
         val connectCalls = mutableListOf<String>()
         override val connectionStatus: StateFlow<ConnectionStatus> = MutableStateFlow(ConnectionStatus.DISCONNECTED).asStateFlow()
+        override val connectionSnapshot: StateFlow<ConnectionSnapshot?> = MutableStateFlow(null).asStateFlow()
         override val activeProfile: StateFlow<ServerProfile?> = MutableStateFlow(null).asStateFlow()
         override val isConnected: StateFlow<Boolean> = MutableStateFlow(false).asStateFlow()
         override val errorMessage: StateFlow<String?> = MutableStateFlow(null).asStateFlow()

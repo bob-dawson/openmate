@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Server;
 
 namespace GradleMcp
@@ -9,7 +11,8 @@ namespace GradleMcp
     [McpServerToolType]
     public static class GradleTools
     {
-        private static readonly TimeSpan OutputIdleTimeout = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan OutputIdleTimeout = TimeSpan.FromSeconds(20);
+        private static readonly Regex AnsiEscapeRegex = new(@"\x1B\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled);
         private static readonly object Sync = new();
         private static readonly object LogSync = new();
         private static RunningInvocation? _current;
@@ -73,7 +76,7 @@ namespace GradleMcp
                 Arguments = $"/d /s /c \"{command}\"",
                 WorkingDirectory = androidDirectory,
                 UseShellExecute = false,
-                CreateNoWindow = false,
+                CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 StandardOutputEncoding = Encoding.UTF8,
@@ -109,16 +112,23 @@ namespace GradleMcp
                 try
                 {
                     Log($"{invocationId}: waiting for exit");
-                    var task = WaitForExitOrIdleAsync(process, outputActivity, cts.Token, invocationId);
-                    await Task.WhenAny(task, stdoutPump, stderrPump);
+                    await WaitForExitOrIdleAsync(process, outputActivity, cts.Token, invocationId);
                     Log($"{invocationId}: process exited", $"exitCode={process.ExitCode}");
+                }
+                catch (OutputIdleTimeoutException ex)
+                {
+                    idleTimedOut = true;
+                    Log($"{invocationId}: output idle timeout", ex.Message);
+                    TryKillProcessTree(process);
+                    await process.WaitForExitAsync();
+                    Log($"{invocationId}: process killed after idle timeout", $"exitCode={process.ExitCode}");
                 }
                 catch
                 {
 
                 }
 
-                if (!process.HasExited)
+                if (!process.HasExited && !idleTimedOut)
                 {
                     timedOut = true;
                     Log($"{invocationId}: process wait timed out", $"timeoutMs={timeoutMs}");
@@ -218,6 +228,25 @@ namespace GradleMcp
                     ? "message: requested termination of the current Gradle process tree"
                     : "message: failed to terminate the current Gradle process tree",
             ]);
+        }
+
+        public static Task StopActiveProcessAsync()
+        {
+            RunningInvocation? invocation;
+            lock (Sync)
+            {
+                invocation = _current;
+            }
+
+            if (invocation is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            Log($"{invocation.Id}: service shutdown requested");
+            TryKillProcessTree(invocation.Process);
+            ClearInvocation(invocation.Id);
+            return Task.CompletedTask;
         }
 
         private static string ResolveRequestedDirectory(string? cwd)
@@ -374,18 +403,25 @@ namespace GradleMcp
             string invocationId,
             OutputActivityTracker activityTracker)
         {
+            var buffer = new char[1024];
             while (true)
             {
-                var line = await reader.ReadLineAsync();
-                if (line is null)
+                var read = await reader.ReadAsync(buffer, 0, buffer.Length);
+                if (read == 0)
                 {
                     Log($"{invocationId}: {streamName} stream completed");
                     return;
                 }
 
-                collector.AppendLine(line);
-                Console.WriteLine(line);
                 activityTracker.MarkActivity();
+                var chunk = NormalizeOutputChunk(new string(buffer, 0, read));
+                if (chunk.Length == 0)
+                {
+                    continue;
+                }
+
+                collector.AppendText(chunk);
+                Console.Write(chunk);
             }
         }
 
@@ -408,8 +444,7 @@ namespace GradleMcp
                 var idleFor = DateTimeOffset.UtcNow - activityTracker.LastActivityUtc;
                 if (idleFor >= OutputIdleTimeout)
                 {
-                    Log($"no stdout/stderr update for {OutputIdleTimeout.TotalSeconds:0} seconds");
-                    return;
+                    throw new OutputIdleTimeoutException($"no stdout/stderr update for {OutputIdleTimeout.TotalSeconds:0} seconds");
                 }
 
                 var remaining = OutputIdleTimeout - idleFor;
@@ -442,6 +477,28 @@ namespace GradleMcp
             }
 
             return "... tail truncated ...\n" + value[^maxChars..];
+        }
+
+        private static string NormalizeOutputChunk(string chunk)
+        {
+            if (string.IsNullOrEmpty(chunk))
+            {
+                return string.Empty;
+            }
+
+            var normalized = chunk.Replace("\r\n", "\n").Replace('\r', '\n');
+            normalized = AnsiEscapeRegex.Replace(normalized, string.Empty);
+
+            var builder = new StringBuilder(normalized.Length);
+            foreach (var ch in normalized)
+            {
+                if (ch == '\n' || ch == '\t' || !char.IsControl(ch))
+                {
+                    builder.Append(ch);
+                }
+            }
+
+            return builder.ToString();
         }
 
         private static void Log(params string[] parts)
@@ -512,12 +569,12 @@ namespace GradleMcp
                 File.WriteAllText(path, string.Empty, Encoding.UTF8);
             }
 
-            public void AppendLine(string line)
+            public void AppendText(string text)
             {
                 lock (_sync)
                 {
-                    File.AppendAllText(_path, line + Environment.NewLine, Encoding.UTF8);
-                    _tail.AppendLine(line);
+                    File.AppendAllText(_path, text, Encoding.UTF8);
+                    _tail.Append(text);
                     if (_tail.Length > 16000)
                     {
                         _tail.Remove(0, _tail.Length - 16000);
@@ -533,5 +590,12 @@ namespace GradleMcp
                 }
             }
         }
+    }
+
+    public sealed class GradleShutdownService : IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task StopAsync(CancellationToken cancellationToken) => GradleTools.StopActiveProcessAsync();
     }
 }

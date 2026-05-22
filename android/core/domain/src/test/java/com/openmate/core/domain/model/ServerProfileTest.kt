@@ -38,14 +38,32 @@ class ServerProfileTest {
 
     @Test
     fun equality_sameValues_areEqual() {
-        val p1 = ServerProfile("a", "n", "1.1.1.1", 4096, null, 100L, null)
-        val p2 = ServerProfile("a", "n", "1.1.1.1", 4096, null, 100L, null)
+        val p1 = ServerProfile(
+            id = "a",
+            name = "n",
+            address = "1.1.1.1",
+            port = 4096,
+            createdAt = 100L,
+        )
+        val p2 = ServerProfile(
+            id = "a",
+            name = "n",
+            address = "1.1.1.1",
+            port = 4096,
+            createdAt = 100L,
+        )
         assertThat(p1).isEqualTo(p2)
     }
 
     @Test
     fun copy_modifiesFields() {
-        val original = ServerProfile("a", "n", "1.1.1.1", 4096, null, 100L, null)
+        val original = ServerProfile(
+            id = "a",
+            name = "n",
+            address = "1.1.1.1",
+            port = 4096,
+            createdAt = 100L,
+        )
         val modified = original.copy(name = "Updated", port = 8080)
         assertThat(modified.name).isEqualTo("Updated")
         assertThat(modified.port).isEqualTo(8080)

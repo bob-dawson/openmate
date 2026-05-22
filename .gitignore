@@ -11,3 +11,7 @@ release/
 .worktrees/
 .vs
 /.openmate
+bin
+obj
+/GradleMcp/Client/*.user
+/GradleMcp/GradleMcp/*.user

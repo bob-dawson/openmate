@@ -3,6 +3,7 @@ package com.openmate.feature.session
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.google.common.truth.Truth.assertThat
 import com.openmate.core.database.ActiveDatabaseProvider
+import com.openmate.core.domain.model.ConnectionSnapshot
 import com.openmate.core.database.DatabaseFactory
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
@@ -90,6 +91,7 @@ class WorkspaceAndSessionConnectionStatusTest {
 
     private class FakeConnectionRepository(status: ConnectionStatus) : ConnectionRepository {
         override val connectionStatus: StateFlow<ConnectionStatus> = MutableStateFlow(status).asStateFlow()
+        override val connectionSnapshot: StateFlow<ConnectionSnapshot?> = MutableStateFlow(null).asStateFlow()
         override val activeProfile: StateFlow<ServerProfile?> = MutableStateFlow(null).asStateFlow()
         override val isConnected: StateFlow<Boolean> = MutableStateFlow(true).asStateFlow()
         override val errorMessage: StateFlow<String?> = MutableStateFlow(null).asStateFlow()

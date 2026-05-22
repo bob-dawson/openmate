@@ -4,10 +4,16 @@ import com.google.common.truth.Truth.assertThat
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.Callback
@@ -26,6 +32,29 @@ import org.robolectric.RuntimeEnvironment
 
 @RunWith(RobolectricTestRunner::class)
 class SyncSseClientTest {
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun connect_forceRestart_sameBaseUrl_startsFreshAttempt() = runTest {
+        val callFactory = BlockingCallFactory()
+        val client = SyncSseClient(
+            client = callFactory,
+            tokenStore = TokenStore(RuntimeEnvironment.getApplication()),
+            logger = NoOpSyncSseLogger,
+        )
+
+        val first = launch(Dispatchers.IO) { client.connect("http://127.0.0.1:4097", forceRestart = true) }
+        assertThat(callFactory.started.await(2, TimeUnit.SECONDS)).isTrue()
+
+        val second = launch(Dispatchers.IO) { client.connect("http://127.0.0.1:4097", forceRestart = true) }
+        advanceUntilIdle()
+
+        client.disconnect("done")
+        first.cancel()
+        second.cancel()
+
+        assertThat(callFactory.newCallCount).isAtLeast(2)
+    }
 
     @Test
     fun connect_requestsBridgeEventsPath_forwardsHeaders_andEmitsBridgeEvent() = runBlocking {
@@ -145,6 +174,49 @@ class SyncSseClientTest {
         assertThat(factory.canceled.await(2, TimeUnit.SECONDS)).isTrue()
     }
 
+    @Test
+    fun parsedSseEvent_emitsStrongPositiveSignal() = runBlocking {
+        val callFactory = StreamingCallFactory(
+            sseBody = "data: {\"type\":\"session.updated\",\"properties\":{\"sessionID\":\"ses_1\"}}\n\n"
+        )
+        val client = SyncSseClient(
+            client = callFactory,
+            tokenStore = TokenStore(RuntimeEnvironment.getApplication()),
+            logger = NoOpSyncSseLogger,
+        )
+
+        val signalDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            client.transportSignals.first { it is SyncSseSignal.EventReceived }
+        }
+        val connectJob = launch(Dispatchers.IO) { client.connect("http://127.0.0.1:4097", forceRestart = true) }
+        val signal = withTimeout(2_000) { signalDeferred.await() }
+
+        client.disconnect("done")
+        connectJob.cancelAndJoin()
+
+        assertThat((signal as SyncSseSignal.EventReceived).routeBaseUrl).isEqualTo("http://127.0.0.1:4097")
+    }
+
+    @Test
+    fun streamFailure_emitsSuspicionSignal() = runBlocking {
+        val client = SyncSseClient(
+            client = AlwaysFailingCallFactory(),
+            tokenStore = TokenStore(RuntimeEnvironment.getApplication()),
+            logger = NoOpSyncSseLogger,
+        )
+
+        val signalDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+            client.transportSignals.first { it is SyncSseSignal.Failed }
+        }
+        val connectJob = launch(Dispatchers.IO) { client.connect("http://127.0.0.1:4097", forceRestart = true) }
+        val signal = withTimeout(2_000) { signalDeferred.await() }
+
+        client.disconnect("done")
+        connectJob.cancelAndJoin()
+
+        assertThat(signal).isInstanceOf(SyncSseSignal.Failed::class.java)
+    }
+
     private class StreamingCallFactory(
         private val sseBody: String,
     ) : Call.Factory {
@@ -194,8 +266,34 @@ class SyncSseClientTest {
     private class BlockingCallFactory : Call.Factory {
         val started = CountDownLatch(1)
         val canceled = CountDownLatch(1)
+        var newCallCount = 0
 
-        override fun newCall(request: Request): Call = BlockingCall(request, started, canceled)
+        override fun newCall(request: Request): Call {
+            newCallCount += 1
+            return BlockingCall(request, started, canceled)
+        }
+    }
+
+    private class AlwaysFailingCallFactory : Call.Factory {
+        override fun newCall(request: Request): Call = object : Call {
+            override fun request(): Request = request
+
+            override fun execute(): Response {
+                throw IOException("boom")
+            }
+
+            override fun enqueue(responseCallback: Callback) = Unit
+
+            override fun cancel() = Unit
+
+            override fun isExecuted(): Boolean = true
+
+            override fun isCanceled(): Boolean = false
+
+            override fun timeout(): Timeout = Timeout.NONE
+
+            override fun clone(): Call = this
+        }
     }
 
     private class BlockingCall(

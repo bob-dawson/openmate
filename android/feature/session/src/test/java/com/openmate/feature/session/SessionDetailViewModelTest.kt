@@ -16,6 +16,7 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.ConnectionStatus
+import com.openmate.core.domain.model.ConnectionSnapshot
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionMessageSyncEvent
@@ -1298,6 +1299,7 @@ class SessionDetailViewModelTest {
         status: ConnectionStatus = ConnectionStatus.DISCONNECTED,
     ) : ConnectionRepository {
         override val connectionStatus = MutableStateFlow(status).asStateFlow()
+        override val connectionSnapshot = MutableStateFlow<ConnectionSnapshot?>(null).asStateFlow()
         override val activeProfile = MutableStateFlow<ServerProfile?>(null).asStateFlow()
         override val isConnected = MutableStateFlow(false).asStateFlow()
         override val errorMessage = MutableStateFlow<String?>(null).asStateFlow()
@@ -1348,7 +1350,7 @@ class SessionDetailViewModelTest {
     private class FakeSyncSseConnection : SyncSseConnection {
         override val currentBaseUrl: String? = "http://test"
 
-        override suspend fun connect(baseUrl: String) = Unit
+        override suspend fun connect(baseUrl: String, forceRestart: Boolean) = Unit
 
         override fun disconnect(traceId: String?) = Unit
     }

@@ -62,7 +62,7 @@ class SyncDebugController @Inject constructor(
         syncSseConnection.disconnect(traceId)
         syncSseStarter.start()
         scope.launch {
-            syncSseConnection.connect(baseUrl)
+            syncSseConnection.connect(baseUrl, forceRestart = true)
         }
     }
 

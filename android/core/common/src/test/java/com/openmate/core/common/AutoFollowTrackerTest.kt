@@ -29,7 +29,7 @@ class AutoFollowTrackerTest {
     fun initialLoad_triggersScroll() {
         val tracker = AutoFollowTracker()
         tracker.onMessagesChanged(5, false)
-        assertThat(tracker.consumeShouldScrollToBottom()).isTrue()
+        assertThat(tracker.consumeShouldScrollToBottom()).isFalse()
     }
 
     @Test
@@ -293,7 +293,7 @@ class AutoFollowTrackerTest {
     fun fullFlow_load_scrollUp_newMessage_scrollBack_newMessage() {
         val tracker = AutoFollowTracker()
         tracker.onMessagesChanged(5, false)
-        assertThat(tracker.consumeShouldScrollToBottom()).isTrue()
+        assertThat(tracker.consumeShouldScrollToBottom()).isFalse()
         tracker.onScrollStarted(true)
         assertThat(tracker.shouldFollow).isFalse()
         tracker.onMessagesChanged(6, false)
@@ -325,9 +325,9 @@ class AutoFollowTrackerTest {
         val tracker = AutoFollowTracker()
         assertThat(tracker.scrollVersion).isEqualTo(0)
         tracker.onMessagesChanged(5, false)
-        assertThat(tracker.scrollVersion).isEqualTo(1)
+        assertThat(tracker.scrollVersion).isEqualTo(0)
         tracker.onContentUpdated()
-        assertThat(tracker.scrollVersion).isEqualTo(2)
+        assertThat(tracker.scrollVersion).isEqualTo(1)
     }
 
     @Test

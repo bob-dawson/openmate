@@ -31,6 +31,7 @@ import com.openmate.core.network.dto.SessionDto
 import com.openmate.core.network.dto.PathInfo
 import com.openmate.core.network.dto.SessionStatusDto
 import com.openmate.core.network.dto.SkillInfoDto
+import com.openmate.core.domain.model.ConnectionRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -55,6 +56,8 @@ class OpencodeApiClient(
     private val client: OkHttpClient,
     private val downloadClient: OkHttpClient = client,
     var baseUrl: String = "http://localhost:8080",
+    private val gatewayInterceptor: GatewayInterceptor? = null,
+    private val routeEvidenceReporter: RouteEvidenceReporter? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -477,18 +480,32 @@ class OpencodeApiClient(
 
     private suspend inline fun <reified T> get(path: String, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
         val request = requestBuilder("GET", path, params).get().build()
-        val response = client.newCall(request).execute()
-        handleResponse(response)
+        val route = currentRoute()
+        try {
+            val response = client.newCall(request).execute()
+            route?.let { routeEvidenceReporter?.reportSuccess(it) }
+            handleResponse(response)
+        } catch (e: Exception) {
+            route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
+            throw e
+        }
     }
 
     private suspend inline fun <reified T> getList(path: String, params: Map<String, String> = emptyMap()): List<T> = withContext(Dispatchers.IO) {
         val request = requestBuilder("GET", path, params).get().build()
-        val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: return@withContext emptyList()
-        if (!response.isSuccessful) {
-            throw ServerUnavailableException("HTTP ${response.code}: $body")
+        val route = currentRoute()
+        try {
+            val response = client.newCall(request).execute()
+            route?.let { routeEvidenceReporter?.reportSuccess(it) }
+            val body = response.body?.string() ?: return@withContext emptyList()
+            if (!response.isSuccessful) {
+                throw ServerUnavailableException("HTTP ${response.code}: $body")
+            }
+            json.decodeFromString(body)
+        } catch (e: Exception) {
+            route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
+            throw e
         }
-        json.decodeFromString(body)
     }
 
     private suspend inline fun <reified T> post(path: String, body: Any, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
@@ -500,8 +517,15 @@ class OpencodeApiClient(
         val request = requestBuilder("POST", path, params)
             .post(requestBody)
             .build()
-        val response = client.newCall(request).execute()
-        handleResponse(response)
+        val route = currentRoute()
+        try {
+            val response = client.newCall(request).execute()
+            route?.let { routeEvidenceReporter?.reportSuccess(it) }
+            handleResponse(response)
+        } catch (e: Exception) {
+            route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
+            throw e
+        }
     }
 
     private suspend fun postUnit(path: String, body: Any, params: Map<String, String> = emptyMap()) = withContext(Dispatchers.IO) {
@@ -515,11 +539,18 @@ class OpencodeApiClient(
             .post(requestBody)
             .build()
         runCatching { Log.d("OpencodeApiClient", "POST ${request.url} body=$jsonStr") }
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) {
-            val respBody = response.body?.string()?.take(500) ?: ""
-            runCatching { Log.e("OpencodeApiClient", "POST ${request.url} failed: HTTP ${response.code} body=$respBody") }
-            throw ServerUnavailableException("HTTP ${response.code}: $respBody")
+        val route = currentRoute()
+        try {
+            val response = client.newCall(request).execute()
+            route?.let { routeEvidenceReporter?.reportSuccess(it) }
+            if (!response.isSuccessful) {
+                val respBody = response.body?.string()?.take(500) ?: ""
+                runCatching { Log.e("OpencodeApiClient", "POST ${request.url} failed: HTTP ${response.code} body=$respBody") }
+                throw ServerUnavailableException("HTTP ${response.code}: $respBody")
+            }
+        } catch (e: Exception) {
+            route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
+            throw e
         }
     }
 
@@ -559,9 +590,16 @@ class OpencodeApiClient(
 
     private suspend fun delete(path: String) = withContext(Dispatchers.IO) {
         val request = Request.Builder().url("$baseUrl$path").delete().build()
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful && response.code != HttpURLConnection.HTTP_NO_CONTENT) {
-            throw ServerUnavailableException("HTTP ${response.code}")
+        val route = currentRoute()
+        try {
+            val response = client.newCall(request).execute()
+            route?.let { routeEvidenceReporter?.reportSuccess(it) }
+            if (!response.isSuccessful && response.code != HttpURLConnection.HTTP_NO_CONTENT) {
+                throw ServerUnavailableException("HTTP ${response.code}")
+            }
+        } catch (e: Exception) {
+            route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
+            throw e
         }
     }
 
@@ -573,10 +611,26 @@ class OpencodeApiClient(
         }
         val requestBody = jsonStr.toRequestBody(jsonMediaType)
         val request = Request.Builder().url("$baseUrl$path").patch(requestBody).build()
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful && response.code != HttpURLConnection.HTTP_NO_CONTENT) {
-            throw ServerUnavailableException("HTTP ${response.code}")
+        val route = currentRoute()
+        try {
+            val response = client.newCall(request).execute()
+            route?.let { routeEvidenceReporter?.reportSuccess(it) }
+            if (!response.isSuccessful && response.code != HttpURLConnection.HTTP_NO_CONTENT) {
+                throw ServerUnavailableException("HTTP ${response.code}")
+            }
+        } catch (e: Exception) {
+            route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
+            throw e
         }
+    }
+
+    private fun currentRoute(): ConnectionRoute? {
+        val gatewayId = gatewayInterceptor?.instanceId
+        if (!gatewayId.isNullOrBlank()) {
+            return ConnectionRoute.Gateway(gatewayId)
+        }
+        val url = runCatching { baseUrl.toHttpUrl() }.getOrNull() ?: return null
+        return ConnectionRoute.Direct(url.host, url.port)
     }
 
     private suspend inline fun <reified T> handleResponse(response: okhttp3.Response): T = withContext(Dispatchers.IO) {

@@ -1,11 +1,13 @@
 package com.openmate.core.domain.repository
 
+import com.openmate.core.domain.model.ConnectionSnapshot
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
 import kotlinx.coroutines.flow.StateFlow
 
 interface ConnectionRepository {
     val connectionStatus: StateFlow<ConnectionStatus>
+    val connectionSnapshot: StateFlow<ConnectionSnapshot?>
     val activeProfile: StateFlow<ServerProfile?>
     val isConnected: StateFlow<Boolean>
     val errorMessage: StateFlow<String?>
