@@ -307,9 +307,10 @@ async function loadOverview() {
     const s = statusRes.bridge;
     const oc = statusRes.opencode;
     document.getElementById('bridge-version').textContent = 'v' + s.version;
-    document.getElementById('bridge-port').textContent = s.port;
+    const actualPort = s.actual_port || s.port;
+    document.getElementById('bridge-port').textContent = actualPort;
     document.getElementById('bridge-ver').textContent = 'v' + s.version;
-    document.getElementById('bridge-port-sub').textContent = '端口 ' + s.port;
+    document.getElementById('bridge-port-sub').textContent = '端口 ' + actualPort + (s.actual_port && s.actual_port !== s.port ? ' (配置: ' + s.port + ')' : '');
 
     const statusEl = document.getElementById('oc-status');
     const dot = document.getElementById('status-dot');
@@ -499,7 +500,7 @@ async function updateQR() {
       api('/api/bridge/status').then(r => r.json()),
       api('/api/bridge/pair/scan').then(r => r.json()),
     ]);
-    const port = statusRes.bridge.port;
+    const port = statusRes.bridge.actual_port || statusRes.bridge.port;
     const st = scanRes.scan_token || '';
     const url = 'http://' + ip + ':' + port + '/ui/download?name=' + encodeURIComponent(scanRes.machine_name || 'Bridge') + (st ? '&st=' + st : '');
     document.getElementById('qr-url').textContent = url;

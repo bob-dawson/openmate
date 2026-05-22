@@ -16,7 +16,7 @@ pub async fn generate_qrcode(
     State(state): State<AppState>,
     Query(params): Query<QrCodeQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let port = state.config.bridge.port;
+    let port = state.actual_port.load(std::sync::atomic::Ordering::Relaxed);
 
     let machine_name = hostname::get()
         .ok()
