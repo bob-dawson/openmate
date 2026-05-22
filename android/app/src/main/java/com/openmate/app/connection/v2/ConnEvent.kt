@@ -24,4 +24,27 @@ sealed class ConnEvent : Event {
 
     data class BridgeNotBridge(val profile: ServerProfile) : ConnEvent()
     data class BridgeNeedsRepair(val profile: ServerProfile) : ConnEvent()
+
+    fun logText(): String = when (this) {
+        is Connect -> "Connect profile=${profile.id} iid='${profile.instanceId}'"
+        is Disconnect -> "Disconnect"
+        is Retry -> "Retry"
+        is RepairCompleted -> "RepairCompleted id=$profileId"
+        is NetworkAvailable -> "NetworkAvailable"
+        is NetworkLost -> "NetworkLost"
+        is AppForegrounded -> "AppForegrounded"
+        is ProbeOk -> "ProbeOk route=${route.logText()}"
+        is ProbeFail -> "ProbeFail route=${route.logText()} reason=$reason"
+        is SseConnected -> "SseConnected route=${route.logText()}"
+        is SseFailed -> "SseFailed route=${route.logText()} msg=$msg"
+        is SseStreamClosed -> "SseStreamClosed route=${route.logText()}"
+        is BackoffExpired -> "BackoffExpired"
+        is BridgeNotBridge -> "BridgeNotBridge"
+        is BridgeNeedsRepair -> "BridgeNeedsRepair"
+    }
+}
+
+fun Route.logText(): String = when (this) {
+    is Route.Direct -> "Direct($address:$port)"
+    is Route.Gateway -> "Gateway($instanceId)"
 }

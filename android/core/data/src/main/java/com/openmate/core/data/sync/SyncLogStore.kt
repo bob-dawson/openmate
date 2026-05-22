@@ -16,7 +16,7 @@ class SyncLogStore @Inject constructor() {
 
     fun append(entry: SyncLogEntry) {
         _entries.update { entries ->
-            (entries + entry).takeLast(200)
+            (entries + entry).takeLast(2000)
         }
     }
 

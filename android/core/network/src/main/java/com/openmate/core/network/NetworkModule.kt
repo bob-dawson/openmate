@@ -21,7 +21,7 @@ object NetworkModule {
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .addInterceptor(BearerTokenInterceptor(tokenStore))
             .addInterceptor(gatewayInterceptor)
             .build()
@@ -55,12 +55,6 @@ object NetworkModule {
             .addInterceptor(BearerTokenInterceptor(tokenStore))
             .addInterceptor(gatewayInterceptor)
             .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideSseClient(@Named("sse") client: OkHttpClient): SseClient {
-        return SseClient(client)
     }
 
     @Provides

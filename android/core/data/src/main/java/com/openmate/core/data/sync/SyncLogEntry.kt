@@ -6,7 +6,7 @@ import java.util.Locale
 
 enum class SyncLogLevel { Info, Warn, Error }
 
-enum class SyncLogCategory { Sse, Sync, Manual, Poll, Gateway }
+enum class SyncLogCategory { Sse, Sync, Manual, Poll, Gateway, Connection }
 
 data class SyncLogEntry(
     val id: Long,
