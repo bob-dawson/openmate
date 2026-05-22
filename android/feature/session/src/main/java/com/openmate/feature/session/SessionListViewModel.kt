@@ -60,8 +60,7 @@ class SessionListViewModel @Inject constructor(
             try {
                 sessionRepository.getSessions(currentDirectory, null, null)
             } catch (e: Exception) {
-                Log.e(TAG, "refresh failed", e)
-                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
+                Log.w(TAG, "refresh skipped: ${e.javaClass.simpleName}")
             }
             _isLoading.value = false
         }
