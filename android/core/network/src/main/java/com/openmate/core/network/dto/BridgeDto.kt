@@ -50,6 +50,8 @@ data class BridgeStatusResponse(
 data class BridgeInfoDto(
     val version: String = "",
     val port: Int = 0,
+    @SerialName("actual_port")
+    val actualPort: Int? = null,
     @SerialName("auth_enabled")
     val authEnabled: Boolean = false,
     @SerialName("instance_id")
