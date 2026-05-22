@@ -670,4 +670,8 @@ class OpencodeApiClient(
         }
         return builder.build().toString()
     }
+
+    fun peek(request: Request): okhttp3.Response {
+        return client.newCall(request).execute()
+    }
 }

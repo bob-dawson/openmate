@@ -68,6 +68,8 @@ dependencies {
     implementation(project(":core:network"))
     implementation(project(":core:common"))
     implementation(libs.okhttp)
+    implementation(libs.kstatemachine)
+    implementation(libs.kstatemachine.coroutines)
 
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)

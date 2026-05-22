@@ -1,5 +1,6 @@
 package com.openmate.app.connection
 
+import com.openmate.app.connection.ConnectionAction
 import com.openmate.core.domain.model.ConnectionPhase
 
 object ConnectionReducer {
@@ -66,11 +67,40 @@ object ConnectionReducer {
             is ConnectionEvent.SseEventReceived -> Result(state.copy(activeRoute = event.route), emptyList())
 
             is ConnectionEvent.SseFailed,
-            is ConnectionEvent.SseStreamClosed,
+            is ConnectionEvent.SseStreamClosed -> when (state.phase) {
+                ConnectionPhase.CONNECTED -> Result(
+                    nextState = state.copy(phase = ConnectionPhase.RECOVERING),
+                    actions = listOf(ConnectionAction.StartBackoff),
+                )
+                else -> Result(state, emptyList())
+            }
+
             ConnectionEvent.NetworkLost -> Result(
                 nextState = state.copy(phase = ConnectionPhase.RECOVERING),
                 actions = listOf(ConnectionAction.StartBackoff),
             )
+
+            ConnectionEvent.BackoffExpired -> when (state.phase) {
+                ConnectionPhase.RECOVERING, ConnectionPhase.FAILED -> Result(
+                    nextState = state.copy(
+                        phase = ConnectionPhase.EVALUATING,
+                        recoveryGeneration = state.recoveryGeneration + 1,
+                    ),
+                    actions = listOf(ConnectionAction.ReevaluateRoutes),
+                )
+                else -> Result(state, emptyList())
+            }
+
+            is ConnectionEvent.RouteHealthUpdated -> when (state.phase) {
+                ConnectionPhase.RECOVERING, ConnectionPhase.FAILED, ConnectionPhase.CONNECTING -> Result(
+                    nextState = state.copy(
+                        phase = ConnectionPhase.EVALUATING,
+                        recoveryGeneration = state.recoveryGeneration + 1,
+                    ),
+                    actions = listOf(ConnectionAction.ReevaluateRoutes),
+                )
+                else -> Result(state, emptyList())
+            }
 
             else -> Result(state, emptyList())
         }
