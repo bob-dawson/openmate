@@ -58,7 +58,7 @@ pub async fn update_config(
             AppError::ConfigValidation(format!("Unknown config key: {}", update.key))
         })?;
 
-        validate_config_value(&update.key, &update.value, entry)?;
+        validate_config_value(&update.key, &update.value, entry, &state)?;
 
         if entry.needs_restart {
             needs_restart = true;
@@ -88,17 +88,20 @@ pub async fn update_config(
     })))
 }
 
-fn validate_config_value(key: &str, value: &str, entry: &ConfigEntry) -> Result<(), AppError> {
+fn validate_config_value(key: &str, value: &str, entry: &ConfigEntry, state: &AppState) -> Result<(), AppError> {
     match entry.r#type.as_str() {
         "u16" => {
             let port: u16 = value.parse().map_err(|_| {
                 AppError::ConfigValidation(format!("{} must be a valid port number", key))
             })?;
-            if key == "bridge.port" && !crate::config::is_port_available(port) {
-                return Err(AppError::ConfigValidation(format!(
-                    "Port {} is already in use",
-                    port
-                )));
+            if key == "bridge.port" {
+                let current_port = state.actual_port.load(std::sync::atomic::Ordering::Relaxed);
+                if port != current_port && !crate::config::is_port_available(port) {
+                    return Err(AppError::ConfigValidation(format!(
+                        "Port {} is already in use",
+                        port
+                    )));
+                }
             }
         }
         "bool" => {
