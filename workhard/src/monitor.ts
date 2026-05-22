@@ -1,7 +1,7 @@
 import type { WorkHardConfig } from "./config.js"
-import { buildContinuePrompt, shouldAllowPermission } from "./config.js"
+import { buildContinuePrompt, shouldAllowPermission, shouldRetryStepFailed } from "./config.js"
 import { log } from "./log.js"
-import type { PluginInput, Hooks } from "@opencode-ai/plugin"
+import type { PluginInput } from "@opencode-ai/plugin"
 
 interface BusEvent {
   id: string
@@ -13,6 +13,7 @@ interface SessionState {
   finished: boolean
   idleRetries: number
   idleInProgress: boolean
+  retryInProgress: boolean
 }
 
 export function createMonitor(input: PluginInput, config: WorkHardConfig) {
@@ -24,7 +25,7 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
   function getSession(sessionID: string): SessionState {
     let s = sessions.get(sessionID)
     if (!s) {
-      s = { finished: false, idleRetries: 0, idleInProgress: false }
+      s = { finished: false, idleRetries: 0, idleInProgress: false, retryInProgress: false }
       sessions.set(sessionID, s)
     }
     return s
@@ -96,10 +97,37 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
     })
   }
 
+  async function handleStepFailed(event: BusEvent) {
+    const p = event.properties
+    const sessionID = p.sessionID as string
+    const errorMessage = (p.error as { message?: string })?.message ?? ""
+
+    log("step.failed", `session=${sessionID} error=${errorMessage}`)
+
+    if (!shouldRetryStepFailed(config, errorMessage)) return
+
+    const state = getSession(sessionID)
+    if (state.finished || state.retryInProgress) return
+
+    state.retryInProgress = true
+    try {
+      log("step.failed", `→ matched retry pattern, will send continue after ${config.retryDelayMs}ms`)
+      await delay(config.retryDelayMs)
+      if (state.finished) return
+      await sendPrompt(sessionID, "继续执行上次的任务，刚才的请求失败是临时错误，请重试。")
+    } catch (err) {
+      log("step.failed", "retry handler error", err)
+    } finally {
+      state.retryInProgress = false
+    }
+  }
+
   async function handleSessionIdle(sessionID: string) {
     const state = getSession(sessionID)
     if (state.finished) return
-    if (state.idleInProgress) return
+    if (state.idleInProgress || state.retryInProgress) return
+
+    if (!config.autoContinue) return
 
     state.idleInProgress = true
     try {
@@ -177,6 +205,10 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
       }
       case "question.asked": {
         void handleQuestionAsked(event)
+        break
+      }
+      case "session.next.step.failed": {
+        void handleStepFailed(event)
         break
       }
       case "session.idle": {

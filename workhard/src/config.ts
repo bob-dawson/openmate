@@ -7,6 +7,10 @@ export interface WorkHardConfig {
   continuePrompt: string | null
   maxIdleRetries: number
   idleDelayMs: number
+  autoContinue: boolean
+  retryOnStepFailed: boolean
+  retryPatterns: string[]
+  retryDelayMs: number
 }
 
 const DEFAULT_CONFIG: WorkHardConfig = {
@@ -18,6 +22,10 @@ const DEFAULT_CONFIG: WorkHardConfig = {
   continuePrompt: null,
   maxIdleRetries: 50,
   idleDelayMs: 3000,
+  autoContinue: false,
+  retryOnStepFailed: true,
+  retryPatterns: ["EngineInternalError", "ServiceIsBusyError", "NotEnoughCvError", "Xunfei request failed"],
+  retryDelayMs: 3000,
 }
 
 export function parseConfig(raw: Record<string, unknown> | undefined): WorkHardConfig {
@@ -31,12 +39,21 @@ export function parseConfig(raw: Record<string, unknown> | undefined): WorkHardC
     continuePrompt: raw.continuePrompt === null ? null : (asString(raw.continuePrompt) ?? DEFAULT_CONFIG.continuePrompt),
     maxIdleRetries: asNumber(raw.maxIdleRetries) ?? DEFAULT_CONFIG.maxIdleRetries,
     idleDelayMs: asNumber(raw.idleDelayMs) ?? DEFAULT_CONFIG.idleDelayMs,
+    autoContinue: asBool(raw.autoContinue) ?? DEFAULT_CONFIG.autoContinue,
+    retryOnStepFailed: asBool(raw.retryOnStepFailed) ?? DEFAULT_CONFIG.retryOnStepFailed,
+    retryPatterns: asStringArray(raw.retryPatterns) ?? DEFAULT_CONFIG.retryPatterns,
+    retryDelayMs: asNumber(raw.retryDelayMs) ?? DEFAULT_CONFIG.retryDelayMs,
   }
 }
 
 export function buildContinuePrompt(config: WorkHardConfig): string {
   if (config.continuePrompt) return config.continuePrompt
   return `请检查所有任务是否全部完成，若没有完成继续，若完成回复 ${config.endKeyword}`
+}
+
+export function shouldRetryStepFailed(config: WorkHardConfig, errorMessage: string): boolean {
+  if (!config.retryOnStepFailed) return false
+  return config.retryPatterns.some((p) => errorMessage.includes(p))
 }
 
 const SAFE_PERMISSIONS = new Set(["read", "glob", "grep", "lsp", "webfetch", "websearch", "list"])
@@ -57,6 +74,10 @@ function asString(v: unknown): string | undefined {
 
 function asNumber(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined
+}
+
+function asBool(v: unknown): boolean | undefined {
+  return typeof v === "boolean" ? v : undefined
 }
 
 function asStringArray(v: unknown): string[] | undefined {
