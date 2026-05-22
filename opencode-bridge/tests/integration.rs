@@ -122,6 +122,7 @@ async fn test_get_config() {
     let req = axum::http::Request::builder()
         .uri("/api/bridge/config")
         .header("authorization", format!("Bearer {}", token))
+        .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
         .body(axum::body::Body::empty())
         .unwrap();
 
@@ -170,6 +171,7 @@ async fn test_update_config_bool() {
         .uri("/api/bridge/config")
         .header("authorization", format!("Bearer {}", token))
         .header("content-type", "application/json")
+        .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
         .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
         .unwrap();
 
@@ -217,6 +219,7 @@ async fn test_update_config_unknown_key_rejected() {
         .uri("/api/bridge/config")
         .header("authorization", format!("Bearer {}", token))
         .header("content-type", "application/json")
+        .extension(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 54321))))
         .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
         .unwrap();
 

@@ -28,6 +28,7 @@ const LOCALHOST_ONLY_PATHS: &[&str] = &[
     "/api/bridge/pair/pending",
     "/api/bridge/pair/reject",
     "/api/bridge/reset-secret",
+    "/api/bridge/config",
 ];
 
 pub async fn auth_middleware(

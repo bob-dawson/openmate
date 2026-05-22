@@ -84,6 +84,15 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
 .toast.show{opacity:1}
 .toast.error{border-color:#ef4444}
 .rename-input{background:#0f172a;border:1px solid #3b82f6;border-radius:4px;padding:3px 8px;color:#e2e8f0;font-size:12px;width:120px}
+.config-input{background:#0f172a;border:1px solid #334155;border-radius:5px;padding:5px 10px;color:#e2e8f0;font-size:12px;width:260px}
+.config-input:focus{border-color:#3b82f6;outline:none}
+.config-input.short{width:100px}
+.config-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #334155}
+.config-row:last-child{border-bottom:none}
+.config-label{font-size:13px;min-width:120px}
+.config-desc{font-size:11px;color:#64748b;margin-top:2px}
+.config-right{display:flex;align-items:center;gap:8px}
+.needs-restart-badge{font-size:10px;padding:1px 6px;border-radius:3px;background:#7f1d1d;color:#fca5a5}
 </style>
 </head>
 <body>
@@ -196,6 +205,24 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
 
     <div id="page-settings" style="display:none">
       <div class="card">
+        <div class="card-header">Bridge</div>
+        <div class="card-body" id="bridge-settings">
+          <div style="text-align:center;color:#64748b;font-size:12px">加载中...</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">opencode</div>
+        <div class="card-body" id="opencode-settings">
+          <div style="text-align:center;color:#64748b;font-size:12px">加载中...</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">网关</div>
+        <div class="card-body" id="gateway-settings">
+          <div style="text-align:center;color:#64748b;font-size:12px">加载中...</div>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-header">通用</div>
         <div class="card-body">
           <div class="setting-row">
@@ -218,6 +245,10 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
             <button class="btn btn-danger btn-sm" id="reset-key-btn">重置</button>
           </div>
         </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button class="btn btn-primary" id="save-config-btn">保存配置</button>
+        <span id="config-status" style="font-size:12px;color:#64748b"></span>
       </div>
     </div>
 
@@ -564,16 +595,85 @@ document.getElementById('log-download-btn').addEventListener('click', () => {
   a.click();
 });
 
+let configEntries = [];
+
 async function loadSettings() {
   try {
     const res = await api('/api/bridge/autostart').then(r => r.json());
     const toggle = document.getElementById('autostart-toggle');
     if (res.enabled) toggle.classList.add('on');
     else toggle.classList.remove('on');
+
+    const cfgRes = await api('/api/bridge/config').then(r => r.json());
+    configEntries = cfgRes.configs || [];
+
+    const bridgeGroup = configEntries.filter(e => e.key.startsWith('bridge.'));
+    const ocGroup = configEntries.filter(e => e.key.startsWith('opencode.'));
+    const gwGroup = configEntries.filter(e => e.key.startsWith('gateway.'));
+    const fsGroup = configEntries.filter(e => e.key.startsWith('fs.'));
+
+    document.getElementById('bridge-settings').innerHTML = renderConfigGroup(bridgeGroup);
+    document.getElementById('opencode-settings').innerHTML = renderConfigGroup(ocGroup) + renderConfigGroup(fsGroup);
+    document.getElementById('gateway-settings').innerHTML = renderConfigGroup(gwGroup);
   } catch(e) {
     console.error('loadSettings error:', e);
   }
 }
+
+function renderConfigGroup(entries) {
+  return entries.map(e => {
+    const isBool = e.type === 'bool';
+    const isPort = e.type === 'u16';
+    const inputClass = isPort ? 'config-input short' : 'config-input';
+    let inputHtml;
+    if (isBool) {
+      const on = e.value === 'true';
+      inputHtml = '<div class="toggle' + (on ? ' on' : '') + '" data-key="' + esc(e.key) + '" onclick="toggleConfig(this)"></div>';
+    } else {
+      inputHtml = '<input class="' + inputClass + '" data-key="' + esc(e.key) + '" value="' + esc(e.value) + '">';
+    }
+    const badge = e.needs_restart ? '<span class="needs-restart-badge">需重启</span>' : '';
+    return '<div class="config-row"><div><div class="config-label">' + esc(e.description) + '</div><div class="config-desc">' + esc(e.key) + '</div></div><div class="config-right">' + badge + inputHtml + '</div></div>';
+  }).join('');
+}
+
+function toggleConfig(el) {
+  el.classList.toggle('on');
+}
+
+document.getElementById('save-config-btn').addEventListener('click', async () => {
+  const statusEl = document.getElementById('config-status');
+  statusEl.textContent = '保存中...';
+  statusEl.style.color = '#eab308';
+
+  const configs = [];
+  document.querySelectorAll('.config-input').forEach(input => {
+    configs.push({key: input.dataset.key, value: input.value});
+  });
+  document.querySelectorAll('.toggle[data-key]').forEach(toggle => {
+    configs.push({key: toggle.dataset.key, value: toggle.classList.contains('on') ? 'true' : 'false'});
+  });
+
+  try {
+    const res = await api('/api/bridge/config', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({configs}),
+    }).then(r => r.json());
+
+    if (res.needs_restart) {
+      statusEl.textContent = '已保存。以下配置需要重启生效: ' + res.restart_keys.join(', ');
+      statusEl.style.color = '#eab308';
+    } else {
+      statusEl.textContent = '已保存';
+      statusEl.style.color = '#22c55e';
+    }
+    setTimeout(() => statusEl.textContent = '', 5000);
+  } catch(e) {
+    statusEl.textContent = '保存失败: ' + e.message;
+    statusEl.style.color = '#ef4444';
+  }
+});
 
 document.getElementById('autostart-toggle').addEventListener('click', async function() {
   const enabled = !this.classList.contains('on');
