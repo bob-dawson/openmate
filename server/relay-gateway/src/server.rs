@@ -177,6 +177,7 @@ async fn proxy_handler(
         || path_only.starts_with("/files/");
 
     let is_sse = path_only == "/global/event"
+        || path_only == "/api/bridge/events"
         || headers
             .get("accept")
             .and_then(|v| v.to_str().ok())
@@ -200,6 +201,7 @@ async fn proxy_handler(
         )?;
 
         let stream = async_stream::stream! {
+            yield Ok::<_, Infallible>(axum::response::sse::Event::default().comment(""));
             while let Some(data) = event_rx.recv().await {
                 yield Ok::<_, Infallible>(axum::response::sse::Event::default().data(data));
             }
