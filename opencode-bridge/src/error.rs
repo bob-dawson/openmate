@@ -79,6 +79,9 @@ pub enum AppError {
 
     #[error("Upgrade in progress")]
     UpgradeInProgress,
+
+    #[error("Config validation failed: {0}")]
+    ConfigValidation(String),
 }
 
 impl IntoResponse for AppError {
@@ -109,6 +112,7 @@ impl IntoResponse for AppError {
             AppError::MessageNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::UpgradeFailed(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             AppError::UpgradeInProgress => (StatusCode::CONFLICT, self.to_string()),
+            AppError::ConfigValidation(_) => (StatusCode::BAD_REQUEST, self.to_string()),
         };
 
         let body = json!({ "error": message });

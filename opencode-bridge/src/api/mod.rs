@@ -4,6 +4,7 @@ use axum::routing::{delete, get, post, put};
 use crate::state::AppState;
 
 mod autostart;
+pub mod config;
 mod devices;
 mod logs;
 mod network;
@@ -53,4 +54,6 @@ pub fn routes() -> Router<AppState> {
             "/api/bridge/reset-secret",
             post(reset_secret::reset_secret),
         )
+        .route("/api/bridge/config", get(config::get_config))
+        .route("/api/bridge/config", put(config::update_config))
 }

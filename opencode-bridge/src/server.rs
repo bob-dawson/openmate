@@ -68,7 +68,7 @@ pub async fn run_server(
     }
 
     let listen_addr = config.bridge_listen_addr();
-    let port = config.bridge.port;
+    let configured_port = config.bridge.port;
     let gateway_url = config.gateway.url.clone();
     let gateway_auto_connect = config.gateway.auto_connect;
     let gateway_instance_id = config.gateway.instance_id.clone();
@@ -150,8 +150,41 @@ pub async fn run_server(
         .layer(TraceLayer::new_for_http())
         .with_state(app_state.clone());
 
-    let listener = tokio::net::TcpListener::bind(&listen_addr).await?;
-    tracing::info!("Bridge listening on {}", listen_addr);
+    let listener = match tokio::net::TcpListener::bind(&listen_addr).await {
+        Ok(l) => l,
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+            tracing::warn!(
+                "Port {} is already in use, falling back to a random port",
+                configured_port
+            );
+            let fallback_addr = format!("{}:0", config.bridge.hostname);
+            let l = tokio::net::TcpListener::bind(&fallback_addr).await?;
+            let actual = l.local_addr()?.port();
+            tracing::info!(
+                "Bridge listening on random port {} (configured: {})",
+                actual,
+                configured_port
+            );
+            l
+        }
+        Err(e) => return Err(e.into()),
+    };
+
+    let actual_port = listener.local_addr()?.port();
+    let port_changed = actual_port != configured_port;
+
+    if port_changed {
+        if let Err(e) = app_state.bridge_db.set_config("bridge.port", &actual_port.to_string()) {
+            tracing::warn!("Failed to update bridge.port in DB: {}", e);
+        } else {
+            tracing::info!("Updated bridge.port in DB to {}", actual_port);
+        }
+    }
+
+    app_state.actual_port.store(actual_port, std::sync::atomic::Ordering::Relaxed);
+
+    let port = actual_port;
+    tracing::info!("Bridge listening on {}", listener.local_addr()?);
 
     if !gateway_url.is_empty() && gateway_auto_connect {
         let gw_url = gateway_url.clone();

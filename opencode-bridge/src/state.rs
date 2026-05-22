@@ -38,6 +38,7 @@ pub struct AppStateInner {
     pub bridge_id: String,
     pub scan_token: RwLock<Option<ScanTokenEntry>>,
     pub event_source: Arc<SharedEventSource>,
+    pub actual_port: std::sync::atomic::AtomicU16,
 }
 
 pub type AppState = Arc<AppStateInner>;
@@ -93,6 +94,8 @@ pub fn create_app_state_with_db_and_event_source(
     };
     tracing::info!("Bridge ID: {}", bridge_id);
 
+    let bridge_port = config.bridge.port;
+
     Arc::new(AppStateInner {
         config,
         opencode_status: RwLock::new(OpencodeStatus::Stopped),
@@ -112,5 +115,6 @@ pub fn create_app_state_with_db_and_event_source(
         scan_token: RwLock::new(None),
         bridge_id,
         event_source: event_source.unwrap_or_else(|| Arc::new(SharedEventSource::new())),
+        actual_port: std::sync::atomic::AtomicU16::new(bridge_port),
     })
 }

@@ -1,6 +1,6 @@
 use axum::Router;
 use axum::extract::ConnectInfo;
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use std::net::SocketAddr;
 use tower::ServiceExt;
 
@@ -40,6 +40,8 @@ fn test_app_with_dir(dir: &std::path::Path) -> (Router, openmate::state::AppStat
         .route("/api/bridge/fs/search", post(fs::router::search))
         .route("/api/bridge/fs/stat", get(fs::router::stat))
         .route("/api/bridge/fs/write", post(fs::router::write))
+        .route("/api/bridge/config", get(openmate::api::config::get_config))
+        .route("/api/bridge/config", put(openmate::api::config::update_config))
         .route("/files/{*path}", get(files::router::serve_file))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -95,6 +97,135 @@ async fn test_status_endpoint() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[tokio::test]
+async fn test_get_config() {
+    let dir = std::env::temp_dir().join("bridge_int_config_get");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let (app, state) = test_app_with_dir(&dir);
+
+    let device_id = "cfgtestdev000001";
+    let _ = state.bridge_db.insert_device(&PairedDevice {
+        device_id: device_id.to_string(),
+        client_device_id: String::new(),
+        ip: "127.0.0.1".to_string(),
+        name: String::new(),
+        user_agent: String::new(),
+        paired_at: 0,
+        last_seen: 0,
+    });
+
+    let token = auth::token::Token::generate(&state.secret_key, device_id);
+
+    let req = axum::http::Request::builder()
+        .uri("/api/bridge/config")
+        .header("authorization", format!("Bearer {}", token))
+        .body(axum::body::Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let body = axum::body::to_bytes(resp.into_body(), 8192).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let configs = json["configs"].as_array().unwrap();
+    assert!(!configs.is_empty());
+
+    let bridge_port = configs.iter().find(|c| c["key"] == "bridge.port").unwrap();
+    assert_eq!(bridge_port["type"], "u16");
+    assert_eq!(bridge_port["needs_restart"], true);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_update_config_bool() {
+    let dir = std::env::temp_dir().join("bridge_int_config_put");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let (app, state) = test_app_with_dir(&dir);
+
+    let device_id = "cfgtestdev000002";
+    let _ = state.bridge_db.insert_device(&PairedDevice {
+        device_id: device_id.to_string(),
+        client_device_id: String::new(),
+        ip: "127.0.0.1".to_string(),
+        name: String::new(),
+        user_agent: String::new(),
+        paired_at: 0,
+        last_seen: 0,
+    });
+
+    let token = auth::token::Token::generate(&state.secret_key, device_id);
+
+    let body = serde_json::json!({
+        "configs": [{"key": "opencode.auto_start", "value": "false"}]
+    });
+
+    let req = axum::http::Request::builder()
+        .method("PUT")
+        .uri("/api/bridge/config")
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let resp_body = axum::body::to_bytes(resp.into_body(), 8192).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&resp_body).unwrap();
+    assert_eq!(json["success"], true);
+    assert_eq!(json["needs_restart"], false);
+
+    let saved = state.bridge_db.get_config("opencode.auto_start").unwrap();
+    assert_eq!(saved, Some("false".to_string()));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn test_update_config_unknown_key_rejected() {
+    let dir = std::env::temp_dir().join("bridge_int_config_unknown");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let (app, state) = test_app_with_dir(&dir);
+
+    let device_id = "cfgtestdev000003";
+    let _ = state.bridge_db.insert_device(&PairedDevice {
+        device_id: device_id.to_string(),
+        client_device_id: String::new(),
+        ip: "127.0.0.1".to_string(),
+        name: String::new(),
+        user_agent: String::new(),
+        paired_at: 0,
+        last_seen: 0,
+    });
+
+    let token = auth::token::Token::generate(&state.secret_key, device_id);
+
+    let body = serde_json::json!({
+        "configs": [{"key": "auth.secret_key", "value": "hacked"}]
+    });
+
+    let req = axum::http::Request::builder()
+        .method("PUT")
+        .uri("/api/bridge/config")
+        .header("authorization", format!("Bearer {}", token))
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(serde_json::to_string(&body).unwrap()))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), 400);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 
 #[tokio::test]
 async fn test_fs_list_endpoint() {

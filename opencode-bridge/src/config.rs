@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::bridge_db::BridgeDb;
@@ -46,6 +47,20 @@ pub fn default_db_path() -> String {
     path.to_string_lossy().to_string()
 }
 
+pub fn is_port_available(port: u16) -> bool {
+    std::net::TcpListener::bind(("0.0.0.0", port)).is_ok()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigEntry {
+    pub key: String,
+    pub value: String,
+    pub default: String,
+    pub r#type: String,
+    pub needs_restart: bool,
+    pub description: String,
+}
+
 impl Default for FsConfig {
     fn default() -> Self {
         FsConfig {
@@ -78,6 +93,115 @@ impl Default for Config {
 }
 
 impl Config {
+    pub fn config_metadata() -> Vec<ConfigEntry> {
+        vec![
+            ConfigEntry {
+                key: "bridge.port".into(),
+                value: String::new(),
+                default: "4097".into(),
+                r#type: "u16".into(),
+                needs_restart: true,
+                description: "Bridge HTTP server listen port".into(),
+            },
+            ConfigEntry {
+                key: "bridge.hostname".into(),
+                value: String::new(),
+                default: "0.0.0.0".into(),
+                r#type: "string".into(),
+                needs_restart: true,
+                description: "Bridge HTTP server listen address".into(),
+            },
+            ConfigEntry {
+                key: "bridge.auth_enabled".into(),
+                value: String::new(),
+                default: "true".into(),
+                r#type: "bool".into(),
+                needs_restart: false,
+                description: "Require authentication for API access".into(),
+            },
+            ConfigEntry {
+                key: "opencode.binary".into(),
+                value: String::new(),
+                default: "opencode".into(),
+                r#type: "string".into(),
+                needs_restart: false,
+                description: "Path to opencode executable".into(),
+            },
+            ConfigEntry {
+                key: "opencode.hostname".into(),
+                value: String::new(),
+                default: "127.0.0.1".into(),
+                r#type: "string".into(),
+                needs_restart: false,
+                description: "opencode serve hostname".into(),
+            },
+            ConfigEntry {
+                key: "opencode.port".into(),
+                value: String::new(),
+                default: "4096".into(),
+                r#type: "u16".into(),
+                needs_restart: false,
+                description: "opencode serve port".into(),
+            },
+            ConfigEntry {
+                key: "opencode.directory".into(),
+                value: String::new(),
+                default: String::new(),
+                r#type: "string".into(),
+                needs_restart: false,
+                description: "opencode working directory (empty = exe dir)".into(),
+            },
+            ConfigEntry {
+                key: "opencode.auto_start".into(),
+                value: String::new(),
+                default: "true".into(),
+                r#type: "bool".into(),
+                needs_restart: false,
+                description: "Auto-start opencode when Bridge starts".into(),
+            },
+            ConfigEntry {
+                key: "opencode.auto_restart".into(),
+                value: String::new(),
+                default: "true".into(),
+                r#type: "bool".into(),
+                needs_restart: false,
+                description: "Auto-restart opencode on crash".into(),
+            },
+            ConfigEntry {
+                key: "opencode.db_path".into(),
+                value: String::new(),
+                default: default_db_path(),
+                r#type: "string".into(),
+                needs_restart: false,
+                description: "Path to opencode SQLite database".into(),
+            },
+            ConfigEntry {
+                key: "fs.allowed_paths".into(),
+                value: String::new(),
+                default: String::new(),
+                r#type: "string".into(),
+                needs_restart: false,
+                description: "Comma-separated allowed file paths (empty = all)".into(),
+            },
+            ConfigEntry {
+                key: "gateway.url".into(),
+                value: String::new(),
+                default: "https://gateway.clawmate.net".into(),
+                r#type: "string".into(),
+                needs_restart: true,
+                description: "Relay gateway URL".into(),
+            },
+            ConfigEntry {
+                key: "gateway.auto_connect".into(),
+                value: String::new(),
+                default: "true".into(),
+                r#type: "bool".into(),
+                needs_restart: true,
+                description: "Auto-connect to relay gateway".into(),
+            },
+        ]
+    }
+
     pub fn opencode_url(&self) -> String {
         format!("http://{}:{}", self.opencode.hostname, self.opencode.port)
     }
@@ -321,5 +445,20 @@ mod tests {
         assert_eq!(config.bridge.port, 4097);
         assert_eq!(config.opencode.auto_start, true);
         assert!(config.fs.allowed_paths.is_empty());
+    }
+
+    #[test]
+    fn test_is_port_available_with_occupied_port() {
+        let listener = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        let occupied_port = listener.local_addr().unwrap().port();
+        assert!(!is_port_available(occupied_port));
+    }
+
+    #[test]
+    fn test_is_port_available_with_unused_port() {
+        let listener = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        let free_port = listener.local_addr().unwrap().port();
+        drop(listener);
+        assert!(is_port_available(free_port));
     }
 }
