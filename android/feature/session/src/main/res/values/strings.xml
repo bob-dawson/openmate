@@ -202,6 +202,15 @@
     <string name="sync_logs_reconnect_sse">Reconnect</string>
     <string name="sync_logs_incremental_sync">Sync</string>
     <string name="sync_logs_clear_confirm">Clear?</string>
+    <string name="sync_logs_clear_title">Clear Logs</string>
+    <string name="sync_logs_clear_message">All sync logs will be deleted. This cannot be undone.</string>
+    <string name="sync_logs_clear_confirm_action">Clear</string>
+    <string name="sync_logs_clear_cancel">Cancel</string>
+    <string name="sync_logs_copy_title">Copy Logs</string>
+    <string name="sync_logs_copy_message">%1$d log entries matched. Choose range to copy:</string>
+    <string name="sync_logs_copy_all">All (%1$d)</string>
+    <string name="sync_logs_copy_first">First %1$d</string>
+    <string name="sync_logs_copy_last">Last %1$d</string>
     <string name="opencode_management">OpenCode</string>
     <string name="opencode_not_connected">Not connected</string>
     <string name="upgrade_to">Upgrade to v%1$s</string>

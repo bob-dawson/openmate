@@ -199,6 +199,15 @@
     <string name="sync_logs_reconnect_sse">重连</string>
     <string name="sync_logs_incremental_sync">同步</string>
     <string name="sync_logs_clear_confirm">确认清除？</string>
+    <string name="sync_logs_clear_title">清除日志</string>
+    <string name="sync_logs_clear_message">所有同步日志将被删除，此操作不可撤销。</string>
+    <string name="sync_logs_clear_confirm_action">清除</string>
+    <string name="sync_logs_clear_cancel">取消</string>
+    <string name="sync_logs_copy_title">复制日志</string>
+    <string name="sync_logs_copy_message">共 %1$d 条日志，选择复制范围：</string>
+    <string name="sync_logs_copy_all">全部 (%1$d)</string>
+    <string name="sync_logs_copy_first">前 %1$d 条</string>
+    <string name="sync_logs_copy_last">后 %1$d 条</string>
     <string name="opencode_management">OpenCode</string>
     <string name="opencode_not_connected">未连接</string>
     <string name="upgrade_to">升级到 v%1$s</string>
