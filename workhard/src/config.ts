@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: WorkHardConfig = {
   autoContinue: false,
   retryOnStepFailed: true,
   retryPatterns: ["EngineInternalError", "ServiceIsBusyError", "NotEnoughCvError", "Xunfei request failed"],
-  retryDelayMs: 3000,
+  retryDelayMs: 15000,
 }
 
 export function parseConfig(raw: Record<string, unknown> | undefined): WorkHardConfig {

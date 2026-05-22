@@ -114,7 +114,7 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
       log("step.failed", `→ matched retry pattern, will send continue after ${config.retryDelayMs}ms`)
       await delay(config.retryDelayMs)
       if (state.finished) return
-      await sendPrompt(sessionID, "继续执行上次的任务，刚才的请求失败是临时错误，请重试。")
+      await sendPrompt(sessionID, "继续")
     } catch (err) {
       log("step.failed", "retry handler error", err)
     } finally {
