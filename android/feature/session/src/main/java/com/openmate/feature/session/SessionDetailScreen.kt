@@ -488,6 +488,16 @@ fun SessionDetailScreen(
                             )
                             if (selectedModel != null) {
                                 DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.init_session)) },
+                                    onClick = {
+                                        menuExpanded = false
+                                        viewModel.initSession(sessionID)
+                                    },
+                                    enabled = currentBusyStart == null,
+                                )
+                            }
+                            if (selectedModel != null) {
+                                DropdownMenuItem(
                                     text = { Text(compactActionLabel) },
                                     onClick = {
                                         menuExpanded = false

@@ -1015,14 +1015,12 @@ class SessionDetailViewModel @Inject constructor(
 
     fun initSession(sessionID: String) {
         val model = _selectedModel.value ?: return
+        val messageID = generateMessageID()
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val messageID = generateMessageID()
                 apiClient.initSession(sessionID, model.providerID, model.modelID, messageID, currentDirectory.ifBlank { null })
-                sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
-                Log.e(TAG, "initSession failed", e)
-                _errorMessage.value = appContext.getString(R.string.init_failed)
+                Log.w(TAG, "initSession request completed with: ${e.javaClass.simpleName}: ${e.message}")
             }
         }
     }

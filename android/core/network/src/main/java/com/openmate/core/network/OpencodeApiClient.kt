@@ -316,6 +316,17 @@ class OpencodeApiClient(
         postUnit("/session/$sessionID/summarize", body, params)
     }
 
+    suspend fun initSession(sessionID: String, providerID: String, modelID: String, messageID: String, directory: String? = null) {
+        val body = mapOf(
+            "providerID" to providerID,
+            "modelID" to modelID,
+            "messageID" to messageID,
+        )
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/session/$sessionID/init", body, params)
+    }
+
     suspend fun bridgeListRoots(): List<BridgeRootEntryDto> {
         return getList("/api/bridge/fs/roots")
     }
