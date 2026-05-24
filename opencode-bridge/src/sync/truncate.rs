@@ -59,7 +59,7 @@ fn truncate_event_reasoning_ended(data: &Value) -> Value {
 
 fn truncate_tool_input(tool_name: &str, input: &Value) -> Value {
     match tool_name {
-        "bash" => keep_fields(input, &["command"]),
+        "bash" => keep_fields(input, &["command", "description"]),
         "read" => keep_fields(input, &["filePath"]),
         "write" => keep_fields(input, &["filePath"]),
         "edit" => keep_fields(input, &["filePath"]),
@@ -554,7 +554,7 @@ fn truncate_attachment(attachment: &Value) -> Value {
 fn truncate_tool_bash(state: &Value) -> Value {
     build_state(
         state,
-        &["command"],
+        &["command", "description"],
         &["exit", "truncated"],
         ContentMode::TruncateBashOutput,
     )
@@ -802,6 +802,7 @@ mod tests {
         });
         let result = truncate_tool("bash", &state);
         assert_eq!(result["input"]["command"], "ls -la");
+        assert_eq!(result["input"]["description"], "list");
         assert!(result["input"]["timeout"].is_null());
         assert!(result["input"]["workdir"].is_null());
         assert_eq!(result["structured"]["exit"], 0);
