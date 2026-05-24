@@ -11,6 +11,7 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -40,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -50,12 +53,6 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 
 private const val TAG = "QrScanScreen"
-
-sealed interface QrScanState {
-    data object Scanning : QrScanState
-    data class Processing(val url: String) : QrScanState
-    data class Error(val message: String) : QrScanState
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,10 +93,21 @@ fun QrScanScreen(
         }
     }
 
+    val isProcessing = scanState is ScanUiStateProcessing
+    val isError = scanState is ScanUiStateError
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Scan QR Code") },
+                title = {
+                    Text(
+                        when {
+                            isProcessing -> stringResource(R.string.scan_pairing)
+                            isError -> stringResource(R.string.scan_pair_failed)
+                            else -> stringResource(R.string.scan_qr_code)
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -111,77 +119,120 @@ fun QrScanScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            if (hasCameraPermission) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
-
-                    AndroidView(
-                        factory = { ctx ->
-                            val previewView = PreviewView(ctx)
-                            val preview = Preview.Builder().build()
-                            val analyzer = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
-
-                            analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
-                                processImageProxy(imageProxy, viewModel)
-                            }
-
-                            val cameraProvider = cameraProviderFuture.get()
-                            preview.setSurfaceProvider(previewView.surfaceProvider)
-
-                            try {
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    CameraSelector.DEFAULT_BACK_CAMERA,
-                                    preview,
-                                    analyzer,
-                                )
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Camera bind failed", e)
-                            }
-
-                            previewView
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-
-                    when (val state = scanState) {
-                        is ScanUiStateProcessing -> {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(48.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        is ScanUiStateError -> {
-                            Text(
-                                state.message,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(16.dp),
-                            )
-                        }
-                        else -> {}
-                    }
-                }
-            } else {
-                Spacer(modifier = Modifier.height(48.dp))
-                Text(
-                    "Camera permission is required to scan QR codes",
-                    color = MaterialTheme.colorScheme.error,
+        when {
+            isProcessing -> {
+                PairingProgressScreen(
+                    modifier = Modifier.padding(padding),
                 )
             }
+            isError -> {
+                PairingErrorScreen(
+                    message = (scanState as ScanUiStateError).message,
+                    onRetry = {
+                        viewModel.reset()
+                    },
+                    modifier = Modifier.padding(padding),
+                )
+            }
+            else -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (hasCameraPermission) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+
+                            AndroidView(
+                                factory = { ctx ->
+                                    val previewView = PreviewView(ctx)
+                                    val preview = Preview.Builder().build()
+                                    val analyzer = ImageAnalysis.Builder()
+                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                        .build()
+
+                                    analyzer.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                                        processImageProxy(imageProxy, viewModel)
+                                    }
+
+                                    val cameraProvider = cameraProviderFuture.get()
+                                    preview.setSurfaceProvider(previewView.surfaceProvider)
+
+                                    try {
+                                        cameraProvider.unbindAll()
+                                        cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            CameraSelector.DEFAULT_BACK_CAMERA,
+                                            preview,
+                                            analyzer,
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Camera bind failed", e)
+                                    }
+
+                                    previewView
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(48.dp))
+                        Text(
+                            stringResource(R.string.camera_permission_required),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PairingProgressScreen(
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = stringResource(R.string.scan_pairing_message),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PairingErrorScreen(
+    message: String,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.error,
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onRetry) {
+            Text(stringResource(R.string.retry_scan))
         }
     }
 }

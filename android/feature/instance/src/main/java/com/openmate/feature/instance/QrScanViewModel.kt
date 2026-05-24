@@ -108,6 +108,11 @@ class QrScanViewModel @Inject constructor(
         _scanState.value = ScanUiStateError(message)
     }
 
+    fun reset() {
+        processed = false
+        _scanState.value = ScanUiIdle
+    }
+
     fun handleScanComplete(name: String, address: String, port: Int) {
         val currentState = _scanState.value
         if (currentState !is ScanResult) return

@@ -35,6 +35,13 @@
     <string name="confirm">Confirm</string>
     <string name="cancel">Cancel</string>
 
+    <string name="scan_qr_code">Scan QR Code</string>
+    <string name="scan_pairing">Pairing</string>
+    <string name="scan_pairing_message">Checking gateway and pairing…</string>
+    <string name="scan_pair_failed">Pairing Failed</string>
+    <string name="camera_permission_required">Camera permission is required to scan QR codes</string>
+    <string name="retry_scan">Retry</string>
+
     <string name="crash_log">Crash Log</string>
     <string name="no_crash_logs">No crash logs</string>
     <string name="crash_count">%1$d crash logs</string>

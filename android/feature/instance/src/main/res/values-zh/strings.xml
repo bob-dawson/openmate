@@ -33,4 +33,11 @@
     <string name="pairing_instruction">运行：opencode-bridge approve %1$s</string>
     <string name="confirm">确认</string>
     <string name="cancel">取消</string>
+
+    <string name="scan_qr_code">扫描二维码</string>
+    <string name="scan_pairing">配对中</string>
+    <string name="scan_pairing_message">正在检查网关并配对…</string>
+    <string name="scan_pair_failed">配对失败</string>
+    <string name="camera_permission_required">需要相机权限才能扫描二维码</string>
+    <string name="retry_scan">重试</string>
 </resources>
