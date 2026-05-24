@@ -722,8 +722,7 @@ class SessionDetailViewModel @Inject constructor(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sync,
                     sessionId = sid,
-                    title = "数据库上传完成",
-                    message = "uploaded db files to $dir/.openmate/debug/",
+                    message = "数据库上传完成 uploaded db files to $dir/.openmate/debug/",
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "uploadDatabase failed", e)
@@ -792,8 +791,7 @@ class SessionDetailViewModel @Inject constructor(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Manual,
             sessionId = sessionID,
-            title = "发送消息",
-            message = "send message requested textLength=${text.length} attachments=${_attachedFiles.value.size}",
+            message = "发送消息 send message requested textLength=${text.length} attachments=${_attachedFiles.value.size}",
         )
         _inputText.value = ""
         val model = _selectedModel.value
@@ -1199,8 +1197,7 @@ class SessionDetailViewModel @Inject constructor(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
             sessionId = sessionId,
-            title = "消息窗口更新",
-            message = "source=$source count=${messages.size} last=${last?.id ?: "none"}/${last?.type ?: "none"} lastCompaction=${lastCompaction?.id ?: "none"}/${lastCompaction?.type ?: "none"}",
+            message = "消息窗口更新 source=$source count=${messages.size} last=${last?.id ?: "none"}/${last?.type ?: "none"} lastCompaction=${lastCompaction?.id ?: "none"}/${lastCompaction?.type ?: "none"}",
         )
     }
 
@@ -1567,8 +1564,7 @@ class SessionDetailViewModel @Inject constructor(
                         level = SyncLogLevel.Error,
                         category = SyncLogCategory.Manual,
                         sessionId = sessionID,
-                        title = "revert失败",
-                        message = "messageID=$messageID not found in recent window",
+                        message = "revert失败 messageID=$messageID not found in recent window",
                     )
                     return@launch
                 }
@@ -1578,8 +1574,7 @@ class SessionDetailViewModel @Inject constructor(
                         level = SyncLogLevel.Error,
                         category = SyncLogCategory.Manual,
                         sessionId = sessionID,
-                        title = "revert失败",
-                        message = "evtID=$messageID timeCreated=${targetMsg.timeCreated} resolve msg_ ID failed",
+                        message = "revert失败 evtID=$messageID timeCreated=${targetMsg.timeCreated} resolve msg_ ID failed",
                     )
                     return@launch
                 }
@@ -1587,16 +1582,14 @@ class SessionDetailViewModel @Inject constructor(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    title = "revert请求",
-                    message = "evtID=$messageID → msgID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
+                    message = "revert请求 evtID=$messageID → msgID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
                 )
                 if (busy) {
                     syncDebugController.log(
                         level = SyncLogLevel.Info,
                         category = SyncLogCategory.Manual,
                         sessionId = sessionID,
-                        title = "abort先执行",
-                        message = "session busy, aborting before revert",
+                        message = "abort先执行 session busy, aborting before revert",
                     )
                     sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
                     delay(500)
@@ -1618,8 +1611,7 @@ class SessionDetailViewModel @Inject constructor(
                     level = SyncLogLevel.Error,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    title = "revert失败",
-                    message = "evtID=$messageID error=${e.message}",
+                    message = "revert失败 evtID=$messageID error=${e.message}",
                 )
                 _errorMessage.value = "Revert failed: ${e.message}"
             }
@@ -1642,8 +1634,7 @@ class SessionDetailViewModel @Inject constructor(
                 level = SyncLogLevel.Warn,
                 category = SyncLogCategory.Manual,
                 sessionId = sessionID,
-                title = "revert跳过",
-                message = "no visible user message found",
+                message = "revert跳过 no visible user message found",
             )
         }
     }
@@ -1655,8 +1646,7 @@ class SessionDetailViewModel @Inject constructor(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    title = "unrevert请求",
-                    message = "dir=${currentDirectory.ifBlank { "null" }}",
+                    message = "unrevert请求 dir=${currentDirectory.ifBlank { "null" }}",
                 )
                 sessionRepository.unrevertSession(sessionID, directory = currentDirectory.ifBlank { null })
                 sessionMessageRepository.incrementalSync(sessionID)
@@ -1666,8 +1656,7 @@ class SessionDetailViewModel @Inject constructor(
                     level = SyncLogLevel.Error,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    title = "unrevert失败",
-                    message = "error=${e.message}",
+                    message = "unrevert失败 error=${e.message}",
                 )
                 _errorMessage.value = "Unrevert failed: ${e.message}"
             }

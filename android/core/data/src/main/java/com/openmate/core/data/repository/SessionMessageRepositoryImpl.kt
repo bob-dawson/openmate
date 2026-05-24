@@ -52,9 +52,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                 logStore.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sync,
+                    message = "观察消息表 observe messages count=${entities.size} last=${latest?.id ?: "none"}/${latest?.type ?: "none"}",
                     sessionId = sessionId,
-                    title = "观察消息表",
-                    message = "observe messages count=${entities.size} last=${latest?.id ?: "none"}/${latest?.type ?: "none"}",
                 )
                 entities.map { it.toDomain() }
             }
@@ -70,9 +69,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
+            message = "读取消息表 load recent window count=${entities.size} limit=$limit cost=${costMs}ms last=${latest?.id ?: "none"}/${latest?.type ?: "none"}",
             sessionId = sessionId,
-            title = "读取消息表",
-            message = "load recent window count=${entities.size} limit=$limit cost=${costMs}ms last=${latest?.id ?: "none"}/${latest?.type ?: "none"}",
         )
         return entities.map { it.toDomain() }
     }
@@ -92,9 +90,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
+            message = "读取旧消息页 load older page count=${entities.size} before=$beforeId/$beforeTimeCreated limit=$limit cost=${costMs}ms first=${first?.id ?: "none"} last=${last?.id ?: "none"}",
             sessionId = sessionId,
-            title = "读取旧消息页",
-            message = "load older page count=${entities.size} before=$beforeId/$beforeTimeCreated limit=$limit cost=${costMs}ms first=${first?.id ?: "none"} last=${last?.id ?: "none"}",
         )
         return entities.map { it.toDomain() }
     }
@@ -114,9 +111,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
+            message = "按用户轮次加载旧消息 userTurns=$userTurns count=${entities.size} cost=${costMs}ms first=${first?.id ?: "none"} last=${last?.id ?: "none"}",
             sessionId = sessionId,
-            title = "按用户轮次加载旧消息",
-            message = "userTurns=$userTurns count=${entities.size} cost=${costMs}ms first=${first?.id ?: "none"} last=${last?.id ?: "none"}",
         )
         return entities.map { it.toDomain() }
     }
@@ -178,11 +174,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
+            message = "增量同步开始 incremental sync begin afterSeq=${syncState.lastSeq} seq=${syncState.lastSeq} trace=$traceId",
             sessionId = sessionId,
-            title = "增量同步开始",
-            message = "incremental sync begin afterSeq=${syncState.lastSeq}",
-            relatedSeq = syncState.lastSeq,
-            traceId = traceId,
         )
 
         try {
@@ -239,12 +232,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                     logStore.log(
                         level = SyncLogLevel.Info,
                         category = SyncLogCategory.Sync,
+                        message = "增量同步结束 incremental sync completed batches=$batchIndex totalEvents=$totalEvents cost=${System.currentTimeMillis() - t0}ms totalBytes=$totalBytes bytes=$totalBytes seq=$lastSeq trace=$traceId",
                         sessionId = sessionId,
-                        title = "增量同步结束",
-                        message = "incremental sync completed batches=$batchIndex totalEvents=$totalEvents cost=${System.currentTimeMillis() - t0}ms totalBytes=$totalBytes",
-                        bytes = totalBytes.toInt(),
-                        relatedSeq = lastSeq,
-                        traceId = traceId,
                     )
                     return
                 }
@@ -258,11 +247,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                 logStore.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sync,
+                    message = "增量包返回 batch=$batchIndex eventCount=$eventCount maxSeq=${response.maxSeq} bytes=$packageBytes trace=$traceId",
                     sessionId = sessionId,
-                    title = "增量包返回",
-                    message = "batch=$batchIndex eventCount=$eventCount maxSeq=${response.maxSeq}",
-                    bytes = packageBytes,
-                    traceId = traceId,
                 )
 
                 db.withTransaction {
@@ -290,12 +276,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                         logStore.log(
                             level = SyncLogLevel.Info,
                             category = SyncLogCategory.Sync,
+                            message = "增量消息处理 event type=${event.type} aggregateId=${event.aggregateId} bytes=$bytesValue seq=${event.seq} trace=$traceId",
                             sessionId = sessionId,
-                            title = "增量消息处理",
-                            message = "event type=${event.type} aggregateId=${event.aggregateId}",
-                            bytes = bytesValue,
-                            relatedSeq = event.seq,
-                            traceId = traceId,
                         )
 
                         if (event.type.startsWith("message.removed") && !event.type.startsWith("message.part.removed")) {
@@ -311,11 +293,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                 logStore.log(
                                     level = SyncLogLevel.Info,
                                     category = SyncLogCategory.Sync,
+                                    message = "revert范围删除 seq=${event.seq} from=$fromId to=$toId count=${rangeMessages.size} seq=${event.seq} trace=$traceId",
                                     sessionId = sessionId,
-                                    title = "revert范围删除",
-                                    message = "seq=${event.seq} from=$fromId to=$toId count=${rangeMessages.size}",
-                                    relatedSeq = event.seq,
-                                    traceId = traceId,
                                 )
                             }
                             db.sessionDao().updateRevertFields(sessionId, null, null, null, null)
@@ -336,11 +315,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             logStore.log(
                                 level = SyncLogLevel.Info,
                                 category = SyncLogCategory.Sync,
+                                message = "REPLAY seq=${event.seq} type=${replayEvent.type} cache=[${replayer.cacheDebugInfo()}] changes=$changeSummaries seq=${event.seq} trace=$traceId",
                                 sessionId = sessionId,
-                                title = "REPLAY seq=${event.seq}",
-                                message = "type=${replayEvent.type} cache=[${replayer.cacheDebugInfo()}] changes=$changeSummaries",
-                                relatedSeq = event.seq,
-                                traceId = traceId,
                             )
                         }
                         for (change in changes) {
@@ -441,22 +417,16 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                 logStore.log(
                                     level = if (rows == 0) SyncLogLevel.Error else SyncLogLevel.Info,
                                     category = SyncLogCategory.Sync,
+                                    message = "revert写入结果 seq=${event.seq} aggId=$aggId msgID=$revertMsgID from=$fromId to=$toId rows=$rows seq=${event.seq} trace=$traceId",
                                     sessionId = sessionId,
-                                    title = "revert写入结果",
-                                    message = "seq=${event.seq} aggId=$aggId msgID=$revertMsgID from=$fromId to=$toId rows=$rows",
-                                    relatedSeq = event.seq,
-                                    traceId = traceId,
                                 )
                             } else if (hasRevertKey && revertJson is JsonNull) {
                                 val rows = db.sessionDao().updateRevertFields(aggId, null, null, null, null)
                                 logStore.log(
                                     level = if (rows == 0) SyncLogLevel.Error else SyncLogLevel.Info,
                                     category = SyncLogCategory.Sync,
+                                    message = "revert清除结果 seq=${event.seq} aggId=$aggId rows=$rows seq=${event.seq} trace=$traceId",
                                     sessionId = sessionId,
-                                    title = "revert清除结果",
-                                    message = "seq=${event.seq} aggId=$aggId rows=$rows",
-                                    relatedSeq = event.seq,
-                                    traceId = traceId,
                                 )
                             }
                         }
@@ -487,10 +457,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
             logStore.log(
                 level = SyncLogLevel.Error,
                 category = SyncLogCategory.Sync,
+                message = "增量同步失败 incremental sync failed afterSeq=${syncState.lastSeq} error=${e.javaClass.simpleName}: ${e.message} cost=${totalMs}ms trace=$traceId",
                 sessionId = sessionId,
-                title = "增量同步失败",
-                message = "incremental sync failed afterSeq=${syncState.lastSeq} error=${e.javaClass.simpleName}: ${e.message} cost=${totalMs}ms",
-                traceId = traceId,
             )
             throw e
         }

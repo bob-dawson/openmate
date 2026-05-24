@@ -1,5 +1,7 @@
 package com.openmate.app.connection.v2
 
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.data.sync.SyncLogStore
@@ -32,6 +34,7 @@ class EffectExecutor(
     private val profileRepository: ServerProfileRepository,
     private val tokenStore: TokenStore,
     private val logStore: SyncLogStore,
+    private val connectivityManager: ConnectivityManager,
 ) {
     private val probeClient = OkHttpClient.Builder()
         .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
@@ -43,6 +46,7 @@ class EffectExecutor(
 
     fun execute(effect: ConnEffect) {
         when (effect) {
+            is ConnEffect.CheckNetwork -> checkNetwork()
             is ConnEffect.ProbeGateway -> probeGateway(effect.instanceId)
             is ConnEffect.ProbeDirect -> probeDirect(effect.address, effect.port)
             is ConnEffect.StartSse -> startSse(effect.baseUrl, effect.instanceId)
@@ -55,6 +59,21 @@ class EffectExecutor(
             is ConnEffect.StartDirectCheckLoop -> startDirectCheckLoop(effect.address, effect.port)
             is ConnEffect.StopDirectCheckLoop -> stopDirectCheckLoop()
             is ConnEffect.ClearApiClient -> clearApiClient()
+        }
+    }
+
+    private fun checkNetwork() {
+        scope.launch {
+            val activeNetwork = connectivityManager.activeNetwork
+            val caps = activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
+            val hasNetwork = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            val isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网络检测 hasNetwork=$hasNetwork isWifi=$isWifi")
+            when {
+                !hasNetwork -> sendEvent(ConnEvent.NetworkIsNone)
+                isWifi -> sendEvent(ConnEvent.NetworkIsWifi)
+                else -> sendEvent(ConnEvent.NetworkIsMobile)
+            }
         }
     }
 
@@ -73,7 +92,7 @@ class EffectExecutor(
         scope.launch {
             try {
                 val status = fetchBridgeStatus(address, port)
-                logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "直连探测", message = "address=$address:$port ok=true version=${status.bridge.version}")
+                logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "直连探测 address=$address:$port ok=true version=${status.bridge.version}")
                 if (status.bridge.version.isBlank()) {
                     sendEvent(ConnEvent.BridgeNotBridge(profileRepository.getAll().first { it.address == address && it.port == port }))
                     return@launch
@@ -82,7 +101,7 @@ class EffectExecutor(
                     val profile = profileRepository.getAll().first { it.address == address && it.port == port }
                     val token = tokenStore.getToken(profile.id)
                     if (token == null) {
-                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "需要配对", message = "profile=${profile.id}")
+                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "需要配对 profile=${profile.id}")
                         sendEvent(ConnEvent.BridgeNeedsRepair(profile))
                         return@launch
                     }
@@ -92,12 +111,12 @@ class EffectExecutor(
                     if (profile != null && status.bridge.instanceId != profile.instanceId) {
                         val updated = profile.copy(instanceId = status.bridge.instanceId)
                         profileRepository.save(updated)
-                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "更新instanceId", message = "old='${profile.instanceId}' new='${status.bridge.instanceId}'")
+                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "更新instanceId old='${profile.instanceId}' new='${status.bridge.instanceId}'")
                     }
                 }
                 sendEvent(ConnEvent.ProbeOk(Route.Direct(address, port)))
             } catch (e: Exception) {
-                logStore.log(SyncLogLevel.Warn, SyncLogCategory.Connection, title = "直连探测失败", message = "address=$address:$port ${e.javaClass.simpleName}: ${e.message}")
+                logStore.log(SyncLogLevel.Warn, SyncLogCategory.Connection, "直连探测失败 address=$address:$port ${e.javaClass.simpleName}: ${e.message}")
                 sendEvent(ConnEvent.ProbeFail(Route.Direct(address, port)))
             }
         }
@@ -140,17 +159,17 @@ class EffectExecutor(
                 .build()
             val response = probeClient.newCall(request).execute()
             val success = response.isSuccessful
-            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "网关状态", message = "instance=$instanceId code=${response.code} online=$success")
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关状态 instance=$instanceId code=${response.code} online=$success")
             response.close()
             success
         } catch (e: Exception) {
-            logStore.log(SyncLogLevel.Error, SyncLogCategory.Connection, title = "网关检查失败", message = "${e.javaClass.simpleName}: ${e.message}")
+            logStore.log(SyncLogLevel.Error, SyncLogCategory.Connection, "网关检查失败 ${e.javaClass.simpleName}: ${e.message}")
             false
         }
     }
 
     private fun startSse(baseUrl: String, instanceId: String?) {
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "启动SSE", message = "url=$baseUrl iid=$instanceId")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "启动SSE url=$baseUrl iid=$instanceId")
         sseJob?.cancel()
         syncSseHandler.start()
         syncSseClient.instanceId = instanceId
@@ -160,14 +179,14 @@ class EffectExecutor(
     }
 
     private fun stopSse() {
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "停止SSE", message = "")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "停止SSE")
         sseJob?.cancel()
         sseEventRepository.disconnect()
         syncSseClient.disconnect()
     }
 
     private fun startBackoff(delayMs: Long) {
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "开始退避", message = "delay=$delayMs ms")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "开始退避 delay=$delayMs ms")
         backoffJob?.cancel()
         backoffJob = scope.launch {
             delay(delayMs)
@@ -195,7 +214,7 @@ class EffectExecutor(
             while (true) {
                 delay(DIRECT_CHECK_INTERVAL_MS)
                 if (isDirectReachable(address, port)) {
-                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "直连恢复", message = "切回直连")
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "直连恢复 切回直连")
                     sendEvent(ConnEvent.ProbeOk(Route.Direct(address, port)))
                     break
                 }

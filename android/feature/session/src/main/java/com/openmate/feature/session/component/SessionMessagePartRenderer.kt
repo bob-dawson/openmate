@@ -165,8 +165,10 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
     when (toolName) {
         "bash" -> {
             val command = jsonArgs.str("command") ?: args?.take(80) ?: ""
+            val desc = jsonArgs.str("description") ?: ""
             val hasOutput = result != null && result.isNotBlank()
-            return ToolSummary("shell", command.ifBlank { "shell" }, hasOutput)
+            val displayText = desc.ifBlank { command }.ifBlank { "shell" }
+            return ToolSummary("shell", displayText, hasOutput)
         }
         "glob" -> {
             val pattern = jsonArgs.str("pattern") ?: ""

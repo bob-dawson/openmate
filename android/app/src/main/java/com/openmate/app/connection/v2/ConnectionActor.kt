@@ -15,6 +15,16 @@ import ru.nsk.kstatemachine.transition.onTriggered
 sealed class ConnState(name: String? = null) : DefaultState(name) {
     data class Idle(val profile: ServerProfile? = null) : ConnState("Idle")
 
+    data class ProbingNetwork(
+        val profile: ServerProfile,
+        val attempt: Int = 0,
+    ) : ConnState("ProbingNetwork")
+
+    data class WaitingForNetwork(
+        val profile: ServerProfile,
+        val attempt: Int = 0,
+    ) : ConnState("WaitingForNetwork")
+
     data class ProbingDirect(
         val profile: ServerProfile,
         val attempt: Int = 0,
@@ -48,6 +58,8 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
 
     fun logText(): String = when (this) {
         is Idle -> "Idle(profile=${profile?.id})"
+        is ProbingNetwork -> "ProbingNetwork(profile=${profile.id}, attempt=$attempt)"
+        is WaitingForNetwork -> "WaitingForNetwork(profile=${profile.id}, attempt=$attempt)"
         is ProbingDirect -> "ProbingDirect(profile=${profile.id}, attempt=$attempt)"
         is ProbingGateway -> "ProbingGateway(profile=${profile.id}, attempt=$attempt)"
         is Connecting -> "Connecting(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
@@ -71,6 +83,8 @@ class ConnectionActor(
     val state: StateFlow<ConnState> = _state.asStateFlow()
 
     private val idle = ConnState.Idle()
+    private val probingNetwork = ConnState.ProbingNetwork(DUMMY_PROFILE)
+    private val waitingForNetwork = ConnState.WaitingForNetwork(DUMMY_PROFILE)
     private val probingDirect = ConnState.ProbingDirect(DUMMY_PROFILE)
     private val probingGateway = ConnState.ProbingGateway(DUMMY_PROFILE)
     private val connecting = ConnState.Connecting(DUMMY_PROFILE, Route.Direct("", 0))
@@ -83,16 +97,77 @@ class ConnectionActor(
         createStateMachine(machineScope, "Connection") {
             addInitialState(idle) {
                 transition<ConnEvent.Connect> {
-                    targetState = probingDirect
+                    targetState = probingNetwork
                     onTriggered {
                         val e = it.event as ConnEvent.Connect
-                        _state.value = ConnState.ProbingDirect(e.profile)
+                        _state.value = ConnState.ProbingNetwork(e.profile)
                     }
                 }
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
                         _state.value = ConnState.Idle()
+                    }
+                }
+            }
+
+            addState(probingNetwork) {
+                onEntry {
+                    val s = _state.value as ConnState.ProbingNetwork
+                    onEffect(ConnEffect.CheckNetwork(s.profile, s.attempt))
+                }
+                transition<ConnEvent.NetworkIsWifi> {
+                    targetState = probingDirect
+                    onTriggered {
+                        val s = _state.value as ConnState.ProbingNetwork
+                        _state.value = ConnState.ProbingDirect(s.profile, s.attempt)
+                    }
+                }
+                transition<ConnEvent.NetworkIsMobile> {
+                    targetState = probingGateway
+                    onTriggered {
+                        val s = _state.value as ConnState.ProbingNetwork
+                        _state.value = ConnState.ProbingGateway(s.profile, s.attempt)
+                    }
+                }
+                transition<ConnEvent.NetworkIsNone> {
+                    targetState = waitingForNetwork
+                    onTriggered {
+                        val s = _state.value as ConnState.ProbingNetwork
+                        _state.value = ConnState.WaitingForNetwork(s.profile, s.attempt)
+                    }
+                }
+                transition<ConnEvent.Disconnect> {
+                    targetState = idle
+                    onTriggered {
+                        onEffect(ConnEffect.ClearApiClient)
+                        val s = _state.value as ConnState.ProbingNetwork
+                        _state.value = ConnState.Idle(s.profile)
+                    }
+                }
+            }
+
+            addState(waitingForNetwork) {
+                transition<ConnEvent.NetworkAvailable> {
+                    targetState = probingNetwork
+                    onTriggered {
+                        val s = _state.value as ConnState.WaitingForNetwork
+                        _state.value = ConnState.ProbingNetwork(s.profile, s.attempt)
+                    }
+                }
+                transition<ConnEvent.AppForegrounded> {
+                    targetState = probingNetwork
+                    onTriggered {
+                        val s = _state.value as ConnState.WaitingForNetwork
+                        _state.value = ConnState.ProbingNetwork(s.profile, s.attempt)
+                    }
+                }
+                transition<ConnEvent.Disconnect> {
+                    targetState = idle
+                    onTriggered {
+                        onEffect(ConnEffect.ClearApiClient)
+                        val s = _state.value as ConnState.WaitingForNetwork
+                        _state.value = ConnState.Idle(s.profile)
                     }
                 }
             }
@@ -281,17 +356,17 @@ class ConnectionActor(
                     onEffect(ConnEffect.StopBackoff)
                 }
                 transition<ConnEvent.BackoffExpired> {
-                    targetState = probingDirect
+                    targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Recovering
-                        _state.value = ConnState.ProbingDirect(s.profile, attempt = s.attempt)
+                        _state.value = ConnState.ProbingNetwork(s.profile, attempt = s.attempt)
                     }
                 }
                 transition<ConnEvent.NetworkAvailable> {
-                    targetState = probingDirect
+                    targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Recovering
-                        _state.value = ConnState.ProbingDirect(s.profile, attempt = s.attempt)
+                        _state.value = ConnState.ProbingNetwork(s.profile, attempt = s.attempt)
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -307,24 +382,24 @@ class ConnectionActor(
 
             addState(failed) {
                 transition<ConnEvent.NetworkAvailable> {
-                    targetState = probingDirect
+                    targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Failed
-                        _state.value = ConnState.ProbingDirect(s.profile)
+                        _state.value = ConnState.ProbingNetwork(s.profile)
                     }
                 }
                 transition<ConnEvent.AppForegrounded> {
-                    targetState = probingDirect
+                    targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Failed
-                        _state.value = ConnState.ProbingDirect(s.profile)
+                        _state.value = ConnState.ProbingNetwork(s.profile)
                     }
                 }
                 transition<ConnEvent.Retry> {
-                    targetState = probingDirect
+                    targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Failed
-                        _state.value = ConnState.ProbingDirect(s.profile)
+                        _state.value = ConnState.ProbingNetwork(s.profile)
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -340,10 +415,10 @@ class ConnectionActor(
             addState(needsRepair) {
                 transition<ConnEvent.RepairCompleted> {
                     guard = { (event as ConnEvent.RepairCompleted).profileId == (_state.value as ConnState.NeedsRepair).profile.id }
-                    targetState = probingDirect
+                    targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.NeedsRepair
-                        _state.value = ConnState.ProbingDirect(s.profile)
+                        _state.value = ConnState.ProbingNetwork(s.profile)
                     }
                 }
                 transition<ConnEvent.Disconnect> {

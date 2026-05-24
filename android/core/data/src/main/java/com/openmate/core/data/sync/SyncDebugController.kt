@@ -28,8 +28,7 @@ class SyncDebugController @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Manual,
-            title = "日志已清除",
-            message = "sync logs cleared by user",
+            message = "日志已清除 sync logs cleared by user",
         )
     }
 
@@ -37,14 +36,12 @@ class SyncDebugController @Inject constructor(
         level: SyncLogLevel,
         category: SyncLogCategory,
         sessionId: String? = null,
-        title: String,
         message: String,
     ) {
         logStore.log(
             level = level,
             category = category,
             sessionId = sessionId,
-            title = title,
             message = message,
         )
     }
@@ -54,9 +51,7 @@ class SyncDebugController @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Manual,
-            title = "用户请求重连SSE",
-            message = "reconnect sync sse requested from sync log screen",
-            traceId = traceId,
+            message = "用户请求重连SSE reconnect sync sse requested from sync log screen trace=$traceId",
         )
         val baseUrl = syncSseConnection.currentBaseUrl ?: apiClient.baseUrl
         syncSseConnection.disconnect(traceId)
@@ -71,10 +66,8 @@ class SyncDebugController @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Manual,
+            message = "用户发起增量同步 manual incremental sync requested trace=$traceId",
             sessionId = sessionId,
-            title = "用户发起增量同步",
-            message = "manual incremental sync requested",
-            traceId = traceId,
         )
         sessionMessageRepository.incrementalSync(sessionId)
     }

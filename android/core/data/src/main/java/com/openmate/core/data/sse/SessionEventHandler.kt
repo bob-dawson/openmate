@@ -71,9 +71,8 @@ open class SessionEventHandler @Inject constructor(
                         logStore.log(
                             level = SyncLogLevel.Info,
                             category = SyncLogCategory.Sse,
+                            message = "SSE revert写入跳过 msgID=${revertJson["messageID"]?.jsonPrimitive?.content}, defer to incremental sync",
                             sessionId = sessionID,
-                            title = "SSE revert写入跳过",
-                            message = "msgID=${revertJson["messageID"]?.jsonPrimitive?.content}, defer to incremental sync",
                         )
                         if (title != null) {
                             db.sessionDao().updateTitle(sessionID, title)
@@ -82,9 +81,8 @@ open class SessionEventHandler @Inject constructor(
                         logStore.log(
                             level = SyncLogLevel.Info,
                             category = SyncLogCategory.Sse,
+                            message = "SSE revert清除跳过 revert=null, defer to incremental sync",
                             sessionId = sessionID,
-                            title = "SSE revert清除跳过",
-                            message = "revert=null, defer to incremental sync",
                         )
                         if (title != null) {
                             db.sessionDao().updateTitle(sessionID, title)
@@ -93,9 +91,8 @@ open class SessionEventHandler @Inject constructor(
                         logStore.log(
                             level = SyncLogLevel.Info,
                             category = SyncLogCategory.Sync,
+                            message = "SSE revert跳过 无revert字段，保留现有值",
                             sessionId = sessionID,
-                            title = "SSE revert跳过",
-                            message = "无revert字段，保留现有值",
                         )
                         if (title != null) {
                             db.sessionDao().updateTitle(sessionID, title)

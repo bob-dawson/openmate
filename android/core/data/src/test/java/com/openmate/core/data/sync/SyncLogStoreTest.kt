@@ -20,11 +20,7 @@ class SyncLogStoreTest {
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sync,
                     sessionId = if (index % 2 == 0) "ses_current" else null,
-                    title = "增量消息处理",
-                    message = "seq=${1000 + index}",
-                    bytes = 128 + index,
-                    relatedSeq = (1000 + index).toLong(),
-                    traceId = "inc-1",
+                    message = "增量消息处理 seq=${1000 + index} bytes=${128 + index} seq=${1000 + index} trace=inc-1",
                 )
             )
         }
@@ -34,8 +30,8 @@ class SyncLogStoreTest {
         assertThat(entries.size).isEqualTo(200)
         assertThat(entries.first().id).isEqualTo(5L)
         assertThat(entries.last().renderedText).contains("INFO [Sync] 增量消息处理")
-        assertThat(entries.last().renderedText).contains("trace=inc-1")
-        assertThat(entries.last().renderedText).contains("bytes=")
+        assertThat(entries.last().message).contains("trace=inc-1")
+        assertThat(entries.last().message).contains("bytes=")
     }
 
     @Test
@@ -58,11 +54,7 @@ class SyncLogStoreTest {
                         level = SyncLogLevel.Info,
                         category = SyncLogCategory.Sync,
                         sessionId = null,
-                        title = "t$taskIndex",
-                        message = "e$taskIndex",
-                        bytes = null,
-                        relatedSeq = null,
-                        traceId = null,
+                        message = "t$taskIndex e$taskIndex",
                     )
                 )
                 done.countDown()

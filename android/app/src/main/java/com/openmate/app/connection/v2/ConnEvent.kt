@@ -25,6 +25,10 @@ sealed class ConnEvent : Event {
     data class BridgeNotBridge(val profile: ServerProfile) : ConnEvent()
     data class BridgeNeedsRepair(val profile: ServerProfile) : ConnEvent()
 
+    data object NetworkIsWifi : ConnEvent()
+    data object NetworkIsMobile : ConnEvent()
+    data object NetworkIsNone : ConnEvent()
+
     fun logText(): String = when (this) {
         is Connect -> "Connect profile=${profile.id} iid='${profile.instanceId}'"
         is Disconnect -> "Disconnect"
@@ -41,6 +45,9 @@ sealed class ConnEvent : Event {
         is BackoffExpired -> "BackoffExpired"
         is BridgeNotBridge -> "BridgeNotBridge"
         is BridgeNeedsRepair -> "BridgeNeedsRepair"
+        is NetworkIsWifi -> "NetworkIsWifi"
+        is NetworkIsMobile -> "NetworkIsMobile"
+        is NetworkIsNone -> "NetworkIsNone"
     }
 }
 

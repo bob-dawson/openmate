@@ -1,5 +1,7 @@
 package com.openmate.app
 
+import android.content.Context
+import android.net.ConnectivityManager
 import android.util.Log
 import com.openmate.app.connection.AppForegroundMonitor
 import com.openmate.app.connection.NetworkChangeEvent
@@ -36,11 +38,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class ConnectionManager @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val profileRepository: ServerProfileRepository,
     private val sseEventRepository: SseEventRepository,
     private val sessionRepository: SessionRepository,
@@ -81,8 +85,13 @@ class ConnectionManager @Inject constructor(
 
     val client: OpencodeApiClient get() = apiClient
 
+    private val prevState = java.util.concurrent.atomic.AtomicReference<ConnState>(ConnState.Idle())
+
+    @Volatile
+    private var lastEvent: ConnEvent? = null
+
     private val sendEvent: (ConnEvent) -> Unit = { event ->
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "→ event", message = event.logText())
+        lastEvent = event
         scope.launch { actor.processEvent(event) }
     }
 
@@ -98,6 +107,7 @@ class ConnectionManager @Inject constructor(
         profileRepository = profileRepository,
         tokenStore = tokenStore,
         logStore = logStore,
+        connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager,
     )
 
     private val actor = ConnectionActor { effect: ConnEffect ->
@@ -121,7 +131,7 @@ class ConnectionManager @Inject constructor(
         }
         scope.launch {
             sseEventRepository.observeConnectionStatus().collect { status ->
-                logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "SSE状态变化", message = "status=$status activeProfile=${_activeProfile.value?.id}")
+                logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "SSE状态变化 status=$status activeProfile=${_activeProfile.value?.id}")
             }
         }
     }
@@ -195,7 +205,7 @@ class ConnectionManager @Inject constructor(
             }
         }
 
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "开始连接", message = "id=${profile.id} iid='${profile.instanceId}'")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "开始连接 id=${profile.id} iid='${profile.instanceId}'")
     }
 
     override fun reconnect() {
@@ -205,7 +215,7 @@ class ConnectionManager @Inject constructor(
     }
 
     override fun disconnect() {
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, title = "断开连接", message = "")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, "断开连接")
         scope.launch { actor.processEvent(ConnEvent.Disconnect) }
     }
 
@@ -227,7 +237,12 @@ class ConnectionManager @Inject constructor(
     }
 
     private fun applyState(state: ConnState) {
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "← state", message = state.logText())
+        val prev = prevState.getAndSet(state)
+        val evt = lastEvent
+        if (evt != null && prev != state) {
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "[${prev.name}] ${evt::class.simpleName} -> [${state.name}]")
+        }
+        lastEvent = null
         val status = state.toLegacyStatus()
         _connectionStatus.value = status
         _isConnected.value = status == ConnectionStatus.CONNECTED || status == ConnectionStatus.GATEWAY_CONNECTED
@@ -257,7 +272,7 @@ class ConnectionManager @Inject constructor(
 
     private fun handleTransportSignal(signal: SyncSseSignal) {
         val route = routeForBaseUrl(signal.routeBaseUrl)
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, title = "SSE信号", message = "signal=${signal::class.simpleName} url=${signal.routeBaseUrl} route=$route")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "SSE信号 signal=${signal::class.simpleName} url=${signal.routeBaseUrl} route=$route")
         if (route == null) return
         when (signal) {
             is SyncSseSignal.ConnectStarted -> Unit
@@ -287,6 +302,8 @@ class ConnectionManager @Inject constructor(
 
     private fun ConnState.toLegacyStatus(): ConnectionStatus = when (this) {
         is ConnState.Idle -> ConnectionStatus.DISCONNECTED
+        is ConnState.ProbingNetwork -> ConnectionStatus.CONNECTING
+        is ConnState.WaitingForNetwork -> ConnectionStatus.DISCONNECTED
         is ConnState.ProbingDirect -> ConnectionStatus.CONNECTING
         is ConnState.ProbingGateway -> ConnectionStatus.CONNECTING
         is ConnState.Connecting -> ConnectionStatus.CONNECTING
@@ -301,6 +318,8 @@ class ConnectionManager @Inject constructor(
 
     private fun ConnState.toPhase(): ConnectionPhase = when (this) {
         is ConnState.Idle -> ConnectionPhase.DISCONNECTED
+        is ConnState.ProbingNetwork -> ConnectionPhase.EVALUATING
+        is ConnState.WaitingForNetwork -> ConnectionPhase.DISCONNECTED
         is ConnState.ProbingDirect -> ConnectionPhase.EVALUATING
         is ConnState.ProbingGateway -> ConnectionPhase.EVALUATING
         is ConnState.Connecting -> ConnectionPhase.CONNECTING
@@ -323,6 +342,8 @@ class ConnectionManager @Inject constructor(
 
     private val ConnState.profile: ServerProfile? get() = when (this) {
         is ConnState.Idle -> profile
+        is ConnState.ProbingNetwork -> profile
+        is ConnState.WaitingForNetwork -> profile
         is ConnState.ProbingDirect -> profile
         is ConnState.ProbingGateway -> profile
         is ConnState.Connecting -> profile

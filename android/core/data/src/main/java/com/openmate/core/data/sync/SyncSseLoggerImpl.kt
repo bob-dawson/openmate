@@ -11,9 +11,7 @@ class SyncSseLoggerImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sse,
-            title = "发起SSE连接",
-            message = "connecting to /api/bridge/events token=$hasToken",
-            traceId = traceId,
+            message = "发起SSE连接 connecting to /api/bridge/events token=$hasToken trace=$traceId",
         )
     }
 
@@ -21,9 +19,7 @@ class SyncSseLoggerImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sse,
-            title = "SSE连接成功",
-            message = "connected to sync event stream cost=${costMs}ms",
-            traceId = traceId,
+            message = "SSE连接成功 connected to sync event stream cost=${costMs}ms trace=$traceId",
         )
     }
 
@@ -31,9 +27,7 @@ class SyncSseLoggerImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sse,
-            title = "主动断开SSE",
-            message = "disconnect requested currentBaseUrl=$currentBaseUrl",
-            traceId = traceId,
+            message = "主动断开SSE disconnect requested currentBaseUrl=$currentBaseUrl${traceId?.let { " trace=$it" }.orEmpty()}",
         )
     }
 
@@ -41,9 +35,7 @@ class SyncSseLoggerImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Error,
             category = SyncLogCategory.Sse,
-            title = "SSE连接失败",
-            message = "${error.javaClass.simpleName}: ${error.message}",
-            traceId = traceId,
+            message = "SSE连接失败 ${error.javaClass.simpleName}: ${error.message} trace=$traceId",
         )
     }
 
@@ -51,9 +43,7 @@ class SyncSseLoggerImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Warn,
             category = SyncLogCategory.Sse,
-            title = "SSE断开",
-            message = "stream closed unexpectedly reconnectIn=3000ms",
-            traceId = traceId,
+            message = "SSE断开 stream closed unexpectedly reconnectIn=3000ms trace=$traceId",
         )
     }
 
@@ -61,10 +51,8 @@ class SyncSseLoggerImpl @Inject constructor(
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sse,
+            message = "收到Bridge事件 type=${event.type} messageId=${event.messageId} partId=${event.partId} trace=$traceId",
             sessionId = event.sessionId,
-            title = "收到Bridge事件",
-            message = "type=${event.type} messageId=${event.messageId} partId=${event.partId}",
-            traceId = traceId,
         )
     }
 }

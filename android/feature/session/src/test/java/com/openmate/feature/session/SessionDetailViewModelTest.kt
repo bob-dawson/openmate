@@ -1340,11 +1340,7 @@ class SessionDetailViewModelTest {
                 else -> SyncLogCategory.Sync
             },
             sessionId = text.substringAfter("session=", "").substringBefore(' ').ifBlank { null },
-            title = text.substringAfter("] ").substringBefore(" trace=").substringBefore(" session=").substringBefore(" message="),
-            message = text.substringAfter("message=", ""),
-            bytes = null,
-            relatedSeq = null,
-            traceId = text.substringAfter("trace=", "").substringBefore(' ').ifBlank { null },
+            message = text.substringAfter("] ", ""),
         )
 
     private class FakeSyncSseConnection : SyncSseConnection {

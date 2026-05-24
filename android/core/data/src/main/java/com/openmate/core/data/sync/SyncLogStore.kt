@@ -16,19 +16,15 @@ class SyncLogStore @Inject constructor() {
 
     fun append(entry: SyncLogEntry) {
         _entries.update { entries ->
-            (entries + entry).takeLast(2000)
+            (entries + entry).takeLast(500)
         }
     }
 
     fun log(
         level: SyncLogLevel,
         category: SyncLogCategory,
-        sessionId: String? = null,
-        title: String,
         message: String,
-        bytes: Int? = null,
-        relatedSeq: Long? = null,
-        traceId: String? = null,
+        sessionId: String? = null,
     ) {
         append(
             SyncLogEntry(
@@ -37,11 +33,7 @@ class SyncLogStore @Inject constructor() {
                 level = level,
                 category = category,
                 sessionId = sessionId,
-                title = title,
                 message = message,
-                bytes = bytes,
-                relatedSeq = relatedSeq,
-                traceId = traceId,
             )
         )
     }

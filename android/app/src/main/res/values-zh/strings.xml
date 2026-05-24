@@ -57,7 +57,7 @@
     <string name="model">Model</string>
     <string name="mode_plan">模式: Plan → Build</string>
     <string name="mode_build">模式: Build → Plan</string>
-    <string name="compact">Compact</string>
+    <string name="compact">压缩</string>
     <string name="compacting">压缩中…</string>
     <string name="skill">技能</string>
     <string name="attach_file">附加文件</string>

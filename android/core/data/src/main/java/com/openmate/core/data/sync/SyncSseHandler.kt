@@ -48,10 +48,8 @@ class SyncSseHandler @Inject constructor(
                 logStore.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Sse,
+                    message = "Bridge事件触发同步 type=${event.type} messageId=${event.messageId} partId=${event.partId} trace=$notifyTrace",
                     sessionId = sessionId,
-                    title = "Bridge事件触发同步",
-                    message = "type=${event.type} messageId=${event.messageId} partId=${event.partId}",
-                    traceId = notifyTrace,
                 )
                 performSync(sessionId)
             }
@@ -76,10 +74,8 @@ class SyncSseHandler @Inject constructor(
             logStore.log(
                 level = SyncLogLevel.Info,
                 category = SyncLogCategory.Sync,
+                message = "发起增量同步 trigger=sse trace=$syncTrace",
                 sessionId = sessionId,
-                title = "发起增量同步",
-                message = "trigger=sse",
-                traceId = syncTrace,
             )
             repository.incrementalSyncAndNotify(sessionId)
             Log.d("SyncSseHandler", "sync done: ${System.currentTimeMillis() - t0}ms")
@@ -87,10 +83,8 @@ class SyncSseHandler @Inject constructor(
             logStore.log(
                 level = SyncLogLevel.Error,
                 category = SyncLogCategory.Sync,
+                message = "自动增量同步失败 ${e.javaClass.simpleName}: ${e.message} trace=$syncTrace",
                 sessionId = sessionId,
-                title = "自动增量同步失败",
-                message = "${e.javaClass.simpleName}: ${e.message}",
-                traceId = syncTrace,
             )
             Log.w("SyncSseHandler", "sync failed: ${e.message}", e)
         } finally {

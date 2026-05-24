@@ -45,6 +45,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Card
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -125,13 +126,10 @@ internal fun shouldScrollToBottomOnInitialLoad(
 }
 
 internal fun sessionDetailMenuItems(): List<String> = listOf(
-    "Abort",
-    "Model",
-    "Skill",
-    "同步日志",
-    "Refresh",
     "Rename",
     "Delete",
+    "Skill",
+    "同步日志",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -447,18 +445,33 @@ fun SessionDetailScreen(
                             onDismissRequest = { menuExpanded = false },
                         ) {
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.rename)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    renameText = sessionTitle
+                                    showRenameDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.delete)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    showDeleteDialog = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.skill)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.loadSkills()
+                                    showSkillPicker = true
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.abort)) },
                                 onClick = {
                                     menuExpanded = false
                                     viewModel.abort(sessionID)
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.model)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    viewModel.loadProviders(forceRefresh = false)
-                                    showModelPicker = true
                                 },
                             )
                             if (selectedModel != null) {
@@ -471,21 +484,19 @@ fun SessionDetailScreen(
                                     enabled = compactActionEnabled,
                                 )
                             }
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.skill)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    viewModel.loadSkills()
-                                    showSkillPicker = true
-                                },
-                             )
-                             DropdownMenuItem(
-                                text = { Text(stringResource(R.string.refresh)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    viewModel.refresh()
-                                },
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "调试",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                                HorizontalDivider(modifier = Modifier.weight(1f).padding(start = 8.dp))
+                            }
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.resync)) },
                                 onClick = {
@@ -507,21 +518,6 @@ fun SessionDetailScreen(
                                     viewModel.uploadDatabase()
                                 },
                                 enabled = !viewModel.isUploadingDb.value,
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.rename)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    renameText = sessionTitle
-                                    showRenameDialog = true
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.delete)) },
-                                onClick = {
-                                    menuExpanded = false
-                                    showDeleteDialog = true
-                                },
                             )
                         }
                     }

@@ -90,9 +90,7 @@ class SyncDebugControllerTest {
             logStore.log(
                 level = SyncLogLevel.Info,
                 category = SyncLogCategory.Sse,
-                title = "主动断开SSE",
-                message = "disconnect requested currentBaseUrl=$currentBaseUrl",
-                traceId = traceId,
+                message = "主动断开SSE disconnect requested currentBaseUrl=$currentBaseUrl${traceId?.let { " trace=$it" }.orEmpty()}",
             )
             currentBaseUrl = null
         }
