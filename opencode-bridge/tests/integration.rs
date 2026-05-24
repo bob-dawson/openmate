@@ -51,26 +51,6 @@ fn test_app_with_dir(dir: &std::path::Path) -> (Router, openmate::state::AppStat
     (router, state)
 }
 
-fn test_app_with_auth_disabled(dir: &std::path::Path) -> Router {
-    let db = temp_bridge_db();
-    db.init_default_configs().unwrap();
-    db.set_config("opencode.auto_start", "false").unwrap();
-    db.set_config("bridge.auth_enabled", "false").unwrap();
-    db.set_config("fs.allowed_paths", &dir.to_string_lossy()).unwrap();
-    let state = create_app_state_with_db(create_shared_buffer(), Some(db));
-    Router::new()
-        .route("/api/bridge/status", get(bridge::router::status))
-        .route("/api/bridge/pair/request", post(auth::pair::pair_request))
-        .route("/api/bridge/pair/approve", post(auth::pair::pair_approve))
-        .route("/api/bridge/pair/confirm", post(auth::pair::pair_confirm))
-        .route("/api/bridge/fs/list", get(fs::router::list))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            auth::middleware::auth_middleware,
-        ))
-        .with_state(state)
-}
-
 
 #[tokio::test]
 async fn test_status_endpoint() {
@@ -511,6 +491,8 @@ async fn test_status_is_public() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(json["bridge"]["auth_enabled"].is_boolean());
 
+    assert_eq!(json["bridge"]["auth_enabled"], true);
+
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -659,29 +641,6 @@ async fn test_confirm_from_different_ip_fails() {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["token"].as_str().unwrap().len() > 0);
     }
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[tokio::test]
-async fn test_auth_disabled_allows_all_requests() {
-    let dir = std::env::temp_dir().join("bridge_int_auth_disabled");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("test.txt"), "hello").unwrap();
-
-    let app = test_app_with_auth_disabled(&dir);
-
-    let req = axum::http::Request::builder()
-        .uri(&format!(
-            "/api/bridge/fs/list?path={}",
-            url_encode(&dir.to_string_lossy())
-        ))
-        .body(axum::body::Body::empty())
-        .unwrap();
-
-    let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 200);
 
     let _ = std::fs::remove_dir_all(&dir);
 }

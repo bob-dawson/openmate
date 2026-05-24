@@ -112,14 +112,6 @@ impl Config {
                 description: "Bridge HTTP server listen address".into(),
             },
             ConfigEntry {
-                key: "bridge.auth_enabled".into(),
-                value: String::new(),
-                default: "true".into(),
-                r#type: "bool".into(),
-                needs_restart: false,
-                description: "Require authentication for API access".into(),
-            },
-            ConfigEntry {
                 key: "opencode.binary".into(),
                 value: String::new(),
                 default: "opencode".into(),
@@ -183,22 +175,6 @@ impl Config {
                 needs_restart: false,
                 description: "Comma-separated allowed file paths (empty = all)".into(),
             },
-            ConfigEntry {
-                key: "gateway.url".into(),
-                value: String::new(),
-                default: "https://gateway.clawmate.net".into(),
-                r#type: "string".into(),
-                needs_restart: true,
-                description: "Relay gateway URL".into(),
-            },
-            ConfigEntry {
-                key: "gateway.auto_connect".into(),
-                value: String::new(),
-                default: "true".into(),
-                r#type: "bool".into(),
-                needs_restart: true,
-                description: "Auto-connect to relay gateway".into(),
-            },
         ]
     }
 
@@ -250,7 +226,7 @@ impl Config {
             bridge: BridgeConfig {
                 port: get_u16("bridge.port", 4097),
                 hostname: get("bridge.hostname", "0.0.0.0"),
-                auth_enabled: get_bool("bridge.auth_enabled", true),
+                auth_enabled: true,
             },
             opencode: OpencodeConfig {
                 binary: get("opencode.binary", "opencode"),
@@ -276,7 +252,6 @@ impl Config {
         let entries = vec![
             ("bridge.port".to_string(), self.bridge.port.to_string()),
             ("bridge.hostname".to_string(), self.bridge.hostname.clone()),
-            ("bridge.auth_enabled".to_string(), self.bridge.auth_enabled.to_string()),
             ("opencode.binary".to_string(), self.opencode.binary.clone()),
             ("opencode.hostname".to_string(), self.opencode.hostname.clone()),
             ("opencode.port".to_string(), self.opencode.port.to_string()),

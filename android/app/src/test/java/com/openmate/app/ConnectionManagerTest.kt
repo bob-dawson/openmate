@@ -323,7 +323,7 @@ class ConnectionManagerTest {
                                 "bridge": {
                                   "version": "1.0.0",
                                   "port": 4097,
-                                  "auth_enabled": false,
+                                  "auth_enabled": true,
                                   "instance_id": "$directBridgeInstanceId"
                                 },
                               "opencode": {

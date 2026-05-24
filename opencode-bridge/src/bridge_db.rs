@@ -298,7 +298,6 @@ impl BridgeDb {
         vec![
             ("bridge.port", "4097".to_string()),
             ("bridge.hostname", "0.0.0.0".to_string()),
-            ("bridge.auth_enabled", "true".to_string()),
             ("opencode.binary", "opencode".to_string()),
             ("opencode.hostname", "127.0.0.1".to_string()),
             ("opencode.port", "4096".to_string()),

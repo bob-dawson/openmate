@@ -53,7 +53,7 @@ data class BridgeInfoDto(
     @SerialName("actual_port")
     val actualPort: Int? = null,
     @SerialName("auth_enabled")
-    val authEnabled: Boolean = false,
+    val authEnabled: Boolean = true,
     @SerialName("instance_id")
     val instanceId: String = "",
 )

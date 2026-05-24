@@ -54,6 +54,12 @@ pub async fn update_config(
     let mut entries_to_save: Vec<(String, String)> = Vec::new();
 
     for update in &body.configs {
+        if update.key == "bridge.auth_enabled" || update.key == "gateway.url" {
+            return Err(AppError::ConfigValidation(format!(
+                "{} is not configurable via this API",
+                update.key
+            )));
+        }
         let entry = metadata.get(&update.key).ok_or_else(|| {
             AppError::ConfigValidation(format!("Unknown config key: {}", update.key))
         })?;
