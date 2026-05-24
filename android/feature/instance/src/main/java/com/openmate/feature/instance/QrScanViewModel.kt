@@ -8,6 +8,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.network.InstallationIdProvider
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.TokenStore
+import com.openmate.core.network.dto.ScanPairConfirmResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,7 @@ import java.net.URL
 import javax.inject.Inject
 
 private const val TAG = "QrScanViewModel"
+private const val GATEWAY_URL = "https://gateway.clawmate.net"
 
 @HiltViewModel
 class QrScanViewModel @Inject constructor(
@@ -46,16 +48,9 @@ class QrScanViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val baseUrl = "http://${parsed.address}:${parsed.port}"
-                val saved = apiClient.baseUrl
-                apiClient.baseUrl = baseUrl
                 val clientDeviceId = installationIdProvider.getInstallationId()
                 val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-                val response = try {
-                    apiClient.bridgeScanPairConfirm(parsed.scanToken, deviceName, clientDeviceId)
-                } finally {
-                    apiClient.baseUrl = saved
-                }
+                val response = performScanPair(parsed, deviceName, clientDeviceId)
 
                 Log.d(TAG, "Scan pair confirmed, device_id=${response.deviceId}")
                 _scanState.value = ScanResult(
@@ -72,6 +67,40 @@ class QrScanViewModel @Inject constructor(
                 processed = false
                 _scanState.value = ScanUiStateError("Pairing failed: ${e.message}")
             }
+        }
+    }
+
+    private suspend fun performScanPair(
+        parsed: ParsedQrUrl,
+        deviceName: String,
+        clientDeviceId: String,
+    ): ScanPairConfirmResponse {
+        if (parsed.instanceId.isNotBlank()) {
+            val online = apiClient.isGatewayBridgeOnline(GATEWAY_URL, parsed.instanceId)
+            if (online) {
+                Log.d(TAG, "Bridge online via gateway, pairing through gateway")
+                return apiClient.bridgeScanPairConfirmViaGateway(
+                    GATEWAY_URL, parsed.instanceId, parsed.scanToken, deviceName, clientDeviceId,
+                )
+            }
+            Log.d(TAG, "Bridge not online via gateway, falling back to LAN")
+        }
+
+        return pairViaLan(parsed, deviceName, clientDeviceId)
+    }
+
+    private suspend fun pairViaLan(
+        parsed: ParsedQrUrl,
+        deviceName: String,
+        clientDeviceId: String,
+    ): ScanPairConfirmResponse {
+        val directUrl = "http://${parsed.address}:${parsed.port}"
+        val saved = apiClient.baseUrl
+        apiClient.baseUrl = directUrl
+        try {
+            return apiClient.bridgeScanPairConfirm(parsed.scanToken, deviceName, clientDeviceId)
+        } finally {
+            apiClient.baseUrl = saved
         }
     }
 

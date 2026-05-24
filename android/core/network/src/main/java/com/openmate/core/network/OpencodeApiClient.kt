@@ -466,6 +466,38 @@ class OpencodeApiClient(
         json.decodeFromString(responseBody)
     }
 
+    suspend fun bridgeScanPairConfirmViaGateway(
+        gatewayUrl: String,
+        instanceId: String,
+        scanToken: String,
+        deviceName: String,
+        clientDeviceId: String,
+    ): ScanPairConfirmResponse {
+        val saved = baseUrl
+        val savedIid = gatewayInterceptor?.instanceId
+        baseUrl = gatewayUrl
+        gatewayInterceptor?.instanceId = instanceId
+        try {
+            return bridgeScanPairConfirm(scanToken, deviceName, clientDeviceId)
+        } finally {
+            baseUrl = saved
+            gatewayInterceptor?.instanceId = savedIid
+        }
+    }
+
+    suspend fun isGatewayBridgeOnline(gatewayUrl: String, instanceId: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("$gatewayUrl/api/gateway/status?instance_id=$instanceId")
+                .get()
+                .build()
+            val response = OkHttpClient().newCall(request).execute()
+            response.isSuccessful
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun bridgeOpencodeVersion(): OpencodeVersionResponse {
         return get("/api/bridge/opencode/latest-version")
     }
