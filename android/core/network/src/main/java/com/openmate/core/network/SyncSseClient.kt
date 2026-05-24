@@ -70,12 +70,17 @@ class SyncSseClient @Inject constructor(
                         activeCall.set(call)
                         val response = call.execute()
                         if (!response.isSuccessful) {
-                            _connectionStatus.value = ConnectionStatus.ERROR
-                            _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, "http ${response.code}"))
-                            logger.logConnectFailure(traceId, IllegalStateException("http ${response.code}"))
-                            Log.w("SyncSseClient", "SSE connect returned ${response.code}")
-                            response.close()
-                            delay(5000)
+                            if (connectionGeneration.get() != generation) {
+                                Log.d("SyncSseClient", "ignoring http error from stale generation: ${response.code}")
+                                response.close()
+                            } else {
+                                _connectionStatus.value = ConnectionStatus.ERROR
+                                _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, "http ${response.code}"))
+                                logger.logConnectFailure(traceId, IllegalStateException("http ${response.code}"))
+                                Log.w("SyncSseClient", "SSE connect returned ${response.code}")
+                                response.close()
+                                delay(5000)
+                            }
                             continue
                         }
                         _connectionStatus.value = ConnectionStatus.CONNECTED
@@ -114,6 +119,8 @@ class SyncSseClient @Inject constructor(
                             if (currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
                                 _transportSignals.tryEmit(SyncSseSignal.StreamClosed(baseUrl))
                                 logger.logStreamClosed(traceId)
+                            } else {
+                                Log.d("SyncSseClient", "ignoring stream closed from stale generation")
                             }
                         } finally {
                             activeCall.compareAndSet(call, null)
@@ -124,10 +131,14 @@ class SyncSseClient @Inject constructor(
                         Log.d("SyncSseClient", "connect cancelled, propagating")
                         throw e
                     } catch (e: Exception) {
-                        _connectionStatus.value = ConnectionStatus.ERROR
-                        _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, e.message))
-                        logger.logConnectFailure(traceId, e)
-                        Log.w("SyncSseClient", "SSE error: ${e.javaClass.simpleName}: ${e.message}")
+                        if (connectionGeneration.get() != generation) {
+                            Log.d("SyncSseClient", "ignoring error from stale generation: ${e.javaClass.simpleName}")
+                        } else {
+                            _connectionStatus.value = ConnectionStatus.ERROR
+                            _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, e.message))
+                            logger.logConnectFailure(traceId, e)
+                            Log.w("SyncSseClient", "SSE error: ${e.javaClass.simpleName}: ${e.message}")
+                        }
                     }
                     if (currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
                         delay(3000)

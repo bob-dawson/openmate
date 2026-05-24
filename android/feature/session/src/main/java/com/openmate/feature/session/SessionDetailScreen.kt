@@ -106,6 +106,7 @@ import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
 import com.openmate.feature.session.component.SessionMessageSearchPanel
 import com.openmate.feature.session.component.AgentPickerSheet
+import com.openmate.feature.session.component.McpPickerSheet
 import com.openmate.feature.session.component.ModelPickerSheet
 import com.openmate.feature.session.component.SelectedModel
 import com.openmate.feature.session.component.SkillPickerSheet
@@ -166,6 +167,7 @@ fun SessionDetailScreen(
     val connectionStatus by viewModel.connectionStatus.collectAsState()
     val sessionRevert by viewModel.sessionRevert.collectAsState()
     val skills by viewModel.skills.collectAsState()
+    val mcpServers by viewModel.mcpServers.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
@@ -199,6 +201,7 @@ fun SessionDetailScreen(
     var showModelPicker by remember { mutableStateOf(false) }
     var showVariantPicker by remember { mutableStateOf(false) }
     var showSkillPicker by remember { mutableStateOf(false) }
+    var showMcpPicker by remember { mutableStateOf(false) }
     var showAgentPicker by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showSyncLogs by remember { mutableStateOf(false) }
@@ -465,6 +468,14 @@ fun SessionDetailScreen(
                                     menuExpanded = false
                                     viewModel.loadSkills()
                                     showSkillPicker = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("MCP") },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.loadMcpServers()
+                                    showMcpPicker = true
                                 },
                             )
                             DropdownMenuItem(
@@ -1127,6 +1138,14 @@ fun SessionDetailScreen(
                 showAgentPicker = false
             },
             onDismiss = { showAgentPicker = false },
+        )
+    }
+
+    if (showMcpPicker) {
+        McpPickerSheet(
+            servers = mcpServers,
+            onToggle = { name, enable -> viewModel.toggleMcp(name, enable) },
+            onDismiss = { showMcpPicker = false },
         )
     }
 

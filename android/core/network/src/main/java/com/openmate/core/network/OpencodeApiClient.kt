@@ -15,6 +15,7 @@ import com.openmate.core.network.dto.BridgeStatusResponse
 import com.openmate.core.network.dto.BridgeWriteRequest
 import com.openmate.core.network.dto.FileNodeDto
 import com.openmate.core.network.dto.HealthDto
+import com.openmate.core.network.dto.McpServerEntry
 import com.openmate.core.network.dto.MessageHeaderDto
 import com.openmate.core.network.dto.OpencodeUpgradeResponse
 import com.openmate.core.network.dto.OpencodeUpgradeStatusResponse
@@ -264,6 +265,45 @@ class OpencodeApiClient(
 
     suspend fun getSkills(): List<SkillInfoDto> {
         return getList("/skill")
+    }
+
+    suspend fun getMcpStatus(directory: String? = null): List<McpServerEntry> = withContext(Dispatchers.IO) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        val request = requestBuilder("GET", "/mcp", params).get().build()
+        val route = currentRoute()
+        try {
+            val response = client.newCall(request).execute()
+            route?.let { routeEvidenceReporter?.reportSuccess(it) }
+            val body = response.body?.string() ?: return@withContext emptyList()
+            if (!response.isSuccessful) {
+                throw ServerUnavailableException("HTTP ${response.code}: $body")
+            }
+            val obj = json.parseToJsonElement(body).jsonObject
+            obj.entries.map { (name, element) ->
+                val statusObj = element.jsonObject
+                McpServerEntry(
+                    name = name,
+                    status = statusObj["status"]?.jsonPrimitive?.content ?: "unknown",
+                    error = statusObj["error"]?.jsonPrimitive?.content,
+                )
+            }
+        } catch (e: Exception) {
+            route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
+            throw e
+        }
+    }
+
+    suspend fun connectMcp(name: String, directory: String? = null) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/mcp/$name/connect", emptyMap<String, String>(), params)
+    }
+
+    suspend fun disconnectMcp(name: String, directory: String? = null) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["directory"] = it }
+        postUnit("/mcp/$name/disconnect", emptyMap<String, String>(), params)
     }
 
     suspend fun summarizeSession(sessionID: String, providerID: String, modelID: String, directory: String? = null) {

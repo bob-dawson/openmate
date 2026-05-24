@@ -37,6 +37,7 @@ import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.common.guessMimeForAttachment
+import com.openmate.core.network.dto.McpServerEntry
 import com.openmate.core.network.dto.SkillInfoDto
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -990,6 +991,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _skills = MutableStateFlow<List<SkillInfoDto>>(emptyList())
     val skills: StateFlow<List<SkillInfoDto>> = _skills.asStateFlow()
 
+    private val _mcpServers = MutableStateFlow<List<McpServerEntry>>(emptyList())
+    val mcpServers: StateFlow<List<McpServerEntry>> = _mcpServers.asStateFlow()
+
     fun compact(sessionID: String) {
         val model = _selectedModel.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -1015,6 +1019,32 @@ class SessionDetailViewModel @Inject constructor(
     fun useSkill(skillName: String) {
         val current = _inputText.value
         _inputText.value = (if (current.isNotBlank()) "$current\n" else "") + "/skill $skillName"
+    }
+
+    fun loadMcpServers() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                _mcpServers.value = apiClient.getMcpStatus(currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "loadMcpServers failed", e)
+            }
+        }
+    }
+
+    fun toggleMcp(name: String, enable: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (enable) {
+                    apiClient.connectMcp(name, currentDirectory.ifBlank { null })
+                } else {
+                    apiClient.disconnectMcp(name, currentDirectory.ifBlank { null })
+                }
+                _mcpServers.value = apiClient.getMcpStatus(currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.e(TAG, "toggleMcp failed", e)
+                _errorMessage.value = "MCP toggle failed: ${e.message}"
+            }
+        }
     }
 
     fun insertFilePath(path: String) {
