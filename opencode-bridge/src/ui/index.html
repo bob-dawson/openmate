@@ -489,7 +489,7 @@ async function loadQR() {
   } catch(e) {
     console.error('loadQR error:', e);
   }
-  qrRefreshTimer = setInterval(updateQR, 60000);
+  qrRefreshTimer = setInterval(updateQR, 3000);
 }
 
 async function updateQR() {

@@ -20,13 +20,25 @@ pub struct ScanConfirmRequest {
 pub async fn scan_generate(
     State(state): State<AppState>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let token_bytes = super::key::generate_random_bytes(32);
-    let token = super::key::hex_encode(&token_bytes);
-
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
+
+    {
+        let st = state.scan_token.read().await;
+        if let Some(entry) = st.as_ref() {
+            if entry.expires_at > now {
+                return Ok(Json(serde_json::json!({
+                    "scan_token": entry.token,
+                    "expires_at": entry.expires_at,
+                })));
+            }
+        }
+    }
+
+    let token_bytes = super::key::generate_random_bytes(32);
+    let token = super::key::hex_encode(&token_bytes);
 
     let expires_at = now + SCAN_TOKEN_TTL_SECS * 1000;
 
