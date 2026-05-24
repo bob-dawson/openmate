@@ -135,6 +135,7 @@ class SessionDetailViewModel @Inject constructor(
     val sessionRetryStatus: StateFlow<SessionRetryStatus?> = _sessionRetryStatus.asStateFlow()
 
     private var wasBusy = false
+    private var messageIdCounter = 0
     private val _sessionStatus = MutableStateFlow("")
     val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
 
@@ -424,7 +425,7 @@ class SessionDetailViewModel @Inject constructor(
                 try {
                     _previewFileContent.value = apiClient.bridgeReadFile(resolvedPath)
                 } catch (e: Exception) {
-                    _errorMessage.value = e.message ?: "Failed to read file"
+                    _errorMessage.value = appContext.getString(R.string.failed_read_file)
                 } finally {
                     _previewFileLoading.value = false
                 }
@@ -472,7 +473,7 @@ class SessionDetailViewModel @Inject constructor(
                     _attachedFiles.value = _attachedFiles.value + FileAttachment(serverPath, filename, guessMimeForAttachment(filename))
                     draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
                 } catch (e: Exception) {
-                    _errorMessage.value = appContext.getString(R.string.upload_failed, e.message ?: "Unknown error")
+                    _errorMessage.value = appContext.getString(R.string.upload_failed_msg)
                 }
             }
             _isUploading.value = false
@@ -680,7 +681,7 @@ class SessionDetailViewModel @Inject constructor(
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "resync failed", e)
-                _errorMessage.value = "Resync failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.resync_failed)
             }
         }
     }
@@ -730,7 +731,7 @@ class SessionDetailViewModel @Inject constructor(
                 )
             } catch (e: Exception) {
                 Log.e(TAG, "uploadDatabase failed", e)
-                _errorMessage.value = "Upload DB failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.upload_db_failed)
             } finally {
                 _isUploadingDb.value = false
             }
@@ -848,7 +849,7 @@ class SessionDetailViewModel @Inject constructor(
                 sessionRepository.updateSession(sid, newTitle)
                 _sessionTitle.value = newTitle
             } catch (e: Exception) {
-                _errorMessage.value = "Rename failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.rename_session_failed)
             }
         }
     }
@@ -860,7 +861,7 @@ class SessionDetailViewModel @Inject constructor(
                 sessionRepository.deleteSession(sid)
                 withContext(Dispatchers.Main) { onDeleted() }
             } catch (e: Exception) {
-                _errorMessage.value = "Delete failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.delete_session_msg_failed)
             }
         }
     }
@@ -1007,9 +1008,32 @@ class SessionDetailViewModel @Inject constructor(
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
-                _errorMessage.value = "Compact failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.compact_failed)
             }
         }
+    }
+
+    fun initSession(sessionID: String) {
+        val model = _selectedModel.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val messageID = generateMessageID()
+                apiClient.initSession(sessionID, model.providerID, model.modelID, messageID, currentDirectory.ifBlank { null })
+                sessionMessageRepository.incrementalSync(sessionID)
+            } catch (e: Exception) {
+                Log.e(TAG, "initSession failed", e)
+                _errorMessage.value = appContext.getString(R.string.init_failed)
+            }
+        }
+    }
+
+    private fun generateMessageID(): String {
+        val timestamp = System.currentTimeMillis()
+        val counter = ++messageIdCounter
+        val now = (timestamp.toLong() shl 12) + counter
+        val timeHex = String.format("%012x", now)
+        val random = (1..14).map { "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".random() }.joinToString("")
+        return "msg_$timeHex$random"
     }
 
     fun loadSkills() {
@@ -1048,7 +1072,7 @@ class SessionDetailViewModel @Inject constructor(
                 _mcpServers.value = apiClient.getMcpStatus(currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "toggleMcp failed", e)
-                _errorMessage.value = "MCP toggle failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.mcp_toggle_failed)
             }
         }
     }
@@ -1649,7 +1673,7 @@ class SessionDetailViewModel @Inject constructor(
                     sessionId = sessionID,
                     message = "revert失败 evtID=$messageID error=${e.message}",
                 )
-                _errorMessage.value = "Revert failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.revert_failed)
             }
         }
     }
@@ -1694,7 +1718,7 @@ class SessionDetailViewModel @Inject constructor(
                     sessionId = sessionID,
                     message = "unrevert失败 error=${e.message}",
                 )
-                _errorMessage.value = "Unrevert failed: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.unrevert_failed)
             }
         }
     }

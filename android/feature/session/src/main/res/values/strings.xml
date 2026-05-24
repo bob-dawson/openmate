@@ -140,6 +140,16 @@
     <string name="file_too_large">File %1$s exceeds 20MB limit</string>
     <string name="upload_failed">Upload failed: %1$s</string>
     <string name="send_failed">Send failed</string>
+    <string name="create_session_failed">Failed to create session</string>
+    <string name="delete_session_failed">Failed to delete session</string>
+    <string name="resync_failed">Failed to resync</string>
+    <string name="upload_db_failed">Failed to upload database</string>
+    <string name="rename_session_failed">Failed to rename</string>
+    <string name="delete_session_msg_failed">Failed to delete</string>
+    <string name="compact_failed">Failed to compact</string>
+    <string name="mcp_toggle_failed">Failed to toggle MCP</string>
+    <string name="revert_failed">Failed to revert</string>
+    <string name="unrevert_failed">Failed to unrevert</string>
 
     <string name="content_desc_back">Back</string>
     <string name="content_desc_more">More</string>
@@ -174,7 +184,7 @@
     <string name="cannot_read_file">Cannot read file</string>
     <string name="file_too_large_upload">File too large (max 100MB)</string>
     <string name="upload_complete">Upload complete: %1$s</string>
-    <string name="upload_failed_msg">Upload failed: %1$s</string>
+    <string name="upload_failed_msg">Upload failed</string>
     <string name="failed_list_dir">Failed to list directory</string>
     <string name="failed_read_file">Failed to read file</string>
     <string name="file_cached">File already cached</string>
@@ -226,4 +236,6 @@
     <string name="up_to_date">Up to date</string>
     <string name="latest_version">Latest version</string>
     <string name="current_version">Current version</string>
+    <string name="init_session">Initialize Session</string>
+    <string name="init_failed">Failed to initialize session</string>
 </resources>

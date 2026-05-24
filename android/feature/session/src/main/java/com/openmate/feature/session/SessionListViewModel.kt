@@ -1,5 +1,6 @@
 package com.openmate.feature.session
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SessionRepository
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +23,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class SessionListViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val sessionRepository: SessionRepository,
     private val connectionRepository: ConnectionRepository,
 ) : ViewModel() {
@@ -78,7 +81,7 @@ class SessionListViewModel @Inject constructor(
                 withContext(Dispatchers.Main) { onCreated(session.id) }
             } catch (e: Exception) {
                 Log.e(TAG, "createSession failed", e)
-                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.create_session_failed)
             }
         }
     }
@@ -89,7 +92,7 @@ class SessionListViewModel @Inject constructor(
                 sessionRepository.deleteSession(id)
             } catch (e: Exception) {
                 Log.e(TAG, "deleteSession failed", e)
-                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.delete_session_failed)
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.openmate.feature.session
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +12,7 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.network.OpencodeApiClient
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +24,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class WorkspaceListViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val sessionRepository: SessionRepository,
     private val connectionRepository: ConnectionRepository,
     private val profileRepository: ServerProfileRepository,
@@ -101,7 +104,7 @@ class WorkspaceListViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "createSession failed", e)
-                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.create_session_failed)
             }
         }
     }
