@@ -32,6 +32,7 @@ fun ChatInputBar(
     onAbort: () -> Unit = {},
     isBusy: Boolean = false,
     isUploading: Boolean = false,
+    isSending: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -52,6 +53,7 @@ fun ChatInputBar(
                 )
             },
             maxLines = 4,
+            enabled = !isSending,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -77,7 +79,7 @@ fun ChatInputBar(
         } else {
             IconButton(
                 onClick = onSend,
-                enabled = text.isNotBlank() && !isUploading,
+                enabled = text.isNotBlank() && !isUploading && !isSending,
                 modifier = Modifier.height(40.dp),
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -86,7 +88,7 @@ fun ChatInputBar(
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
                     contentDescription = stringResource(R.string.content_desc_send),
-                    tint = if (text.isNotBlank()) {
+                    tint = if (text.isNotBlank() && !isSending) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant

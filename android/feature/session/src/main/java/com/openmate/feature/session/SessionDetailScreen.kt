@@ -155,6 +155,7 @@ fun SessionDetailScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val todos by viewModel.todos.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
+    val isSending by viewModel.isSending.collectAsState()
     val providers by viewModel.providers.collectAsState()
     val selectedModel by viewModel.selectedModel.collectAsState()
     val selectedVariant by viewModel.selectedVariant.collectAsState()
@@ -606,7 +607,7 @@ fun SessionDetailScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            if (isUploading) {
+            if (isUploading || isSending) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
             if (isLoading) {
@@ -935,6 +936,7 @@ fun SessionDetailScreen(
                 onAbort = { viewModel.abort(sessionID) },
                 isBusy = currentBusyStart != null || sessionRetryStatus != null,
                 isUploading = isUploading,
+                isSending = isSending,
             )
         }
     }

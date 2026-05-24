@@ -165,6 +165,9 @@ class SessionDetailViewModel @Inject constructor(
     private val _isUploading = MutableStateFlow(false)
     val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
 
+    private val _isSending = MutableStateFlow(false)
+    val isSending: StateFlow<Boolean> = _isSending.asStateFlow()
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
@@ -794,13 +797,11 @@ class SessionDetailViewModel @Inject constructor(
             sessionId = sessionID,
             message = "发送消息 send message requested textLength=${text.length} attachments=${_attachedFiles.value.size}",
         )
-        _inputText.value = ""
+        _isSending.value = true
         val model = _selectedModel.value
         val agent = _selectedAgent.value
         val variant = _selectedVariant.value
         val files = _attachedFiles.value
-        _attachedFiles.value = emptyList()
-        clearDraft(sessionID)
         val sendModelPID = if (isModelOverridden) model?.providerID else null
         val sendModelMID = if (isModelOverridden) model?.modelID else null
         val sendAgent = if (isAgentOverridden) agent else null
@@ -808,10 +809,15 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
                 apiClient.sendPrompt(sessionID, text, sendModelPID, sendModelMID, sendAgent, apiFiles, currentDirectory.ifBlank { null }, variant)
+                _inputText.value = ""
+                _attachedFiles.value = emptyList()
+                clearDraft(sessionID)
                 sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
-                _errorMessage.value = "${e.javaClass.simpleName}: ${e.message}"
+                _errorMessage.value = appContext.getString(R.string.send_failed)
+            } finally {
+                _isSending.value = false
             }
         }
     }

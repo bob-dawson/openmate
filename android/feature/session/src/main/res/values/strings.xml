@@ -139,6 +139,7 @@
     <string name="uploading">Uploading…</string>
     <string name="file_too_large">File %1$s exceeds 20MB limit</string>
     <string name="upload_failed">Upload failed: %1$s</string>
+    <string name="send_failed">Send failed</string>
 
     <string name="content_desc_back">Back</string>
     <string name="content_desc_more">More</string>

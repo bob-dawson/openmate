@@ -136,6 +136,7 @@
     <string name="uploading">上传中…</string>
     <string name="file_too_large">%1$s 超过 20MB 限制</string>
     <string name="upload_failed">上传失败：%1$s</string>
+    <string name="send_failed">发送失败</string>
 
     <string name="content_desc_back">返回</string>
     <string name="content_desc_more">更多</string>
