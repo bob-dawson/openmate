@@ -102,6 +102,7 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
     let shutdown = Arc::new(Notify::new());
     let shutdown_clone = shutdown.clone();
 
+    #[cfg(target_os = "windows")]
     if !_args.tray {
         let port_copy = port;
         tokio::spawn(async move {
@@ -110,6 +111,78 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
             tracing::info!("Opening browser: {}", url);
             let _ = open::that(&url);
         });
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let has_desktop = std::env::var("DISPLAY").is_ok()
+            || std::env::var("WAYLAND_DISPLAY").is_ok();
+        if has_desktop && !_args.tray {
+            let port_copy = port;
+            tokio::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                let url = format!("http://127.0.0.1:{}/ui/", port_copy);
+                tracing::info!("Opening browser: {}", url);
+                let _ = open::that(&url);
+            });
+        } else if !has_desktop {
+            let instance_id = config.gateway.instance_id.clone();
+            let port_copy = port;
+            tokio::spawn(async move {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+                let client = reqwest::Client::new();
+                let scan_url = format!("http://127.0.0.1:{}/api/bridge/pair/scan", port_copy);
+                let scan_token = match client.get(&scan_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        match resp.json::<serde_json::Value>().await {
+                            Ok(val) => val["scan_token"].as_str().unwrap_or("").to_string(),
+                            Err(_) => String::new(),
+                        }
+                    }
+                    _ => String::new(),
+                };
+
+                let qr_data = format!("openmate:iid={};st={}", instance_id, scan_token);
+                match qrcode::QrCode::new(&qr_data) {
+                    Ok(code) => {
+                        let qr_string = code
+                            .render::<qrcode::render::unicode::Dense1x2>()
+                            .quiet_zone(false)
+                            .module_dimensions(2, 1)
+                            .build();
+
+                        let machine_name = hostname::get()
+                            .ok()
+                            .and_then(|h| h.into_string().ok())
+                            .unwrap_or_else(|| "Bridge".to_string());
+
+                        let local_ip = local_ip_address::local_ip()
+                            .map(|ip| ip.to_string())
+                            .unwrap_or_else(|_| "unknown".to_string());
+
+                        println!();
+                        println!("╔══════════════════════════════════════╗");
+                        println!("║   OpenMate Bridge - Pair Your Phone  ║");
+                        println!("╚══════════════════════════════════════╝");
+                        println!();
+                        println!("  Bridge: {}", machine_name);
+                        println!("  IP:     {}:{}", local_ip, port_copy);
+                        println!();
+                        for line in qr_string.lines() {
+                            println!("  {}", line);
+                        }
+                        println!();
+                        println!("  Scan this QR code with the OpenMate app to pair.");
+                        println!("  Or open: http://{}:{}/ui/", local_ip, port_copy);
+                        println!();
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to generate QR code: {}", e);
+                    }
+                }
+            });
+        }
     }
 
     #[cfg(target_os = "windows")]
