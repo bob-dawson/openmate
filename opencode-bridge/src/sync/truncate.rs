@@ -50,7 +50,7 @@ fn truncate_event_reasoning_ended(data: &Value) -> Value {
     let mut result = data.clone();
     if let Some(obj) = result.as_object_mut() {
         if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
-            let truncated = truncate_ends_chars(text, 100);
+            let truncated = truncate_ends_chars(text, TEXT_KEEP);
             obj.insert(String::from("text"), Value::String(truncated));
         }
     }
@@ -288,12 +288,19 @@ fn truncate_event_part_updated(data: &Value) -> Value {
     result
 }
 
+const TEXT_KEEP: usize = 1500;
+
 fn truncate_user(data: &Value) -> Value {
     let mut result = data.clone();
     let obj = match result.as_object_mut() {
         Some(o) => o,
         None => return result,
     };
+
+    if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
+        let truncated = truncate_ends_chars(text, TEXT_KEEP);
+        obj.insert(String::from("text"), Value::String(truncated));
+    }
 
     if let Some(files) = obj.get_mut("files").and_then(|f| f.as_array_mut()) {
         for file in files.iter_mut() {
@@ -332,10 +339,17 @@ fn truncate_assistant(data: &Value) -> Value {
         for item in content.iter_mut() {
             let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
             match item_type {
-                "text" => {}
+                "text" => {
+                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                        let truncated = truncate_ends_chars(text, TEXT_KEEP);
+                        if let Some(io) = item.as_object_mut() {
+                            io.insert(String::from("text"), Value::String(truncated));
+                        }
+                    }
+                }
                 "reasoning" => {
                     if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                        let truncated = truncate_ends_chars(text, 100);
+                        let truncated = truncate_ends_chars(text, TEXT_KEEP);
                         if let Some(io) = item.as_object_mut() {
                             io.insert(String::from("text"), Value::String(truncated));
                         }
@@ -739,6 +753,16 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_user_long_text() {
+        let long_text: String = (0..5000).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let data = json!({"text": long_text, "files": [], "agents": []});
+        let result = truncate_user(&data);
+        let text = result["text"].as_str().unwrap();
+        assert!(text.contains("...[truncated]..."));
+        assert!(text.chars().count() < 5000);
+    }
+
+    #[test]
     fn test_truncate_assistant_removes_snapshot() {
         let data = json!({
             "content": [{"type": "text", "text": "hello"}],
@@ -755,8 +779,31 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_assistant_reasoning() {
-        let long_text: String = (0..300).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+    fn test_truncate_assistant_reasoning_short_not_truncated() {
+        let short_text: String = (0..300).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let data = json!({
+            "content": [{"type": "reasoning", "text": short_text}]
+        });
+        let result = truncate_assistant(&data);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(!text.contains("...[truncated]..."));
+        assert_eq!(text, short_text);
+    }
+
+    #[test]
+    fn test_truncate_assistant_long_text() {
+        let long_text: String = (0..5000).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let data = json!({
+            "content": [{"type": "text", "text": long_text}]
+        });
+        let result = truncate_assistant(&data);
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("...[truncated]..."));
+    }
+
+    #[test]
+    fn test_truncate_assistant_long_reasoning() {
+        let long_text: String = (0..5000).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
         let data = json!({
             "content": [{"type": "reasoning", "text": long_text}]
         });
@@ -964,7 +1011,7 @@ mod tests {
 
     #[test]
     fn test_truncate_event_reasoning_ended() {
-        let long_text: String = (0..300).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
+        let long_text: String = (0..5000).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
         let data = json!({
             "sessionID": "s1",
             "reasoningID": "r1",
