@@ -1,32 +1,30 @@
-use axum::response::IntoResponse;
-use axum::Json;
-use serde::Deserialize;
+use std::os::windows::process::CommandExt;
 
 use crate::error::AppError;
+use super::AutostartImpl;
 
-#[derive(Deserialize)]
-pub struct AutostartRequest {
-    pub enabled: bool,
-}
+pub struct WindowsAutostart;
 
-pub async fn get_autostart() -> Result<impl IntoResponse, AppError> {
-    let shortcut_path = get_startup_shortcut_path()?;
-    let exists = shortcut_path.exists();
-    Ok(Json(serde_json::json!({ "enabled": exists })))
-}
-
-pub async fn set_autostart(
-    Json(body): Json<AutostartRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let shortcut_path = get_startup_shortcut_path()?;
-
-    if body.enabled {
-        create_startup_shortcut(&shortcut_path)?;
-    } else {
-        remove_startup_shortcut(&shortcut_path)?;
+impl AutostartImpl for WindowsAutostart {
+    fn mode() -> &'static str {
+        "windows"
     }
 
-    Ok(Json(serde_json::json!({ "success": true, "enabled": body.enabled })))
+    fn is_enabled() -> bool {
+        get_startup_shortcut_path()
+            .map(|p| p.exists())
+            .unwrap_or(false)
+    }
+
+    fn set_enabled(enabled: bool) -> Result<(), AppError> {
+        let shortcut_path = get_startup_shortcut_path()?;
+        if enabled {
+            create_startup_shortcut(&shortcut_path)?;
+        } else {
+            remove_startup_shortcut(&shortcut_path)?;
+        }
+        Ok(())
+    }
 }
 
 fn get_startup_shortcut_path() -> Result<std::path::PathBuf, AppError> {
@@ -58,14 +56,11 @@ fn create_startup_shortcut(shortcut_path: &std::path::Path) -> Result<(), AppErr
         exe_str,
     );
 
-    let output = {
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
-            .creation_flags(0x08000000)
-            .output()
-            .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create shortcut: {}", e)))?
-    };
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+        .creation_flags(0x08000000)
+        .output()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("Failed to create shortcut: {}", e)))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
