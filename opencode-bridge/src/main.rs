@@ -211,6 +211,34 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
         });
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        let (tx, rx) = std::sync::mpsc::channel::<openmate::tray::TrayEvent>();
+        match openmate::tray::spawn_tray_thread(port, tx) {
+            Ok(_tray_handle) => {
+                let shutdown_signal = shutdown_clone.clone();
+                tokio::spawn(async move {
+                    while let Ok(event) = rx.recv() {
+                        match event {
+                            openmate::tray::TrayEvent::Quit => {
+                                shutdown_signal.notify_one();
+                                break;
+                            }
+                            openmate::tray::TrayEvent::OpenUi => {
+                                let url = format!("http://127.0.0.1:{}/ui/", port);
+                                let _ = open::that(&url);
+                            }
+                            openmate::tray::TrayEvent::ToggleAutostart => {}
+                        }
+                    }
+                });
+            }
+            Err(e) => {
+                tracing::warn!("System tray unavailable: {}", e);
+            }
+        }
+    }
+
     let server_shutdown = shutdown.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();

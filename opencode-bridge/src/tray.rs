@@ -406,11 +406,86 @@ fn set_autostart_enabled(enabled: bool) -> bool {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
+struct BridgeTray {
+    port: u16,
+    autostart_enabled: bool,
+    tx: mpsc::Sender<TrayEvent>,
+}
+
+#[cfg(target_os = "linux")]
+impl ksni::Tray for BridgeTray {
+    fn id(&self) -> String {
+        "openmate-bridge".into()
+    }
+    fn title(&self) -> String {
+        "OpenMate Bridge".into()
+    }
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            title: "OpenMate Bridge".into(),
+            description: format!("Port: {}", self.port).into(),
+            ..Default::default()
+        }
+    }
+    fn activate(&self, _x: i32, _y: i32) {
+        let _ = self.tx.send(TrayEvent::OpenUi);
+    }
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::*;
+        vec![
+            StandardItem {
+                label: "Open Management Page".into(),
+                activate: Box::new(|tray: &mut BridgeTray| {
+                    let _ = tray.tx.send(TrayEvent::OpenUi);
+                }),
+                ..Default::default()
+            },
+            Separator,
+            CheckmarkItem {
+                label: "Auto-start on boot".into(),
+                checked: self.autostart_enabled,
+                activate: Box::new(|tray: &mut BridgeTray| {
+                    tray.autostart_enabled = !tray.autostart_enabled;
+                    let _ = tray.tx.send(TrayEvent::ToggleAutostart);
+                }),
+                ..Default::default()
+            },
+            Separator,
+            StandardItem {
+                label: "Quit".into(),
+                activate: Box::new(|tray: &mut BridgeTray| {
+                    let _ = tray.tx.send(TrayEvent::Quit);
+                }),
+                ..Default::default()
+            },
+        ]
+    }
+}
+
+#[cfg(target_os = "linux")]
 pub fn spawn_tray_thread(
-    _port: u16,
-    _tx: mpsc::Sender<TrayEvent>,
-    _shutdown: std::sync::Arc<Notify>,
+    port: u16,
+    tx: mpsc::Sender<TrayEvent>,
 ) -> anyhow::Result<std::thread::JoinHandle<()>> {
-    Err(anyhow::anyhow!("System tray is not supported on this platform"))
+    if std::env::var("DBUS_SESSION_BUS_ADDRESS").is_err() {
+        tracing::warn!("D-Bus session bus not available, skipping system tray");
+        return Err(anyhow::anyhow!("D-Bus session bus not available"));
+    }
+
+    let tray = BridgeTray {
+        port,
+        autostart_enabled: false,
+        tx,
+    };
+    let handle = ksni::Handle::new(tray);
+
+    std::thread::Builder::new()
+        .name("tray".into())
+        .spawn(move || {
+            if let Err(e) = handle.run_blocking() {
+                tracing::error!("Tray error: {}", e);
+            }
+        })
+        .map_err(|e| anyhow::anyhow!("Failed to spawn tray thread: {}", e))
 }

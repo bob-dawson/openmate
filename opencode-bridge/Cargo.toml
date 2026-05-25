@@ -58,5 +58,8 @@ http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 tempfile = "3"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = "0.3"
+
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
