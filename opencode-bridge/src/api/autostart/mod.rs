@@ -13,6 +13,24 @@ mod linux;
 pub use windows::WindowsAutostart as Autostart;
 #[cfg(target_os = "linux")]
 pub use linux::LinuxAutostart as Autostart;
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+pub use self::unsupported::UnsupportedAutostart as Autostart;
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+mod unsupported {
+    use crate::error::AppError;
+    use super::AutostartImpl;
+
+    pub struct UnsupportedAutostart;
+
+    impl AutostartImpl for UnsupportedAutostart {
+        fn mode() -> &'static str { "unavailable" }
+        fn is_enabled() -> bool { false }
+        fn set_enabled(_: bool) -> Result<(), AppError> {
+            Err(AppError::Internal(anyhow::anyhow!("Autostart is not supported on this platform")))
+        }
+    }
+}
 
 pub trait AutostartImpl {
     fn mode() -> &'static str;

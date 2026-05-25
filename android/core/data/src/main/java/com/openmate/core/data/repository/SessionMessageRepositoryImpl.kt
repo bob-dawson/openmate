@@ -165,6 +165,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
             Log.w("SyncRepo", "incrementalSync skip: no sync state for $sessionId")
             return
         }
+        var hasTodoEvent = false
         val t0 = System.currentTimeMillis()
         val traceId = "inc-${System.nanoTime()}"
         Log.d(
@@ -279,6 +280,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
                             message = "增量消息处理 event type=${event.type} aggregateId=${event.aggregateId} bytes=$bytesValue seq=${event.seq} trace=$traceId",
                             sessionId = sessionId,
                         )
+
+                        if (!hasTodoEvent && event.data.toString().contains("todowrite")) {
+                            hasTodoEvent = true
+                        }
 
                         if (event.type.startsWith("message.removed") && !event.type.startsWith("message.part.removed")) {
                             val session = db.sessionDao().getById(sessionId)
@@ -445,7 +450,8 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                 sessionId = sessionId,
                                 result = SessionMessageSyncResult(
                                     lastSeq = newSeq,
-                                    changes = batchChanges
+                                    changes = batchChanges,
+                                    hasTodoEvent = hasTodoEvent,
                                 ),
                             )
                         )

@@ -1240,6 +1240,16 @@ class SessionDetailViewModel @Inject constructor(
         if (result.changes.isNotEmpty()) {
             recalculateMessageDerivedState(messageWindowState.messages)
         }
+        if (result.hasTodoEvent) {
+            val sid = currentSessionID ?: return
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    todoRepository.refreshTodos(sid)
+                } catch (e: Exception) {
+                    Log.e(TAG, "sync-triggered todo refresh failed", e)
+                }
+            }
+        }
     }
 
     private fun logMessageWindowState(

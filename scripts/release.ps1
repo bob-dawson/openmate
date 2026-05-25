@@ -82,7 +82,7 @@ function Generate-Changelog {
 
     $header = "# OpenMate $Version`n`nReleased: $(Get-Date -Format 'yyyy-MM-dd')`n"
 
-    $logArgs = @("--pretty=format:- %s (%h)", "--no-merges")
+    $logArgs = @("--pretty=format:%s", "--no-merges")
     if ($LastTag) {
         $logArgs += "$LastTag..HEAD"
     }
@@ -94,31 +94,54 @@ function Generate-Changelog {
     [Console]::OutputEncoding = $prevEncoding
     $commits = Get-Content $tmpFile -Encoding UTF8
     Remove-Item $tmpFile -Force
-    if (-not $commits) {
-        $commits = "(no commits since last tag)"
+
+    $features = [System.Collections.ArrayList]::new()
+    $fixes = [System.Collections.ArrayList]::new()
+    $other = [System.Collections.ArrayList]::new()
+
+    foreach ($c in $commits) {
+        $c = $c.Trim()
+        if (-not $c) { continue }
+        if ($c -match "^(docs?:|tooling:|Merge|test:|refactor)") { continue }
+        if ($c -match "^(feat|feature)[\(:]") {
+            [void]$features.Add($c)
+        } elseif ($c -match "^fix[\(:]") {
+            [void]$fixes.Add($c)
+        } else {
+            [void]$other.Add($c)
+        }
     }
 
-    $bridgeSection = "`n## Bridge`n"
-    $bridgeCommits = $commits | Where-Object { $_ -match "bridge|Bridge|sync" }
-    if ($bridgeCommits) {
-        $bridgeSection += ($bridgeCommits -join "`n") + "`n"
-    } else {
-        $bridgeSection += "(no bridge-specific commits)`n"
+    $sb = [System.Text.StringBuilder]::new()
+    [void]$sb.AppendLine($header)
+
+    if ($features.Count -gt 0) {
+        [void]$sb.AppendLine("## New Features")
+        foreach ($f in $features) {
+            $clean = $f -replace "^(feat|feature)[\(:]\s*", ""
+            [void]$sb.AppendLine("- $clean")
+        }
+        [void]$sb.AppendLine()
     }
 
-    $androidSection = "`n## Android`n"
-    $androidCommits = $commits | Where-Object { $_ -match "android|Android|compose|UI|message|session" }
-    if ($androidCommits) {
-        $androidSection += ($androidCommits -join "`n") + "`n"
-    } else {
-        $androidSection += "(no android-specific commits)`n"
+    if ($fixes.Count -gt 0) {
+        [void]$sb.AppendLine("## Bug Fixes")
+        foreach ($f in $fixes) {
+            $clean = $f -replace "^fix[\(:]\s*", ""
+            [void]$sb.AppendLine("- $clean")
+        }
+        [void]$sb.AppendLine()
     }
 
-    $allSection = "`n## All Commits`n"
-    $allSection += ($commits -join "`n") + "`n"
+    if ($other.Count -gt 0) {
+        [void]$sb.AppendLine("## Other Changes")
+        foreach ($o in $other) {
+            [void]$sb.AppendLine("- $o")
+        }
+        [void]$sb.AppendLine()
+    }
 
-    $content = $header + $bridgeSection + $androidSection + $allSection
-    [System.IO.File]::WriteAllText($OutPath, $content, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($OutPath, $sb.ToString(), [System.Text.UTF8Encoding]::new($false))
     Write-Host "  CHANGELOG written to $OutPath" -ForegroundColor Green
 }
 
@@ -171,7 +194,6 @@ if (-not $SkipBridge) {
         if ($LASTEXITCODE -ne 0) { throw "Bridge build failed" }
 
         Copy-Item "$BridgeRoot\target\release\openmate.exe" "$ReleaseDir\openmate.exe" -Force
-        Copy-Item "$BridgeRoot\bridge.toml" "$ReleaseDir\bridge.toml" -Force
         Write-Host "  Bridge Windows -> openmate.exe" -ForegroundColor Green
         $bridgeOk = $true
     } finally {
