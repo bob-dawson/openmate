@@ -156,7 +156,7 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
                         let qr_string = code
                             .render::<qrcode::render::unicode::Dense1x2>()
                             .quiet_zone(false)
-                            .module_dimensions(1, 2)
+                            .module_dimensions(2, 2)
                             .build();
 
                         let machine_name = hostname::get()
