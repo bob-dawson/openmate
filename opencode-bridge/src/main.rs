@@ -50,6 +50,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Service) => {
             init_console_logging();
+            #[cfg(target_os = "windows")]
+            return run_service_mode();
+            #[cfg(target_os = "linux")]
             return run_service_mode().await;
         }
         None => {}
@@ -77,8 +80,11 @@ fn init_capture_logging() -> openmate::log_capture::SharedLogBuffer {
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
 
+    let fmt_layer = tracing_subscriber::fmt::layer();
+
     let subscriber = tracing_subscriber::registry()
         .with(env_filter)
+        .with(fmt_layer)
         .with(capture_layer);
 
     subscriber.init();
