@@ -34,7 +34,7 @@ class SessionRepositoryImplTest {
     fun setUp() {
         server = MockWebServer()
         server.start()
-        dbProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication()))
+        dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
         repository = SessionRepositoryImpl(
             api = OpencodeApiClient(OkHttpClient(), baseUrl = server.url("/").toString().removeSuffix("/")),

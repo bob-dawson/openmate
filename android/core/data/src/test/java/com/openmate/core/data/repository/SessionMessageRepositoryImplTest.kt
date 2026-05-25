@@ -32,7 +32,7 @@ class SessionMessageRepositoryImplTest {
         server = MockWebServer()
         server.start()
 
-        dbProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication()))
+        dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
         val apiClient = OpencodeApiClient(OkHttpClient(), baseUrl = server.url("/").toString().removeSuffix("/"))
         logStore = SyncLogStore()

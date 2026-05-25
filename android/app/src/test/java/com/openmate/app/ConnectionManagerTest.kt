@@ -305,7 +305,7 @@ class ConnectionManagerTest {
         val profileRepository = FakeServerProfileRepository()
         val sseEventRepository = FakeSseEventRepository()
         val sessionRepository = FakeSessionRepository()
-        val databaseProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication()))
+        val databaseProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
         val gatewayInterceptor = GatewayInterceptor()
         val routeEvidenceReporter = RouteEvidenceReporter()
         val apiClient = OpencodeApiClient(

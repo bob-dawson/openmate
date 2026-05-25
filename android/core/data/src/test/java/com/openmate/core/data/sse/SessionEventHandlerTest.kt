@@ -25,7 +25,7 @@ class SessionEventHandlerTest {
 
     @Before
     fun setUp() {
-        dbProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication()))
+        dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
         retryStateStore = SessionRetryStateStore()
         handler = SessionEventHandler(dbProvider = dbProvider, retryStateStore = retryStateStore, api = com.openmate.core.network.OpencodeApiClient(okhttp3.OkHttpClient()))

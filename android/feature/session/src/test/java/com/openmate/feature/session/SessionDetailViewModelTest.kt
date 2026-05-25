@@ -611,7 +611,7 @@ class SessionDetailViewModelTest {
             .putString("variant_pref::profile-2::openai::gpt-5", "default")
             .apply()
 
-        val profileOneDbProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
+        val profileOneDbProvider = ActiveDatabaseProvider(appContext(), DatabaseFactory(appContext())).apply {
             setActive("profile-1")
         }
         val profileOneViewModel = createViewModel(
@@ -630,7 +630,7 @@ class SessionDetailViewModelTest {
             .isEqualTo("gpt-5 profile 1")
         assertThat(profileOneViewModel.selectedVariant.value).isEqualTo("medium")
 
-        val profileTwoDbProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
+        val profileTwoDbProvider = ActiveDatabaseProvider(appContext(), DatabaseFactory(appContext())).apply {
             setActive("profile-2")
         }
         val profileTwoViewModel = createViewModel(

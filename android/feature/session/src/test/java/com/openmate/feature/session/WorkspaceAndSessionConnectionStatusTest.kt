@@ -85,7 +85,7 @@ class WorkspaceAndSessionConnectionStatusTest {
 
     private fun apiClient() = OpencodeApiClient(client = OkHttpClient(), baseUrl = "http://test")
 
-    private fun dbProvider() = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication())).apply {
+    private fun dbProvider() = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication())).apply {
         setActive("profile-default")
     }
 

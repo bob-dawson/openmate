@@ -50,7 +50,7 @@ class InstanceListViewModelTest {
         val connectionRepository = RecordingConnectionRepository()
         val viewModel = InstanceListViewModel(
             profileRepository = profileRepository,
-            dbProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication())),
+            dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication())),
             connectionManager = connectionRepository,
         )
 
@@ -66,7 +66,7 @@ class InstanceListViewModelTest {
         val connectionRepository = RecordingConnectionRepository()
         val viewModel = InstanceListViewModel(
             profileRepository = FakeServerProfileRepository(),
-            dbProvider = ActiveDatabaseProvider(DatabaseFactory(RuntimeEnvironment.getApplication())),
+            dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication())),
             connectionManager = connectionRepository,
         )
 
