@@ -15,6 +15,7 @@ pub struct OpencodeManager {
     auto_restart: Arc<bool>,
     opencode_version: Arc<RwLock<Option<String>>>,
     upgrade_in_progress: Arc<AtomicBool>,
+    pid: Arc<RwLock<Option<u32>>>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -43,6 +44,7 @@ impl OpencodeManager {
             auto_restart: Arc::new(true),
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
+            pid: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -64,6 +66,7 @@ impl OpencodeManager {
             auto_restart: Arc::new(auto_restart),
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
+            pid: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -109,7 +112,13 @@ impl OpencodeManager {
 
         let mut child = spawn_opencode(&binary, &hostname, port, &directory)?;
 
-        tracing::info!("opencode process spawned (pid: {:?})", child.id());
+        let child_pid = child.id();
+        tracing::info!("opencode process spawned (pid: {:?})", child_pid);
+
+        {
+            let mut p = self.pid.write().await;
+            *p = child_pid;
+        }
 
         let url = self.opencode_url.clone();
         let status_arc = self.status.clone();
@@ -211,29 +220,43 @@ impl OpencodeManager {
         *status = OpencodeStatus::Stopping;
         drop(status);
 
-        #[cfg(windows)]
-        {
-            let output = tokio::process::Command::new("taskkill")
-                .args(["/F", "/IM", "opencode.exe"])
-                .creation_flags(0x08000000)
-                .output()
-                .await;
-            if let Ok(out) = output {
-                tracing::info!("taskkill output: {}", String::from_utf8_lossy(&out.stdout));
+        let pid = self.find_pid_by_port().await;
+        if let Some(pid) = pid {
+            send_sigint(pid).await;
+
+            for _ in 0..10 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                let client = reqwest::Client::new();
+                if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_err() {
+                    tracing::info!("opencode exited after SIGINT");
+                    break;
+                }
+            }
+
+            let client = reqwest::Client::new();
+            if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_ok() {
+                tracing::warn!("opencode did not exit after SIGINT, sending SIGINT again");
+                send_sigint(pid).await;
+                for _ in 0..5 {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_err() {
+                        tracing::info!("opencode exited after second SIGINT");
+                        break;
+                    }
+                }
+            }
+
+            let client = reqwest::Client::new();
+            if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_ok() {
+                tracing::warn!("opencode still running after two SIGINTs, force killing");
+                force_kill(pid).await;
             }
         }
 
-        #[cfg(not(windows))]
         {
-            let output = tokio::process::Command::new("pkill")
-                .args(["-f", "opencode serve"])
-                .output()
-                .await;
-            if let Ok(out) = output {
-                tracing::info!("pkill output: {}", String::from_utf8_lossy(&out.stdout));
-            }
+            let mut p = self.pid.write().await;
+            *p = None;
         }
-
         let mut status = self.status.write().await;
         *status = OpencodeStatus::Stopped;
         tracing::info!("opencode stopped");
@@ -253,6 +276,52 @@ impl OpencodeManager {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
         self.start().await
+    }
+
+    #[cfg(windows)]
+    async fn find_pid_by_port(&self) -> Option<u32> {
+        let port = *self.port;
+        let output = tokio::process::Command::new("netstat")
+            .args(["-ano"])
+            .creation_flags(0x08000000)
+            .output()
+            .await
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let pattern = format!(":{}", port);
+        for line in stdout.lines() {
+            if line.contains("LISTENING") && line.contains(&pattern) {
+                let pid: u32 = line.trim().split_whitespace().last()?.parse().ok()?;
+                tracing::info!("Found opencode pid {} by port {}", pid, port);
+                return Some(pid);
+            }
+        }
+        None
+    }
+
+    #[cfg(not(windows))]
+    async fn find_pid_by_port(&self) -> Option<u32> {
+        let port = *self.port;
+        let output = tokio::process::Command::new("ss")
+            .args(["-tlnp"])
+            .output()
+            .await
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let pattern = format!(":{}", port);
+        for line in stdout.lines() {
+            if line.contains(&pattern) {
+                if let Some(pid_str) = line.split("pid=").nth(1).and_then(|s| s.split(',').next()).and_then(|s| s.split(')').next()) {
+                    if let Ok(pid) = pid_str.parse::<u32>() {
+                        tracing::info!("Found opencode pid {} by port {}", pid, port);
+                        return Some(pid);
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub async fn set_status(&self, new_status: OpencodeStatus) {
@@ -589,6 +658,75 @@ async fn restart_loop(
                 }
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
+        }
+    }
+}
+
+async fn send_sigint(pid: u32) {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
+
+        let result = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid) };
+        if result.is_ok() {
+            tracing::info!("CTRL_C_EVENT sent to pid {}", pid);
+        } else {
+            let err = result.unwrap_err();
+            tracing::warn!("GenerateConsoleCtrlEvent failed for pid {}: {}", pid, err);
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let pid_str = pid.to_string();
+        let output = tokio::process::Command::new("kill")
+            .args(["-INT", &pid_str])
+            .output()
+            .await;
+        match output {
+            Ok(out) => {
+                if out.status.success() {
+                    tracing::info!("SIGINT sent to pid {}", pid);
+                } else {
+                    tracing::warn!("kill -INT failed: {}", String::from_utf8_lossy(&out.stderr));
+                }
+            }
+            Err(e) => tracing::warn!("Failed to send SIGINT: {}", e),
+        }
+    }
+}
+
+async fn force_kill(pid: u32) {
+    #[cfg(windows)]
+    {
+        let pid_str = pid.to_string();
+        let output = tokio::process::Command::new("taskkill")
+            .args(["/F", "/PID", &pid_str, "/T"])
+            .creation_flags(0x08000000)
+            .output()
+            .await;
+        match output {
+            Ok(out) => tracing::info!("Force kill output: {}", String::from_utf8_lossy(&out.stdout)),
+            Err(e) => tracing::warn!("Failed to force kill: {}", e),
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let pid_str = pid.to_string();
+        let output = tokio::process::Command::new("kill")
+            .args(["-9", &pid_str])
+            .output()
+            .await;
+        match output {
+            Ok(out) => {
+                if out.status.success() {
+                    tracing::info!("Force killed pid {}", pid);
+                } else {
+                    tracing::warn!("kill -9 failed: {}", String::from_utf8_lossy(&out.stderr));
+                }
+            }
+            Err(e) => tracing::warn!("Failed to force kill: {}", e),
         }
     }
 }

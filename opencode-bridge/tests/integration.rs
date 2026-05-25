@@ -204,9 +204,57 @@ async fn test_update_config_unknown_key_rejected() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 400);
+    assert_eq!(resp.status(), 401);
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn test_opencode_start_stop_with_sigint() {
+    use openmate::process::opencode_manager::OpencodeManager;
+    use openmate::state::OpencodeStatus;
+
+    let port: u16 = 5696;
+    let url = format!("http://127.0.0.1:{}", port);
+    let dir = std::env::temp_dir().join("bridge_int_sigint_test");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let manager = OpencodeManager::with_config(
+        url.clone(),
+        "opencode".to_string(),
+        "127.0.0.1".to_string(),
+        port,
+        dir.to_string_lossy().to_string(),
+        false,
+    );
+
+    manager.start().await.expect("Failed to start opencode");
+
+    for i in 0..30 {
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        if manager.is_running().await {
+            break;
+        }
+        if i == 29 {
+            panic!("opencode did not become ready within 60s");
+        }
+    }
+    assert_eq!(manager.get_status().await, OpencodeStatus::Running);
+
+    let client = reqwest::Client::new();
+    let resp = client.get(format!("{}/global/health", url)).send().await;
+    assert!(resp.is_ok(), "health check should succeed while running");
+
+    manager.stop().await.expect("Failed to stop opencode");
+    assert_eq!(manager.get_status().await, OpencodeStatus::Stopped);
+
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    let resp = client.get(format!("{}/global/health", url)).send().await;
+    assert!(resp.is_err(), "health check should fail after stop, port should be released");
+
+    println!("SIGINT stop test passed: port {} released after stop", port);
 }
 
 

@@ -252,7 +252,7 @@ private fun processImageProxy(imageProxy: ImageProxy, viewModel: QrScanViewModel
                         return@addOnSuccessListener
                     }
                     val rawValue = barcode.rawValue ?: continue
-                    if (rawValue.startsWith("http")) {
+                    if (rawValue.startsWith("http") || rawValue.startsWith("openmate:", ignoreCase = true)) {
                         viewModel.handleBarcode(rawValue)
                         return@addOnSuccessListener
                     }
