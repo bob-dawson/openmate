@@ -86,6 +86,10 @@ class QrScanViewModel @Inject constructor(
             Log.d(TAG, "Bridge not online via gateway, falling back to LAN")
         }
 
+        if (parsed.address.isBlank()) {
+            throw Exception("No LAN address available and Bridge is not online via gateway")
+        }
+
         return pairViaLan(parsed, deviceName, clientDeviceId)
     }
 
@@ -159,6 +163,9 @@ class QrScanViewModel @Inject constructor(
     )
 
     private fun parseQrUrl(url: String): ParsedQrUrl? {
+        if (url.startsWith("openmate:", ignoreCase = true)) {
+            return parseCustomProtocol(url)
+        }
         return try {
             val parsed = URL(url)
             val port = parsed.port.takeIf { it > 0 } ?: 4097
@@ -180,6 +187,30 @@ class QrScanViewModel @Inject constructor(
             Log.e(TAG, "Failed to parse QR URL: $url", e)
             null
         }
+    }
+
+    private fun parseCustomProtocol(url: String): ParsedQrUrl? {
+        val body = url.removePrefix("openmate:")
+        val params = body.split(";")
+        var iid = ""
+        var st = ""
+        for (param in params) {
+            val parts = param.split("=", limit = 2)
+            if (parts.size == 2) {
+                when (parts[0]) {
+                    "iid" -> iid = parts[1]
+                    "st" -> st = parts[1]
+                }
+            }
+        }
+        if (st.isBlank()) return null
+        return ParsedQrUrl(
+            name = "",
+            address = "",
+            port = 0,
+            scanToken = st,
+            instanceId = iid,
+        )
     }
 
     private fun parseQueryParams(query: String): Map<String, String> {
