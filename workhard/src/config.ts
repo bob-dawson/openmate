@@ -1,6 +1,8 @@
 export interface WorkHardConfig {
   endKeyword: string
+  autoAnswerQuestion: boolean
   questionReply: string
+  autoApprovePermission: boolean
   permissionStrategy: "allow-all" | "allow-safe" | "deny-all"
   safePermissions: string[]
   denyPrompt: string
@@ -15,7 +17,9 @@ export interface WorkHardConfig {
 
 const DEFAULT_CONFIG: WorkHardConfig = {
   endKeyword: "DONE",
+  autoAnswerQuestion: false,
   questionReply: "按你推荐的进行",
+  autoApprovePermission: false,
   permissionStrategy: "allow-all",
   safePermissions: [],
   denyPrompt: "我不能授予你相关权限，请使用其他方法完成任务",
@@ -32,7 +36,9 @@ export function parseConfig(raw: Record<string, unknown> | undefined): WorkHardC
   if (!raw) return { ...DEFAULT_CONFIG }
   return {
     endKeyword: asString(raw.endKeyword) ?? DEFAULT_CONFIG.endKeyword,
+    autoAnswerQuestion: asBool(raw.autoAnswerQuestion) ?? DEFAULT_CONFIG.autoAnswerQuestion,
     questionReply: asString(raw.questionReply) ?? DEFAULT_CONFIG.questionReply,
+    autoApprovePermission: asBool(raw.autoApprovePermission) ?? DEFAULT_CONFIG.autoApprovePermission,
     permissionStrategy: asPermissionStrategy(raw.permissionStrategy) ?? DEFAULT_CONFIG.permissionStrategy,
     safePermissions: asStringArray(raw.safePermissions) ?? DEFAULT_CONFIG.safePermissions,
     denyPrompt: asString(raw.denyPrompt) ?? DEFAULT_CONFIG.denyPrompt,

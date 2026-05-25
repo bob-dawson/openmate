@@ -45,6 +45,7 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
   }
 
   async function handlePermissionAsked(event: BusEvent) {
+    if (!config.autoApprovePermission) return
     const p = event.properties
     const sessionID = p.sessionID as string
     const requestID = p.id as string
@@ -68,6 +69,7 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
   }
 
   async function handleQuestionAsked(event: BusEvent) {
+    if (!config.autoAnswerQuestion) return
     const p = event.properties
     const requestID = p.id as string
     const sessionID = p.sessionID as string
