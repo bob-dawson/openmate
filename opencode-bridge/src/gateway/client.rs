@@ -72,6 +72,23 @@ impl GatewayClient {
             let _ = socket2::SockRef::from(&*sock).set_tcp_keepalive(&ka);
         }
 
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::io::{AsRawFd, FromRawFd};
+            let inner: &MaybeTlsStream<tokio::net::TcpStream> = ws_stream.get_ref();
+            let tcp = match inner {
+                MaybeTlsStream::Plain(tcp) => tcp,
+                MaybeTlsStream::Rustls(tls) => tls.get_ref().0,
+                _ => return Ok(()),
+            };
+            let ka = socket2::TcpKeepalive::new()
+                .with_time(Duration::from_secs(30))
+                .with_interval(Duration::from_secs(10));
+            let sock = unsafe { socket2::Socket::from_raw_fd(tcp.as_raw_fd()) };
+            let sock = std::mem::ManuallyDrop::new(sock);
+            let _ = socket2::SockRef::from(&*sock).set_tcp_keepalive(&ka);
+        }
+
         let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
         tracing::info!("Gateway WebSocket connected");
