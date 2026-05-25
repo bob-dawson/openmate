@@ -127,6 +127,7 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
             });
         } else if !has_desktop {
             let instance_id = config.gateway.instance_id.clone();
+            let gateway_url = config.gateway.url.clone();
             let port_copy = port;
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
@@ -174,6 +175,7 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
                         }
                         println!();
                         println!("  Scan this QR code with the OpenMate app to pair.");
+                        println!("  Gateway: {}", gateway_url);
                         println!("  Or open: http://{}:{}/ui/", local_ip, port_copy);
                         println!();
                     }
