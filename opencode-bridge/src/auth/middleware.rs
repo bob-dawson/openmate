@@ -54,10 +54,41 @@ pub async fn auth_middleware(
     let is_localhost = addr.map(|a| a.ip().is_loopback()).unwrap_or(false);
 
     if LOCALHOST_ONLY_PATHS.iter().any(|p| path == *p) || path.starts_with("/ui/") {
-        if !is_localhost {
-            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+        if is_localhost {
+            return next.run(req).await;
         }
-        return next.run(req).await;
+        if let Some(auth_header) = req.headers().get("authorization") {
+            if let Some(token_str) = auth_header
+                .to_str()
+                .ok()
+                .and_then(Token::extract_from_header)
+            {
+                if Token::validate(&state.secret_key, token_str) {
+                    if let Some(device_id) = Token::extract_device_id(token_str) {
+                        let bridge_db = state.bridge_db.clone();
+                        let did = device_id.clone();
+                        let exists = tokio::task::spawn_blocking(move || {
+                            bridge_db.device_exists(&did).unwrap_or(false)
+                        })
+                        .await
+                        .unwrap_or(false);
+
+                        if exists {
+                            let bridge_db = state.bridge_db.clone();
+                            tokio::task::spawn_blocking(move || {
+                                let now = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_millis() as i64;
+                                let _ = bridge_db.update_last_seen(&device_id, now);
+                            });
+                            return next.run(req).await;
+                        }
+                    }
+                }
+            }
+        }
+        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
     }
 
     if is_localhost {

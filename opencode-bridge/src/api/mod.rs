@@ -3,7 +3,7 @@ use axum::routing::{delete, get, post, put};
 
 use crate::state::AppState;
 
-mod autostart;
+pub mod autostart;
 pub mod config;
 mod devices;
 mod logs;

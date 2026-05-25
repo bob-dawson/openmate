@@ -225,10 +225,10 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
       <div class="card">
         <div class="card-header">通用</div>
         <div class="card-body">
-          <div class="setting-row">
+          <div class="setting-row" id="autostart-row">
             <div>
-              <div class="setting-label">开机自动启动</div>
-              <div class="setting-desc">Windows 启动时静默运行 Bridge</div>
+              <div class="setting-label" id="autostart-label">开机自动启动</div>
+              <div class="setting-desc" id="autostart-desc">Windows 启动时静默运行 Bridge</div>
             </div>
             <div class="toggle" id="autostart-toggle"></div>
           </div>
@@ -600,12 +600,29 @@ let configEntries = [];
 
 async function loadSettings() {
   try {
-    const res = await api('/api/bridge/autostart').then(r => r.json());
+    const [autoRes, statusRes, cfgRes] = await Promise.all([
+      api('/api/bridge/autostart').then(r => r.json()),
+      api('/api/bridge/status').then(r => r.json()),
+      api('/api/bridge/config').then(r => r.json()),
+    ]);
     const toggle = document.getElementById('autostart-toggle');
-    if (res.enabled) toggle.classList.add('on');
+    if (autoRes.enabled) toggle.classList.add('on');
     else toggle.classList.remove('on');
 
-    const cfgRes = await api('/api/bridge/config').then(r => r.json());
+    const autostartMode = statusRes.bridge.autostart_mode || 'unavailable';
+    const autostartRow = document.getElementById('autostart-row');
+    const autostartLabel = document.getElementById('autostart-label');
+    const autostartDesc = document.getElementById('autostart-desc');
+    if (autostartMode === 'unavailable') {
+      autostartRow.style.display = 'none';
+    } else if (autostartMode === 'systemd') {
+      autostartLabel.textContent = '系统启动时自动启动 (systemd)';
+      autostartDesc.textContent = '通过 systemd 服务开机自启';
+    } else if (autostartMode === 'windows') {
+      autostartLabel.textContent = '开机自动启动';
+      autostartDesc.textContent = 'Windows 启动时静默运行 Bridge';
+    }
+
     configEntries = cfgRes.configs || [];
 
     const bridgeGroup = configEntries.filter(e => e.key.startsWith('bridge.'));
