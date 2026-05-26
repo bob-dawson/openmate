@@ -123,7 +123,10 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
     {
         let has_desktop = std::env::var("DISPLAY").is_ok()
             || std::env::var("WAYLAND_DISPLAY").is_ok();
-        if has_desktop && !_args.tray {
+        let is_wsl = std::fs::read_to_string("/proc/version")
+            .map(|v| v.contains("Microsoft") || v.contains("WSL"))
+            .unwrap_or(false);
+        if has_desktop && !is_wsl && !_args.tray {
             let port_copy = port;
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
