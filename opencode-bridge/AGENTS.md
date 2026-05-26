@@ -21,6 +21,29 @@ cargo test                     # 65 单元 + 17 集成测试
 cargo test --test integration  # 仅集成测试
 ```
 
+## 本机更新部署
+
+```powershell
+# 一键构建 + 优雅停止 + 替换 + 重启（推荐）
+python D:\openmate\scripts\update-bridge.ps1
+
+# 跳过构建，仅停止+替换+重启（已手动 build 过时）
+python D:\openmate\scripts\update-bridge.ps1 -SkipBuild
+```
+
+脚本流程：
+1. `cargo build --release`
+2. 复制 binary 到 `D:\openmate\opencode-bridge\release\openmate.exe`
+3. 通过 `POST /api/bridge/shutdown` 优雅停止（localhost-only API）
+4. 等待进程退出（超时 10s 后 force kill）
+5. 启动新进程
+6. 验证进程和端口
+
+**重要**：
+- 不要用 `Stop-Process -Force` 杀进程，会导致端口占用，下次启动无法绑定原端口
+- Binary 部署位置：`D:\openmate\opencode-bridge\release\openmate.exe`
+- 优雅停止 API：`POST http://127.0.0.1:{actual_port}/api/bridge/shutdown`（仅 localhost 可调用）
+
 ## 运行
 
 ```powershell

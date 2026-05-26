@@ -3,7 +3,6 @@ use axum::routing::{any, get, post};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -14,16 +13,21 @@ use crate::files;
 use crate::fs;
 use crate::proxy;
 use crate::log_capture::SharedLogBuffer;
-use crate::state::create_app_state;
+use crate::state::create_app_state_with_db_event_source_and_actual_port;
 use crate::sync;
 
 pub async fn run_server(
     log_buffer: SharedLogBuffer,
-    shutdown_notify: Option<Arc<Notify>>,
+    shutdown: Option<(tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>)>,
+    actual_port: Option<Arc<std::sync::atomic::AtomicU16>>,
 ) -> anyhow::Result<()> {
-    tracing::info!("OpenCode Bridge starting");
-
-    let app_state = create_app_state(log_buffer);
+    let app_state = create_app_state_with_db_event_source_and_actual_port(
+        log_buffer,
+        None,
+        None,
+        actual_port,
+        shutdown,
+    );
     let config = &app_state.config;
 
     tracing::info!(
@@ -174,11 +178,10 @@ pub async fn run_server(
     let port_changed = actual_port != configured_port;
 
     if port_changed {
-        if let Err(e) = app_state.bridge_db.set_config("bridge.port", &actual_port.to_string()) {
-            tracing::warn!("Failed to update bridge.port in DB: {}", e);
-        } else {
-            tracing::info!("Updated bridge.port in DB to {}", actual_port);
-        }
+        tracing::warn!(
+            "Port {} unavailable, using {} instead. Config not updated — restart may reclaim original port.",
+            configured_port, actual_port
+        );
     }
 
     app_state.actual_port.store(actual_port, std::sync::atomic::Ordering::Relaxed);
@@ -208,16 +211,13 @@ pub async fn run_server(
         app.into_make_service_with_connect_info::<SocketAddr>(),
     );
 
-    if let Some(notify) = shutdown_notify {
-        tokio::select! {
-            result = server => result?,
-            _ = notify.notified() => {
-                tracing::info!("Shutdown signal received, stopping server");
-            }
+let mut shutdown_rx = app_state.shutdown_tx.subscribe();
+    server.with_graceful_shutdown(async move {
+        if shutdown_rx.changed().await.is_ok() {
+            tracing::info!("Shutdown signal received, stopping server");
         }
-    } else {
-        server.await?;
-    }
+    }).await?;
 
-    Ok(())
+    tracing::info!("Server stopped, exiting");
+    std::process::exit(0);
 }

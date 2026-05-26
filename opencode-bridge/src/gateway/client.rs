@@ -105,6 +105,9 @@ impl GatewayClient {
         let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
         heartbeat.tick().await;
 
+        let mut last_received = std::time::Instant::now();
+        let read_timeout = Duration::from_secs(90);
+
         loop {
             tokio::select! {
                 _ = heartbeat.tick() => {
@@ -112,6 +115,10 @@ impl GatewayClient {
                     let json = serde_json::to_string(&ping)?;
                     if ws_sink.send(Message::Text(json.into())).await.is_err() {
                         tracing::warn!("Failed to send heartbeat, connection lost");
+                        break;
+                    }
+                    if last_received.elapsed() > read_timeout {
+                        tracing::warn!("No data received from gateway for {}s, reconnecting", read_timeout.as_secs());
                         break;
                     }
                 }
@@ -137,8 +144,13 @@ impl GatewayClient {
                 msg = ws_stream.next() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
+                            last_received = std::time::Instant::now();
                             match serde_json::from_str::<TunnelFrame>(&text) {
                                 Ok(frame) => {
+                                    if frame.frame_type == "error" {
+                                        tracing::warn!("Gateway error: code={:?} msg={:?}, disconnecting", frame.status, frame.error_message);
+                                        break;
+                                    }
                                     self.handle_incoming(frame, &pending_uploads).await;
                                 }
                                 Err(e) => {
@@ -147,6 +159,7 @@ impl GatewayClient {
                             }
                         }
                         Some(Ok(Message::Binary(data))) => {
+                            last_received = std::time::Instant::now();
                             if data.len() < 36 {
                                 continue;
                             }
@@ -165,6 +178,7 @@ impl GatewayClient {
                             }
                         }
                         Some(Ok(Message::Ping(data))) => {
+                            last_received = std::time::Instant::now();
                             let _ = ws_sink.send(Message::Pong(data)).await;
                         }
                         Some(Ok(Message::Close(_))) | None => {
@@ -252,13 +266,6 @@ impl GatewayClient {
                 });
             }
             "pong" => {}
-            "error" => {
-                tracing::warn!(
-                    "Gateway error: code={:?} msg={:?}",
-                    frame.status,
-                    frame.error_message
-                );
-            }
             other => {
                 tracing::warn!("Unknown frame type from gateway: {}", other);
             }

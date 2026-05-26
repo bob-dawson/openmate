@@ -11,6 +11,7 @@ mod network;
 mod open_ui;
 mod qrcode;
 mod reset_secret;
+mod shutdown;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -56,4 +57,5 @@ pub fn routes() -> Router<AppState> {
         )
         .route("/api/bridge/config", get(config::get_config))
         .route("/api/bridge/config", put(config::update_config))
+        .route("/api/bridge/shutdown", post(shutdown::shutdown))
 }

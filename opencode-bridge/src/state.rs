@@ -1,6 +1,7 @@
 use axum::extract::FromRef;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU16;
 use tokio::sync::RwLock;
 
 use crate::auth;
@@ -38,7 +39,8 @@ pub struct AppStateInner {
     pub bridge_id: String,
     pub scan_token: RwLock<Option<ScanTokenEntry>>,
     pub event_source: Arc<SharedEventSource>,
-    pub actual_port: std::sync::atomic::AtomicU16,
+pub actual_port: Arc<AtomicU16>,
+    pub shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
 pub type AppState = Arc<AppStateInner>;
@@ -61,6 +63,16 @@ pub fn create_app_state_with_db_and_event_source(
     log_buffer: SharedLogBuffer,
     external_db: Option<BridgeDb>,
     event_source: Option<Arc<SharedEventSource>>,
+) -> AppState {
+    create_app_state_with_db_event_source_and_actual_port(log_buffer, external_db, event_source, None, None)
+}
+
+pub fn create_app_state_with_db_event_source_and_actual_port(
+    log_buffer: SharedLogBuffer,
+    external_db: Option<BridgeDb>,
+    event_source: Option<Arc<SharedEventSource>>,
+    actual_port: Option<Arc<AtomicU16>>,
+    shutdown: Option<(tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>)>,
 ) -> AppState {
     let bridge_db = external_db.unwrap_or_else(|| BridgeDb::open().expect("Failed to open bridge database"));
     bridge_db.init_default_configs().expect("Failed to initialize default configs");
@@ -115,6 +127,10 @@ pub fn create_app_state_with_db_and_event_source(
         scan_token: RwLock::new(None),
         bridge_id,
         event_source: event_source.unwrap_or_else(|| Arc::new(SharedEventSource::new())),
-        actual_port: std::sync::atomic::AtomicU16::new(bridge_port),
+        actual_port: actual_port.unwrap_or_else(|| Arc::new(AtomicU16::new(bridge_port))),
+        shutdown_tx: shutdown.map_or_else(
+            || tokio::sync::watch::channel(false).0,
+            |(tx, _)| tx,
+        ),
     })
 }

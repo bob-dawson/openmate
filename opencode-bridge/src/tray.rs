@@ -1,5 +1,6 @@
 use std::sync::mpsc;
-use tokio::sync::Notify;
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
@@ -10,14 +11,13 @@ pub enum TrayEvent {
 
 #[cfg(target_os = "windows")]
 pub fn spawn_tray_thread(
-    port: u16,
+    actual_port: Arc<AtomicU16>,
     tx: mpsc::Sender<TrayEvent>,
-    _shutdown: std::sync::Arc<Notify>,
 ) -> anyhow::Result<std::thread::JoinHandle<()>> {
     let handle = std::thread::Builder::new()
         .name("tray".into())
         .spawn(move || {
-            if let Err(e) = run_tray_loop(port, tx.clone()) {
+            if let Err(e) = run_tray_loop(actual_port, tx.clone()) {
                 eprintln!("Tray error: {}", e);
             }
         })
@@ -26,7 +26,7 @@ pub fn spawn_tray_thread(
 }
 
 #[cfg(target_os = "windows")]
-fn run_tray_loop(port: u16, tx: mpsc::Sender<TrayEvent>) -> anyhow::Result<()> {
+fn run_tray_loop(actual_port: Arc<AtomicU16>, tx: mpsc::Sender<TrayEvent>) -> anyhow::Result<()> {
     use std::ffi::c_void;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::*;
@@ -63,7 +63,7 @@ fn run_tray_loop(port: u16, tx: mpsc::Sender<TrayEvent>) -> anyhow::Result<()> {
     }
 
     let ctx = Box::new(TrayContext {
-        port,
+        actual_port,
         tx,
         autostart_checked: is_autostart_enabled(),
     });
@@ -141,7 +141,7 @@ fn run_tray_loop(port: u16, tx: mpsc::Sender<TrayEvent>) -> anyhow::Result<()> {
 
 #[cfg(target_os = "windows")]
 struct TrayContext {
-    port: u16,
+    actual_port: Arc<AtomicU16>,
     tx: mpsc::Sender<TrayEvent>,
     autostart_checked: bool,
 }
@@ -183,7 +183,8 @@ unsafe extern "system" fn tray_wnd_proc(
                     }
                     WM_LBUTTONDBLCLK => {
                         if let Some(ctx) = get_tray_ctx(hwnd) {
-                            let _ = crate::browser::open_browser(&format!("http://127.0.0.1:{}/ui/", ctx.port));
+                            let port = ctx.actual_port.load(Ordering::Relaxed);
+                            let _ = crate::browser::open_browser(&format!("http://127.0.0.1:{}/ui/", port));
                         }
                     }
                     _ => {}
@@ -196,7 +197,8 @@ unsafe extern "system" fn tray_wnd_proc(
             match cmd_id {
                 IDM_OPEN_UI => {
                     if let Some(ctx) = get_tray_ctx(hwnd) {
-                        let _ = crate::browser::open_browser(&format!("http://127.0.0.1:{}/ui/", ctx.port));
+                        let port = ctx.actual_port.load(Ordering::Relaxed);
+                        let _ = crate::browser::open_browser(&format!("http://127.0.0.1:{}/ui/", port));
                     }
                 }
                 IDM_AUTOSTART => {

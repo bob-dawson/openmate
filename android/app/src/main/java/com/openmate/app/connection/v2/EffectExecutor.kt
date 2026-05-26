@@ -19,6 +19,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.openmate.core.network.dto.BridgeStatusResponse
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -36,6 +39,8 @@ class EffectExecutor(
     private val logStore: SyncLogStore,
     private val connectivityManager: ConnectivityManager,
 ) {
+    private val json = Json { ignoreUnknownKeys = true }
+
     private val probeClient = OkHttpClient.Builder()
         .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
@@ -133,7 +138,7 @@ class EffectExecutor(
             throw IllegalStateException("HTTP ${response.code}")
         }
         val body = response.body?.string() ?: throw IllegalStateException("Empty body")
-        return Json.decodeFromString<BridgeStatusResponse>(body)
+        return json.decodeFromString<BridgeStatusResponse>(body)
     }
 
     private suspend fun isDirectReachable(address: String, port: Int): Boolean {
@@ -158,10 +163,13 @@ class EffectExecutor(
                 .get()
                 .build()
             val response = probeClient.newCall(request).execute()
-            val success = response.isSuccessful
-            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关状态 instance=$instanceId code=${response.code} online=$success")
+            val body = response.body?.string()
             response.close()
-            success
+            val online = body?.let {
+                runCatching { json.parseToJsonElement(it).jsonObject["online"]?.jsonPrimitive?.booleanOrNull }.getOrNull()
+            } ?: false
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关状态 instance=$instanceId code=${response.code} online=$online")
+            online
         } catch (e: Exception) {
             logStore.log(SyncLogLevel.Error, SyncLogCategory.Connection, "网关检查失败 ${e.javaClass.simpleName}: ${e.message}")
             false

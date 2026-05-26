@@ -2,7 +2,6 @@
 
 use clap::{Parser, Subcommand};
 use std::sync::Arc;
-use tokio::sync::Notify;
 
 #[derive(Parser, Debug)]
 #[command(name = "openmate", about = "OpenMate Bridge")]
@@ -105,15 +104,16 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let shutdown = Arc::new(Notify::new());
-    let shutdown_clone = shutdown.clone();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let actual_port: Arc<std::sync::atomic::AtomicU16> = Arc::new(std::sync::atomic::AtomicU16::new(port));
 
     #[cfg(target_os = "windows")]
     if !_args.tray {
-        let port_copy = port;
+        let ap = actual_port.clone();
         tokio::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            let url = format!("http://127.0.0.1:{}/ui/", port_copy);
+            let port = ap.load(std::sync::atomic::Ordering::Relaxed);
+            let url = format!("http://127.0.0.1:{}/ui/", port);
             tracing::info!("Opening browser: {}", url);
             let _ = open::that(&url);
         });
@@ -127,22 +127,24 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
             .map(|v| v.contains("Microsoft") || v.contains("WSL"))
             .unwrap_or(false);
         if has_desktop && !is_wsl && !_args.tray {
-            let port_copy = port;
+            let ap = actual_port.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                let url = format!("http://127.0.0.1:{}/ui/", port_copy);
+                let port = ap.load(std::sync::atomic::Ordering::Relaxed);
+                let url = format!("http://127.0.0.1:{}/ui/", port);
                 tracing::info!("Opening browser: {}", url);
                 let _ = open::that(&url);
             });
         } else {
             let instance_id = config.gateway.instance_id.clone();
             let gateway_url = config.gateway.url.clone();
-            let port_copy = port;
+            let ap = actual_port.clone();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
+                let port_val = ap.load(std::sync::atomic::Ordering::Relaxed);
                 let client = reqwest::Client::new();
-                let scan_url = format!("http://127.0.0.1:{}/api/bridge/pair/scan", port_copy);
+                let scan_url = format!("http://127.0.0.1:{}/api/bridge/pair/scan", port_val);
                 let scan_token = match client.get(&scan_url).send().await {
                     Ok(resp) if resp.status().is_success() => {
                         match resp.json::<serde_json::Value>().await {
@@ -177,7 +179,7 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
                         println!("╚══════════════════════════════════════╝");
                         println!();
                         println!("  Bridge: {}", machine_name);
-                        println!("  IP:     {}:{}", local_ip, port_copy);
+                        println!("  IP:     {}:{}", local_ip, port_val);
                         println!();
                         for line in qr_string.lines() {
                             println!("  {}", line);
@@ -185,7 +187,7 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
                         println!();
                         println!("  Scan this QR code with the OpenMate app to pair.");
                         println!("  Gateway: {}", gateway_url);
-                        println!("  Or open: http://{}:{}/ui/", local_ip, port_copy);
+                        println!("  Or open: http://{}:{}/ui/", local_ip, port_val);
                         println!();
                     }
                     Err(e) => {
@@ -199,18 +201,19 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
     #[cfg(target_os = "windows")]
     {
         let (tx, rx) = std::sync::mpsc::channel::<openmate::tray::TrayEvent>();
-        let shutdown_for_tray = shutdown_clone.clone();
-        let _tray_handle = openmate::tray::spawn_tray_thread(port, tx, shutdown_for_tray)?;
+        let _tray_handle = openmate::tray::spawn_tray_thread(actual_port.clone(), tx)?;
 
-        let shutdown_signal = shutdown_clone.clone();
+        let shutdown_signal = shutdown_tx.clone();
+        let ap = actual_port.clone();
         tokio::spawn(async move {
             while let Ok(event) = rx.recv() {
                 match event {
                     openmate::tray::TrayEvent::Quit => {
-                        shutdown_signal.notify_one();
+                        let _ = shutdown_signal.send(true);
                         break;
                     }
                     openmate::tray::TrayEvent::OpenUi => {
+                        let port = ap.load(std::sync::atomic::Ordering::Relaxed);
                         let url = format!("http://127.0.0.1:{}/ui/", port);
                         let _ = open::that(&url);
                     }
@@ -220,14 +223,14 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
         });
     }
 
-    let server_shutdown = shutdown.clone();
+    let ctrl_c_tx = shutdown_tx.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();
         tracing::info!("Ctrl+C received, shutting down");
-        server_shutdown.notify_one();
+        let _ = ctrl_c_tx.send(true);
     });
 
-    openmate::server::run_server(buffer, Some(shutdown_clone)).await
+    openmate::server::run_server(buffer, Some((shutdown_tx, shutdown_rx)), Some(actual_port.clone())).await
 }
 
 #[cfg(target_os = "windows")]

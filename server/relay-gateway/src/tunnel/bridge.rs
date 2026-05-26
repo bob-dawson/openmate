@@ -51,16 +51,21 @@ pub fn get_bridge_binary_tx(state: &SharedState, instance_id: &str) -> Option<mp
 }
 
 pub fn cleanup_stale_bridges(state: &SharedState, timeout_secs: u64) {
-    let cutoff = std::time::Instant::now() - Duration::from_secs(timeout_secs);
-    let stale: Vec<String> = state
+    let now = std::time::Instant::now();
+    let cutoff = now - Duration::from_secs(timeout_secs);
+    let stale: Vec<(String, u64, mpsc::UnboundedSender<TunnelFrame>)> = state
         .bridges
         .iter()
         .filter(|entry| entry.last_heartbeat < cutoff)
-        .map(|entry| entry.instance_id.clone())
+        .map(|entry| {
+            let elapsed = now.duration_since(entry.last_heartbeat).as_secs();
+            (entry.instance_id.clone(), elapsed, entry.tx.clone())
+        })
         .collect();
 
-    for instance_id in stale {
-        tracing::warn!(instance_id = %instance_id, "removing stale bridge");
+    for (instance_id, elapsed, tx) in stale {
+        tracing::warn!(instance_id = %instance_id, elapsed_secs = elapsed, "removing stale bridge");
+        let _ = tx.send(TunnelFrame::error(None, 408, "heartbeat timeout"));
         state.bridges.remove(&instance_id);
     }
 }
