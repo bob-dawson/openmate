@@ -31,6 +31,8 @@ chmod +x openmate
 ./openmate install     # Windows 服务 / Linux systemd
 ./openmate uninstall   # 卸载
 ```
+windows下一般不推荐作为服务运行，因为需要用户单独设置服务的账号密码，不能使用系统账号
+一般window下作为普通应用运行即可，开机自启可以在管理页面设置
 
 ## 2. 安装 Android APK
 
