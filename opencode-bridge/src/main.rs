@@ -134,7 +134,7 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
                 tracing::info!("Opening browser: {}", url);
                 let _ = open::that(&url);
             });
-        } else if !has_desktop {
+        } else {
             let instance_id = config.gateway.instance_id.clone();
             let gateway_url = config.gateway.url.clone();
             let port_copy = port;
