@@ -246,14 +246,14 @@ private fun processImageProxy(imageProxy: ImageProxy, viewModel: QrScanViewModel
         scanner.process(image)
             .addOnSuccessListener { barcodes ->
                 for (barcode in barcodes) {
+                    val rawValue = barcode.rawValue
+                    if (!rawValue.isNullOrBlank() && (rawValue.startsWith("http") || rawValue.startsWith("openmate:", ignoreCase = true))) {
+                        viewModel.handleBarcode(rawValue)
+                        return@addOnSuccessListener
+                    }
                     if (barcode.valueType == Barcode.TYPE_URL) {
                         val url = barcode.url?.url ?: continue
                         viewModel.handleBarcode(url)
-                        return@addOnSuccessListener
-                    }
-                    val rawValue = barcode.rawValue ?: continue
-                    if (rawValue.startsWith("http") || rawValue.startsWith("openmate:", ignoreCase = true)) {
-                        viewModel.handleBarcode(rawValue)
                         return@addOnSuccessListener
                     }
                 }
