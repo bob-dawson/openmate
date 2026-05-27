@@ -140,19 +140,13 @@ class SessionRepositoryImpl @Inject constructor(
                     }
                     dao.updateStatusAndStartedAt(sessionID, newStatus, startedAt)
                 } else {
-                    dao.upsert(
-                        com.openmate.core.database.entity.SessionEntity(
-                            id = sessionID,
-                            title = "",
-                            directory = "",
-                            projectID = "",
-                            createdAt = now,
-                            updatedAt = now,
+                        val dto = api.getSession(sessionID)
+                        if (dto.parentID != null) continue
+                        dao.upsert(dto.toDomain().toEntity().copy(
                             status = newStatus,
                             startedAt = if (newStatus == SessionStatus.BUSY.name || newStatus == SessionStatus.RUNNING.name) now else null,
-                        )
-                    )
-                }
+                        ))
+                    }
             }
 
             for (busy in dao.getBusySessions()) {
