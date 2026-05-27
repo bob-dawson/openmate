@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.TokenStore
@@ -25,6 +26,7 @@ class AddInstanceViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
     private val apiClient: OpencodeApiClient,
     private val tokenStore: TokenStore,
+    private val connectionRepository: ConnectionRepository,
 ) : ViewModel() {
 
     val name = MutableStateFlow("")
@@ -214,23 +216,27 @@ class AddInstanceViewModel @Inject constructor(
 
     private suspend fun completeSave(profileId: String, portNum: Int, onSaved: () -> Unit) {
         val existing = editProfileId?.let { profileRepository.getById(it) }
+        val saved: ServerProfile
         if (existing != null) {
-            profileRepository.save(existing.copy(
+            saved = existing.copy(
                 name = name.value,
                 address = address.value,
                 port = portNum,
                 instanceId = pendingInstanceId.ifEmpty { existing.instanceId },
-            ))
+            )
+            profileRepository.save(saved)
         } else {
-            profileRepository.save(ServerProfile(
+            saved = ServerProfile(
                 id = profileId,
                 name = name.value,
                 address = address.value,
                 port = portNum,
                 instanceId = pendingInstanceId,
                 createdAt = System.currentTimeMillis(),
-            ))
+            )
+            profileRepository.save(saved)
         }
+        connectionRepository.notifyProfileUpdated(saved)
         withContext(Dispatchers.Main) { onSaved() }
     }
 }

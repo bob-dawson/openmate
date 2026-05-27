@@ -68,6 +68,7 @@ class EffectExecutor(
             }
             is ConnEffect.StartDirectCheckLoop -> startDirectCheckLoop(effect.address, effect.port)
             is ConnEffect.StopDirectCheckLoop -> stopDirectCheckLoop()
+            is ConnEffect.RestartDirectCheckLoop -> { stopDirectCheckLoop(); startDirectCheckLoop(effect.address, effect.port) }
             is ConnEffect.ClearApiClient -> clearApiClient()
         }
     }

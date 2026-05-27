@@ -17,6 +17,7 @@ interface ConnectionRepository {
     fun reconnect()
     fun disconnect()
     fun confirmRepairing(profileId: String, token: String)
+    fun notifyProfileUpdated(profile: ServerProfile)
     fun clearNeedsRepairing()
     fun clearError()
 }

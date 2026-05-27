@@ -228,6 +228,11 @@ class ConnectionManager @Inject constructor(
         }
     }
 
+    override fun notifyProfileUpdated(profile: ServerProfile) {
+        actor.updateProfile(profile)
+        _activeProfile.value = profile
+    }
+
     override fun clearNeedsRepairing() {
         _needsRepairing.value = null
     }

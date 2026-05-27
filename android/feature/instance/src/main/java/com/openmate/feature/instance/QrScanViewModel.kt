@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.network.InstallationIdProvider
 import com.openmate.core.network.OpencodeApiClient
@@ -27,6 +28,7 @@ class QrScanViewModel @Inject constructor(
     private val tokenStore: TokenStore,
     private val profileRepository: ServerProfileRepository,
     private val installationIdProvider: InstallationIdProvider,
+    private val connectionRepository: ConnectionRepository,
 ) : ViewModel() {
 
     private val _scanState = MutableStateFlow<ScanUiState>(ScanUiIdle)
@@ -128,29 +130,29 @@ class QrScanViewModel @Inject constructor(
                 null
             }
 
+            val saved: ServerProfile
             if (existingProfile != null) {
-                tokenStore.saveToken(existingProfile.id, currentState.token)
-                profileRepository.save(
-                    existingProfile.copy(
-                        name = name,
-                        address = address,
-                        port = port,
-                    )
+                saved = existingProfile.copy(
+                    name = name,
+                    address = address,
+                    port = port,
                 )
+                tokenStore.saveToken(existingProfile.id, currentState.token)
+                profileRepository.save(saved)
             } else {
                 val profileId = java.util.UUID.randomUUID().toString()
-                tokenStore.saveToken(profileId, currentState.token)
-                profileRepository.save(
-                    ServerProfile(
-                        id = profileId,
-                        name = name,
-                        address = address,
-                        port = port,
-                        instanceId = currentState.instanceId,
-                        createdAt = System.currentTimeMillis(),
-                    )
+                saved = ServerProfile(
+                    id = profileId,
+                    name = name,
+                    address = address,
+                    port = port,
+                    instanceId = currentState.instanceId,
+                    createdAt = System.currentTimeMillis(),
                 )
+                tokenStore.saveToken(profileId, currentState.token)
+                profileRepository.save(saved)
             }
+            connectionRepository.notifyProfileUpdated(saved)
         }
     }
 

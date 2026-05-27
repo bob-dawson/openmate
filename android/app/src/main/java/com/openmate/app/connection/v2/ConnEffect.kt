@@ -16,4 +16,5 @@ sealed class ConnEffect {
     data class UpdateLastConnectedAt(val profileId: String) : ConnEffect()
     data class StartDirectCheckLoop(val address: String, val port: Int) : ConnEffect()
     data object StopDirectCheckLoop : ConnEffect()
+    data class RestartDirectCheckLoop(val address: String, val port: Int) : ConnEffect()
 }

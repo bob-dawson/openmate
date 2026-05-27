@@ -56,6 +56,19 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
 
     data class NeedsRepair(val profile: ServerProfile) : ConnState("NeedsRepair")
 
+    fun withProfile(newProfile: ServerProfile): ConnState = when (this) {
+        is Idle -> this
+        is ProbingNetwork -> copy(profile = newProfile)
+        is WaitingForNetwork -> copy(profile = newProfile)
+        is ProbingDirect -> copy(profile = newProfile)
+        is ProbingGateway -> copy(profile = newProfile)
+        is Connecting -> copy(profile = newProfile)
+        is Connected -> copy(profile = newProfile)
+        is Recovering -> copy(profile = newProfile)
+        is Failed -> copy(profile = newProfile)
+        is NeedsRepair -> copy(profile = newProfile)
+    }
+
     fun logText(): String = when (this) {
         is Idle -> "Idle(profile=${profile?.id})"
         is ProbingNetwork -> "ProbingNetwork(profile=${profile.id}, attempt=$attempt)"
@@ -429,6 +442,28 @@ class ConnectionActor(
                         _state.value = ConnState.Idle(s.profile)
                     }
                 }
+            }
+        }
+    }
+
+    fun updateProfile(profile: ServerProfile) {
+        val s = _state.value
+        val currentId = when (s) {
+            is ConnState.Idle -> s.profile?.id
+            is ConnState.ProbingNetwork -> s.profile.id
+            is ConnState.WaitingForNetwork -> s.profile.id
+            is ConnState.ProbingDirect -> s.profile.id
+            is ConnState.ProbingGateway -> s.profile.id
+            is ConnState.Connecting -> s.profile.id
+            is ConnState.Connected -> s.profile.id
+            is ConnState.Recovering -> s.profile.id
+            is ConnState.Failed -> s.profile.id
+            is ConnState.NeedsRepair -> s.profile.id
+        }
+        if (currentId == profile.id) {
+            _state.value = s.withProfile(profile)
+            if (s is ConnState.Connected && s.route is Route.Gateway) {
+                onEffect(ConnEffect.RestartDirectCheckLoop(profile.address, profile.port))
             }
         }
     }
