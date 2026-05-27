@@ -21,6 +21,8 @@
     <string name="delete">删除</string>
     <string name="diff_viewer">差异查看</string>
     <string name="no_diff_data">未找到差异数据</string>
+    <string name="view_file">查看文件</string>
+    <string name="view_diff">查看差异</string>
 
     <!-- Connection Status -->
     <string name="status_connected">在线</string>

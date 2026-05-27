@@ -666,6 +666,7 @@ fun SessionDetailScreen(
                                     putExtra("message_id", mId)
                                     putExtra("tool_name", toolName)
                                     if (fp != null) putExtra("file_path", fp)
+                                    putExtra("directory", viewModel.getWorkingDirectory())
                                 }
                                 context.startActivity(intent)
                             },

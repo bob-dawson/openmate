@@ -19,6 +19,7 @@ class DiffViewerActivity : ComponentActivity() {
         val messageId = intent.getStringExtra(EXTRA_MESSAGE_ID) ?: return finish()
         val toolName = intent.getStringExtra(EXTRA_TOOL_NAME) ?: return finish()
         val filePath = intent.getStringExtra(EXTRA_FILE_PATH)
+        val directory = intent.getStringExtra(EXTRA_DIRECTORY) ?: ""
 
         setContent {
             OpenMateTheme {
@@ -28,6 +29,7 @@ class DiffViewerActivity : ComponentActivity() {
                         messageId = messageId,
                         toolName = toolName,
                         targetFilePath = filePath,
+                        directory = directory,
                         onBack = { finish() },
                     )
                 }
@@ -40,6 +42,7 @@ class DiffViewerActivity : ComponentActivity() {
         private const val EXTRA_MESSAGE_ID = "message_id"
         private const val EXTRA_TOOL_NAME = "tool_name"
         private const val EXTRA_FILE_PATH = "file_path"
+        private const val EXTRA_DIRECTORY = "directory"
 
         fun intent(
             context: Context,
@@ -47,11 +50,13 @@ class DiffViewerActivity : ComponentActivity() {
             messageId: String,
             toolName: String,
             filePath: String? = null,
+            directory: String = "",
         ) = Intent(context, DiffViewerActivity::class.java).apply {
             putExtra(EXTRA_SESSION_ID, sessionId)
             putExtra(EXTRA_MESSAGE_ID, messageId)
             putExtra(EXTRA_TOOL_NAME, toolName)
             putExtra(EXTRA_FILE_PATH, filePath)
+            putExtra(EXTRA_DIRECTORY, directory)
         }
     }
 }

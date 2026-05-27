@@ -657,7 +657,8 @@ internal fun BlockToolLine(
         item.files
     }
 
-    val canViewFile = onViewFile != null && summary.filePath != null
+    val canDiff = isDiffTool && onViewDiff != null && item.sessionId.isNotEmpty() && item.messageId.isNotEmpty()
+    val canViewFile = !canDiff && onViewFile != null && summary.filePath != null
 
     Column(modifier = Modifier.padding(vertical = 2.dp)) {
         Row(
@@ -677,9 +678,11 @@ internal fun BlockToolLine(
                     StartEllipsisText(
                         text = summary.filePath,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (canViewFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (canDiff || canViewFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace,
-                        modifier = if (canViewFile) Modifier.clickable { onViewFile!!.invoke(summary.filePath) } else Modifier,
+                        modifier = if (canDiff) Modifier.clickable { onViewDiff!!.invoke(item.sessionId, item.messageId, item.toolName, summary.filePath) }
+                            else if (canViewFile) Modifier.clickable { onViewFile!!.invoke(summary.filePath) }
+                            else Modifier,
                     )
                 } else {
                     Text(
