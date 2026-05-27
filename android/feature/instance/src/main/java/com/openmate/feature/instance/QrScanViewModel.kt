@@ -7,7 +7,7 @@ import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.network.InstallationIdProvider
-import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.TempHttpClient
 import com.openmate.core.network.TokenStore
 import com.openmate.core.network.dto.ScanPairConfirmResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,7 +25,6 @@ private const val GATEWAY_URL = "https://gateway.clawmate.net"
 
 @HiltViewModel
 class QrScanViewModel @Inject constructor(
-    private val apiClient: OpencodeApiClient,
     private val tokenStore: TokenStore,
     private val profileRepository: ServerProfileRepository,
     private val installationIdProvider: InstallationIdProvider,
@@ -84,10 +83,10 @@ class QrScanViewModel @Inject constructor(
         clientDeviceId: String,
     ): ScanPairConfirmResponse {
         if (parsed.instanceId.isNotBlank()) {
-            val online = apiClient.isGatewayBridgeOnline(GATEWAY_URL, parsed.instanceId)
+            val online = TempHttpClient.isGatewayBridgeOnline(GATEWAY_URL, parsed.instanceId)
             if (online) {
                 Log.d(TAG, "Bridge online via gateway, pairing through gateway")
-                return apiClient.bridgeScanPairConfirmViaGateway(
+                return TempHttpClient.scanPairConfirmViaGateway(
                     GATEWAY_URL, parsed.instanceId, parsed.scanToken, deviceName, clientDeviceId,
                 )
             }
@@ -106,14 +105,8 @@ class QrScanViewModel @Inject constructor(
         deviceName: String,
         clientDeviceId: String,
     ): ScanPairConfirmResponse {
-        val directUrl = "http://${parsed.address}:${parsed.port}"
-        val saved = apiClient.baseUrl
-        apiClient.baseUrl = directUrl
-        try {
-            return apiClient.bridgeScanPairConfirm(parsed.scanToken, deviceName, clientDeviceId)
-        } finally {
-            apiClient.baseUrl = saved
-        }
+        val baseUrl = "http://${parsed.address}:${parsed.port}"
+        return TempHttpClient.scanPairConfirm(baseUrl, parsed.scanToken, deviceName, clientDeviceId)
     }
 
     private suspend fun performLogin(parsed: ParsedQrUrl) {
@@ -124,10 +117,10 @@ class QrScanViewModel @Inject constructor(
             ?: throw Exception("未找到设备凭证，请重新配对")
 
         if (parsed.instanceId.isNotBlank()) {
-            val online = apiClient.isGatewayBridgeOnline(GATEWAY_URL, parsed.instanceId)
+            val online = TempHttpClient.isGatewayBridgeOnline(GATEWAY_URL, parsed.instanceId)
             if (online) {
                 Log.d(TAG, "Bridge online via gateway, confirming login through gateway")
-                apiClient.bridgeLoginConfirmViaGateway(
+                TempHttpClient.loginConfirmViaGateway(
                     GATEWAY_URL, parsed.instanceId, token, parsed.sessionId,
                 )
                 Log.d(TAG, "Login confirmed via gateway")
@@ -143,8 +136,8 @@ class QrScanViewModel @Inject constructor(
     }
 
     private suspend fun loginViaLan(profile: ServerProfile, authToken: String, sessionId: String) {
-        val directUrl = "http://${profile.address}:${profile.port}"
-        apiClient.bridgeLoginConfirm(directUrl, authToken, sessionId)
+        val baseUrl = "http://${profile.address}:${profile.port}"
+        TempHttpClient.loginConfirm(baseUrl, authToken, sessionId)
         Log.d(TAG, "Login confirmed via LAN for ${profile.address}:${profile.port}")
     }
 

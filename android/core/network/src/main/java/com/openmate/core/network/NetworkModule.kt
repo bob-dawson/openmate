@@ -14,6 +14,20 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    fun provideGatewayInterceptor(
+        activeProfileProvider: ActiveProfileProvider,
+    ): GatewayInterceptor {
+        return GatewayInterceptor(activeProfileProvider)
+    }
+
+    @Provides
+    @Singleton
+    fun provideActiveProfileProvider(): ActiveProfileProvider {
+        return ActiveProfileProviderHolder
+    }
+
+    @Provides
+    @Singleton
     @Named("sse")
     fun provideSseOkHttpClient(
         tokenStore: TokenStore,
@@ -62,10 +76,11 @@ object NetworkModule {
     fun provideOpencodeApiClient(
         @Named("api") client: OkHttpClient,
         @Named("download") downloadClient: OkHttpClient,
+        activeProfileProvider: ActiveProfileProvider,
         gatewayInterceptor: GatewayInterceptor,
         routeEvidenceReporter: RouteEvidenceReporter,
     ): OpencodeApiClient {
-        return OpencodeApiClient(client, downloadClient, gatewayInterceptor = gatewayInterceptor, routeEvidenceReporter = routeEvidenceReporter)
+        return OpencodeApiClient(client, downloadClient, activeProfileProvider = activeProfileProvider, gatewayInterceptor = gatewayInterceptor, routeEvidenceReporter = routeEvidenceReporter)
     }
 
     @Provides

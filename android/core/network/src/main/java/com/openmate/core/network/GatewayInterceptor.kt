@@ -2,16 +2,12 @@ package com.openmate.core.network
 
 import okhttp3.Interceptor
 import okhttp3.Response
-import javax.inject.Inject
-import javax.inject.Singleton
 
-@Singleton
-class GatewayInterceptor @Inject constructor() : Interceptor {
-    @Volatile
-    var instanceId: String? = null
-
+class GatewayInterceptor(
+    private val activeProfileProvider: ActiveProfileProvider,
+) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val id = instanceId
+        val id = activeProfileProvider.getActiveProfile()?.instanceId?.ifBlank { null }
         if (id == null) return chain.proceed(chain.request())
         val request = chain.request().newBuilder()
             .header("X-Instance-Id", id)

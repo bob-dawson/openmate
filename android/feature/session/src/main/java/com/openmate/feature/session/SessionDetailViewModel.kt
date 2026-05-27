@@ -61,6 +61,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import java.util.concurrent.ConcurrentHashMap
 import java.io.File
 
 object AttachmentBridge {
@@ -222,6 +223,11 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    private val providerBucket = ConcurrentHashMap<String, ProviderListDto>()
+    private val agentBucket = ConcurrentHashMap<String, List<AgentDto>>()
+    private val skillBucket = ConcurrentHashMap<String, List<SkillInfoDto>>()
+    private val mcpBucket = ConcurrentHashMap<String, List<McpServerEntry>>()
+
     private val _providers = MutableStateFlow<ProviderListDto?>(null)
     val providers: StateFlow<ProviderListDto?> = _providers.asStateFlow()
 
@@ -242,6 +248,20 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _agents = MutableStateFlow<List<AgentDto>>(emptyList())
     val agents: StateFlow<List<AgentDto>> = _agents.asStateFlow()
+
+    private val _skills = MutableStateFlow<List<SkillInfoDto>>(emptyList())
+    val skills: StateFlow<List<SkillInfoDto>> = _skills.asStateFlow()
+
+    private val _mcpServers = MutableStateFlow<List<McpServerEntry>>(emptyList())
+    val mcpServers: StateFlow<List<McpServerEntry>> = _mcpServers.asStateFlow()
+
+    private fun syncInstanceCaches() {
+        val key = activeProfileKey()
+        _providers.value = key?.let { providerBucket[it] }
+        _agents.value = key?.let { agentBucket[it] } ?: emptyList()
+        _skills.value = key?.let { skillBucket[it] } ?: emptyList()
+        _mcpServers.value = key?.let { mcpBucket[it] } ?: emptyList()
+    }
 
     private var isModelOverridden = false
     private var isAgentOverridden = false
@@ -292,10 +312,21 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
+    private var lastObservedProfileId: String? = null
+
     private fun observeConnectionStatus() {
         viewModelScope.launch {
             connectionRepository.connectionStatus.collect { status ->
                 _connectionStatus.value = status
+            }
+        }
+        viewModelScope.launch {
+            connectionRepository.activeProfile.collect { profile ->
+                val newId = profile?.id
+                if (newId != lastObservedProfileId) {
+                    lastObservedProfileId = newId
+                    syncInstanceCaches()
+                }
             }
         }
     }
@@ -511,11 +542,14 @@ class SessionDetailViewModel @Inject constructor(
         observeRetryStatusJob?.cancel()
         pollJob?.cancel()
         _selectedModel.value = null
-        if (_providers.value == null) {
-            loadCachedProviders()?.let { _providers.value = it }
-        }
-        if (_agents.value.isEmpty()) {
-            loadCachedAgents()?.let { _agents.value = it }
+        val profileKey = activeProfileKey()
+        if (profileKey != null) {
+            providerBucket[profileKey]?.let { _providers.value = it }
+                ?: loadCachedProviders()?.let { providerBucket[profileKey] = it; _providers.value = it }
+            agentBucket[profileKey]?.let { _agents.value = it }
+                ?: loadCachedAgents()?.let { agentBucket[profileKey] = it; _agents.value = it }
+            skillBucket[profileKey]?.let { _skills.value = it }
+            mcpBucket[profileKey]?.let { _mcpServers.value = it }
         }
         messageWindowState = SessionMessageWindowManager.State(
             messages = emptyList(),
@@ -611,7 +645,10 @@ class SessionDetailViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                loadCachedProviders()?.let { _providers.value = it }
+                val pk = activeProfileKey()
+                if (pk != null && providerBucket[pk] == null) {
+                    loadCachedProviders()?.let { providerBucket[pk] = it; _providers.value = it }
+                }
                 rebuildInitialWindow(sessionID)
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
                 val hasLocalMessages = messageWindowState.messages.isNotEmpty()
@@ -874,10 +911,15 @@ class SessionDetailViewModel @Inject constructor(
             return
         }
         try {
-            val result = loadCachedProviders() ?: apiClient.getProviders().also {
-                _providers.value = it
-                saveCachedProviders(it)
-            }
+            val key = activeProfileKey()
+            val bucketHit = key?.let { providerBucket[it] }
+            val result = bucketHit
+                ?: loadCachedProviders()?.also { if (key != null) providerBucket[key] = it }
+                ?: apiClient.getProviders().also {
+                    _providers.value = it
+                    saveCachedProviders(it)
+                    if (key != null) providerBucket[key] = it
+                }
             _providers.value = result
             val connected = result.connected
             val defaults = result.default
@@ -900,8 +942,16 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun loadProviders(forceRefresh: Boolean = false) {
-        if (!forceRefresh) {
+        val key = activeProfileKey()
+        if (!forceRefresh && key != null) {
+            providerBucket[key]?.let {
+                _providers.value = it
+                updateAvailableVariants()
+                refreshModelName()
+                return
+            }
             loadCachedProviders()?.let {
+                providerBucket[key] = it
                 _providers.value = it
                 updateAvailableVariants()
                 refreshModelName()
@@ -913,6 +963,7 @@ class SessionDetailViewModel @Inject constructor(
                 val result = apiClient.getProviders()
                 Log.d(TAG, "loadProviders OK: ${result.all.size} providers, connected=${result.connected}")
                 _providers.value = result
+                if (key != null) providerBucket[key] = result
                 saveCachedProviders(result)
                 updateAvailableVariants()
                 refreshModelName()
@@ -923,8 +974,14 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun loadAgents(forceRefresh: Boolean = false) {
-        if (!forceRefresh) {
+        val key = activeProfileKey()
+        if (!forceRefresh && key != null) {
+            agentBucket[key]?.let {
+                _agents.value = it
+                return
+            }
             loadCachedAgents()?.let {
+                agentBucket[key] = it
                 _agents.value = it
                 return
             }
@@ -933,6 +990,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 val result = apiClient.getAgents()
                 _agents.value = result
+                if (key != null) agentBucket[key] = result
                 saveCachedAgents(result)
             } catch (e: Exception) {
                 Log.e(TAG, "loadAgents FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
@@ -996,12 +1054,6 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    private val _skills = MutableStateFlow<List<SkillInfoDto>>(emptyList())
-    val skills: StateFlow<List<SkillInfoDto>> = _skills.asStateFlow()
-
-    private val _mcpServers = MutableStateFlow<List<McpServerEntry>>(emptyList())
-    val mcpServers: StateFlow<List<McpServerEntry>> = _mcpServers.asStateFlow()
-
     fun compact(sessionID: String) {
         val model = _selectedModel.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -1038,7 +1090,9 @@ class SessionDetailViewModel @Inject constructor(
     fun loadSkills() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                _skills.value = apiClient.getSkills()
+                val result = apiClient.getSkills()
+                _skills.value = result
+                activeProfileKey()?.let { skillBucket[it] = result }
             } catch (e: Exception) {
                 Log.e(TAG, "loadSkills failed", e)
             }
@@ -1053,7 +1107,9 @@ class SessionDetailViewModel @Inject constructor(
     fun loadMcpServers() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                _mcpServers.value = apiClient.getMcpStatus(currentDirectory.ifBlank { null })
+                val result = apiClient.getMcpStatus(currentDirectory.ifBlank { null })
+                _mcpServers.value = result
+                activeProfileKey()?.let { mcpBucket[it] = result }
             } catch (e: Exception) {
                 Log.e(TAG, "loadMcpServers failed", e)
             }

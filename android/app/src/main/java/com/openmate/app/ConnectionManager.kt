@@ -28,7 +28,7 @@ import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
-import com.openmate.core.network.GatewayInterceptor
+import com.openmate.core.network.ActiveProfileProvider
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncSseSignal
 import com.openmate.core.network.SyncSseClient
@@ -55,19 +55,24 @@ class ConnectionManager @Inject constructor(
     private val tokenStore: TokenStore,
     private val syncSseClient: SyncSseClient,
     private val syncSseHandler: SyncSseHandler,
-    private val gatewayInterceptor: GatewayInterceptor,
     private val appForegroundMonitor: AppForegroundMonitor,
     private val networkChangeMonitor: NetworkChangeMonitor,
     private val logStore: SyncLogStore,
     private val permissionRepository: PermissionRepository,
     private val questionRepository: QuestionRepository,
-) : ConnectionRepository {
+) : ConnectionRepository, ActiveProfileProvider {
     companion object {
         private const val TAG = "ConnectionManager"
         private const val GATEWAY_URL = "https://gateway.clawmate.net"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        com.openmate.core.network.ActiveProfileProviderHolder.delegate = this
+    }
+
+    override fun getActiveProfile(): ServerProfile? = _activeProfile.value
 
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     override val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
@@ -103,7 +108,7 @@ class ConnectionManager @Inject constructor(
         scope = scope,
         sendEvent = sendEvent,
         apiClient = apiClient,
-        gatewayInterceptor = gatewayInterceptor,
+        activeProfileProvider = this,
         syncSseClient = syncSseClient,
         syncSseHandler = syncSseHandler,
         sseEventRepository = sseEventRepository,
@@ -212,15 +217,7 @@ class ConnectionManager @Inject constructor(
             tokenStore.setActiveProfileId(profile.id)
             dbProvider.setActive(profile.id)
 
-            val directUrl = "http://${profile.address}:${profile.port}"
-            if (profile.instanceId.isNotBlank()) {
-                apiClient.baseUrl = directUrl
-                gatewayInterceptor.instanceId = profile.instanceId
-            } else {
-                apiClient.baseUrl = directUrl
-                gatewayInterceptor.instanceId = null
-            }
-
+            actor.updateProfile(profile)
             val prevState = actor.state.value
             if (prevState is ConnState.Idle || prevState is ConnState.Failed || prevState is ConnState.NeedsRepair) {
                 actor.processEvent(ConnEvent.Connect(profile))
@@ -328,8 +325,6 @@ class ConnectionManager @Inject constructor(
         syncSseHandler.stop()
         permissionRepository.clearPending()
         questionRepository.clearPending()
-        apiClient.baseUrl = ""
-        gatewayInterceptor.instanceId = null
         dbProvider.clearActive()
         tokenStore.setActiveProfileId(null)
         _activeProfile.value = null

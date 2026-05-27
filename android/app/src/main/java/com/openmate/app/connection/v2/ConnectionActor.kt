@@ -153,7 +153,6 @@ class ConnectionActor(
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.ProbingNetwork
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -178,7 +177,6 @@ class ConnectionActor(
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.WaitingForNetwork
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -188,7 +186,7 @@ class ConnectionActor(
             addState(probingDirect) {
                 onEntry {
                     val s = _state.value as ConnState.ProbingDirect
-                    onEffect(ConnEffect.ProbeDirect(s.profile.address, s.profile.port))
+                    onEffect(ConnEffect.ProbeDirect)
                 }
                 transition<ConnEvent.ProbeOk> {
                     targetState = connecting
@@ -235,7 +233,6 @@ class ConnectionActor(
                     targetState = idle
                     onTriggered {
                         onEffect(ConnEffect.StopSse)
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.ProbingDirect
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -245,7 +242,7 @@ class ConnectionActor(
             addState(probingGateway) {
                 onEntry {
                     val s = _state.value as ConnState.ProbingGateway
-                    onEffect(ConnEffect.ProbeGateway(s.profile.instanceId))
+                    onEffect(ConnEffect.ProbeGateway)
                 }
                 transition<ConnEvent.ProbeOk> {
                     targetState = connecting
@@ -266,7 +263,6 @@ class ConnectionActor(
                     targetState = idle
                     onTriggered {
                         onEffect(ConnEffect.StopSse)
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.ProbingGateway
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -275,11 +271,7 @@ class ConnectionActor(
 
             addState(connecting) {
                 onEntry {
-                    val s = _state.value as ConnState.Connecting
-                    val baseUrl = baseUrlFor(s.route)
-                    val iid = (s.route as? Route.Gateway)?.instanceId
-                    onEffect(ConnEffect.SetApiClient(baseUrl, iid))
-                    onEffect(ConnEffect.StartSse(baseUrl, iid))
+                    onEffect(ConnEffect.StartSse)
                 }
                 transition<ConnEvent.SseConnected> {
                     targetState = connected
@@ -300,7 +292,6 @@ class ConnectionActor(
                     targetState = idle
                     onTriggered {
                         onEffect(ConnEffect.StopSse)
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.Connecting
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -313,7 +304,7 @@ class ConnectionActor(
                     onEffect(ConnEffect.RefreshSessions)
                     onEffect(ConnEffect.UpdateLastConnectedAt(s.profile.id))
                     if (s.route is Route.Gateway) {
-                        onEffect(ConnEffect.StartDirectCheckLoop(s.profile.address, s.profile.port))
+                        onEffect(ConnEffect.StartDirectCheckLoop)
                     }
                 }
                 onExit {
@@ -353,7 +344,6 @@ class ConnectionActor(
                     targetState = idle
                     onTriggered {
                         onEffect(ConnEffect.StopSse)
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.Connected
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -386,7 +376,6 @@ class ConnectionActor(
                     targetState = idle
                     onTriggered {
                         onEffect(ConnEffect.StopSse)
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.Recovering
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -418,7 +407,6 @@ class ConnectionActor(
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.Failed
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -437,7 +425,6 @@ class ConnectionActor(
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
-                        onEffect(ConnEffect.ClearApiClient)
                         val s = _state.value as ConnState.NeedsRepair
                         _state.value = ConnState.Idle(s.profile)
                     }
@@ -463,7 +450,7 @@ class ConnectionActor(
         if (currentId == profile.id) {
             _state.value = s.withProfile(profile)
             if (s is ConnState.Connected && s.route is Route.Gateway) {
-                onEffect(ConnEffect.RestartDirectCheckLoop(profile.address, profile.port))
+                onEffect(ConnEffect.RestartDirectCheckLoop)
             }
         }
     }
@@ -472,16 +459,10 @@ class ConnectionActor(
         machine.processEvent(event)
     }
 
-    private fun baseUrlFor(route: Route): String = when (route) {
-        is Route.Direct -> "http://${route.address}:${route.port}"
-        is Route.Gateway -> GATEWAY_URL
-    }
-
     private fun backoffMs(attempt: Int): Long =
         minOf(INITIAL_BACKOFF_MS * (1L shl minOf(attempt, 4)), MAX_BACKOFF_MS)
 
     companion object {
-        private const val GATEWAY_URL = "https://gateway.clawmate.net"
         private const val INITIAL_BACKOFF_MS = 1_000L
         private const val MAX_BACKOFF_MS = 30_000L
         private val DUMMY_PROFILE = ServerProfile(

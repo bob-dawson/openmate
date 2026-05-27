@@ -57,10 +57,16 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 class OpencodeApiClient(
     private val client: OkHttpClient,
     private val downloadClient: OkHttpClient = client,
-    @Volatile var baseUrl: String = "http://localhost:8080",
+    private val activeProfileProvider: ActiveProfileProvider = object : ActiveProfileProvider { override fun getActiveProfile() = null },
     private val gatewayInterceptor: GatewayInterceptor? = null,
     private val routeEvidenceReporter: RouteEvidenceReporter? = null,
 ) {
+    val baseUrl: String
+        get() {
+            val p = activeProfileProvider.getActiveProfile()
+            return if (p != null) "http://${p.address}:${p.port}" else ""
+        }
+
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
@@ -484,17 +490,22 @@ class OpencodeApiClient(
         scanToken: String,
         deviceName: String,
         clientDeviceId: String,
-    ): ScanPairConfirmResponse {
-        val saved = baseUrl
-        val savedIid = gatewayInterceptor?.instanceId
-        baseUrl = gatewayUrl
-        gatewayInterceptor?.instanceId = instanceId
-        try {
-            return bridgeScanPairConfirm(scanToken, deviceName, clientDeviceId)
-        } finally {
-            baseUrl = saved
-            gatewayInterceptor?.instanceId = savedIid
+    ): ScanPairConfirmResponse = withContext(Dispatchers.IO) {
+        val body = ScanPairConfirmRequest(scanToken, deviceName, clientDeviceId)
+        val jsonStr = json.encodeToString(ScanPairConfirmRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = "$gatewayUrl/api/bridge/pair/scan-confirm"
+        val request = Request.Builder()
+            .url(url)
+            .header("X-Instance-Id", instanceId)
+            .post(requestBody)
+            .build()
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
         }
+        json.decodeFromString(responseBody)
     }
 
     suspend fun bridgeLoginConfirm(
@@ -502,25 +513,19 @@ class OpencodeApiClient(
         authToken: String,
         sessionId: String,
     ) = withContext(Dispatchers.IO) {
-        val saved = this@OpencodeApiClient.baseUrl
-        this@OpencodeApiClient.baseUrl = baseUrl
-        try {
-            val body = LoginConfirmRequest(sessionId)
-            val jsonStr = json.encodeToString(LoginConfirmRequest.serializer(), body)
-            val requestBody = jsonStr.toRequestBody(jsonMediaType)
-            val url = buildUrl("/api/bridge/login/confirm", emptyMap())
-            val request = Request.Builder()
-                .url(url)
-                .header("Authorization", "Bearer $authToken")
-                .post(requestBody)
-                .build()
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
-            if (!response.isSuccessful) {
-                throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
-            }
-        } finally {
-            this@OpencodeApiClient.baseUrl = saved
+        val body = LoginConfirmRequest(sessionId)
+        val jsonStr = json.encodeToString(LoginConfirmRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = "$baseUrl/api/bridge/login/confirm"
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $authToken")
+            .post(requestBody)
+            .build()
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
         }
     }
 
@@ -529,16 +534,21 @@ class OpencodeApiClient(
         instanceId: String,
         authToken: String,
         sessionId: String,
-    ) {
-        val saved = this@OpencodeApiClient.baseUrl
-        val savedIid = gatewayInterceptor?.instanceId
-        this@OpencodeApiClient.baseUrl = gatewayUrl
-        gatewayInterceptor?.instanceId = instanceId
-        try {
-            bridgeLoginConfirm(gatewayUrl, authToken, sessionId)
-        } finally {
-            this@OpencodeApiClient.baseUrl = saved
-            gatewayInterceptor?.instanceId = savedIid
+    ) = withContext(Dispatchers.IO) {
+        val body = LoginConfirmRequest(sessionId)
+        val jsonStr = json.encodeToString(LoginConfirmRequest.serializer(), body)
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val url = "$gatewayUrl/api/bridge/login/confirm"
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $authToken")
+            .header("X-Instance-Id", instanceId)
+            .post(requestBody)
+            .build()
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
         }
     }
 
@@ -754,9 +764,9 @@ class OpencodeApiClient(
     }
 
     private fun currentRoute(): ConnectionRoute? {
-        val gatewayId = gatewayInterceptor?.instanceId
-        if (!gatewayId.isNullOrBlank()) {
-            return ConnectionRoute.Gateway(gatewayId)
+        val instanceId = activeProfileProvider.getActiveProfile()?.instanceId?.ifBlank { null }
+        if (instanceId != null) {
+            return ConnectionRoute.Gateway(instanceId)
         }
         val url = runCatching { baseUrl.toHttpUrl() }.getOrNull() ?: return null
         return ConnectionRoute.Direct(url.host, url.port)

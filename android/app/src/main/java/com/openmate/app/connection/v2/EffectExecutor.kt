@@ -6,10 +6,11 @@ import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.data.sync.SyncSseHandler
+import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
-import com.openmate.core.network.GatewayInterceptor
+import com.openmate.core.network.ActiveProfileProvider
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.TokenStore
@@ -29,7 +30,7 @@ class EffectExecutor(
     private val scope: CoroutineScope,
     private val sendEvent: (ConnEvent) -> Unit,
     private val apiClient: OpencodeApiClient,
-    private val gatewayInterceptor: GatewayInterceptor,
+    private val activeProfileProvider: ActiveProfileProvider,
     private val syncSseClient: SyncSseClient,
     private val syncSseHandler: SyncSseHandler,
     private val sseEventRepository: SseEventRepository,
@@ -49,16 +50,17 @@ class EffectExecutor(
     private var sseJob: Job? = null
     private var directCheckJob: Job? = null
 
+    private fun activeProfile(): ServerProfile? = activeProfileProvider.getActiveProfile()
+
     fun execute(effect: ConnEffect) {
         when (effect) {
             is ConnEffect.CheckNetwork -> checkNetwork()
-            is ConnEffect.ProbeGateway -> probeGateway(effect.instanceId)
-            is ConnEffect.ProbeDirect -> probeDirect(effect.address, effect.port)
-            is ConnEffect.StartSse -> startSse(effect.baseUrl, effect.instanceId)
+            is ConnEffect.ProbeGateway -> probeGateway()
+            is ConnEffect.ProbeDirect -> probeDirect()
+            is ConnEffect.StartSse -> startSse()
             is ConnEffect.StopSse -> stopSse()
             is ConnEffect.StartBackoff -> startBackoff(effect.delayMs)
             is ConnEffect.StopBackoff -> stopBackoff()
-            is ConnEffect.SetApiClient -> setApiClient(effect.baseUrl, effect.instanceId)
             is ConnEffect.RefreshSessions -> scope.launch { sessionRepository.refreshSessionStatuses() }
             is ConnEffect.UpdateLastConnectedAt -> scope.launch {
                 val profile = profileRepository.getById(effect.profileId)
@@ -66,10 +68,9 @@ class EffectExecutor(
                     profileRepository.save(profile.copy(lastConnectedAt = System.currentTimeMillis()))
                 }
             }
-            is ConnEffect.StartDirectCheckLoop -> startDirectCheckLoop(effect.address, effect.port)
+            is ConnEffect.StartDirectCheckLoop -> startDirectCheckLoop()
             is ConnEffect.StopDirectCheckLoop -> stopDirectCheckLoop()
-            is ConnEffect.RestartDirectCheckLoop -> { stopDirectCheckLoop(); startDirectCheckLoop(effect.address, effect.port) }
-            is ConnEffect.ClearApiClient -> clearApiClient()
+            is ConnEffect.RestartDirectCheckLoop -> { stopDirectCheckLoop(); startDirectCheckLoop() }
         }
     }
 
@@ -88,7 +89,8 @@ class EffectExecutor(
         }
     }
 
-    private fun probeGateway(instanceId: String) {
+    private fun probeGateway() {
+        val instanceId = activeProfile()?.instanceId ?: return
         scope.launch {
             val success = isGatewayOnline(instanceId)
             if (success) {
@@ -99,7 +101,10 @@ class EffectExecutor(
         }
     }
 
-    private fun probeDirect(address: String, port: Int) {
+    private fun probeDirect() {
+        val profile = activeProfile() ?: return
+        val address = profile.address
+        val port = profile.port
         scope.launch {
             try {
                 val status = fetchBridgeStatus(address, port)
@@ -109,20 +114,20 @@ class EffectExecutor(
                     return@launch
                 }
                 if (status.bridge.authEnabled) {
-                    val profile = profileRepository.getAll().first { it.address == address && it.port == port }
-                    val token = tokenStore.getToken(profile.id)
+                    val p = profileRepository.getAll().first { it.address == address && it.port == port }
+                    val token = tokenStore.getToken(p.id)
                     if (token == null) {
-                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "需要配对 profile=${profile.id}")
-                        sendEvent(ConnEvent.BridgeNeedsRepair(profile))
+                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "需要配对 profile=${p.id}")
+                        sendEvent(ConnEvent.BridgeNeedsRepair(p))
                         return@launch
                     }
                 }
                 if (status.bridge.instanceId.isNotEmpty()) {
-                    val profile = profileRepository.getAll().firstOrNull { it.address == address && it.port == port }
-                    if (profile != null && status.bridge.instanceId != profile.instanceId) {
-                        val updated = profile.copy(instanceId = status.bridge.instanceId)
+                    val p = profileRepository.getAll().firstOrNull { it.address == address && it.port == port }
+                    if (p != null && status.bridge.instanceId != p.instanceId) {
+                        val updated = p.copy(instanceId = status.bridge.instanceId)
                         profileRepository.save(updated)
-                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "更新instanceId old='${profile.instanceId}' new='${status.bridge.instanceId}'")
+                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "更新instanceId old='${p.instanceId}' new='${status.bridge.instanceId}'")
                     }
                 }
                 sendEvent(ConnEvent.ProbeOk(Route.Direct(address, port)))
@@ -182,7 +187,10 @@ class EffectExecutor(
         }
     }
 
-    private fun startSse(baseUrl: String, instanceId: String?) {
+    private fun startSse() {
+        val profile = activeProfile() ?: return
+        val baseUrl = apiClient.baseUrl
+        val instanceId = profile.instanceId.ifBlank { null }
         logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "启动SSE url=$baseUrl iid=$instanceId")
         sseJob?.cancel()
         syncSseHandler.start()
@@ -213,17 +221,10 @@ class EffectExecutor(
         backoffJob = null
     }
 
-    private fun setApiClient(baseUrl: String, instanceId: String?) {
-        apiClient.baseUrl = baseUrl
-        gatewayInterceptor.instanceId = instanceId
-    }
-
-    private fun clearApiClient() {
-        apiClient.baseUrl = ""
-        gatewayInterceptor.instanceId = null
-    }
-
-    private fun startDirectCheckLoop(address: String, port: Int) {
+    private fun startDirectCheckLoop() {
+        val profile = activeProfile() ?: return
+        val address = profile.address
+        val port = profile.port
         stopDirectCheckLoop()
         directCheckJob = scope.launch {
             while (true) {

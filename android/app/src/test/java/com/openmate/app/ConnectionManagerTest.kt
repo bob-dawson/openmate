@@ -23,6 +23,9 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
+import com.openmate.core.domain.repository.PermissionRepository
+import com.openmate.core.domain.repository.QuestionRepository
+import com.openmate.core.network.ActiveProfileProvider
 import com.openmate.core.network.BridgeEvent
 import com.openmate.core.network.GatewayInterceptor
 import com.openmate.core.network.OpencodeApiClient
@@ -92,8 +95,7 @@ class ConnectionManagerTest {
         waitUntil { env.syncSseCallFactory.requestCount == 1 }
 
         assertThat(env.manager.activeProfile.value?.id).isEqualTo(profile.id)
-        assertThat(env.apiClient.baseUrl).isEqualTo("http://${profile.address}:${profile.port}")
-        assertThat(env.gatewayInterceptor.instanceId).isNull()
+        assertThat(env.syncSseCallFactory.requests.single().url.toString()).isEqualTo("http://${profile.address}:${profile.port}/api/bridge/events")
         assertThat(env.sseEventRepository.directConnectCount).isEqualTo(0)
         assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
         assertThat(env.syncSseCallFactory.requests.single().url.toString()).isEqualTo("http://${profile.address}:${profile.port}/api/bridge/events")
@@ -110,8 +112,8 @@ class ConnectionManagerTest {
         waitUntil { env.syncSseCallFactory.requestCount == 1 }
 
         assertThat(env.manager.activeProfile.value?.id).isEqualTo(profile.id)
-        assertThat(env.apiClient.baseUrl).isEqualTo("https://gateway.clawmate.net")
-        assertThat(env.gatewayInterceptor.instanceId).isEqualTo(profile.instanceId)
+        assertThat(env.syncSseCallFactory.requests.single().url.toString()).isEqualTo("https://gateway.clawmate.net/api/bridge/events")
+        assertThat(env.syncSseCallFactory.requests.single().header("X-Instance-Id")).isEqualTo(profile.instanceId)
         assertThat(env.sseEventRepository.directConnectCount).isEqualTo(0)
         assertThat(env.sseEventRepository.gatewayConnectCount).isEqualTo(0)
         assertThat(env.syncSseCallFactory.requests.single().url.toString()).isEqualTo("https://gateway.clawmate.net/api/bridge/events")
@@ -237,7 +239,8 @@ class ConnectionManagerTest {
         assertThat(env.manager.connectionSnapshot.value?.isUsable).isTrue()
         assertThat(env.manager.connectionSnapshot.value?.activeRoute)
             .isEqualTo(ConnectionRoute.Direct(profile.address, profile.port))
-        assertThat(env.apiClient.baseUrl).isEqualTo("http://${profile.address}:${profile.port}")
+        assertThat(env.syncSseCallFactory.requests.last().url.toString())
+            .isEqualTo("http://${profile.address}:${profile.port}/api/bridge/events")
     }
 
     @Test
@@ -257,7 +260,8 @@ class ConnectionManagerTest {
         assertThat(env.manager.connectionSnapshot.value?.phase).isEqualTo(ConnectionPhase.RECOVERING)
         assertThat(env.manager.connectionSnapshot.value?.activeRoute)
             .isEqualTo(ConnectionRoute.Direct(profile.address, profile.port))
-        assertThat(env.apiClient.baseUrl).isEqualTo("http://${profile.address}:${profile.port}")
+        assertThat(env.syncSseCallFactory.requests.last().url.toString())
+            .isEqualTo("http://${profile.address}:${profile.port}/api/bridge/events")
     }
 
     @Test
@@ -287,7 +291,7 @@ class ConnectionManagerTest {
 
             waitUntil {
                 callFactory.requestCount >= 2 &&
-                    env.apiClient.baseUrl == "http://${profile.address}:${profile.port}"
+                    env.syncSseCallFactory.requests.last().url.toString() == "http://${profile.address}:${profile.port}/api/bridge/events"
             }
 
             assertThat(history.drop(1)).doesNotContain(ConnectionStatus.DISCONNECTED)
@@ -306,7 +310,8 @@ class ConnectionManagerTest {
         val sseEventRepository = FakeSseEventRepository()
         val sessionRepository = FakeSessionRepository()
         val databaseProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
-        val gatewayInterceptor = GatewayInterceptor()
+        val profileProviderDelegate = MutableActiveProfileProviderDelegate()
+        val gatewayInterceptor = GatewayInterceptor(profileProviderDelegate)
         val routeEvidenceReporter = RouteEvidenceReporter()
         val apiClient = OpencodeApiClient(
             OkHttpClient.Builder()
@@ -345,6 +350,7 @@ class ConnectionManagerTest {
                     chain.proceed(request)
                 }
                 .build(),
+            activeProfileProvider = profileProviderDelegate,
             gatewayInterceptor = gatewayInterceptor,
             routeEvidenceReporter = routeEvidenceReporter,
         )
@@ -361,6 +367,7 @@ class ConnectionManagerTest {
         )
         val routeEvidenceAggregator = RouteEvidenceAggregator(clock = { System.currentTimeMillis() })
         val manager = ConnectionManager(
+            context = RuntimeEnvironment.getApplication(),
             profileRepository = profileRepository,
             sseEventRepository = sseEventRepository,
             sessionRepository = sessionRepository,
@@ -369,20 +376,19 @@ class ConnectionManagerTest {
             tokenStore = tokenStore,
             syncSseClient = syncSseClient,
             syncSseHandler = syncSseHandler,
-            gatewayInterceptor = gatewayInterceptor,
-            routeEvidenceReporter = routeEvidenceReporter,
-            routeEvidenceAggregator = routeEvidenceAggregator,
             appForegroundMonitor = FakeAppForegroundMonitor(),
             networkChangeMonitor = FakeNetworkChangeMonitor(),
             logStore = SyncLogStore(),
+            permissionRepository = FakePermissionRepository(),
+            questionRepository = FakeQuestionRepository(),
         )
+        profileProviderDelegate.delegate = manager
         managers += manager
         return TestEnvironment(
             manager = manager,
             profileRepository = profileRepository,
             sseEventRepository = sseEventRepository,
             apiClient = apiClient,
-            gatewayInterceptor = gatewayInterceptor,
             syncSseCallFactory = syncSseCallFactory,
             routeEvidenceAggregator = routeEvidenceAggregator,
         )
@@ -419,7 +425,6 @@ class ConnectionManagerTest {
         val profileRepository: FakeServerProfileRepository,
         val sseEventRepository: FakeSseEventRepository,
         val apiClient: OpencodeApiClient,
-        val gatewayInterceptor: GatewayInterceptor,
         val syncSseCallFactory: RecordingCancellationCallFactory,
         val routeEvidenceAggregator: RouteEvidenceAggregator,
     )
@@ -562,6 +567,21 @@ class ConnectionManagerTest {
 
     private class FakeNetworkChangeMonitor : NetworkChangeMonitor {
         override val events = emptyFlow<com.openmate.app.connection.NetworkChangeEvent>()
+    }
+
+    private class FakePermissionRepository : PermissionRepository {
+        override suspend fun refresh(directory: String) = Unit
+        override suspend fun reply(requestID: String, reply: com.openmate.core.domain.model.PermissionReply, message: String?, directory: String?) = Unit
+        override fun observePending(): Flow<List<com.openmate.core.domain.model.PermissionRequest>> = emptyFlow()
+        override fun clearPending() = Unit
+    }
+
+    private class FakeQuestionRepository : QuestionRepository {
+        override suspend fun refresh(directory: String) = Unit
+        override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) = Unit
+        override suspend fun reject(requestID: String, directory: String?) = Unit
+        override fun observePending(): Flow<List<com.openmate.core.domain.model.QuestionRequest>> = emptyFlow()
+        override fun clearPending() = Unit
     }
 
     private open class RecordingCancellationCallFactory : Call.Factory {
@@ -746,5 +766,10 @@ class ConnectionManagerTest {
         override fun logStreamClosed(traceId: String) = Unit
 
         override fun logNotification(event: BridgeEvent, traceId: String) = Unit
+    }
+
+    private class MutableActiveProfileProviderDelegate : ActiveProfileProvider {
+        var delegate: ActiveProfileProvider? = null
+        override fun getActiveProfile(): ServerProfile? = delegate?.getActiveProfile()
     }
 }

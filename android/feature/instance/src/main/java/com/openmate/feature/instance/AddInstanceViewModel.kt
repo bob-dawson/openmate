@@ -6,7 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
-import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.TempHttpClient
 import com.openmate.core.network.TokenStore
 import com.openmate.core.network.dto.BridgeStatusResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,7 +24,6 @@ private const val TAG = "AddInstanceViewModel"
 @HiltViewModel
 class AddInstanceViewModel @Inject constructor(
     private val profileRepository: ServerProfileRepository,
-    private val apiClient: OpencodeApiClient,
     private val tokenStore: TokenStore,
     private val connectionRepository: ConnectionRepository,
 ) : ViewModel() {
@@ -67,18 +66,10 @@ class AddInstanceViewModel @Inject constructor(
             _uiState.value = AddInstanceUiState.Testing
             _pin.value = null
             try {
-                val status = withContext(Dispatchers.IO) {
-                    val portNum = port.value.toIntOrNull()
-                        ?: throw IllegalArgumentException("Invalid port")
-                    val url = "http://${address.value}:$portNum"
-                    val saved = apiClient.baseUrl
-                    apiClient.baseUrl = url
-                    try {
-                        apiClient.bridgeStatus()
-                    } finally {
-                        apiClient.baseUrl = saved
-                    }
-                }
+                val portNum = port.value.toIntOrNull()
+                    ?: throw IllegalArgumentException("Invalid port")
+                val url = "http://${address.value}:$portNum"
+                val status = TempHttpClient.fetchBridgeStatus(url)
                 if (status.bridge.version.isBlank()) {
                     _uiState.value = AddInstanceUiState.Error("Not a Bridge server")
                 } else {
@@ -98,16 +89,8 @@ class AddInstanceViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = AddInstanceUiState.Saving
             try {
-                val status = withContext(Dispatchers.IO) {
-                    val url = "http://${address.value}:$portNum"
-                    val saved = apiClient.baseUrl
-                    apiClient.baseUrl = url
-                    try {
-                        apiClient.bridgeStatus()
-                    } finally {
-                        apiClient.baseUrl = saved
-                    }
-                }
+                val url = "http://${address.value}:$portNum"
+                val status = TempHttpClient.fetchBridgeStatus(url)
                 if (status.bridge.version.isBlank()) {
                     throw IllegalStateException("Not a Bridge server")
                 }
@@ -120,7 +103,7 @@ class AddInstanceViewModel @Inject constructor(
                 Log.d(TAG, "needsPairing=$needsPairing, authEnabled=${status.bridge.authEnabled}")
                 if (needsPairing) {
                     pendingOnSaved = onSaved
-                    startPairing(profileId, portNum)
+                    startPairing(portNum)
                 } else {
                     completeSave(profileId, portNum, onSaved)
                 }
@@ -130,21 +113,17 @@ class AddInstanceViewModel @Inject constructor(
         }
     }
 
-    private fun startPairing(profileId: String, portNum: Int) {
+    private fun startPairing(portNum: Int) {
         viewModelScope.launch {
             try {
                 _uiState.value = AddInstanceUiState.Pairing
                 val url = "http://${address.value}:$portNum"
                 Log.d(TAG, "Starting pairing request to $url")
-                val saved = apiClient.baseUrl
-                apiClient.baseUrl = url
                 val response = try {
-                    apiClient.bridgePairRequest()
+                    TempHttpClient.pairRequest(url)
                 } catch (e: Exception) {
                     Log.e(TAG, "Pair request failed", e)
                     throw e
-                } finally {
-                    apiClient.baseUrl = saved
                 }
                 Log.d(TAG, "Got PIN: ${response.pin}")
                 _pin.value = response.pin
@@ -164,13 +143,7 @@ class AddInstanceViewModel @Inject constructor(
             _uiState.value = AddInstanceUiState.ConfirmingPairing
             try {
                 val url = "http://${address.value}:$portNum"
-                val saved = apiClient.baseUrl
-                apiClient.baseUrl = url
-                val response = try {
-                    apiClient.bridgePairConfirm(pin)
-                } finally {
-                    apiClient.baseUrl = saved
-                }
+                val response = TempHttpClient.pairConfirm(url, pin)
                 tokenStore.saveToken(profileId, response.token)
                 val onSaved = pendingOnSaved
                 pendingOnSaved = null
