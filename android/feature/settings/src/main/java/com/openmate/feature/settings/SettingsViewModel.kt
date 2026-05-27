@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
+import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.network.OpencodeApiClient
@@ -30,6 +31,7 @@ private const val KEY_COMPACT_MODE = "compact_mode"
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val profileRepository: ServerProfileRepository,
+    private val connectionRepository: ConnectionRepository,
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
@@ -127,8 +129,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun disconnect() {
-        sseEventRepository.disconnect()
-        dbProvider.clearActive()
+        connectionRepository.disconnect()
     }
 
     fun setShowReasoning(show: Boolean) {

@@ -118,6 +118,9 @@ class ConnectionManager @Inject constructor(
     private var restoreStarted = false
 
     @Volatile
+    private var disconnectRequested = false
+
+    @Volatile
     private var runtimeMonitoringStarted = false
 
     init {
@@ -197,8 +200,17 @@ class ConnectionManager @Inject constructor(
         _needsRepairing.value = null
         _activeProfile.value = profile
 
+        val directUrl = "http://${profile.address}:${profile.port}"
+        if (profile.instanceId.isNotBlank()) {
+            apiClient.baseUrl = directUrl
+            gatewayInterceptor.instanceId = profile.instanceId
+        } else {
+            apiClient.baseUrl = directUrl
+            gatewayInterceptor.instanceId = null
+        }
+        scope.launch { tokenStore.setActiveProfileId(profile.id) }
+
         scope.launch {
-            tokenStore.setActiveProfileId(profile.id)
             dbProvider.setActive(profile.id)
             val prevState = actor.state.value
             if (prevState is ConnState.Idle || prevState is ConnState.Failed || prevState is ConnState.NeedsRepair) {
@@ -220,6 +232,7 @@ class ConnectionManager @Inject constructor(
 
     override fun disconnect() {
         logStore.log(SyncLogLevel.Info, SyncLogCategory.Gateway, "断开连接")
+        disconnectRequested = true
         scope.launch { actor.processEvent(ConnEvent.Disconnect) }
     }
 
@@ -271,7 +284,8 @@ class ConnectionManager @Inject constructor(
             is ConnState.Failed -> _errorMessage.value = state.reason
             is ConnState.NeedsRepair -> _needsRepairing.value = state.profile.id
             is ConnState.Idle -> {
-                if (_activeProfile.value != null) {
+                if (disconnectRequested) {
+                    disconnectRequested = false
                     scope.launch { clearConnection() }
                 }
             }
