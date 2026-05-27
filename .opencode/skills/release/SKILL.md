@@ -1,6 +1,6 @@
 ---
 name: release
-description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"打版本"、"版本发布"、"新版本"时触发。构建 Bridge (Windows) + Android APK，生成 CHANGELOG，复制安装说明，打 git 标签。
+description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"打版本"、"版本发布"、"新版本"时触发。构建 Bridge (Windows + Linux via WSL) + Android APK，生成 CHANGELOG，复制安装说明，打 git 标签。
 ---
 
 # OpenMate 发布流程
@@ -23,14 +23,14 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
 
 3. **执行发布脚本**
    ```powershell
-   powershell -File D:\openmate\scripts\release.ps1 -SkipLinux
+   powershell -File D:\openmate\scripts\release.ps1
    ```
-   - 默认跳过 Linux 交叉编译（需要额外配置交叉编译工具链）
-   - 如果需要 Linux 构建，去掉 `-SkipLinux`
+   - 默认包含 Linux 构建（通过 WSL Ubuntu-24.04 编译）
+   - 如果不需要 Linux 版本，加 `-SkipLinux`
 
 4. **验证产出**
    - 检查 `D:\openmate\release\{version}\` 目录内容
-   - 应包含：`openmate.exe`、`OpenMate-{version}.apk`、`bridge.toml`、`CHANGELOG.md`、`INSTALL.md`
+   - 应包含：`openmate.exe`、`openmate-linux-x86_64`、`OpenMate-{version}.apk`、`CHANGELOG.md`、`INSTALL.md`
    - 检查 CHANGELOG.md 中文是否正常（非乱码）
 
 5. **脚本自动处理**
@@ -49,7 +49,7 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
 | `-Version "0.2.0"` | 指定版本号 |
 | `-SkipBridge` | 跳过 Bridge 构建 |
 | `-SkipAndroid` | 跳过 Android 构建 |
-| `-SkipLinux` | 跳过 Linux 交叉编译（默认跳过） |
+| `-SkipLinux` | 跳过 Linux 构建（默认包含，通过 WSL 编译） |
 | `-SkipTag` | 不打 git 标签 |
 | `-DryRun` | 预览模式，不实际执行 |
 
@@ -66,3 +66,5 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
 - 这两个文件已在 `.gitignore` 中，不要提交
 - 发布脚本会自动处理 PowerShell 的 native 命令 stderr 编码问题
 - Android 需要 `--no-daemon` 避免 Windows 上 Gradle daemon 挂起
+- Linux 构建通过 `wsl -d Ubuntu-24.04` 调用 WSL 中的 `cargo build --release`，产出 Linux 原生 ELF binary
+- WSL 需要已安装 Rust 工具链（`~/.cargo/env`）

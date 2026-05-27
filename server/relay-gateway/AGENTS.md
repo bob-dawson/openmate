@@ -47,22 +47,32 @@ Android 客户端           网关 (服务器)               Bridge (用户 PC)
 
 ## 更新部署
 
-### 1. 本地编译 → 上传 → 重启
+### 1. WSL 编译 Linux 原生 binary → 上传 → 重启（推荐）
 
-```bash
-# 本地编译
-cd server/relay-gateway
-cargo build --release
-# 产出: target/release/relay-gateway.exe
+```powershell
+# WSL 编译
+wsl -d Ubuntu-24.04 -- bash -c "source ~/.cargo/env && cd /mnt/d/openmate/server/relay-gateway && cargo build --release"
+# 产出: target/release/relay-gateway (Linux ELF)
 
 # 上传 binary 到服务器
-scp target/release/relay-gateway root@gateway.clawmate.net:/data/relay-gateway/
+scp D:\openmate\server\relay-gateway\target\release\relay-gateway root@gateway.clawmate.net:/data/relay-gateway/
 
 # 重启服务
 ssh root@gateway.clawmate.net "systemctl restart relay-gateway"
 ```
 
-### 2. 或上传源码 → 服务器编译
+### 2. Windows 编译 → 上传 → 重启
+
+```powershell
+# Windows 编译（产出 .exe，仅用于本地调试，服务器需 Linux binary）
+cd D:\openmate\server\relay-gateway
+cargo build --release
+# 产出: target/release/relay-gateway.exe
+
+# 如需部署到服务器，请使用方法 1 (WSL 编译)
+```
+
+### 3. 或上传源码 → 服务器编译
 
 ```powershell
 # 上传单个文件
@@ -75,7 +85,7 @@ scp -r src\* root@gateway.clawmate.net:/data/relay-gateway/src/
 ssh root@gateway.clawmate.net "cd /data/relay-gateway && bash build.sh"
 ```
 
-### 3. `build.sh` 内容
+### `build.sh` 内容
 
 ```bash
 source /root/.cargo/env

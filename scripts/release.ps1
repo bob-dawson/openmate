@@ -204,29 +204,24 @@ if (-not $SkipBridge) {
     $bridgeOk = $true
 }
 
-# Step 3: Build Bridge (Linux)
+# Step 3: Build Bridge (Linux via WSL)
 if (-not $SkipLinux -and -not $SkipBridge) {
-    Write-Host "[3/6] Building Bridge (Linux x86_64)..." -ForegroundColor Cyan
-    Push-Location $BridgeRoot
+    Write-Host "[3/6] Building Bridge (Linux x86_64 via WSL)..." -ForegroundColor Cyan
+    $wslBridgeRoot = "/mnt/d/openmate/opencode-bridge"
+    $wslReleaseDir = "/mnt/d/openmate/release/$Version"
     try {
-        $target = "x86_64-unknown-linux-gnu"
-        $installed = rustup target list --installed 2>$null
-        if ($installed -notcontains $target) {
-            Write-Host "  Installing target $target..." -ForegroundColor Yellow
-            rustup target add $target
-        }
         $ea = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        $output = cargo build --release --target $target 2>&1
+        $output = wsl -d Ubuntu-24.04 -- bash -c "source ~/.cargo/env && cd $wslBridgeRoot && CARGO_TARGET_DIR=target-linux cargo build --release 2>&1"
         $ErrorActionPreference = $ea
         $output | Where-Object { $_ -match "Compiling|Finished|error" } | ForEach-Object { Write-Host "  $_" }
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "  Linux cross-compile failed (may need linker config)" -ForegroundColor Red
+            Write-Host "  Linux build via WSL failed" -ForegroundColor Red
         } else {
-            Copy-Item "$BridgeRoot\target\$target\release\openmate" "$ReleaseDir\openmate-linux-x86_64" -Force
+            Copy-Item "$BridgeRoot\target-linux\release\openmate" "$ReleaseDir\openmate-linux-x86_64" -Force
             Write-Host "  Bridge Linux -> openmate-linux-x86_64" -ForegroundColor Green
         }
-    } finally {
-        Pop-Location
+    } catch {
+        Write-Host "  WSL not available or build failed: $_" -ForegroundColor Red
     }
 } else {
     Write-Host "[3/6] Skipping Linux build" -ForegroundColor Yellow
