@@ -31,14 +31,14 @@ app.MapPost("/api/gradle/run", async (HttpContext ctx) =>
         return;
     }
 
-    var result = await GradleTools.RunGradle(body.Args, body.Cwd, body.TimeoutMs ?? 600000);
-    await ctx.Response.WriteAsJsonAsync(new { result });
+    var result = await GradleTools.RunGradleStructured(body.Args, body.Cwd, body.TimeoutMs ?? 600000);
+    await ctx.Response.WriteAsJsonAsync(result);
 });
 
 app.MapPost("/api/gradle/stop", async (HttpContext ctx) =>
 {
-    var result = await GradleTools.StopGradle();
-    await ctx.Response.WriteAsJsonAsync(new { result });
+    var result = await GradleTools.StopGradleStructured();
+    await ctx.Response.WriteAsJsonAsync(result);
 });
 
 app.MapGet("/api/gradle/status", (HttpContext ctx) =>

@@ -26,9 +26,11 @@ feature/settings/       → 设置页 (1 ViewModel)
 ```
 
 ## Build & Run
-- **优先使用 `gradle_runner_run_gradle` 构建 Android**: 该 MCP 工具会从当前目录向上查找祖先目录中的 `android\gradlew.bat`，允许复用 Gradle daemon，并避免 Windows 下 shell/bash 工具等待 `gradlew` 子进程关闭句柄而卡住。示例: `gradle_runner_run_gradle(args=[":app:assembleDebug"], cwd="D:\\openmate")`
+- **优先使用 GradleMcp HTTP API 构建 Android**: 由于 opencode MCP 远程连接空闲后可能断连且不会自动重连，推荐使用 HTTP 接口。示例: `Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/run" -Method Post -ContentType "application/json" -Body '{"args":[":app:assembleDebug"],"cwd":"D:\\openmate"}'`
+- **MCP 方式（备选）**: `gradle_runner_run_gradle(args=[":app:assembleDebug"], cwd="D:\\openmate")` — MCP 连接不稳定时可能失败
 - **只有直接走 shell 时才要求加 `--no-daemon`**: Windows 上 Gradle daemon 完成后不退出进程，可能导致 shell/bash 工具卡住不返回。示例: `.\gradlew.bat assembleDebug --no-daemon 2>&1 | Select-String -Pattern "^e:|BUILD"`
-- **停止正在运行的 Gradle**: 使用 `gradle_runner_stop_gradle`，不要并发发起第二个 Gradle 命令
+- **停止正在运行的 Gradle**: HTTP 方式 `Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/stop" -Method Post`，或 MCP 方式 `gradle_runner_stop_gradle`，不要并发发起第二个 Gradle 命令
+- **查询构建状态**: `Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/status"`
 - **Kotlin 编译错误过滤**: `Select-String -Pattern "^e:"`（`^` 锚点很重要，否则会匹配 `core:database:preBuild` 等正常日志）
 
 ## Key Conventions

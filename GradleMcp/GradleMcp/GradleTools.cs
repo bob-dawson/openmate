@@ -25,21 +25,32 @@ namespace GradleMcp
             [Description("Starting directory used to locate the workspace that contains android/gradlew.bat")] string? cwd = null,
             [Description("Timeout in milliseconds")] int timeoutMs = 600000)
         {
+            var result = await RunGradleCore(args, cwd, timeoutMs);
+            return result.ToText();
+        }
+
+        public static Task<GradleRunResult> RunGradleStructured(string[] args, string? cwd = null, int timeoutMs = 600000)
+        {
+            return RunGradleCore(args, cwd, timeoutMs);
+        }
+
+        private static async Task<GradleRunResult> RunGradleCore(string[] args, string? cwd, int timeoutMs)
+        {
             if (args.Length == 0)
             {
-                return "error: args must not be empty";
+                return GradleRunResult.Error("args must not be empty");
             }
 
             if (timeoutMs <= 0)
             {
-                return "error: timeoutMs must be greater than zero";
+                return GradleRunResult.Error("timeoutMs must be greater than zero");
             }
 
             var requestedDirectory = ResolveRequestedDirectory(cwd);
             var wrapper = FindGradleWrapper(requestedDirectory);
             if (wrapper is null)
             {
-                return $"error: could not find android{Path.DirectorySeparatorChar}gradlew.bat from '{requestedDirectory}' or its ancestors";
+                return GradleRunResult.Error($"could not find android{Path.DirectorySeparatorChar}gradlew.bat from '{requestedDirectory}' or its ancestors");
             }
 
             var androidDirectory = Path.GetDirectoryName(wrapper)!;
@@ -91,7 +102,7 @@ namespace GradleMcp
 
             if (!TryRegisterInvocation(new RunningInvocation(invocationId, process, stdoutPath, stderrPath, androidDirectory, DateTimeOffset.UtcNow)))
             {
-                return "error: another Gradle command is already running; use stop_gradle before starting a new one";
+                return GradleRunResult.Error("another Gradle command is already running; use stop_gradle before starting a new one");
             }
 
             var timedOut = false;
@@ -152,24 +163,22 @@ namespace GradleMcp
                     $"combinedTailLength={combinedTail.Length}"
                 );
 
-                return string.Join("\n", [
-                    $"ok: {!timedOut && !idleTimedOut && process.ExitCode == 0}",
-                    $"exitCode: {process.ExitCode}",
-                    $"timedOut: {timedOut}",
-                    $"idleTimedOut: {idleTimedOut}",
-                    $"durationMs: {durationMs}",
-                    "stdoutTail:",
-                    stdoutTail,
-                    "stderrTail:",
-                    stderrTail,
-                    "combinedTail:",
-                    combinedTail,
-                ]);
+                return new GradleRunResult
+                {
+                    Ok = !timedOut && !idleTimedOut && process.ExitCode == 0,
+                    ExitCode = process.ExitCode,
+                    TimedOut = timedOut,
+                    IdleTimedOut = idleTimedOut,
+                    DurationMs = durationMs,
+                    StdoutTail = stdoutTail,
+                    StderrTail = stderrTail,
+                    CombinedTail = combinedTail,
+                };
             }
             catch (Exception ex)
             {
                 Log($"{invocationId}: run_gradle failed", ex.ToString());
-                return $"error: {ex.Message}";
+                return GradleRunResult.Error(ex.Message);
             }
             finally
             {
@@ -193,6 +202,17 @@ namespace GradleMcp
         [Description("Stop the currently running Gradle command by terminating its process tree.")]
         public static async Task<string> StopGradle()
         {
+            var result = await StopGradleCore();
+            return result.ToText();
+        }
+
+        public static Task<GradleStopResult> StopGradleStructured()
+        {
+            return StopGradleCore();
+        }
+
+        private static async Task<GradleStopResult> StopGradleCore()
+        {
             RunningInvocation? invocation;
             lock (Sync)
             {
@@ -202,7 +222,7 @@ namespace GradleMcp
             if (invocation is null)
             {
                 Log("stop_gradle: no running task");
-                return "stopped: false\nhadRunningTask: false\nmessage: no Gradle command is running";
+                return new GradleStopResult { Stopped = false, HadRunningTask = false, Message = "no Gradle command is running" };
             }
 
             Log($"{invocation.Id}: stop requested");
@@ -221,13 +241,14 @@ namespace GradleMcp
 
             ClearInvocation(invocation.Id);
             Log($"{invocation.Id}: stop finished", $"stopped={stopped}");
-            return string.Join("\n", [
-                $"stopped: {stopped}",
-                "hadRunningTask: true",
-                stopped
-                    ? "message: requested termination of the current Gradle process tree"
-                    : "message: failed to terminate the current Gradle process tree",
-            ]);
+            return new GradleStopResult
+            {
+                Stopped = stopped,
+                HadRunningTask = true,
+                Message = stopped
+                    ? "requested termination of the current Gradle process tree"
+                    : "failed to terminate the current Gradle process tree",
+            };
         }
 
         public static Task StopActiveProcessAsync()
@@ -617,5 +638,47 @@ namespace GradleMcp
         public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task StopAsync(CancellationToken cancellationToken) => GradleTools.StopActiveProcessAsync();
+    }
+
+    public class GradleRunResult
+    {
+        public bool Ok { get; set; }
+        public int ExitCode { get; set; }
+        public bool TimedOut { get; set; }
+        public bool IdleTimedOut { get; set; }
+        public long DurationMs { get; set; }
+        public string StdoutTail { get; set; } = "";
+        public string StderrTail { get; set; } = "";
+        public string CombinedTail { get; set; } = "";
+        public string? ErrorMessage { get; set; }
+
+        public static GradleRunResult Error(string message) => new() { Ok = false, ErrorMessage = message };
+
+        public string ToText()
+        {
+            if (ErrorMessage is not null) return $"error: {ErrorMessage}";
+            return string.Join("\n", [
+                $"ok: {Ok}",
+                $"exitCode: {ExitCode}",
+                $"timedOut: {TimedOut}",
+                $"idleTimedOut: {IdleTimedOut}",
+                $"durationMs: {DurationMs}",
+                "stdoutTail:",
+                StdoutTail,
+                "stderrTail:",
+                StderrTail,
+                "combinedTail:",
+                CombinedTail,
+            ]);
+        }
+    }
+
+    public class GradleStopResult
+    {
+        public bool Stopped { get; set; }
+        public bool HadRunningTask { get; set; }
+        public string Message { get; set; } = "";
+
+        public string ToText() => $"stopped: {Stopped}\nhadRunningTask: {HadRunningTask}\nmessage: {Message}";
     }
 }

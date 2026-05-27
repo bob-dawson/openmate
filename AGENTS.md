@@ -8,6 +8,7 @@
 - **opencode 源码**: `D:\github\opencode` — 排查服务端事件流、`prompt_async`、`session.next.*` 相关逻辑时优先查看该仓库及其 `AGENTS.md`
 - **调试脚本**: `D:\openmate\scripts\`
 - **sync-debugger**: `D:\openmate\tools\sync-debugger` — 详见 [`tools/sync-debugger/AGENTS.md`](tools/sync-debugger/AGENTS.md)（纯 Kotlin/JVM CLI，重放 EventReplayer 增量同步排查 bug）
+- **GradleMcp**: `D:\openmate\GradleMcp\GradleMcp` — .NET 10 Windows 服务，提供 Gradle 构建能力，端口 5099
 
 ## Key Paths
 
@@ -159,6 +160,44 @@ SELECT id, title, status FROM SessionEntity ORDER BY updatedAt DESC;
 ```
 
 **重要**: 每次 app 重新安装（DB version 变更 + fallbackToDestructiveMigration）后，需要重新进入会话触发同步才能看到数据。
+
+## GradleMcp HTTP API
+
+GradleMcp（端口 5099）同时提供 MCP 协议（`/mcp`）和 REST HTTP 接口。由于 opencode MCP 远程连接空闲后可能断连且不会自动重连，推荐使用 HTTP 接口作为可靠替代。
+
+### 端点
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/gradle/run` | 执行 Gradle 构建 |
+| POST | `/api/gradle/stop` | 停止当前构建 |
+| GET | `/api/gradle/status` | 查询构建状态 |
+
+### 请求/响应
+
+```powershell
+# 运行 Gradle
+Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/run" -Method Post -ContentType "application/json" -Body '{"args":[":app:assembleDebug"],"cwd":"D:\\openmate"}'
+
+# 请求体字段：
+#   args       string[]  必需，Gradle 参数
+#   cwd        string?   可选，起始目录（默认当前目录）
+#   timeoutMs  int?      可选，超时毫秒数（默认 600000）
+
+# run 响应（结构化 JSON）：
+# {"ok":true,"exitCode":0,"timedOut":false,"idleTimedOut":false,"durationMs":12345,"stdoutTail":"...","stderrTail":"...","combinedTail":"...","errorMessage":null}
+# 编译错误在 stderrTail/combinedTail 中，ok=false 且 exitCode!=0 表示构建失败
+
+# 停止构建
+Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/stop" -Method Post
+
+# stop 响应：
+# {"stopped":true,"hadRunningTask":true,"message":"requested termination of the current Gradle process tree"}
+
+# 查询状态
+Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/status"
+# 返回: {"running":false} 或 {"running":true,"invocation":{"id":"...","startedAt":"...","workingDirectory":"...","running":true,"pid":12345}}
+```
 
 ## 编写复杂实现计划的规范
 
