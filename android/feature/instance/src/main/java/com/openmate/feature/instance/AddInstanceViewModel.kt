@@ -213,17 +213,24 @@ class AddInstanceViewModel @Inject constructor(
     }
 
     private suspend fun completeSave(profileId: String, portNum: Int, onSaved: () -> Unit) {
-        val profile = ServerProfile(
-            id = profileId,
-            name = name.value,
-            address = address.value,
-            port = portNum,
-            instanceId = pendingInstanceId,
-            createdAt = editProfileId?.let {
-                profileRepository.getById(it)?.createdAt
-            } ?: System.currentTimeMillis(),
-        )
-        profileRepository.save(profile)
+        val existing = editProfileId?.let { profileRepository.getById(it) }
+        if (existing != null) {
+            profileRepository.save(existing.copy(
+                name = name.value,
+                address = address.value,
+                port = portNum,
+                instanceId = pendingInstanceId.ifEmpty { existing.instanceId },
+            ))
+        } else {
+            profileRepository.save(ServerProfile(
+                id = profileId,
+                name = name.value,
+                address = address.value,
+                port = portNum,
+                instanceId = pendingInstanceId,
+                createdAt = System.currentTimeMillis(),
+            ))
+        }
         withContext(Dispatchers.Main) { onSaved() }
     }
 }

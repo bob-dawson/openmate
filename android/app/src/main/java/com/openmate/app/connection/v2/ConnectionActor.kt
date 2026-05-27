@@ -298,7 +298,7 @@ class ConnectionActor(
                 onEntry {
                     val s = _state.value as ConnState.Connected
                     onEffect(ConnEffect.RefreshSessions)
-                    onEffect(ConnEffect.SaveProfile(s.profile))
+                    onEffect(ConnEffect.UpdateLastConnectedAt(s.profile.id))
                     if (s.route is Route.Gateway) {
                         onEffect(ConnEffect.StartDirectCheckLoop(s.profile.address, s.profile.port))
                     }

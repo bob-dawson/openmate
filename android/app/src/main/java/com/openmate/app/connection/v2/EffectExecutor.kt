@@ -60,7 +60,12 @@ class EffectExecutor(
             is ConnEffect.StopBackoff -> stopBackoff()
             is ConnEffect.SetApiClient -> setApiClient(effect.baseUrl, effect.instanceId)
             is ConnEffect.RefreshSessions -> scope.launch { sessionRepository.refreshSessionStatuses() }
-            is ConnEffect.SaveProfile -> scope.launch { profileRepository.save(effect.profile) }
+            is ConnEffect.UpdateLastConnectedAt -> scope.launch {
+                val profile = profileRepository.getById(effect.profileId)
+                if (profile != null) {
+                    profileRepository.save(profile.copy(lastConnectedAt = System.currentTimeMillis()))
+                }
+            }
             is ConnEffect.StartDirectCheckLoop -> startDirectCheckLoop(effect.address, effect.port)
             is ConnEffect.StopDirectCheckLoop -> stopDirectCheckLoop()
             is ConnEffect.ClearApiClient -> clearApiClient()
