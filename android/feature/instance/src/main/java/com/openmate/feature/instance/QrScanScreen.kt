@@ -247,7 +247,7 @@ private fun processImageProxy(imageProxy: ImageProxy, viewModel: QrScanViewModel
             .addOnSuccessListener { barcodes ->
                 for (barcode in barcodes) {
                     val rawValue = barcode.rawValue
-                    if (!rawValue.isNullOrBlank() && (rawValue.startsWith("http") || rawValue.startsWith("openmate:", ignoreCase = true))) {
+                    if (!rawValue.isNullOrBlank() && (rawValue.startsWith("http") || rawValue.startsWith("op:", ignoreCase = true))) {
                         viewModel.handleBarcode(rawValue)
                         return@addOnSuccessListener
                     }

@@ -124,6 +124,8 @@ class SyncDebugControllerTest {
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
 
+        override suspend fun fetchDiffFiles(sessionId: String, messageId: String, toolName: String, targetFilePath: String?): List<com.openmate.core.domain.model.DiffFile> = emptyList()
+
         override suspend fun getLastSeq(sessionId: String): Long? = null
     }
 }

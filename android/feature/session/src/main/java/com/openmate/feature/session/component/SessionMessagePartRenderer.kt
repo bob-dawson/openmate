@@ -82,6 +82,8 @@ sealed class DisplayItem {
         val hash: String?,
         val callID: String? = null,
         val metadata: JsonObject? = null,
+        val sessionId: String = "",
+        val messageId: String = "",
     ) : DisplayItem()
     data class ReasoningItem(val text: String) : DisplayItem()
     data class FileItem(val filename: String?, val mime: String, val url: String) : DisplayItem()
@@ -641,7 +643,13 @@ internal fun TaskToolLine(
 }
 
 @Composable
-internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onViewFile: ((filePath: String) -> Unit)? = null) {
+internal fun BlockToolLine(
+    item: DisplayItem.ToolItem,
+    summary: ToolSummary,
+    onViewFile: ((filePath: String) -> Unit)? = null,
+    onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
+) {
+    val isDiffTool = item.toolName == "edit" || item.toolName == "apply_patch"
     val expanded = remember { mutableStateOf(false) }
     val files = if (item.toolName == "apply_patch" && item.files.isEmpty()) {
         extractApplyPatchResultFiles(item.result)
@@ -740,12 +748,15 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                         } catch (_: Exception) { null }
                         val filePath = jsonArgs?.str("filePath") ?: jsonArgs?.str("file_path") ?: ""
                         if (filePath.isNotBlank()) {
+                            val canDiff = onViewDiff != null && item.sessionId.isNotEmpty() && item.messageId.isNotEmpty()
                             Text(
                                 text = filePath,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium),
-                                color = if (onViewFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                color = if (onViewFile != null || canDiff) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 softWrap = true,
-                                modifier = if (onViewFile != null) Modifier.clickable { onViewFile.invoke(filePath) } else Modifier,
+                                modifier = if (canDiff) Modifier.clickable { onViewDiff!!.invoke(item.sessionId, item.messageId, item.toolName, filePath) }
+                                    else if (onViewFile != null) Modifier.clickable { onViewFile.invoke(filePath) }
+                                    else Modifier,
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
@@ -867,13 +878,16 @@ internal fun BlockToolLine(item: DisplayItem.ToolItem, summary: ToolSummary, onV
                     if (files.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
                         files.forEach { file ->
+                            val canDiff = isDiffTool && onViewDiff != null && item.sessionId.isNotEmpty() && item.messageId.isNotEmpty()
                             Text(
                                 text = file,
                                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                color = if (onViewFile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (onViewFile != null || canDiff) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = if (onViewFile != null) Modifier.clickable { onViewFile.invoke(file) } else Modifier,
+                                modifier = if (canDiff) Modifier.clickable { onViewDiff!!.invoke(item.sessionId, item.messageId, item.toolName, file) }
+                                    else if (onViewFile != null) Modifier.clickable { onViewFile.invoke(file) }
+                                    else Modifier,
                             )
                         }
                     }

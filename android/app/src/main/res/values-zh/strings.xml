@@ -19,6 +19,8 @@
     <string name="add_first_instance">添加你的第一个 opencode 实例</string>
     <string name="edit">编辑</string>
     <string name="delete">删除</string>
+    <string name="diff_viewer">差异查看</string>
+    <string name="no_diff_data">未找到差异数据</string>
 
     <!-- Connection Status -->
     <string name="status_connected">在线</string>

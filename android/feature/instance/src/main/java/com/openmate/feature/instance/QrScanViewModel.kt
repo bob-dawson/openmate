@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.net.URL
+import java.util.Base64
 import javax.inject.Inject
 
 private const val TAG = "QrScanViewModel"
@@ -165,7 +166,7 @@ class QrScanViewModel @Inject constructor(
     )
 
     private fun parseQrUrl(url: String): ParsedQrUrl? {
-        if (url.startsWith("openmate:", ignoreCase = true)) {
+        if (url.startsWith("op:", ignoreCase = true)) {
             return parseCustomProtocol(url)
         }
         return try {
@@ -192,20 +193,19 @@ class QrScanViewModel @Inject constructor(
     }
 
     private fun parseCustomProtocol(url: String): ParsedQrUrl? {
-        val body = url.removePrefix("openmate:")
-        val params = body.split(";")
-        var iid = ""
-        var st = ""
-        for (param in params) {
-            val parts = param.split("=", limit = 2)
-            if (parts.size == 2) {
-                when (parts[0]) {
-                    "iid" -> iid = parts[1]
-                    "st" -> st = parts[1]
-                }
-            }
-        }
+        val body = url.removePrefix("op:")
+        val parts = body.split(":", limit = 2)
+        if (parts.size < 2) return null
+        val iidB64 = parts[0]
+        val st = parts[1]
         if (st.isBlank()) return null
+        val iid = try {
+            val bytes = Base64.getUrlDecoder().decode(iidB64)
+            bytes.joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to decode iid base64url: ${e.message}")
+            iidB64
+        }
         return ParsedQrUrl(
             name = "",
             address = "",

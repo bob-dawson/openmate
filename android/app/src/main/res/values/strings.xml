@@ -20,6 +20,8 @@
     <string name="add_first_instance">Add your first opencode instance</string>
     <string name="edit">Edit</string>
     <string name="delete">Delete</string>
+    <string name="diff_viewer">Diff Viewer</string>
+    <string name="no_diff_data">No diff data found</string>
 
     <!-- Connection Status -->
     <string name="status_connected">Online</string>

@@ -659,6 +659,16 @@ fun SessionDetailScreen(
                             onReplyPermission = { requestID, reply, msg -> viewModel.replyPermission(requestID, reply, msg) },
                             runningAnchors = runningAnchors,
                             onViewFile = { filePath -> viewModel.openFilePreview(filePath) },
+                            onViewDiff = { sId, mId, toolName, fp ->
+                                val intent = android.content.Intent().apply {
+                                    setClassName(context, "com.openmate.app.diff.DiffViewerActivity")
+                                    putExtra("session_id", sId)
+                                    putExtra("message_id", mId)
+                                    putExtra("tool_name", toolName)
+                                    if (fp != null) putExtra("file_path", fp)
+                                }
+                                context.startActivity(intent)
+                            },
                             onRevertToMessage = { messageID -> viewModel.revertToMessage(sessionID, messageID) },
                         )
                     }

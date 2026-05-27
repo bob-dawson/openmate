@@ -56,7 +56,7 @@ internal fun extractSubtaskSessionId(
         ?: resultText?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
 }
 
-internal fun extractToolItems(data: JsonObject): List<DisplayItem.ToolItem> {
+internal fun extractToolItems(data: JsonObject, sessionId: String = "", messageId: String = ""): List<DisplayItem.ToolItem> {
     val content = data["content"]?.jsonArray ?: return emptyList()
     val items = mutableListOf<DisplayItem.ToolItem>()
     val patches = mutableListOf<List<String>>()
@@ -125,6 +125,8 @@ internal fun extractToolItems(data: JsonObject): List<DisplayItem.ToolItem> {
                         hash = null,
                         callID = callID,
                         metadata = mergedMetadata,
+                        sessionId = sessionId,
+                        messageId = messageId,
                     ),
                 )
                 if (nextPatchFiles != null) {
@@ -157,6 +159,7 @@ fun SessionMessageRenderer(
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
     runningAnchors: Map<String, Long> = emptyMap(),
     onViewFile: ((filePath: String) -> Unit)? = null,
+    onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
     onRevertToMessage: (String) -> Unit = {},
 ) {
     val dataJson = remember(entity.data) {
@@ -209,6 +212,8 @@ fun SessionMessageRenderer(
             Column(modifier = Modifier.fillMaxWidth()) {
                 AssistantMessageItem(
                     data = dataJson,
+                    sessionId = entity.sessionId,
+                    messageId = entity.id,
                     showReasoning = showReasoning,
                     compactMode = compactMode,
                     onNavigateToSubtask = onNavigateToSubtask,
@@ -218,6 +223,7 @@ fun SessionMessageRenderer(
                     onRejectQuestion = onRejectQuestion,
                     onReplyPermission = onReplyPermission,
                     onViewFile = onViewFile,
+                    onViewDiff = onViewDiff,
                 )
                 if (errorMessage != null) {
                     AssistantErrorCard(errorMessage)
@@ -464,6 +470,8 @@ fun UserMessageItem(
 @Composable
 fun AssistantMessageItem(
     data: JsonObject,
+    sessionId: String = "",
+    messageId: String = "",
     showReasoning: Boolean = true,
     compactMode: Boolean = false,
     onNavigateToSubtask: (String, String) -> Unit = { _, _ -> },
@@ -473,10 +481,11 @@ fun AssistantMessageItem(
     onRejectQuestion: (String) -> Unit = {},
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
     onViewFile: ((filePath: String) -> Unit)? = null,
+    onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
 ) {
     val content = data["content"]?.jsonArray ?: return
     val reasoningExpanded = remember { mutableStateOf(false) }
-    val toolItems = remember(data) { extractToolItems(data) }
+    val toolItems = remember(data) { extractToolItems(data, sessionId, messageId) }
     var toolIndex = 0
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
@@ -571,7 +580,7 @@ fun AssistantMessageItem(
                         } else {
                             val summary = toolSummary(name, input, resultText)
                             if (shouldExpandRunningTool(displayItem)) {
-                                BlockToolLine(displayItem, summary, onViewFile)
+                                BlockToolLine(displayItem, summary, onViewFile, onViewDiff)
                             } else {
                                 RunningToolLine(displayItem, onViewFile)
                             }
@@ -599,7 +608,7 @@ fun AssistantMessageItem(
                                 answers = questionAnswers,
                             )
                         } else if (summary.isBlock) {
-                            BlockToolLine(displayItem, summary, onViewFile)
+                            BlockToolLine(displayItem, summary, onViewFile, onViewDiff)
                         } else {
                             InlineToolLine(displayItem, onViewFile)
                         }
