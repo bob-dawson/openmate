@@ -506,34 +506,24 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
             val structured = state["structured"]?.jsonObject
 
-            val matchPath: (String) -> Boolean = if (targetFilePath == null) {
-                { _ -> true }
-            } else {
-                { fp -> fp == targetFilePath || fp.endsWith("/$targetFilePath") || fp.endsWith("\\$targetFilePath") }
-            }
-
             if (toolName == "apply_patch") {
                 val structuredFiles = structured?.get("files")?.jsonArray
-                logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "fetchDiffFiles apply_patch structuredFiles size=${structuredFiles?.size} targetFilePath=$targetFilePath")
                 if (structuredFiles != null) {
                     for (sf in structuredFiles) {
                         val sfObj = sf.jsonObject
                         val fp = sfObj["filePath"]?.jsonPrimitive?.contentOrNull ?: continue
-                        val matched = matchPath(fp)
-                        val hasPatch = sfObj["patch"] != null
-                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "fetchDiffFiles apply_patch file fp=$fp hasPatch=$hasPatch matched=$matched")
-                        if (!matched) continue
+                        if (targetFilePath != null && !fp.replace('\\', '/').endsWith("/${targetFilePath.replace('\\', '/')}") && fp != targetFilePath) continue
                         val patchText = sfObj["patch"]?.jsonPrimitive?.contentOrNull ?: continue
                         val parsed = DiffBuilder.fromUnifiedDiff(patchText)
                         if (parsed.isNotEmpty()) return parsed
                     }
                 }
                 val diffText = structured?.get("diff")?.jsonPrimitive?.contentOrNull
-                logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "fetchDiffFiles apply_patch fallback diff len=${diffText?.length ?: 0}")
                 if (!diffText.isNullOrBlank()) {
                     val parsed = DiffBuilder.fromUnifiedDiff(diffText)
-                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "fetchDiffFiles apply_patch diff parsed=${parsed.size} paths=${parsed.map { it.filePath }}")
-                    return if (targetFilePath != null) parsed.filter { matchPath(it.filePath) } else parsed
+                    return if (targetFilePath != null) parsed.filter {
+                        it.filePath.replace('\\', '/').endsWith("/${targetFilePath.replace('\\', '/')}") || it.filePath == targetFilePath
+                    } else parsed
                 }
                 val input = state["input"]?.jsonObject ?: return emptyList()
                 val patchText = input["patchText"]?.jsonPrimitive?.contentOrNull
