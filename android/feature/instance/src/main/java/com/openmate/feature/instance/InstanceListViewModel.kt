@@ -49,7 +49,7 @@ class InstanceListViewModel @Inject constructor(
                         ProfileWithStatus(profile, status)
                     }
                 }
-                .collect { _profiles.value = it }
+                .collect { _profiles.value = it.sortedBy { item -> item.profile.name.lowercase() } }
         }
     }
 
