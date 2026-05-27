@@ -39,6 +39,8 @@
     <string name="scan_pairing">Pairing</string>
     <string name="scan_pairing_message">Checking gateway and pairing…</string>
     <string name="scan_pair_failed">Pairing Failed</string>
+    <string name="scan_login_success">Login Successful</string>
+    <string name="scan_login_success_message">Browser login confirmed</string>
     <string name="camera_permission_required">Camera permission is required to scan QR codes</string>
     <string name="retry_scan">Retry</string>
 

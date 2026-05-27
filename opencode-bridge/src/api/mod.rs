@@ -48,8 +48,28 @@ pub fn routes() -> Router<AppState> {
             get(crate::auth::scan::scan_generate),
         )
         .route(
+            "/api/bridge/pair/scan-poll",
+            get(crate::auth::scan::scan_poll),
+        )
+        .route(
             "/api/bridge/pair/scan-confirm",
             post(crate::auth::scan::scan_confirm),
+        )
+        .route(
+            "/api/bridge/login/qrcode",
+            get(crate::auth::login::login_qrcode),
+        )
+        .route(
+            "/api/bridge/login/qr-image",
+            get(crate::auth::login::login_qr_image),
+        )
+        .route(
+            "/api/bridge/login/confirm",
+            post(crate::auth::login::login_confirm),
+        )
+        .route(
+            "/api/bridge/login/poll",
+            get(crate::auth::login::login_poll),
         )
         .route(
             "/api/bridge/reset-secret",

@@ -1,11 +1,11 @@
-use axum::extract::{ConnectInfo, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::Json;
 use serde::Deserialize;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::AppError;
-use crate::state::AppState;
+use crate::state::{AppState, ScanConfirmResult};
 use super::token::Token;
 
 const SCAN_TOKEN_TTL_SECS: i64 = 120;
@@ -136,6 +136,15 @@ pub async fn scan_confirm(
 
     let token = Token::generate(&state.secret_key, &device_id);
 
+    {
+        let mut results = state.scan_confirm_results.write().await;
+        results.insert(body.scan_token.clone(), ScanConfirmResult {
+            token: token.clone(),
+            device_id: device_id.clone(),
+            expires_at: now + 30_000,
+        });
+    }
+
     if is_new {
         tracing::info!("Scan pair confirmed for {}, device {} (new)", ip, device_id);
     } else {
@@ -202,4 +211,47 @@ fn is_virtual(ip: &Ipv4Addr) -> bool {
 fn is_private_lan(ip: &Ipv4Addr) -> bool {
     let o = ip.octets();
     o[0] == 192 && o[1] == 168
+}
+
+#[derive(Deserialize)]
+pub struct ScanPollQuery {
+    pub token: String,
+}
+
+pub async fn scan_poll(
+    State(state): State<AppState>,
+    Query(params): Query<ScanPollQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    {
+        let mut results = state.scan_confirm_results.write().await;
+        if let Some(result) = results.get(&params.token) {
+            if result.expires_at > now {
+                let res = result.clone();
+                results.remove(&params.token);
+                return Ok(Json(serde_json::json!({
+                    "status": "confirmed",
+                    "token": res.token,
+                    "device_id": res.device_id,
+                })));
+            } else {
+                results.remove(&params.token);
+            }
+        }
+    }
+
+    {
+        let st = state.scan_token.read().await;
+        if let Some(entry) = st.as_ref() {
+            if entry.token == params.token && entry.expires_at > now {
+                return Ok(Json(serde_json::json!({"status": "pending"})));
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({"status": "expired"})))
 }

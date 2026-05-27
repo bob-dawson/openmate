@@ -152,6 +152,11 @@ data class ScanPairConfirmRequest(
 )
 
 @Serializable
+data class LoginConfirmRequest(
+    @SerialName("session_id") val sessionId: String = "",
+)
+
+@Serializable
 data class ScanPairConfirmResponse(
     val token: String = "",
     @SerialName("device_id") val deviceId: String = "",

@@ -7,14 +7,16 @@ class BearerTokenInterceptor(
     private val tokenStore: TokenStore,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        val hasAuth = request.header("Authorization") != null
         val token = tokenStore.activeToken
-        val request = if (token != null) {
-            chain.request().newBuilder()
+        val newRequest = if (!hasAuth && token != null) {
+            request.newBuilder()
                 .header("Authorization", "Bearer $token")
                 .build()
         } else {
-            chain.request()
+            request
         }
-        return chain.proceed(request)
+        return chain.proceed(newRequest)
     }
 }

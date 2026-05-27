@@ -59,6 +59,7 @@ private const val TAG = "QrScanScreen"
 fun QrScanScreen(
     onBack: () -> Unit,
     onScanComplete: (name: String, address: String, port: Int, scanToken: String) -> Unit,
+    onLoginComplete: () -> Unit = {},
     viewModel: QrScanViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -90,11 +91,14 @@ fun QrScanScreen(
         val result = scanState
         if (result is ScanResult) {
             onScanComplete(result.name, result.address, result.port, result.scanToken)
+        } else if (result is ScanUiLoginConfirmed) {
+            onLoginComplete()
         }
     }
 
     val isProcessing = scanState is ScanUiStateProcessing
     val isError = scanState is ScanUiStateError
+    val isLoginConfirmed = scanState is ScanUiLoginConfirmed
 
     Scaffold(
         topBar = {
@@ -104,6 +108,7 @@ fun QrScanScreen(
                         when {
                             isProcessing -> stringResource(R.string.scan_pairing)
                             isError -> stringResource(R.string.scan_pair_failed)
+                            isLoginConfirmed -> stringResource(R.string.scan_login_success)
                             else -> stringResource(R.string.scan_qr_code)
                         }
                     )
@@ -122,6 +127,11 @@ fun QrScanScreen(
         when {
             isProcessing -> {
                 PairingProgressScreen(
+                    modifier = Modifier.padding(padding),
+                )
+            }
+            isLoginConfirmed -> {
+                LoginConfirmedScreen(
                     modifier = Modifier.padding(padding),
                 )
             }
@@ -237,6 +247,23 @@ private fun PairingErrorScreen(
     }
 }
 
+@Composable
+private fun LoginConfirmedScreen(
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.scan_login_success_message),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
 private fun processImageProxy(imageProxy: ImageProxy, viewModel: QrScanViewModel) {
     val mediaImage = imageProxy.image
     if (mediaImage != null) {
@@ -247,7 +274,7 @@ private fun processImageProxy(imageProxy: ImageProxy, viewModel: QrScanViewModel
             .addOnSuccessListener { barcodes ->
                 for (barcode in barcodes) {
                     val rawValue = barcode.rawValue
-                    if (!rawValue.isNullOrBlank() && (rawValue.startsWith("http") || rawValue.startsWith("op:", ignoreCase = true))) {
+                    if (!rawValue.isNullOrBlank() && (rawValue.startsWith("http") || rawValue.startsWith("op:", ignoreCase = true) || rawValue.startsWith("oplogin:", ignoreCase = true))) {
                         viewModel.handleBarcode(rawValue)
                         return@addOnSuccessListener
                     }

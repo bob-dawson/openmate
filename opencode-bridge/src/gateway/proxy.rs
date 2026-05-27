@@ -32,10 +32,15 @@ pub async fn proxy_request_to_local(
         _ => client.get(&url),
     };
 
+    let preserve_auth = path.starts_with("/api/bridge/");
+
     if let Some(ref hdrs) = headers {
         for (k, v) in hdrs {
             let lower = k.to_lowercase();
-            if matches!(lower.as_str(), "host" | "connection" | "transfer-encoding" | "authorization" | "x-instance-id") {
+            if matches!(lower.as_str(), "host" | "connection" | "transfer-encoding" | "x-instance-id") {
+                continue;
+            }
+            if lower == "authorization" && !preserve_auth {
                 continue;
             }
             builder = builder.header(k.as_str(), v.as_str());
@@ -131,10 +136,15 @@ pub async fn proxy_upload_to_local(
 
     let mut builder = client.request(reqwest_method, &url);
 
+    let preserve_auth = path.starts_with("/api/bridge/");
+
     if let Some(ref hdrs) = headers {
         for (k, v) in hdrs {
             let lower = k.to_lowercase();
-            if matches!(lower.as_str(), "host" | "connection" | "transfer-encoding" | "authorization" | "x-instance-id") {
+            if matches!(lower.as_str(), "host" | "connection" | "transfer-encoding" | "x-instance-id") {
+                continue;
+            }
+            if lower == "authorization" && !preserve_auth {
                 continue;
             }
             builder = builder.header(k.as_str(), v.as_str());

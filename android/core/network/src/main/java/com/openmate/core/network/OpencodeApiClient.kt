@@ -23,6 +23,7 @@ import com.openmate.core.network.dto.OpencodeVersionResponse
 import com.openmate.core.network.dto.PairConfirmRequest
 import com.openmate.core.network.dto.PairConfirmResponse
 import com.openmate.core.network.dto.PairRequestResponse
+import com.openmate.core.network.dto.LoginConfirmRequest
 import com.openmate.core.network.dto.ScanPairConfirmRequest
 import com.openmate.core.network.dto.ScanPairConfirmResponse
 import com.openmate.core.network.dto.PermissionDto
@@ -492,6 +493,51 @@ class OpencodeApiClient(
             return bridgeScanPairConfirm(scanToken, deviceName, clientDeviceId)
         } finally {
             baseUrl = saved
+            gatewayInterceptor?.instanceId = savedIid
+        }
+    }
+
+    suspend fun bridgeLoginConfirm(
+        baseUrl: String,
+        authToken: String,
+        sessionId: String,
+    ) = withContext(Dispatchers.IO) {
+        val saved = this@OpencodeApiClient.baseUrl
+        this@OpencodeApiClient.baseUrl = baseUrl
+        try {
+            val body = LoginConfirmRequest(sessionId)
+            val jsonStr = json.encodeToString(LoginConfirmRequest.serializer(), body)
+            val requestBody = jsonStr.toRequestBody(jsonMediaType)
+            val url = buildUrl("/api/bridge/login/confirm", emptyMap())
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $authToken")
+                .post(requestBody)
+                .build()
+            val response = client.newCall(request).execute()
+            val responseBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+            if (!response.isSuccessful) {
+                throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
+            }
+        } finally {
+            this@OpencodeApiClient.baseUrl = saved
+        }
+    }
+
+    suspend fun bridgeLoginConfirmViaGateway(
+        gatewayUrl: String,
+        instanceId: String,
+        authToken: String,
+        sessionId: String,
+    ) {
+        val saved = this@OpencodeApiClient.baseUrl
+        val savedIid = gatewayInterceptor?.instanceId
+        this@OpencodeApiClient.baseUrl = gatewayUrl
+        gatewayInterceptor?.instanceId = instanceId
+        try {
+            bridgeLoginConfirm(gatewayUrl, authToken, sessionId)
+        } finally {
+            this@OpencodeApiClient.baseUrl = saved
             gatewayInterceptor?.instanceId = savedIid
         }
     }

@@ -51,24 +51,29 @@ class QrScanViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val clientDeviceId = installationIdProvider.getInstallationId()
-                val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-                val response = performScanPair(parsed, deviceName, clientDeviceId)
+                if (parsed.isLogin) {
+                    performLogin(parsed)
+                    _scanState.value = ScanUiLoginConfirmed
+                } else {
+                    val clientDeviceId = installationIdProvider.getInstallationId()
+                    val deviceName = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                    val response = performScanPair(parsed, deviceName, clientDeviceId)
 
-                Log.d(TAG, "Scan pair confirmed, device_id=${response.deviceId}")
-                _scanState.value = ScanResult(
-                    name = parsed.name.ifEmpty { response.name },
-                    address = parsed.address.ifEmpty { response.address },
-                    port = if (parsed.port != 0) parsed.port else response.port,
-                    scanToken = parsed.scanToken,
-                    token = response.token,
-                    deviceId = response.deviceId,
-                    instanceId = parsed.instanceId,
-                )
+                    Log.d(TAG, "Scan pair confirmed, device_id=${response.deviceId}")
+                    _scanState.value = ScanResult(
+                        name = parsed.name.ifEmpty { response.name },
+                        address = parsed.address.ifEmpty { response.address },
+                        port = if (parsed.port != 0) parsed.port else response.port,
+                        scanToken = parsed.scanToken,
+                        token = response.token,
+                        deviceId = response.deviceId,
+                        instanceId = parsed.instanceId,
+                    )
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Scan pair failed: ${e.message}", e)
+                Log.e(TAG, "Flow failed: ${e.message}", e)
                 processed = false
-                _scanState.value = ScanUiStateError("Pairing failed: ${e.message}")
+                _scanState.value = ScanUiStateError(e.message ?: "Unknown error")
             }
         }
     }
@@ -109,6 +114,38 @@ class QrScanViewModel @Inject constructor(
         } finally {
             apiClient.baseUrl = saved
         }
+    }
+
+    private suspend fun performLogin(parsed: ParsedQrUrl) {
+        val profile = profileRepository.getAll().firstOrNull { it.instanceId == parsed.instanceId }
+            ?: throw Exception("此 Bridge 尚未配对，请先在 Bridge 管理页面完成设备配对")
+
+        val token = tokenStore.getToken(profile.id)
+            ?: throw Exception("未找到设备凭证，请重新配对")
+
+        if (parsed.instanceId.isNotBlank()) {
+            val online = apiClient.isGatewayBridgeOnline(GATEWAY_URL, parsed.instanceId)
+            if (online) {
+                Log.d(TAG, "Bridge online via gateway, confirming login through gateway")
+                apiClient.bridgeLoginConfirmViaGateway(
+                    GATEWAY_URL, parsed.instanceId, token, parsed.sessionId,
+                )
+                Log.d(TAG, "Login confirmed via gateway")
+                return
+            }
+            Log.d(TAG, "Bridge not online via gateway, falling back to LAN")
+        }
+
+        if (profile.address.isBlank()) {
+            throw Exception("Bridge 地址未知且不在线")
+        }
+        loginViaLan(profile, token, parsed.sessionId)
+    }
+
+    private suspend fun loginViaLan(profile: ServerProfile, authToken: String, sessionId: String) {
+        val directUrl = "http://${profile.address}:${profile.port}"
+        apiClient.bridgeLoginConfirm(directUrl, authToken, sessionId)
+        Log.d(TAG, "Login confirmed via LAN for ${profile.address}:${profile.port}")
     }
 
     fun setError(message: String) {
@@ -162,11 +199,13 @@ class QrScanViewModel @Inject constructor(
         val address: String,
         val port: Int,
         val scanToken: String,
+        val sessionId: String,
         val instanceId: String,
+        val isLogin: Boolean = false,
     )
 
     private fun parseQrUrl(url: String): ParsedQrUrl? {
-        if (url.startsWith("op:", ignoreCase = true)) {
+        if (url.startsWith("op:", ignoreCase = true) || url.startsWith("oplogin:", ignoreCase = true)) {
             return parseCustomProtocol(url)
         }
         return try {
@@ -184,6 +223,7 @@ class QrScanViewModel @Inject constructor(
                 address = parsed.host,
                 port = port,
                 scanToken = scanToken,
+                sessionId = "",
                 instanceId = instanceId,
             )
         } catch (e: Exception) {
@@ -193,12 +233,13 @@ class QrScanViewModel @Inject constructor(
     }
 
     private fun parseCustomProtocol(url: String): ParsedQrUrl? {
-        val body = url.removePrefix("op:")
+        val isLogin = url.startsWith("oplogin:", ignoreCase = true)
+        val body = if (isLogin) url.removePrefix("oplogin:") else url.removePrefix("op:")
         val parts = body.split(":", limit = 2)
         if (parts.size < 2) return null
         val iidB64 = parts[0]
-        val st = parts[1]
-        if (st.isBlank()) return null
+        val token = parts[1]
+        if (token.isBlank()) return null
         val iid = try {
             val bytes = Base64.getUrlDecoder().decode(iidB64)
             bytes.joinToString("") { "%02x".format(it) }
@@ -210,8 +251,10 @@ class QrScanViewModel @Inject constructor(
             name = "",
             address = "",
             port = 0,
-            scanToken = st,
+            scanToken = if (isLogin) "" else token,
+            sessionId = if (isLogin) token else "",
             instanceId = iid,
+            isLogin = isLogin,
         )
     }
 
@@ -232,6 +275,7 @@ sealed interface ScanUiState
 data object ScanUiIdle : ScanUiState
 data object ScanUiStateProcessing : ScanUiState
 data class ScanUiStateError(val message: String) : ScanUiState
+data object ScanUiLoginConfirmed : ScanUiState
 data class ScanResult(
     val name: String,
     val address: String,

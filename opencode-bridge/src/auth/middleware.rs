@@ -14,6 +14,12 @@ const PUBLIC_PATHS: &[&str] = &[
     "/api/bridge/pair/confirm",
     "/api/bridge/pair/scan",
     "/api/bridge/pair/scan-confirm",
+    "/api/bridge/pair/scan-poll",
+    "/api/bridge/login/qrcode",
+    "/api/bridge/login/qr-image",
+    "/api/bridge/login/poll",
+    "/ui/",
+    "/ui/index.html",
     "/ui/download",
     "/download/openmate.apk",
 ];

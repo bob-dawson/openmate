@@ -1,5 +1,6 @@
 use axum::extract::FromRef;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU16;
 use tokio::sync::RwLock;
@@ -27,6 +28,13 @@ pub struct ScanTokenEntry {
     pub expires_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanConfirmResult {
+    pub token: String,
+    pub device_id: String,
+    pub expires_at: i64,
+}
+
 pub struct AppStateInner {
     pub config: Config,
     pub opencode_status: RwLock<OpencodeStatus>,
@@ -38,6 +46,8 @@ pub struct AppStateInner {
     pub log_buffer: SharedLogBuffer,
     pub bridge_id: String,
     pub scan_token: RwLock<Option<ScanTokenEntry>>,
+    pub scan_confirm_results: RwLock<HashMap<String, ScanConfirmResult>>,
+    pub login_sessions: RwLock<HashMap<String, auth::login::LoginSession>>,
     pub event_source: Arc<SharedEventSource>,
 pub actual_port: Arc<AtomicU16>,
     pub shutdown_tx: tokio::sync::watch::Sender<bool>,
@@ -125,6 +135,8 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
         bridge_db,
         log_buffer,
         scan_token: RwLock::new(None),
+        scan_confirm_results: RwLock::new(HashMap::new()),
+        login_sessions: RwLock::new(HashMap::new()),
         bridge_id,
         event_source: event_source.unwrap_or_else(|| Arc::new(SharedEventSource::new())),
         actual_port: actual_port.unwrap_or_else(|| Arc::new(AtomicU16::new(bridge_port))),

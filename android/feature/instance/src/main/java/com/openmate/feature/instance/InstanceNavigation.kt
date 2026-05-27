@@ -43,6 +43,9 @@ fun NavGraphBuilder.instanceScreens(
                 scanViewModel.handleScanComplete(name, address, port)
                 navController.popBackStack()
             },
+            onLoginComplete = {
+                navController.popBackStack()
+            },
             viewModel = scanViewModel,
         )
     }

@@ -257,7 +257,24 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
 
 <div class="toast" id="toast"></div>
 
+<div id="login-wall" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#0f172a;z-index:999;align-items:center;justify-content:center">
+  <div style="text-align:center;max-width:400px;padding:24px">
+    <h1 style="font-size:22px;color:#60a5fa;margin-bottom:4px">OpenMate Bridge</h1>
+    <p style="color:#94a3b8;font-size:13px;margin-bottom:24px">扫码后使用 OpenMate App 连接</p>
+    <div id="login-qr" style="width:200px;height:200px;background:#fff;border-radius:12px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#94a3b8">生成二维码中...</div>
+    <div id="login-url" style="font-family:monospace;font-size:12px;color:#60a5fa;word-break:break-all;background:#1e293b;border:1px solid #334155;border-radius:6px;padding:10px;margin-bottom:16px"></div>
+    <div id="login-status" style="font-size:12px;color:#eab308;margin-bottom:16px">等待扫码...</div>
+    <a id="login-apk-btn" href="/download/openmate.apk" style="display:inline-block;padding:10px 24px;background:#3b82f6;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">下载 OpenMate App</a>
+    <div style="margin-top:20px;font-size:11px;color:#475569">已连接？<a href="#" id="login-reload" style="color:#60a5fa;text-decoration:none">重新加载</a></div>
+  </div>
+</div>
+
 <script>
+const TOKEN_KEY = 'bridge_auth_token';
+function getToken() { return localStorage.getItem(TOKEN_KEY); }
+function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+
 const PAGE_NAMES = {overview:'概览',qr:'扫码连接',logs:'日志',settings:'设置'};
 let overviewTimer = null;
 let logEventSource = null;
@@ -266,6 +283,7 @@ let activeLevels = new Set(['INFO','WARN','ERROR']);
 let logEntries = [];
 let latestVersionChecked = false;
 let qrRefreshTimer = null;
+let loginPollTimer = null;
 
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
@@ -290,6 +308,12 @@ function showToast(msg, isError) {
 }
 
 async function api(path, opts) {
+  opts = opts || {};
+  const token = getToken();
+  if (token) {
+    opts.headers = opts.headers || {};
+    opts.headers['Authorization'] = 'Bearer ' + token;
+  }
   const r = await fetch(path, opts);
   if (!r.ok) throw new Error(r.status + ' ' + await r.text());
   return r;
@@ -715,7 +739,84 @@ document.getElementById('reset-key-btn').addEventListener('click', async () => {
   }
 });
 
-loadOverview();
+document.getElementById('login-reload').addEventListener('click', e => {
+  e.preventDefault();
+  location.reload();
+});
+
+/* ---- Login flow ---- */
+let currentScanToken = null;
+
+async function startLoginFlow() {
+  const wall = document.getElementById('login-wall');
+  wall.style.display = 'flex';
+  document.querySelector('.sidebar').style.display = 'none';
+  document.querySelector('.main').style.display = 'none';
+
+  const host = location.hostname;
+  const port = location.port || '4097';
+  document.getElementById('login-url').textContent = host + ':' + port;
+
+  try {
+    const qrRes = await fetch('/api/bridge/login/qrcode').then(r => r.json());
+    currentScanToken = qrRes.session_id;
+    document.getElementById('login-qr').innerHTML = '<img src="/api/bridge/login/qr-image?session=' + encodeURIComponent(qrRes.session_id) + '" alt="QR" style="width:180px;height:180px">';
+    document.getElementById('login-status').textContent = '等待扫码验证...';
+    startLoginPoll(qrRes.session_id);
+  } catch(e) {
+    document.getElementById('login-qr').textContent = '二维码生成失败';
+    document.getElementById('login-status').textContent = '请重试';
+  }
+}
+
+async function startLoginPoll(sessionId) {
+  if (loginPollTimer) clearInterval(loginPollTimer);
+  const poll = async () => {
+    try {
+      const res = await fetch('/api/bridge/login/poll?session=' + encodeURIComponent(sessionId)).then(r => r.json());
+      if (res.status === 'confirmed') {
+        setToken(res.token);
+        document.getElementById('login-status').textContent = '验证成功，正在登录...';
+        if (loginPollTimer) clearInterval(loginPollTimer);
+        setTimeout(() => location.reload(), 500);
+      } else if (res.status === 'expired') {
+        document.getElementById('login-status').textContent = '二维码已过期，重新生成...';
+        if (loginPollTimer) clearInterval(loginPollTimer);
+        startLoginFlow();
+      }
+      // 'pending' → continue polling
+    } catch(e) {
+      // ignore poll errors
+    }
+  };
+  await poll();
+  loginPollTimer = setInterval(poll, 1500);
+}
+
+async function checkAuth() {
+  const token = getToken();
+  if (token) return true;
+  try {
+    await api('/api/bridge/devices');
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+async function initPage() {
+  const authed = await checkAuth();
+  if (authed) {
+    document.getElementById('login-wall').style.display = 'none';
+    document.querySelector('.sidebar').style.display = '';
+    document.querySelector('.main').style.display = '';
+    loadOverview();
+  } else {
+    startLoginFlow();
+  }
+}
+
+initPage();
 </script>
 </body>
 </html>
