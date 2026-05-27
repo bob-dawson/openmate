@@ -66,15 +66,18 @@ data class DiffLine(
 
 位置：`feature/session/src/main/java/com/openmate/feature/session/diff/DiffViewerScreen.kt`
 
-Compose 渲染：
+Compose 渲染——左右分屏对比（side-by-side）：
 
 - 顶部：文件路径 + 关闭按钮
-- 内联 diff 模式（单栏，红绿高亮，类似 git diff 输出）
-  - 红色背景：删除行（-）
-  - 绿色背景：新增行（+）
-  - 默认背景：上下文行
-  - 左侧行号（old/new 双列）
-- 支持滚动
+- 左栏：old 内容
+  - 红色高亮删除行
+  - 默认背景上下文行
+  - 左侧行号（old）
+- 右栏：new 内容
+  - 绿色高亮新增行
+  - 默认背景上下文行
+  - 左侧行号（new）
+- 双栏滚动同步
 - 横屏全屏
 
 ### 4. BlockToolLine 文件列表交互修改
@@ -96,37 +99,25 @@ Compose 渲染：
 
 修改：fetchFullMessage 改为返回解析后的数据而非存 DB（或新增一个不存 DB 的方法）。
 
-## Diff 算法选择
+## Diff 算法
 
-edit 的 oldString/newString 对比需要 diff 算法。两个选项：
-
-- **简单行级对比**：直接按行分割，标记新增/删除/上下文。无法处理行内修改，但实现简单
-- **Myers diff**：标准 diff 算法，生成最小编辑脚本。需要自己实现或引入库
-
-推荐：先实现简单行级对比（old 中出现的行标记 REMOVE，new 中标记 ADD，共同行标记 CONTEXT）。后续可升级为 Myers diff。
+edit 的 oldString/newString 对比使用 **Myers diff 算法**，生成最小编辑脚本，正确处理行删除、新增和上下文。自实现，不引入外部库。
 
 apply_patch 的 patchText 已有 hunks 信息，直接解析即可，不需要 diff 算法。
 
-## apply_patch 格式解析
+## Diff 渲染模式
 
-```
-*** Begin Patch
-*** Update File: path/to/file
-@@ -old_start[,old_count] +new_start[,new_count] @@
- context line
--removed line
-+added line
-*** End Patch
-```
+**左右分屏对比**（side-by-side）：
 
-解析逻辑：
-1. 按 `*** Update File:` / `*** Add File:` / `*** Delete File:` 分割文件块
-2. 每个 hunk 以 `@@` 开始
-3. 每行前缀：空格=context, -=remove, +=add
+- 左栏：old 内容（红色高亮删除行）
+- 右栏：new 内容（绿色高亮新增行）
+- 上下文行两侧同步显示
+- 双栏滚动同步（LazyColumn 共享 scroll state）
+- 行号：左栏显示 old 行号，右栏显示 new 行号
+- 横屏全屏
 
 ## 不做的事情
 
 - 不存 DB：full content 只在内存中用于渲染，不持久化
-- 不做左右分屏：内联 diff 模式足够，实现更简单
 - 不做行内 diff（word-level）：后续优化
 - 不做编辑功能：只读查看
