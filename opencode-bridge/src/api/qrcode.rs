@@ -8,37 +8,26 @@ use crate::state::AppState;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
-pub struct QrCodeQuery {
-    pub ip: String,
-}
+pub struct QrCodeQuery {}
 
 pub async fn generate_qrcode(
     State(state): State<AppState>,
-    Query(params): Query<QrCodeQuery>,
+    Query(_params): Query<QrCodeQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let port = state.actual_port.load(std::sync::atomic::Ordering::Relaxed);
-
-    let machine_name = hostname::get()
-        .ok()
-        .and_then(|h| h.into_string().ok())
-        .unwrap_or_else(|| "Bridge".to_string());
-
     let scan_token = {
         let st = state.scan_token.read().await;
         st.as_ref().map(|e| e.token.clone()).unwrap_or_default()
     };
 
-    let mut url = format!(
-        "http://{}:{}/ui/download?name={}",
-        params.ip, port,
-        urlencoding::encode(&machine_name)
+    let mut url = format!("op:");
+    let iid_b64 = crate::auth::key::base64url_encode(
+        &crate::auth::key::hex_to_bytes(&state.config.gateway.instance_id).unwrap_or_default()
     );
+    url.push_str(&iid_b64);
+    url.push(':');
     if !scan_token.is_empty() {
-        url.push_str("&st=");
         url.push_str(&scan_token);
     }
-    url.push_str("&iid=");
-    url.push_str(&state.config.gateway.instance_id);
 
     let code = qrcode::QrCode::new(&url)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("QR generation failed: {}", e)))?;

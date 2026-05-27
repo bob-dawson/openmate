@@ -71,6 +71,17 @@ pub fn generate_random_bytes(len: usize) -> Vec<u8> {
     buf
 }
 
+pub fn base64url_encode(bytes: &[u8]) -> String {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    base64::engine::Engine::encode(&URL_SAFE_NO_PAD, bytes)
+}
+
+pub fn base64url_decode(s: &str) -> anyhow::Result<Vec<u8>> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    base64::engine::Engine::decode(&URL_SAFE_NO_PAD, s)
+        .map_err(|e| anyhow::anyhow!("Invalid base64url: {}", e))
+}
+
 pub fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }

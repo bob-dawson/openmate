@@ -20,6 +20,7 @@ pub async fn run_server(
     log_buffer: SharedLogBuffer,
     shutdown: Option<(tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>)>,
     actual_port: Option<Arc<std::sync::atomic::AtomicU16>>,
+    ready_notify: Option<Arc<tokio::sync::Notify>>,
 ) -> anyhow::Result<()> {
     let app_state = create_app_state_with_db_event_source_and_actual_port(
         log_buffer,
@@ -188,6 +189,9 @@ pub async fn run_server(
 
     let port = actual_port;
     tracing::info!("Bridge listening on {}", listener.local_addr()?);
+    if let Some(notify) = ready_notify {
+        notify.notify_waiters();
+    }
 
     if !gateway_url.is_empty() && gateway_auto_connect {
         let gw_url = gateway_url.clone();

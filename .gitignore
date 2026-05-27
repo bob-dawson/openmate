@@ -15,3 +15,4 @@ bin
 obj
 /GradleMcp/Client/*.user
 /GradleMcp/GradleMcp/*.user
+/scripts/.bridge_token

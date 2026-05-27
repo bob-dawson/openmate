@@ -162,7 +162,7 @@ fn run_service_inner() -> anyhow::Result<()> {
     });
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-    let result = rt.block_on(run_server(log_buffer, Some((shutdown_tx, shutdown_rx)), None));
+    let result = rt.block_on(run_server(log_buffer, Some((shutdown_tx, shutdown_rx)), None, None));
 
     status_handle.set_service_status(ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,

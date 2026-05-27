@@ -37,8 +37,8 @@ pub async fn scan_generate(
         }
     }
 
-    let token_bytes = super::key::generate_random_bytes(32);
-    let token = super::key::hex_encode(&token_bytes);
+    let token_bytes = super::key::generate_random_bytes(6);
+    let token = super::key::base64url_encode(&token_bytes);
 
     let expires_at = now + SCAN_TOKEN_TTL_SECS * 1000;
 

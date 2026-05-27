@@ -2,6 +2,7 @@
 
 use clap::{Parser, Subcommand};
 use std::sync::Arc;
+use tokio::sync::Notify;
 
 #[derive(Parser, Debug)]
 #[command(name = "openmate", about = "OpenMate Bridge")]
@@ -106,12 +107,14 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let actual_port: Arc<std::sync::atomic::AtomicU16> = Arc::new(std::sync::atomic::AtomicU16::new(port));
+    let ready_notify = Arc::new(Notify::new());
 
     #[cfg(target_os = "windows")]
     if !_args.tray {
         let ap = actual_port.clone();
+        let ready = ready_notify.clone();
         tokio::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            ready.notified().await;
             let port = ap.load(std::sync::atomic::Ordering::Relaxed);
             let url = format!("http://127.0.0.1:{}/ui/", port);
             tracing::info!("Opening browser: {}", url);
@@ -128,8 +131,9 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
             .unwrap_or(false);
         if has_desktop && !is_wsl && !_args.tray {
             let ap = actual_port.clone();
+            let ready = ready_notify.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                ready.notified().await;
                 let port = ap.load(std::sync::atomic::Ordering::Relaxed);
                 let url = format!("http://127.0.0.1:{}/ui/", port);
                 tracing::info!("Opening browser: {}", url);
@@ -139,29 +143,77 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
             let instance_id = config.gateway.instance_id.clone();
             let gateway_url = config.gateway.url.clone();
             let ap = actual_port.clone();
+            let ready = ready_notify.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-
-                let port_val = ap.load(std::sync::atomic::Ordering::Relaxed);
+                ready.notified().await;
                 let client = reqwest::Client::new();
-                let scan_url = format!("http://127.0.0.1:{}/api/bridge/pair/scan", port_val);
-                let scan_token = match client.get(&scan_url).send().await {
-                    Ok(resp) if resp.status().is_success() => {
-                        match resp.json::<serde_json::Value>().await {
-                            Ok(val) => val["scan_token"].as_str().unwrap_or("").to_string(),
-                            Err(_) => String::new(),
+                let mut scan_token = String::new();
+                let mut port_val = ap.load(std::sync::atomic::Ordering::Relaxed);
+
+                for attempt in 1..=20 {
+                    port_val = ap.load(std::sync::atomic::Ordering::Relaxed);
+                    let scan_url = format!("http://127.0.0.1:{}/api/bridge/pair/scan", port_val);
+                    match client.get(&scan_url).send().await {
+                        Ok(resp) if resp.status().is_success() => match resp.json::<serde_json::Value>().await {
+                            Ok(val) => {
+                                scan_token = val["scan_token"].as_str().unwrap_or("").to_string();
+                                if !scan_token.is_empty() {
+                                    break;
+                                }
+                                tracing::warn!(
+                                    "Empty scan token from {} on attempt {}",
+                                    scan_url,
+                                    attempt
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to parse scan token response from {} on attempt {}: {}",
+                                    scan_url,
+                                    attempt,
+                                    e
+                                );
+                            }
+                        },
+                        Ok(resp) => {
+                            tracing::warn!(
+                                "Scan token API returned {} from {} on attempt {}",
+                                resp.status(),
+                                scan_url,
+                                attempt
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to request scan token from {} on attempt {}: {}",
+                                scan_url,
+                                attempt,
+                                e
+                            );
                         }
                     }
-                    _ => String::new(),
-                };
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                }
 
-                let qr_data = format!("openmate:iid={};st={}", instance_id, scan_token);
+                if scan_token.is_empty() {
+                    tracing::error!(
+                        "Failed to acquire non-empty scan token after retries on port {}",
+                        port_val
+                    );
+                    return;
+                }
+
+                let iid_b64 = openmate::auth::key::base64url_encode(
+                    &openmate::auth::key::hex_to_bytes(&instance_id).unwrap_or_default()
+                );
+                let qr_data = format!("op:{}:{}", iid_b64, scan_token);
+                tracing::info!("QR pairing ready");
                 match qrcode::QrCode::new(&qr_data) {
                     Ok(code) => {
                         let qr_string = code
                             .render::<qrcode::render::unicode::Dense1x2>()
                             .quiet_zone(false)
-                            .module_dimensions(2, 2)
+                            .module_dimensions(1, 1)
                             .build();
 
                         let machine_name = hostname::get()
@@ -230,7 +282,12 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
         let _ = ctrl_c_tx.send(true);
     });
 
-    openmate::server::run_server(buffer, Some((shutdown_tx, shutdown_rx)), Some(actual_port.clone())).await
+    openmate::server::run_server(
+        buffer,
+        Some((shutdown_tx, shutdown_rx)),
+        Some(actual_port.clone()),
+        Some(ready_notify),
+    ).await
 }
 
 #[cfg(target_os = "windows")]
@@ -363,7 +420,7 @@ fn run_service_mode() -> anyhow::Result<()> {
 #[cfg(target_os = "linux")]
 async fn run_service_mode() -> anyhow::Result<()> {
     let buffer = init_capture_logging();
-    openmate::server::run_server(buffer, None).await
+    openmate::server::run_server(buffer, None, None, None).await
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]

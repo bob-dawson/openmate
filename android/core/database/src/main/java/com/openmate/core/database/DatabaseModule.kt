@@ -17,10 +17,4 @@ object DatabaseModule {
     fun provideDatabaseFactory(@ApplicationContext context: Context): DatabaseFactory {
         return DatabaseFactory(context)
     }
-
-    @Provides
-    @Singleton
-    fun provideActiveDatabaseProvider(@ApplicationContext context: Context, factory: DatabaseFactory): ActiveDatabaseProvider {
-        return ActiveDatabaseProvider(context, factory)
-    }
 }
