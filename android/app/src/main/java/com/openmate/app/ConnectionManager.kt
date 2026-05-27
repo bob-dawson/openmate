@@ -155,6 +155,10 @@ class ConnectionManager @Inject constructor(
             appForegroundMonitor.isForeground.collect { isForeground ->
                 if (isForeground) {
                     sendEvent(ConnEvent.AppForegrounded)
+                    val s = actor.state.value
+                    if (s is ConnState.Idle && s.profile != null) {
+                        connect(s.profile)
+                    }
                 }
             }
         }
