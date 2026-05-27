@@ -57,9 +57,9 @@ class QrScanViewModel @Inject constructor(
 
                 Log.d(TAG, "Scan pair confirmed, device_id=${response.deviceId}")
                 _scanState.value = ScanResult(
-                    name = parsed.name,
-                    address = parsed.address,
-                    port = parsed.port,
+                    name = parsed.name.ifEmpty { response.name },
+                    address = parsed.address.ifEmpty { response.address },
+                    port = if (parsed.port != 0) parsed.port else response.port,
                     scanToken = parsed.scanToken,
                     token = response.token,
                     deviceId = response.deviceId,

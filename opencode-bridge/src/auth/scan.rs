@@ -1,7 +1,7 @@
 use axum::extract::{ConnectInfo, State};
 use axum::Json;
 use serde::Deserialize;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::AppError;
@@ -142,8 +142,64 @@ pub async fn scan_confirm(
         tracing::info!("Scan pair re-confirmed for {}, device {} (existing)", ip, device_id);
     }
 
+    let bridge_name = hostname::get()
+        .ok()
+        .and_then(|h| h.into_string().ok())
+        .unwrap_or_else(|| "Bridge".to_string());
+
+    let bridge_port = state.actual_port.load(std::sync::atomic::Ordering::Relaxed);
+    let bridge_address = best_lan_ip();
+
     Ok(Json(serde_json::json!({
         "token": token,
         "device_id": device_id,
+        "name": bridge_name,
+        "address": bridge_address,
+        "port": bridge_port,
     })))
+}
+
+fn best_lan_ip() -> String {
+    let adapters = match local_ip_address::list_afinet_netifas() {
+        Ok(a) => a,
+        Err(_) => return String::new(),
+    };
+
+    let mut candidates: Vec<Ipv4Addr> = adapters
+        .into_iter()
+        .filter_map(|(_, addr)| match addr {
+            IpAddr::V4(ip) if !ip.is_loopback() && !is_link_local(&ip) && !is_virtual(&ip) => Some(ip),
+            _ => None,
+        })
+        .collect();
+
+    candidates.sort_by(|a, b| {
+        let a_lan = is_private_lan(a) as u8;
+        let b_lan = is_private_lan(b) as u8;
+        b_lan.cmp(&a_lan)
+    });
+
+    match candidates.into_iter().next() {
+        Some(ip) => ip.to_string(),
+        None => local_ip_address::local_ip()
+            .map(|a| a.to_string())
+            .unwrap_or_default(),
+    }
+}
+
+fn is_link_local(ip: &Ipv4Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 169 && o[1] == 254
+}
+
+fn is_virtual(ip: &Ipv4Addr) -> bool {
+    let o = ip.octets();
+    if o[0] == 172 && o[1] >= 16 && o[1] <= 31 { return true; }
+    if o[0] == 10 && o[1] == 0 { return true; }
+    false
+}
+
+fn is_private_lan(ip: &Ipv4Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 192 && o[1] == 168
 }

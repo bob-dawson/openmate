@@ -155,4 +155,7 @@ data class ScanPairConfirmRequest(
 data class ScanPairConfirmResponse(
     val token: String = "",
     @SerialName("device_id") val deviceId: String = "",
+    val name: String = "",
+    val address: String = "",
+    val port: Int = 0,
 )
