@@ -80,7 +80,12 @@ impl OpencodeManager {
 
     pub async fn check_health(&self) -> bool {
         let url = format!("{}/global/health", self.opencode_url);
-        match reqwest::get(&url).await {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .connect_timeout(std::time::Duration::from_secs(1))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+        match client.get(&url).send().await {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(body) = resp.json::<serde_json::Value>().await {
                     if let Some(version) = body.get("version").and_then(|v| v.as_str()) {
