@@ -530,6 +530,8 @@ namespace GradleMcp
             }
         }
 
+        private sealed class OutputIdleTimeoutException(string message) : Exception(message);
+
         private sealed class OutputActivityTracker : IDisposable
         {
             private DateTimeOffset _lastActivityTicks = DateTimeOffset.UtcNow;
@@ -546,7 +548,25 @@ namespace GradleMcp
             }
         }
 
-        private sealed class OutputIdleTimeoutException(string message) : Exception(message);
+        public static object? GetStatus()
+        {
+            lock (Sync)
+            {
+                if (_current is null)
+                {
+                    return null;
+                }
+
+                return new
+                {
+                    id = _current.Id,
+                    startedAt = _current.StartedAt,
+                    workingDirectory = _current.WorkingDirectory,
+                    running = !_current.Process.HasExited,
+                    pid = _current.Process.Id,
+                };
+            }
+        }
 
         private sealed record RunningInvocation(
             string Id,
