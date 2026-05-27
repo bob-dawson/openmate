@@ -7,6 +7,7 @@ OpenMate: opencode 的原生 Android 客户端，连接 `opencode serve` 实例 
 - **opencode 源码**: `D:\github\opencode`
 - **设计文档**: `D:\openmate\OpenMate设计.md`
 - **同步设计**: `D:\openmate\会话同步设计.md`（Bridge + seq-based 增量同步）
+- **同步日志调试法**: `D:\openmate\docs\sync-log-debugging.md`（替代 logcat 的设备端调试方法）
 
 ## Architecture
 Kotlin 2.2.0 / Jetpack Compose + Material 3 (dark theme) / MVVM + Hilt + Room + OkHttp
