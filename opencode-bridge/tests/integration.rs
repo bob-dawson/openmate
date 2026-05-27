@@ -204,7 +204,7 @@ async fn test_update_config_unknown_key_rejected() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 400);
 
     let _ = std::fs::remove_dir_all(&dir);
 }

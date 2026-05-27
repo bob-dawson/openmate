@@ -5,6 +5,7 @@ use futures::StreamExt;
 use futures::stream::Stream;
 use std::convert::Infallible;
 use std::pin::Pin;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::state::AppState;
@@ -13,12 +14,17 @@ type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + 'static>>;
 
 pub async fn sse_proxy(State(state): State<AppState>) -> impl IntoResponse {
     let opencode_url = state.config.opencode_url();
-    let stream = create_sse_stream(opencode_url);
+    let mut shutdown_rx = state.shutdown_tx.subscribe();
+    let stream = create_sse_stream(opencode_url, &mut shutdown_rx);
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
-fn create_sse_stream(opencode_url: String) -> BoxStream<Result<Event, Infallible>> {
+fn create_sse_stream(
+    opencode_url: String,
+    shutdown_rx: &mut tokio::sync::watch::Receiver<bool>,
+) -> BoxStream<Result<Event, Infallible>> {
     let (tx, rx) = mpsc::channel(32);
+    let mut shutdown_rx = shutdown_rx.clone();
 
     tokio::spawn(async move {
         let sse_url = format!("{}/global/event", opencode_url);
@@ -28,11 +34,23 @@ fn create_sse_stream(opencode_url: String) -> BoxStream<Result<Event, Infallible
             match forward_sse_events(&sse_url, &tx).await {
                 Ok(()) => {
                     tracing::warn!("opencode SSE stream ended, reconnecting in 3s...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(3)) => {}
+                        _ = shutdown_rx.changed() => {
+                            tracing::info!("SSE proxy shutting down");
+                            return;
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::error!("opencode SSE error: {}, reconnecting in 5s...", e);
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    tokio::select! {
+                        _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                        _ = shutdown_rx.changed() => {
+                            tracing::info!("SSE proxy shutting down");
+                            return;
+                        }
+                    }
                 }
             }
 

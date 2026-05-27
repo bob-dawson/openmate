@@ -196,6 +196,7 @@ pub async fn run_server(
     if !gateway_url.is_empty() && gateway_auto_connect {
         let gw_url = gateway_url.clone();
         let gw_instance_id = gateway_instance_id.clone();
+        let gw_shutdown_rx = app_state.shutdown_tx.subscribe();
         tokio::spawn(async move {
             let mut client = crate::gateway::client::GatewayClient::new(
                 &crate::config::GatewayConfig {
@@ -206,22 +207,22 @@ pub async fn run_server(
                 &gateway_instance_id,
                 port,
             );
-            client.connect().await;
+            client.connect(gw_shutdown_rx).await;
         });
     }
+
+    let mut shutdown_rx = app_state.shutdown_tx.subscribe();
 
     let server = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
-    );
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_rx.changed().await.ok();
+        tracing::info!("Shutdown signal received, server shutting down");
+    });
 
-let mut shutdown_rx = app_state.shutdown_tx.subscribe();
-    server.with_graceful_shutdown(async move {
-        if shutdown_rx.changed().await.is_ok() {
-            tracing::info!("Shutdown signal received, stopping server");
-        }
-    }).await?;
-
+    server.await.ok();
     tracing::info!("Server stopped, exiting");
     std::process::exit(0);
 }

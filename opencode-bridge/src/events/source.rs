@@ -64,6 +64,7 @@ impl SharedEventSource {
 
         let source = Arc::clone(self);
         let opencode_url = state.config.opencode_url();
+        let mut shutdown_rx = state.shutdown_tx.subscribe();
         tokio::spawn(async move {
             let sse_url = format!("{}/global/event", opencode_url);
             tracing::info!("Starting shared bridge event source to {}", sse_url);
@@ -72,11 +73,23 @@ impl SharedEventSource {
                 match forward_upstream_events(&sse_url, &source.sender).await {
                     Ok(()) => {
                         tracing::warn!("shared bridge event source ended, reconnecting in 3s...");
-                        tokio::time::sleep(Duration::from_secs(3)).await;
+                        tokio::select! {
+                            _ = tokio::time::sleep(Duration::from_secs(3)) => {}
+                            _ = shutdown_rx.changed() => {
+                                tracing::info!("shared bridge event source shutting down");
+                                return;
+                            }
+                        }
                     }
                     Err(err) => {
                         tracing::error!("shared bridge event source error: {}, reconnecting in 5s...", err);
-                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        tokio::select! {
+                            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                            _ = shutdown_rx.changed() => {
+                                tracing::info!("shared bridge event source shutting down");
+                                return;
+                            }
+                        }
                     }
                 }
             }

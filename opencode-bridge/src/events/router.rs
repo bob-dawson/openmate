@@ -19,16 +19,25 @@ pub async fn events_sse(State(state): State<AppState>) -> impl IntoResponse {
 fn create_events_stream(state: AppState) -> BoxStream<Result<Event, Infallible>> {
     Box::pin(stream! {
         let mut rx = state.event_source.subscribe(&state).await;
+        let mut shutdown_rx = state.shutdown_tx.subscribe();
 
         loop {
-            match rx.recv().await {
-                Ok(event) => {
-                    if let Some(filtered) = project_bridge_event(&event) {
-                        yield Ok(Event::default().data(filtered.to_string()));
+            tokio::select! {
+                result = rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            if let Some(filtered) = project_bridge_event(&event) {
+                                yield Ok(Event::default().data(filtered.to_string()));
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                _ = shutdown_rx.changed() => {
+                    tracing::info!("events SSE handler shutting down");
+                    break;
+                }
             }
         }
     })

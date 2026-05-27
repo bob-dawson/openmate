@@ -34,13 +34,19 @@ impl GatewayClient {
         self.outbound_tx.clone()
     }
 
-    pub async fn connect(&mut self) {
+    pub async fn connect(&mut self, mut shutdown_rx: tokio::sync::watch::Receiver<bool>) {
         loop {
             if let Err(e) = self.connect_once().await {
                 tracing::error!("Gateway connection error: {}", e);
             }
             tracing::info!("Gateway disconnected, reconnecting in 5s...");
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                _ = shutdown_rx.changed() => {
+                    tracing::info!("Gateway client shutting down");
+                    return;
+                }
+            }
         }
     }
 

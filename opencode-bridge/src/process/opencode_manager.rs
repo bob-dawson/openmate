@@ -540,12 +540,20 @@ fn spawn_opencode(
 
     #[cfg(not(windows))]
     let child = {
-        tokio::process::Command::new(binary)
-            .args(["serve", "--hostname", hostname, "--port", &port_str])
+        let mut cmd = std::process::Command::new(binary);
+        cmd.args(["serve", "--hostname", hostname, "--port", &port_str])
             .current_dir(&work_dir)
             .env("OPENCODE_EXPERIMENTAL", "true")
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+
+        tokio::process::Command::from(cmd)
             .spawn()
             .map_err(|e| format!("Failed to spawn opencode: {}", e))?
     };
