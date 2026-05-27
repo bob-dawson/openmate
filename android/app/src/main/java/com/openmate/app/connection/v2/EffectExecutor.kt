@@ -219,6 +219,7 @@ class EffectExecutor(
     }
 
     private fun clearApiClient() {
+        apiClient.baseUrl = ""
         gatewayInterceptor.instanceId = null
     }
 

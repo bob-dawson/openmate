@@ -57,7 +57,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 class OpencodeApiClient(
     private val client: OkHttpClient,
     private val downloadClient: OkHttpClient = client,
-    var baseUrl: String = "http://localhost:8080",
+    @Volatile var baseUrl: String = "http://localhost:8080",
     private val gatewayInterceptor: GatewayInterceptor? = null,
     private val routeEvidenceReporter: RouteEvidenceReporter? = null,
 ) {

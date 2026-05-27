@@ -71,4 +71,9 @@ class QuestionRepositoryImpl @Inject constructor(
     }
 
     override fun observePending(): Flow<List<QuestionRequest>> = _pending.asStateFlow()
+
+    override fun clearPending() {
+        pendingMap.clear()
+        _pending.value = emptyList()
+    }
 }

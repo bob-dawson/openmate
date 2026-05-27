@@ -29,6 +29,14 @@ class SyncSseHandler @Inject constructor(
         activeSessionId = sessionId
     }
 
+    fun stop() {
+        collectJob?.cancel()
+        collectJob = null
+        activeSessionId = null
+        activeSyncs.clear()
+        Log.d("SyncSseHandler", "stop: cancelled collectJob, cleared activeSessionId and activeSyncs")
+    }
+
     override fun start() {
         if (collectJob?.isActive == true) return
         Log.d("SyncSseHandler", "start: subscribing to notifications")

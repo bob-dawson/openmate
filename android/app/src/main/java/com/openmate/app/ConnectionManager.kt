@@ -23,6 +23,8 @@ import com.openmate.core.domain.model.ConnectionSnapshot
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ConnectionRepository
+import com.openmate.core.domain.repository.PermissionRepository
+import com.openmate.core.domain.repository.QuestionRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
@@ -57,6 +59,8 @@ class ConnectionManager @Inject constructor(
     private val appForegroundMonitor: AppForegroundMonitor,
     private val networkChangeMonitor: NetworkChangeMonitor,
     private val logStore: SyncLogStore,
+    private val permissionRepository: PermissionRepository,
+    private val questionRepository: QuestionRepository,
 ) : ConnectionRepository {
     companion object {
         private const val TAG = "ConnectionManager"
@@ -194,24 +198,29 @@ class ConnectionManager @Inject constructor(
         )
         if (alreadyActive) return
 
+        syncSseHandler.stop()
+        permissionRepository.clearPending()
+        questionRepository.clearPending()
+
         _connectionStatus.value = ConnectionStatus.CONNECTING
         _isConnected.value = false
         _errorMessage.value = null
         _needsRepairing.value = null
         _activeProfile.value = profile
 
-        val directUrl = "http://${profile.address}:${profile.port}"
-        if (profile.instanceId.isNotBlank()) {
-            apiClient.baseUrl = directUrl
-            gatewayInterceptor.instanceId = profile.instanceId
-        } else {
-            apiClient.baseUrl = directUrl
-            gatewayInterceptor.instanceId = null
-        }
-        scope.launch { tokenStore.setActiveProfileId(profile.id) }
-
         scope.launch {
+            tokenStore.setActiveProfileId(profile.id)
             dbProvider.setActive(profile.id)
+
+            val directUrl = "http://${profile.address}:${profile.port}"
+            if (profile.instanceId.isNotBlank()) {
+                apiClient.baseUrl = directUrl
+                gatewayInterceptor.instanceId = profile.instanceId
+            } else {
+                apiClient.baseUrl = directUrl
+                gatewayInterceptor.instanceId = null
+            }
+
             val prevState = actor.state.value
             if (prevState is ConnState.Idle || prevState is ConnState.Failed || prevState is ConnState.NeedsRepair) {
                 actor.processEvent(ConnEvent.Connect(profile))
@@ -316,11 +325,16 @@ class ConnectionManager @Inject constructor(
     }
 
     private suspend fun clearConnection() {
+        syncSseHandler.stop()
+        permissionRepository.clearPending()
+        questionRepository.clearPending()
+        apiClient.baseUrl = ""
+        gatewayInterceptor.instanceId = null
         dbProvider.clearActive()
+        tokenStore.setActiveProfileId(null)
         _activeProfile.value = null
         _isConnected.value = false
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
-        tokenStore.setActiveProfileId(null)
     }
 
     private fun ConnState.toLegacyStatus(): ConnectionStatus = when (this) {

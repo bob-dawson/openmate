@@ -60,4 +60,9 @@ class PermissionRepositoryImpl @Inject constructor(
     }
 
     override fun observePending(): Flow<List<PermissionRequest>> = _pending.asStateFlow()
+
+    override fun clearPending() {
+        pendingMap.clear()
+        _pending.value = emptyList()
+    }
 }

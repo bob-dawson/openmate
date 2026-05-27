@@ -54,7 +54,6 @@ class InstanceListViewModel @Inject constructor(
     }
 
     fun connect(profile: ServerProfile, onNavigate: () -> Unit = {}) {
-        dbProvider.setActive(profile.id)
         onNavigate()
         connectionManager.connect(profile)
     }
