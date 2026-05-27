@@ -887,6 +887,7 @@ class SessionDetailViewModel @Inject constructor(
                 val model = provider.models[modelID] ?: provider.models.values.firstOrNull() ?: continue
                 val ref = ModelRef(providerID, modelID, model.name.ifBlank { modelID })
                 applySelectedModel(ref)
+                isModelOverridden = true
                 val sid = currentSessionID ?: return
                 try {
                     sessionRepository.updateSessionModel(sid, providerID, modelID, ref.modelName)
