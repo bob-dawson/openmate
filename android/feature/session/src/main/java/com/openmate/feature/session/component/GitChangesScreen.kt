@@ -4,6 +4,7 @@ import android.text.TextUtils
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
@@ -139,7 +141,7 @@ private fun FileList(
                     .fillMaxWidth()
                     .clickable {
                         when (entry.status) {
-                            "untracked" -> {
+                            "untracked", "added" -> {
                                 val fullPath = if (entry.path.startsWith("/") || (entry.path.length >= 3 && entry.path[1] == ':')) {
                                     entry.path
                                 } else {
@@ -167,10 +169,26 @@ private fun FileList(
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                StartEllipsisText(
-                    text = entry.path,
-                    modifier = Modifier.weight(1f),
-                )
+                if (entry.status == "renamed" && !entry.oldPath.isNullOrEmpty()) {
+                    val oldPath = entry.oldPath!!
+                    Column(modifier = Modifier.weight(1f)) {
+                        StartEllipsisText(
+                            text = oldPath,
+                        )
+                        Text(
+                            text = "→ ${entry.path}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    StartEllipsisText(
+                        text = entry.path,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
