@@ -58,14 +58,19 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 class OpencodeApiClient(
     private val client: OkHttpClient,
     private val downloadClient: OkHttpClient = client,
-    private val activeProfileProvider: ActiveProfileProvider = object : ActiveProfileProvider { override fun getActiveProfile() = null },
+    private val activeProfileProvider: ActiveProfileProvider = object : ActiveProfileProvider { override fun getActiveProfile() = null; override fun getActiveRoute() = null },
     private val gatewayInterceptor: GatewayInterceptor? = null,
     private val routeEvidenceReporter: RouteEvidenceReporter? = null,
 ) {
     val baseUrl: String
         get() {
-            val p = activeProfileProvider.getActiveProfile()
-            return if (p != null) "http://${p.address}:${p.port}" else ""
+            val route = activeProfileProvider.getActiveRoute()
+            val profile = activeProfileProvider.getActiveProfile()
+            return when (route) {
+                is ConnectionRoute.Gateway -> GATEWAY_URL
+                is ConnectionRoute.Direct -> "http://${route.address}:${route.port}"
+                null -> if (profile != null) "http://${profile.address}:${profile.port}" else ""
+            }
         }
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -779,12 +784,7 @@ class OpencodeApiClient(
     }
 
     private fun currentRoute(): ConnectionRoute? {
-        val instanceId = activeProfileProvider.getActiveProfile()?.instanceId?.ifBlank { null }
-        if (instanceId != null) {
-            return ConnectionRoute.Gateway(instanceId)
-        }
-        val url = runCatching { baseUrl.toHttpUrl() }.getOrNull() ?: return null
-        return ConnectionRoute.Direct(url.host, url.port)
+        return activeProfileProvider.getActiveRoute()
     }
 
     private suspend inline fun <reified T> handleResponse(response: okhttp3.Response): T = withContext(Dispatchers.IO) {
@@ -827,5 +827,9 @@ class OpencodeApiClient(
 
     fun peek(request: Request): okhttp3.Response {
         return client.newCall(request).execute()
+    }
+
+    private companion object {
+        const val GATEWAY_URL = "https://gateway.clawmate.net"
     }
 }

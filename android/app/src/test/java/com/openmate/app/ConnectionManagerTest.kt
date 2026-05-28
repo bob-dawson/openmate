@@ -771,5 +771,6 @@ class ConnectionManagerTest {
     private class MutableActiveProfileProviderDelegate : ActiveProfileProvider {
         var delegate: ActiveProfileProvider? = null
         override fun getActiveProfile(): ServerProfile? = delegate?.getActiveProfile()
+        override fun getActiveRoute(): ConnectionRoute? = delegate?.getActiveRoute()
     }
 }

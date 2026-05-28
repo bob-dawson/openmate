@@ -74,6 +74,8 @@ class ConnectionManager @Inject constructor(
 
     override fun getActiveProfile(): ServerProfile? = _activeProfile.value
 
+    override fun getActiveRoute(): ConnectionRoute? = _connectionSnapshot.value?.activeRoute
+
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     override val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
