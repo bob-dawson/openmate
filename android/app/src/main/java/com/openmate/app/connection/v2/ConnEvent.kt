@@ -50,8 +50,3 @@ sealed class ConnEvent : Event {
         is NetworkIsNone -> "NetworkIsNone"
     }
 }
-
-fun Route.logText(): String = when (this) {
-    is Route.Direct -> "Direct($address:$port)"
-    is Route.Gateway -> "Gateway($instanceId)"
-}

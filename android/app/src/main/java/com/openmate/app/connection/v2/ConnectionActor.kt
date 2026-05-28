@@ -83,10 +83,14 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
     }
 }
 
-sealed class Route {
-    data class Direct(val address: String, val port: Int) : Route()
-    data class Gateway(val instanceId: String) : Route()
-}
+    sealed class Route {
+        data class Direct(val address: String, val port: Int) : Route()
+        data class Gateway(val instanceId: String) : Route()
+        fun logText(): String = when (this) {
+            is Direct -> "Direct($address:$port)"
+            is Gateway -> "Gateway($instanceId)"
+        }
+    }
 
 class ConnectionActor(
     private val onEffect: (ConnEffect) -> Unit,
@@ -271,7 +275,8 @@ class ConnectionActor(
 
             addState(connecting) {
                 onEntry {
-                    onEffect(ConnEffect.StartSse)
+                    val s = _state.value as ConnState.Connecting
+                    onEffect(ConnEffect.StartSse(s.route))
                 }
                 transition<ConnEvent.SseConnected> {
                     targetState = connected
@@ -383,6 +388,13 @@ class ConnectionActor(
             }
 
             addState(failed) {
+                transition<ConnEvent.Connect> {
+                    targetState = probingNetwork
+                    onTriggered {
+                        val e = it.event as ConnEvent.Connect
+                        _state.value = ConnState.ProbingNetwork(e.profile)
+                    }
+                }
                 transition<ConnEvent.NetworkAvailable> {
                     targetState = probingNetwork
                     onTriggered {
@@ -414,6 +426,13 @@ class ConnectionActor(
             }
 
             addState(needsRepair) {
+                transition<ConnEvent.Connect> {
+                    targetState = probingNetwork
+                    onTriggered {
+                        val e = it.event as ConnEvent.Connect
+                        _state.value = ConnState.ProbingNetwork(e.profile)
+                    }
+                }
                 transition<ConnEvent.RepairCompleted> {
                     guard = { (event as ConnEvent.RepairCompleted).profileId == (_state.value as ConnState.NeedsRepair).profile.id }
                     targetState = probingNetwork

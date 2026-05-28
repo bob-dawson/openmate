@@ -57,7 +57,7 @@ class EffectExecutor(
             is ConnEffect.CheckNetwork -> checkNetwork()
             is ConnEffect.ProbeGateway -> probeGateway()
             is ConnEffect.ProbeDirect -> probeDirect()
-            is ConnEffect.StartSse -> startSse()
+            is ConnEffect.StartSse -> startSse(effect.route)
             is ConnEffect.StopSse -> stopSse()
             is ConnEffect.StartBackoff -> startBackoff(effect.delayMs)
             is ConnEffect.StopBackoff -> stopBackoff()
@@ -187,11 +187,14 @@ class EffectExecutor(
         }
     }
 
-    private fun startSse() {
+    private fun startSse(route: Route) {
         val profile = activeProfile() ?: return
-        val baseUrl = apiClient.baseUrl
+        val baseUrl = when (route) {
+            is Route.Direct -> "http://${route.address}:${route.port}"
+            is Route.Gateway -> GATEWAY_URL
+        }
         val instanceId = profile.instanceId.ifBlank { null }
-        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "启动SSE url=$baseUrl iid=$instanceId")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "启动SSE url=$baseUrl iid=$instanceId route=${route.logText()}")
         sseJob?.cancel()
         syncSseHandler.start()
         syncSseClient.instanceId = instanceId
