@@ -24,6 +24,10 @@
     <string name="no_diff_data">No diff data found</string>
     <string name="view_file">View File</string>
     <string name="view_diff">View Diff</string>
+    <string name="search_hint">Search…</string>
+    <string name="close_search">Close search</string>
+    <string name="previous">Previous</string>
+    <string name="next_result">Next</string>
 
     <!-- Connection Status -->
     <string name="status_connected">Online</string>

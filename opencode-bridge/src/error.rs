@@ -35,6 +35,9 @@ pub enum AppError {
     #[error("Not a directory: {0}")]
     NotADirectory(String),
 
+    #[error("Not a git repository: {0}")]
+    NotAGitRepo(String),
+
     #[error("Rate limited")]
     RateLimited,
 
@@ -97,6 +100,7 @@ impl IntoResponse for AppError {
             AppError::PathNotAllowed(_) => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::PathNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::NotADirectory(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            AppError::NotAGitRepo(_) => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),

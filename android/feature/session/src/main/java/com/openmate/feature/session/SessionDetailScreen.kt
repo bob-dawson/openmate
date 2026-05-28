@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Search
@@ -140,6 +141,7 @@ fun SessionDetailScreen(
     onBack: () -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
     onNavigateToBrowser: (directory: String) -> Unit = {},
+    onNavigateToGitChanges: (directory: String) -> Unit = {},
     viewModel: SessionDetailViewModel = hiltViewModel(),
 ) {
     val messages by viewModel.messages.collectAsState()
@@ -377,16 +379,14 @@ fun SessionDetailScreen(
 
     val fileState = previewFileState
     if (fileState != null) {
-        BackHandler(enabled = true) {
+        LaunchedEffect(fileState) {
+            val intent = android.content.Intent().apply {
+                setClassName(context, "com.openmate.app.fileviewer.FileViewerActivity")
+                putExtra("file_path", fileState.path)
+            }
+            context.startActivity(intent)
             viewModel.closeFilePreview()
         }
-        FileViewer(
-            state = fileState,
-            fileContent = previewFileContent,
-            isLoading = previewFileLoading,
-            error = "",
-            onBack = { viewModel.closeFilePreview() },
-        )
         return
     }
 
@@ -925,6 +925,16 @@ fun SessionDetailScreen(
                     Icon(
                         Icons.Default.FolderOpen,
                         contentDescription = stringResource(R.string.browse_files),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                IconButton(
+                    onClick = { onNavigateToGitChanges(viewModel.getWorkingDirectory()) },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        Icons.Default.Compare,
+                        contentDescription = "Git Changes",
                         modifier = Modifier.size(24.dp),
                     )
                 }

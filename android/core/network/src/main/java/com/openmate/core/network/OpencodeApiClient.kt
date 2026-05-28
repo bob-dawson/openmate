@@ -5,6 +5,7 @@ import com.openmate.core.network.dto.AgentDto
 import com.openmate.core.network.dto.BridgeDeleteRequest
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
+import com.openmate.core.network.dto.BridgeGitStatusEntry
 import com.openmate.core.network.dto.BridgeFileStatDto
 import com.openmate.core.network.dto.BridgeMkdirRequest
 import com.openmate.core.network.dto.BridgeRenameRequest
@@ -446,6 +447,20 @@ class OpencodeApiClient(
             throw ServerUnavailableException("HTTP ${response.code}: $responseBody")
         }
         return json.decodeFromString(responseBody)
+    }
+
+    suspend fun bridgeGitStatus(path: String): List<BridgeGitStatusEntry> {
+        return getList("/api/bridge/git/status", mapOf("path" to path))
+    }
+
+    suspend fun bridgeGitDiff(file: String): String {
+        val url = buildUrl("/api/bridge/git/diff", mapOf("file" to file))
+        val request = Request.Builder().url(url).get().build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw ServerUnavailableException("HTTP ${response.code}")
+        }
+        return response.body?.string() ?: ""
     }
 
     suspend fun bridgeStatus(): BridgeStatusResponse {

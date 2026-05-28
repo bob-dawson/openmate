@@ -18,6 +18,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import com.openmate.core.data.sync.SyncLogCategory
+import com.openmate.core.data.sync.SyncLogLevel
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,6 +41,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.ui.component.TopBar
 import dagger.hilt.android.lifecycle.HiltViewModel
+import com.openmate.core.domain.model.DiffBuilder
 import com.openmate.core.domain.model.DiffFile
 import com.openmate.core.domain.model.DiffLine
 import com.openmate.core.domain.model.DiffLineType
@@ -311,22 +314,46 @@ data class DiffViewState(
 class DiffViewerViewModel @Inject constructor(
     private val sessionMessageRepository: SessionMessageRepository,
     private val apiClient: OpencodeApiClient,
+    private val logStore: com.openmate.core.data.sync.SyncLogStore,
 ) : ViewModel() {
     val state = mutableStateOf(DiffViewState())
     private var currentDirectory: String = ""
 
     fun loadDiff(sessionId: String, messageId: String, toolName: String, targetFilePath: String?, directory: String) {
         currentDirectory = directory
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                val files = sessionMessageRepository.fetchDiffFiles(sessionId, messageId, toolName, targetFilePath)
-                if (files.isEmpty()) {
-                    state.value = DiffViewState(loading = false, isEmpty = true)
+                if (toolName == "git") {
+                    val filePath = targetFilePath ?: ""
+                    val fullPath = if (filePath.startsWith("/") || (filePath.length >= 3 && filePath[1] == ':')) {
+                        filePath
+                    } else {
+                        "${directory.replace('\\', '/')}/$filePath"
+                    }
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "DiffViewerVM git diff: filePath=$filePath directory=$directory fullPath=$fullPath")
+                    val rawDiff = apiClient.bridgeGitDiff(fullPath)
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "DiffViewerVM git diff response: len=${rawDiff.length} first200=${rawDiff.take(200)}")
+                    val files = DiffBuilder.fromUnifiedDiff(rawDiff)
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "DiffViewerVM parsed ${files.size} diff files")
+                    files.forEachIndexed { idx, f ->
+                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Poll, "DiffViewerVM file[$idx]: path=${f.filePath} hunks=${f.hunks.size} lines=${f.hunks.sumOf { it.lines.size }}")
+                    }
+                    if (files.isEmpty()) {
+                        state.value = DiffViewState(loading = false, isEmpty = true)
+                    } else {
+                        state.value = DiffViewState(loading = false, files = files)
+                    }
                 } else {
-                    state.value = DiffViewState(loading = false, files = files)
+                    val files = sessionMessageRepository.fetchDiffFiles(sessionId, messageId, toolName, targetFilePath)
+                    if (files.isEmpty()) {
+                        state.value = DiffViewState(loading = false, isEmpty = true)
+                    } else {
+                        state.value = DiffViewState(loading = false, files = files)
+                    }
                 }
             } catch (e: Exception) {
-                state.value = DiffViewState(loading = false, error = e.message ?: "Failed to load diff")
+                    logStore.log(SyncLogLevel.Error, SyncLogCategory.Poll, "DiffViewerVM git diff failed: ${e.javaClass?.simpleName} message=${e.message}")
+                    state.value = DiffViewState(loading = false, error = e.message ?: "Failed to load diff")
             }
         }
     }

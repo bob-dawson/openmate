@@ -42,7 +42,7 @@ object UnifiedDiffParser {
 
             val hunks = mutableListOf<DiffHunk>()
             while (i < lines.size) {
-                val hunkMatch = hunkHeaderRegex.matchEntire(lines[i])
+                val hunkMatch = hunkHeaderRegex.find(lines[i])
                 if (hunkMatch != null) {
                     val oldStart = hunkMatch.groupValues[1].toInt()
                     val oldCount = hunkMatch.groupValues[2].toIntOrNull() ?: 1
@@ -68,7 +68,7 @@ object UnifiedDiffParser {
                                 hunkLines.add(DiffLine(DiffLineType.CONTEXT, hLine.removePrefix(" "), oLine++, nLine++))
                                 i++
                             }
-                            isFileHeader(hLine) || hunkHeaderRegex.matches(hLine) -> break
+                            isFileHeader(hLine) || hunkHeaderRegex.containsMatchIn(hLine) -> break
                             else -> {
                                 hunkLines.add(DiffLine(DiffLineType.CONTEXT, hLine, oLine++, nLine++))
                                 i++
@@ -91,6 +91,5 @@ object UnifiedDiffParser {
     private fun isFileHeader(line: String): Boolean {
         return line.startsWith("Index: ")
             || line.startsWith("diff --git ")
-            || line.startsWith("--- ")
     }
 }

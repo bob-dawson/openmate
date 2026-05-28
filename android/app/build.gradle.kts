@@ -68,6 +68,7 @@ dependencies {
     implementation(project(":core:network"))
     implementation(project(":core:common"))
     implementation(libs.okhttp)
+    implementation(libs.compose.markdown)
     implementation(libs.kstatemachine)
     implementation(libs.kstatemachine.coroutines)
 

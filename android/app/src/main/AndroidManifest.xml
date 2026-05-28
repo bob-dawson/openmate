@@ -29,6 +29,11 @@
             android:exported="false"
             android:screenOrientation="unspecified"
             android:theme="@style/Theme.OpenMate" />
+        <activity
+            android:name=".fileviewer.FileViewerActivity"
+            android:exported="false"
+            android:screenOrientation="unspecified"
+            android:theme="@style/Theme.OpenMate" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

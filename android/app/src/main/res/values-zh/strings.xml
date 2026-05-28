@@ -23,6 +23,10 @@
     <string name="no_diff_data">未找到差异数据</string>
     <string name="view_file">查看文件</string>
     <string name="view_diff">查看差异</string>
+    <string name="search_hint">搜索…</string>
+    <string name="close_search">关闭搜索</string>
+    <string name="previous">上一个</string>
+    <string name="next_result">下一个</string>
 
     <!-- Connection Status -->
     <string name="status_connected">在线</string>

@@ -11,6 +11,7 @@ use crate::bridge;
 use crate::events;
 use crate::files;
 use crate::fs;
+use crate::git;
 use crate::proxy;
 use crate::log_capture::SharedLogBuffer;
 use crate::state::create_app_state_with_db_event_source_and_actual_port;
@@ -134,6 +135,8 @@ pub async fn run_server(
         )
         .route("/api/bridge/fs/delete", post(fs::router::delete))
         .route("/api/bridge/fs/rename", post(fs::router::rename))
+        .route("/api/bridge/git/status", get(git::router::status))
+        .route("/api/bridge/git/diff", get(git::router::diff))
         .merge(crate::api::routes())
         .merge(crate::ui::routes())
         .route("/files/{*path}", get(files::router::serve_file))

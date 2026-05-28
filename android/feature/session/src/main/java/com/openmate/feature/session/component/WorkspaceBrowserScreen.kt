@@ -569,13 +569,14 @@ fun WorkspaceBrowserScreen(
 
     val vf = viewingFile
     if (vf != null) {
-        FileViewer(
-            state = vf,
-            fileContent = fileContent,
-            isLoading = fileLoading,
-            error = fileError,
-            onBack = { viewingFile = null },
-        )
+        LaunchedEffect(vf) {
+            val intent = android.content.Intent().apply {
+                setClassName(context, "com.openmate.app.fileviewer.FileViewerActivity")
+                putExtra("file_path", vf.path)
+            }
+            context.startActivity(intent)
+            viewingFile = null
+        }
         return
     }
 

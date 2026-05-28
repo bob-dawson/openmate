@@ -164,3 +164,10 @@ data class ScanPairConfirmResponse(
     val address: String = "",
     val port: Int = 0,
 )
+
+@Serializable
+data class BridgeGitStatusEntry(
+    val path: String = "",
+    val status: String = "",
+    val oldPath: String? = null,
+)

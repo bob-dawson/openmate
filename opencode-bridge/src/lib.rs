@@ -9,6 +9,7 @@ pub mod events;
 pub mod files;
 pub mod fs;
 pub mod gateway;
+pub mod git;
 pub mod log_capture;
 pub mod process;
 pub mod proxy;

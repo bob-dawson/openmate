@@ -5,6 +5,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.openmate.feature.session.component.GitChangesScreen
 import com.openmate.feature.session.component.WorkspaceBrowserScreen
 import com.openmate.feature.settings.LocalFileManagerScreen
 import java.net.URLDecoder
@@ -17,6 +18,7 @@ object SessionRoutes {
     const val SUBTASK_DETAIL = "subtask_detail"
     const val WORKSPACE_BROWSER = "workspace_browser"
     const val LOCAL_FILE_MANAGER = "local_file_manager"
+    const val GIT_CHANGES = "git_changes"
 }
 
 fun NavGraphBuilder.sessionScreens(
@@ -65,6 +67,10 @@ fun NavGraphBuilder.sessionScreens(
                 val encoded = URLEncoder.encode(directory, "UTF-8")
                 navController.navigate("${SessionRoutes.WORKSPACE_BROWSER}/$encoded")
             },
+            onNavigateToGitChanges = { directory ->
+                val encoded = URLEncoder.encode(directory, "UTF-8")
+                navController.navigate("${SessionRoutes.GIT_CHANGES}/$encoded")
+            },
             onBack = { navController.popBackStack() },
         )
     }
@@ -84,6 +90,10 @@ fun NavGraphBuilder.sessionScreens(
                 val encoded = URLEncoder.encode(directory, "UTF-8")
                 navController.navigate("${SessionRoutes.WORKSPACE_BROWSER}/$encoded")
             },
+            onNavigateToGitChanges = { directory ->
+                val encoded = URLEncoder.encode(directory, "UTF-8")
+                navController.navigate("${SessionRoutes.GIT_CHANGES}/$encoded")
+            },
             onBack = { navController.popBackStack() },
         )
     }
@@ -101,6 +111,34 @@ fun NavGraphBuilder.sessionScreens(
     composable(SessionRoutes.LOCAL_FILE_MANAGER) {
         LocalFileManagerScreen(
             onBack = { navController.popBackStack() },
+        )
+    }
+    composable(
+        route = "${SessionRoutes.GIT_CHANGES}/{directory}",
+        arguments = listOf(navArgument("directory") { type = NavType.StringType }),
+    ) { backStackEntry ->
+        val encoded = backStackEntry.arguments?.getString("directory") ?: return@composable
+        val directory = URLDecoder.decode(encoded, "UTF-8")
+        val context = androidx.compose.ui.platform.LocalContext.current
+        GitChangesScreen(
+            directory = directory,
+            onBack = { navController.popBackStack() },
+            onOpenDiff = { filePath, dir ->
+                val fullPath = if (filePath.startsWith("/") || (filePath.length >= 3 && filePath[1] == ':')) {
+                    filePath
+                } else {
+                    "${dir.replace('\\', '/')}/$filePath"
+                }
+                val intent = android.content.Intent().apply {
+                    setClassName(context, "com.openmate.app.diff.DiffViewerActivity")
+                    putExtra("session_id", "")
+                    putExtra("message_id", "")
+                    putExtra("tool_name", "git")
+                    putExtra("file_path", fullPath)
+                    putExtra("directory", dir)
+                }
+                context.startActivity(intent)
+            },
         )
     }
 }
