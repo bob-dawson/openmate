@@ -228,6 +228,7 @@ async fn test_opencode_start_stop_with_sigint() {
         port,
         dir.to_string_lossy().to_string(),
         false,
+        String::new(),
     );
 
     manager.start().await.expect("Failed to start opencode");
