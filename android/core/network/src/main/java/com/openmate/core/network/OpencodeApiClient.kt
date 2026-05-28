@@ -65,11 +65,11 @@ class OpencodeApiClient(
     val baseUrl: String
         get() {
             val route = activeProfileProvider.getActiveRoute()
-            val profile = activeProfileProvider.getActiveProfile()
+            val profile = activeProfileProvider.getActiveProfile() ?: return ""
             return when (route) {
-                is ConnectionRoute.Gateway -> GATEWAY_URL
                 is ConnectionRoute.Direct -> "http://${route.address}:${route.port}"
-                null -> if (profile != null) "http://${profile.address}:${profile.port}" else ""
+                is ConnectionRoute.Gateway -> GATEWAY_URL
+                null -> if (profile.instanceId.isNotBlank()) GATEWAY_URL else "http://${profile.address}:${profile.port}"
             }
         }
 

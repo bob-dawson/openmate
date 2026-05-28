@@ -9,9 +9,16 @@ class GatewayInterceptor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val route = activeProfileProvider.getActiveRoute()
-        val request = if (route is ConnectionRoute.Gateway) {
+        val profile = activeProfileProvider.getActiveProfile()
+        val useGateway = route is ConnectionRoute.Gateway
+            || (route == null && profile?.instanceId?.isNotBlank() == true)
+        val instanceId = when (route) {
+            is ConnectionRoute.Gateway -> route.instanceId
+            else -> profile?.instanceId?.ifBlank { null }
+        }
+        val request = if (useGateway && instanceId != null) {
             chain.request().newBuilder()
-                .header("X-Instance-Id", route.instanceId)
+                .header("X-Instance-Id", instanceId)
                 .build()
         } else {
             chain.request()
