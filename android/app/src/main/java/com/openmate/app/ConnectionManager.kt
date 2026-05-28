@@ -214,6 +214,14 @@ class ConnectionManager @Inject constructor(
         _errorMessage.value = null
         _needsRepairing.value = null
         _activeProfile.value = profile
+        _connectionSnapshot.value = ConnectionSnapshot(
+            phase = ConnectionPhase.CONNECTING,
+            activeRoute = null,
+            desiredProfileId = profile.id,
+            isUsable = false,
+            needsUserRepair = false,
+            message = null,
+        )
 
         scope.launch {
             tokenStore.setActiveProfileId(profile.id)
