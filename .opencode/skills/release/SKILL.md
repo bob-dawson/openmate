@@ -17,23 +17,48 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
      - `D:\openmate\android\app\build.gradle.kts` 的 `versionName`，并将 `versionCode` +1
 
 2. **确认 git 工作区干净**
-   - 运行 `git status --short`
-   - 如果有未提交的变更，先提示用户是否提交
-   - 不要自动提交，等用户确认
+    - 运行 `git status --short`
+    - 如果有未提交的变更，先提示用户是否提交
+    - 不要自动提交，等用户确认
 
-3. **执行发布脚本**
-   ```powershell
-   powershell -File D:\openmate\scripts\release.ps1
-   ```
-   - 默认包含 Linux 构建（通过 WSL Ubuntu-24.04 编译）
-   - 如果不需要 Linux 版本，加 `-SkipLinux`
+3. **编写 CHANGELOG**
+     - 读取项目根目录 `CHANGELOG.md`，了解现有格式（中文，只描述 Bridge 和 Android 变更，其他组件不描述）
+     - 运行 `git log v{上一个tag}..HEAD --oneline --no-merges` 获取本次变更
+     - **筛选原则**：只记录用户已发布版本中遇到的问题修复；开发过程中发现并修复的 bug（用户从未遇到过）不写入
+     - 人工精炼变更条目：将技术性 commit 归纳为用户可读的中文描述，按"新功能"/"问题修复"分类
+     - 每条以 `**关键词**：` 开头，简洁说明功能或修复内容
+     - 不描述尚未正式支持的平台（如 macOS）
+     - 在 `CHANGELOG.md` 顶部（`# Changelog` 标题之后）插入新版本条目，保留所有历史版本
+    - 格式模板：
+      ```
+      ## {版本号}
 
-4. **验证产出**
-   - 检查 `D:\openmate\release\{version}\` 目录内容
-   - 应包含：`openmate.exe`、`openmate-linux-x86_64`、`OpenMate-{version}.apk`、`CHANGELOG.md`、`INSTALL.md`
-   - 检查 CHANGELOG.md 中文是否正常（非乱码）
+      Released: {yyyy-MM-dd}
 
-5. **脚本自动处理**
+      ### 新功能
+
+      - **功能名**：描述
+
+      ### 问题修复
+
+      - 修复描述
+      ```
+    - 将 `CHANGELOG.md` 暂存到 git（`git add CHANGELOG.md`），随版本号一起提交
+
+4. **执行发布脚本**
+    ```powershell
+    powershell -File D:\openmate\scripts\release.ps1
+    ```
+    - 默认包含 Linux 构建（通过 WSL Ubuntu-24.04 编译）
+    - 如果不需要 Linux 版本，加 `-SkipLinux`
+
+5. **验证产出**
+    - 检查 `D:\openmate\release\{version}\` 目录内容
+    - 应包含：`openmate.exe`、`openmate-linux-x86_64`、`OpenMate-{version}.apk`、`CHANGELOG.md`、`INSTALL.md`
+    - 检查发布目录的 CHANGELOG.md 内容是否与项目根目录一致
+    - 脚本会自动生成 commit 级别的 CHANGELOG，但发布目录的版本应被项目根目录的 `CHANGELOG.md` 覆盖
+
+6. **脚本自动处理**
    - Bridge 和 Android 全部编译成功后，自动 commit 版本号变更并打 git 标签
    - 编译失败则不提交不打标签
    - commit 消息格式：`release: v{版本号}`
@@ -59,6 +84,7 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
 - 版本号来源以 `Cargo.toml` 为准
 - git 标签格式：`v{版本号}`（如 `v0.1.0`）
 - CHANGELOG 只包含上一个 tag 到当前 HEAD 的变更
+- CHANGELOG.md 存放在项目根目录，持续累积所有版本，发布时复制到发布目录
 
 ## 注意事项
 

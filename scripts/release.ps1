@@ -257,19 +257,20 @@ if (-not $bridgeOk -or -not $androidOk) {
     return
 }
 
-# Step 5: Copy install guide and generate changelog
-Write-Host "[5/6] Generating changelog..." -ForegroundColor Cyan
+# Step 5: Copy install guide and changelog
+Write-Host "[5/6] Copying docs..." -ForegroundColor Cyan
 if (Test-Path $InstallDoc) {
     Copy-Item $InstallDoc "$ReleaseDir\INSTALL.md" -Force
 }
-$lastTag = Get-LastTag -ExcludeVersion $Version
-if ($lastTag) {
-    Write-Host "  Last tag: $lastTag" -ForegroundColor Gray
+$ProjectChangelog = "$ProjectRoot\CHANGELOG.md"
+if (Test-Path $ProjectChangelog) {
+    Copy-Item $ProjectChangelog "$ReleaseDir\CHANGELOG.md" -Force
+    Write-Host "  Copied CHANGELOG.md from project root" -ForegroundColor Green
 } else {
-    Write-Host "  No previous tags found" -ForegroundColor Gray
+    Write-Host "  WARNING: CHANGELOG.md not found in project root, generating from git log" -ForegroundColor Yellow
+    $lastTag = Get-LastTag -ExcludeVersion $Version
+    Generate-Changelog -Version $Version -LastTag $lastTag -OutPath "$ReleaseDir\CHANGELOG.md"
 }
-
-Generate-Changelog -Version $Version -LastTag $lastTag -OutPath "$ReleaseDir\CHANGELOG.md"
 
 # Step 6: Commit version changes and create tag
 Write-Host "[6/6] Committing and tagging..." -ForegroundColor Cyan

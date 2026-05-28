@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -146,7 +146,7 @@ private fun FileContentView(uiState: DiffViewState) {
             val lineNumberColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
 
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                items(items = lines, key = { idx -> idx }) { line ->
+                itemsIndexed(items = lines, key = { idx, _ -> "fline-$idx" }) { _, line ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp),
                     ) {
@@ -210,10 +210,10 @@ private fun UnifiedDiffView(files: List<DiffFile>) {
                         )
                     }
                 }
-                items(
+                itemsIndexed(
                     items = hunk.lines,
-                    key = { line -> "f$fileIdx-h$hunkIdx-${line.oldLineNumber}-${line.newLineNumber}-${line.content.hashCode()}" },
-                ) { line ->
+                    key = { lineIdx, _ -> "f$fileIdx-h$hunkIdx-l$lineIdx" },
+                ) { _, line ->
                     UnifiedDiffLine(
                         line = line,
                         removeBg = removeBg,
