@@ -19,18 +19,19 @@ pub async fn generate_qrcode(
         st.as_ref().map(|e| e.token.clone()).unwrap_or_default()
     };
 
-    let mut url = format!("op:");
+    if scan_token.is_empty() {
+        return Err(AppError::BadRequest("No scan token available".to_string()));
+    }
+
     let iid_b64 = crate::auth::key::base64url_encode(
         &crate::auth::key::hex_to_bytes(&state.config.gateway.instance_id).unwrap_or_default()
     );
-    url.push_str(&iid_b64);
-    url.push(':');
-    if !scan_token.is_empty() {
-        url.push_str(&scan_token);
-    }
+
+    let url = format!("op:{}:{}", iid_b64, scan_token);
 
     let code = qrcode::QrCode::new(&url)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("QR generation failed: {}", e)))?;
+
     let svg = code.render::<qrcode::render::svg::Color>()
         .min_dimensions(384, 384)
         .build();

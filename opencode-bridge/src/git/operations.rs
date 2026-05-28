@@ -6,6 +6,20 @@ use serde::Serialize;
 use crate::error::AppError;
 
 #[cfg(target_os = "windows")]
+fn git_command() -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let mut cmd = git_command();
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+#[cfg(not(target_os = "windows"))]
+fn git_command() -> Command {
+    git_command()
+}
+
+#[cfg(target_os = "windows")]
 fn strip_unc_prefix(path: &Path) -> PathBuf {
     let s = path.to_string_lossy();
     if s.starts_with(r"\\?\") {
@@ -31,7 +45,7 @@ pub struct GitStatusEntry {
 
 pub fn git_status(dir: &Path) -> Result<Vec<GitStatusEntry>, AppError> {
     let dir = strip_unc_prefix(dir);
-    let output = Command::new("git")
+    let output = git_command()
         .args(["status", "--porcelain"])
         .current_dir(&dir)
         .output()
@@ -114,7 +128,7 @@ pub fn git_diff(file: &Path) -> Result<String, AppError> {
     let file_str = file.display().to_string();
     let parent = file.parent().unwrap_or(Path::new("."));
 
-    let repo_root_output = Command::new("git")
+    let repo_root_output = git_command()
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(parent)
         .output()
@@ -143,7 +157,7 @@ pub fn git_diff(file: &Path) -> Result<String, AppError> {
         file_str
     };
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["diff", "--no-color", "HEAD", "--", &relative])
         .current_dir(&repo_root)
         .output()
@@ -152,7 +166,7 @@ pub fn git_diff(file: &Path) -> Result<String, AppError> {
     let diff = String::from_utf8_lossy(&output.stdout).to_string();
 
     if diff.trim().is_empty() {
-        let staged_output = Command::new("git")
+        let staged_output = git_command()
             .args(["diff", "--no-color", "--cached", "--", &relative])
             .current_dir(&repo_root)
             .output()

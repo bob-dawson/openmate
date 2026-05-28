@@ -14,7 +14,7 @@ use crate::fs;
 use crate::git;
 use crate::proxy;
 use crate::log_capture::SharedLogBuffer;
-use crate::state::create_app_state_with_db_event_source_and_actual_port;
+use crate::state::{ScanTokenEntry, create_app_state_with_db_event_source_and_actual_port};
 use crate::sync;
 
 pub async fn run_server(
@@ -78,6 +78,22 @@ pub async fn run_server(
     let gateway_url = config.gateway.url.clone();
     let gateway_auto_connect = config.gateway.auto_connect;
     let gateway_instance_id = config.gateway.instance_id.clone();
+
+    {
+        let token_bytes = auth::key::generate_random_bytes(6);
+        let scan_token = auth::key::base64url_encode(&token_bytes);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        let expires_at = now + 120_000;
+        let mut st = app_state.scan_token.write().await;
+        *st = Some(ScanTokenEntry {
+            token: scan_token.clone(),
+            expires_at,
+        });
+        tracing::info!("Initial scan_token generated: {} (len={})", scan_token, scan_token.len());
+    }
 
     let app = Router::new()
         .route("/api/bridge/sync/sessions", get(sync::router::sessions))
@@ -192,6 +208,65 @@ pub async fn run_server(
 
     let port = actual_port;
     tracing::info!("Bridge listening on {}", listener.local_addr()?);
+
+    #[cfg(target_os = "linux")]
+    {
+        let scan_token = {
+            let st = app_state.scan_token.read().await;
+            st.as_ref().map(|e| e.token.clone()).unwrap_or_default()
+        };
+        let instance_id = app_state.config.gateway.instance_id.clone();
+        let iid_b64 = auth::key::base64url_encode(
+            &auth::key::hex_to_bytes(&instance_id).unwrap_or_default()
+        );
+        let qr_data = format!("op:{}:{}", iid_b64, scan_token);
+        tracing::info!("QR data: {}", qr_data);
+
+        let machine_name = hostname::get()
+            .ok()
+            .and_then(|h| h.into_string().ok())
+            .unwrap_or_else(|| "Bridge".to_string());
+
+        let local_ip = local_ip_address::local_ip()
+            .map(|ip| ip.to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        if let Ok(code) = qrcode::QrCode::new(&qr_data) {
+            let qr_string = code
+                .render::<qrcode::render::unicode::Dense1x2>()
+                .quiet_zone(false)
+                .module_dimensions(1, 1)
+                .build();
+
+            println!();
+            println!("╔══════════════════════════════════════╗");
+            println!("║   OpenMate Bridge - Pair Your Phone  ║");
+            println!("╚══════════════════════════════════════╝");
+            println!();
+            println!("  Bridge: {}", machine_name);
+            println!("  IP:     {}:{}", local_ip, port);
+            println!();
+            for line in qr_string.lines() {
+                println!("  {}", line);
+            }
+            println!();
+            println!("  Scan this QR code with the OpenMate app to pair.");
+        } else {
+            println!();
+            println!("  Pairing data: {}", qr_data);
+        }
+        println!();
+        println!("  Manage: http://127.0.0.1:{}/ui/", port);
+        println!("  LAN:    http://{}:{}/ui/", local_ip, port);
+        println!();
+
+        let gateway_url = &app_state.config.gateway.url;
+        if !gateway_url.is_empty() {
+            println!("  Gateway: {}", gateway_url);
+            println!();
+        }
+    }
+
     if let Some(notify) = ready_notify {
         notify.notify_waiters();
     }

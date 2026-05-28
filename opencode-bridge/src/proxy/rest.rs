@@ -26,6 +26,7 @@ pub async fn proxy_fallback(
     let opencode_url = state.config.opencode_url();
 
     let path = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+    tracing::info!("proxy_fallback v0.1.5: path={}", path);
     let target_url = format!("{}{}", opencode_url, path);
 
     do_proxy(&state, &target_url, req).await

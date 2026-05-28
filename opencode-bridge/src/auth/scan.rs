@@ -52,6 +52,7 @@ pub async fn scan_generate(
         *st = Some(entry);
     }
 
+    tracing::info!("scan_generate token: {}", token);
     Ok(Json(serde_json::json!({
         "scan_token": token,
         "expires_at": expires_at,
