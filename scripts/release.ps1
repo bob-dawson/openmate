@@ -217,8 +217,8 @@ if (-not $SkipLinux -and -not $SkipBridge) {
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  Linux build via WSL failed" -ForegroundColor Red
         } else {
-            Copy-Item "$BridgeRoot\target-linux\release\openmate" "$ReleaseDir\openmate-linux-x86_64" -Force
-            Write-Host "  Bridge Linux -> openmate-linux-x86_64" -ForegroundColor Green
+            Copy-Item "$BridgeRoot\target-linux\release\openmate" "$ReleaseDir\openmate" -Force
+            Write-Host "  Bridge Linux -> openmate" -ForegroundColor Green
         }
     } catch {
         Write-Host "  WSL not available or build failed: $_" -ForegroundColor Red
