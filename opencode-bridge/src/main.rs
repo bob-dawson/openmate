@@ -49,7 +49,6 @@ async fn main() -> anyhow::Result<()> {
             return run_uninstall();
         }
         Some(Commands::Service) => {
-            init_console_logging();
             #[cfg(target_os = "windows")]
             return run_service_mode();
             #[cfg(target_os = "linux")]

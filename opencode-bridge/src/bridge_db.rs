@@ -305,6 +305,7 @@ impl BridgeDb {
             ("opencode.auto_start", "true".to_string()),
             ("opencode.auto_restart", "true".to_string()),
             ("opencode.db_path", db_path),
+            ("opencode.run_as_user", String::new()),
             ("fs.allowed_paths", String::new()),
             ("gateway.url", "https://gateway.clawmate.net".to_string()),
             ("gateway.auto_connect", "true".to_string()),

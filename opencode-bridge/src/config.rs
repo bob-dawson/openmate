@@ -27,6 +27,7 @@ pub struct OpencodeConfig {
     pub auto_start: bool,
     pub auto_restart: bool,
     pub db_path: String,
+    pub run_as_user: String,
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +86,7 @@ impl Default for Config {
                 auto_start: true,
                 auto_restart: true,
                 db_path: default_db_path(),
+                run_as_user: String::new(),
             },
             fs: FsConfig::default(),
             gateway: GatewayConfig::default(),
@@ -168,6 +170,14 @@ impl Config {
                 description: "Path to opencode SQLite database".into(),
             },
             ConfigEntry {
+                key: "opencode.run_as_user".into(),
+                value: String::new(),
+                default: String::new(),
+                r#type: "string".into(),
+                needs_restart: false,
+                description: "Run opencode as this user (empty = current user, for systemd service)".into(),
+            },
+            ConfigEntry {
                 key: "fs.allowed_paths".into(),
                 value: String::new(),
                 default: String::new(),
@@ -236,6 +246,7 @@ impl Config {
                 auto_start: get_bool("opencode.auto_start", true),
                 auto_restart: get_bool("opencode.auto_restart", true),
                 db_path: get("opencode.db_path", &default_db_path()),
+                run_as_user: get("opencode.run_as_user", ""),
             },
             fs: FsConfig {
                 allowed_paths,
@@ -259,6 +270,7 @@ impl Config {
             ("opencode.auto_start".to_string(), self.opencode.auto_start.to_string()),
             ("opencode.auto_restart".to_string(), self.opencode.auto_restart.to_string()),
             ("opencode.db_path".to_string(), self.opencode.db_path.clone()),
+            ("opencode.run_as_user".to_string(), self.opencode.run_as_user.clone()),
             ("fs.allowed_paths".to_string(), self.fs.allowed_paths.join(",")),
             ("gateway.url".to_string(), self.gateway.url.clone()),
             ("gateway.auto_connect".to_string(), self.gateway.auto_connect.to_string()),

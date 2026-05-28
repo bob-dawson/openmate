@@ -101,6 +101,7 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
     let port = config.opencode.port;
     let directory = config.opencode.directory.clone();
     let auto_restart = config.opencode.auto_restart;
+    let run_as_user = config.opencode.run_as_user.clone();
 
     let sync_db = SyncDb::new(&config);
     tracing::info!("opencode DB path: {}", sync_db.db_path().display());
@@ -128,6 +129,7 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
             port,
             directory,
             auto_restart,
+            run_as_user,
         ),
         secret_key,
         pending_pairs: RwLock::new(auth::pair::PairState::new()),

@@ -13,6 +13,7 @@ pub struct OpencodeManager {
     port: Arc<u16>,
     directory: Arc<String>,
     auto_restart: Arc<bool>,
+    run_as_user: Arc<String>,
     opencode_version: Arc<RwLock<Option<String>>>,
     upgrade_in_progress: Arc<AtomicBool>,
     pid: Arc<RwLock<Option<u32>>>,
@@ -42,6 +43,7 @@ impl OpencodeManager {
             port: Arc::new(4096),
             directory: Arc::new(String::new()),
             auto_restart: Arc::new(true),
+            run_as_user: Arc::new(String::new()),
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
             pid: Arc::new(RwLock::new(None)),
@@ -55,6 +57,7 @@ impl OpencodeManager {
         port: u16,
         directory: String,
         auto_restart: bool,
+        run_as_user: String,
     ) -> Self {
         OpencodeManager {
             opencode_url,
@@ -64,6 +67,7 @@ impl OpencodeManager {
             port: Arc::new(port),
             directory: Arc::new(directory),
             auto_restart: Arc::new(auto_restart),
+            run_as_user: Arc::new(run_as_user),
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
             pid: Arc::new(RwLock::new(None)),
@@ -114,8 +118,9 @@ impl OpencodeManager {
         let hostname = self.hostname.clone();
         let port = *self.port;
         let directory = self.directory.clone();
+        let run_as_user = self.run_as_user.clone();
 
-        let mut child = spawn_opencode(&binary, &hostname, port, &directory)?;
+        let mut child = spawn_opencode(&binary, &hostname, port, &directory, &run_as_user)?;
 
         let child_pid = child.id();
         tracing::info!("opencode process spawned (pid: {:?})", child_pid);
@@ -196,6 +201,7 @@ impl OpencodeManager {
                 let status_arc_r = status_arc.clone();
                 let url_r = url.clone();
                 let auto_restart_r = auto_restart;
+                let run_as_user_r = run_as_user.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
                     restart_loop(
@@ -203,6 +209,7 @@ impl OpencodeManager {
                         &hostname_r,
                         port_r,
                         &directory_r,
+                        &run_as_user_r,
                         &status_arc_r,
                         &url_r,
                         auto_restart_r,
@@ -510,6 +517,7 @@ fn spawn_opencode(
     hostname: &str,
     port: u16,
     directory: &str,
+    run_as_user: &str,
 ) -> Result<tokio::process::Child, String> {
     let port_str = port.to_string();
     let work_dir = if directory.is_empty() {
@@ -540,22 +548,44 @@ fn spawn_opencode(
 
     #[cfg(not(windows))]
     let child = {
-        let mut cmd = std::process::Command::new(binary);
-        cmd.args(["serve", "--hostname", hostname, "--port", &port_str])
-            .current_dir(&work_dir)
-            .env("OPENCODE_EXPERIMENTAL", "true")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+        let is_root = std::env::var("USER").unwrap_or_default() == "root";
+        let needs_sudo = is_root && !run_as_user.is_empty() && run_as_user != "root";
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
+        if needs_sudo {
+            let mut cmd = std::process::Command::new("sudo");
+            cmd.args(["-u", run_as_user, binary, "serve", "--hostname", hostname, "--port", &port_str])
+                .current_dir(&work_dir)
+                .env("OPENCODE_EXPERIMENTAL", "true")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                cmd.process_group(0);
+            }
+
+            tokio::process::Command::from(cmd)
+                .spawn()
+                .map_err(|e| format!("Failed to spawn opencode via sudo: {}", e))?
+        } else {
+            let mut cmd = std::process::Command::new(binary);
+            cmd.args(["serve", "--hostname", hostname, "--port", &port_str])
+                .current_dir(&work_dir)
+                .env("OPENCODE_EXPERIMENTAL", "true")
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                cmd.process_group(0);
+            }
+
+            tokio::process::Command::from(cmd)
+                .spawn()
+                .map_err(|e| format!("Failed to spawn opencode: {}", e))?
         }
-
-        tokio::process::Command::from(cmd)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn opencode: {}", e))?
     };
 
     Ok(child)
@@ -566,6 +596,7 @@ async fn restart_loop(
     hostname: &str,
     port: u16,
     directory: &str,
+    run_as_user: &str,
     status_arc: &Arc<RwLock<OpencodeStatus>>,
     opencode_url: &str,
     auto_restart: bool,
@@ -608,7 +639,7 @@ async fn restart_loop(
             *s = OpencodeStatus::Starting;
         }
 
-        match spawn_opencode(binary, hostname, port, directory) {
+        match spawn_opencode(binary, hostname, port, directory, run_as_user) {
             Ok(mut child) => {
                 tracing::info!("opencode re-spawned (pid: {:?})", child.id());
 

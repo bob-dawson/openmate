@@ -12,6 +12,47 @@ pub fn install() -> anyhow::Result<()> {
         .to_string_lossy()
         .to_string();
 
+    let current_user = std::env::var("SUDO_USER")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_else(|_| "root".to_string());
+
+    let current_path = if current_user != "root" {
+        std::process::Command::new("su")
+            .args(["-", &current_user, "-c", "echo $PATH"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
+    } else {
+        std::env::var("PATH").unwrap_or_default()
+    };
+
+    let current_home = if current_user != "root" {
+        std::process::Command::new("su")
+            .args(["-", &current_user, "-c", "echo $HOME"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| "/root".to_string())
+    } else {
+        std::env::var("HOME").unwrap_or_else(|_| "/root".to_string())
+    };
+
+    let db = crate::bridge_db::BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
+    db.set_config("opencode.run_as_user", &current_user).map_err(|e| anyhow::anyhow!("{}", e))?;
+
     let unit_content = format!(
         "[Unit]\n\
          Description=OpenMate Bridge\n\
@@ -19,6 +60,8 @@ pub fn install() -> anyhow::Result<()> {
          \n\
          [Service]\n\
          Type=simple\n\
+         Environment=\"PATH={}\"\n\
+         Environment=\"HOME={}\"\n\
          ExecStart={} service\n\
          WorkingDirectory={}\n\
          Restart=on-failure\n\
@@ -26,6 +69,8 @@ pub fn install() -> anyhow::Result<()> {
          \n\
          [Install]\n\
          WantedBy=multi-user.target\n",
+        current_path,
+        current_home,
         exe_path.display(),
         working_dir
     );
@@ -33,8 +78,16 @@ pub fn install() -> anyhow::Result<()> {
     let mut file = std::fs::File::create(UNIT_PATH)?;
     file.write_all(unit_content.as_bytes())?;
 
+    let daemon_reload = std::process::Command::new("systemctl")
+        .arg("daemon-reload")
+        .status()?;
+
+    if !daemon_reload.success() {
+        anyhow::bail!("systemctl daemon-reload failed");
+    }
+
     let status = std::process::Command::new("systemctl")
-        .args(["daemon-reload", "enable", "--now", SERVICE_NAME])
+        .args(["enable", "--now", SERVICE_NAME])
         .status()?;
 
     if !status.success() {
