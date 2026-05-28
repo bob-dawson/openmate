@@ -530,6 +530,9 @@ fn spawn_opencode(
     };
 
     #[cfg(windows)]
+    let _ = run_as_user;
+
+    #[cfg(windows)]
     let child = {
         let cmd = format!(
             "{} serve --hostname {} --port {}",

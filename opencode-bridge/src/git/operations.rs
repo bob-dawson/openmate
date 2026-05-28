@@ -5,18 +5,22 @@ use serde::Serialize;
 
 use crate::error::AppError;
 
+fn base_git_command() -> Command {
+    Command::new("git")
+}
+
 #[cfg(target_os = "windows")]
 fn git_command() -> Command {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let mut cmd = git_command();
+    let mut cmd = base_git_command();
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd
 }
 
 #[cfg(not(target_os = "windows"))]
 fn git_command() -> Command {
-    git_command()
+    base_git_command()
 }
 
 #[cfg(target_os = "windows")]
