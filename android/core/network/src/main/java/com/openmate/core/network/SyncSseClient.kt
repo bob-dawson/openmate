@@ -5,7 +5,6 @@ import com.openmate.core.domain.model.ConnectionStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,91 +56,87 @@ class SyncSseClient @Inject constructor(
         _transportSignals.tryEmit(SyncSseSignal.ConnectStarted(baseUrl))
         try {
             withContext(Dispatchers.IO) {
-                while (currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
-                    currentCoroutineContext().ensureActive()
-                    val traceId = "sse-${System.currentTimeMillis()}"
-                    try {
-                        val startAt = System.currentTimeMillis()
-                        val token = tokenStore.activeToken
-                        logger.logConnectStart(traceId = traceId, hasToken = token != null)
-                        Log.d("SyncSseClient", "attempting SSE connection, token=${token != null}")
-                        val urlBuilder = Request.Builder().url("$baseUrl/api/bridge/events").get()
-                        val call = client.newCall(urlBuilder.build())
-                        activeCall.set(call)
-                        val response = call.execute()
-                        if (!response.isSuccessful) {
-                            if (connectionGeneration.get() != generation) {
-                                Log.d("SyncSseClient", "ignoring http error from stale generation: ${response.code}")
-                                response.close()
-                            } else {
-                                _connectionStatus.value = ConnectionStatus.ERROR
-                                _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, "http ${response.code}"))
-                                logger.logConnectFailure(traceId, IllegalStateException("http ${response.code}"))
-                                Log.w("SyncSseClient", "SSE connect returned ${response.code}")
-                                response.close()
-                                delay(5000)
-                            }
-                            continue
-                        }
-                        _connectionStatus.value = ConnectionStatus.CONNECTED
-                        _transportSignals.tryEmit(SyncSseSignal.Connected(baseUrl))
-                        logger.logConnectSuccess(traceId = traceId, costMs = System.currentTimeMillis() - startAt)
-                        Log.d("SyncSseClient", "SSE connected successfully")
-                        val bodyStream = response.body?.byteStream()
-                        if (bodyStream == null) {
-                            logger.logStreamClosed(traceId)
-                            response.close()
-                            delay(5000)
-                            continue
-                        }
-                        val reader = BufferedReader(InputStreamReader(bodyStream))
-                        try {
-                            var line = reader.readLine()
-                            while (line != null && currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
-                                val trimmed = line.trim()
-                                if (trimmed.startsWith("data:")) {
-                                    val data = trimmed.removePrefix("data:").trim()
-                                    val event = BridgeEventParser.parse(data)
-                                    if (event != null) {
-                                        _transportSignals.tryEmit(SyncSseSignal.EventReceived(baseUrl))
-                                        val traceId = "notify-${event.type}-${event.sessionId ?: "unknown"}"
-                                        logger.logNotification(event = event, traceId = traceId)
-                                        Log.d(
-                                            "SyncSseClient",
-                                            "notification: type=${event.type} session=${event.sessionId} message=${event.messageId} part=${event.partId} emitted=${_notifications.tryEmit(event)}"
-                                        )
-                                    } else {
-                                        Log.w("SyncSseClient", "parse error: $data")
-                                    }
-                                }
-                                line = reader.readLine()
-                            }
-                            if (currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
-                                _transportSignals.tryEmit(SyncSseSignal.StreamClosed(baseUrl))
-                                logger.logStreamClosed(traceId)
-                            } else {
-                                Log.d("SyncSseClient", "ignoring stream closed from stale generation")
-                            }
-                        } finally {
-                            activeCall.compareAndSet(call, null)
-                            reader.close()
-                            response.close()
-                        }
-                    } catch (e: CancellationException) {
-                        Log.d("SyncSseClient", "connect cancelled, propagating")
-                        throw e
-                    } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
+                val traceId = "sse-${System.currentTimeMillis()}"
+                try {
+                    val startAt = System.currentTimeMillis()
+                    val token = tokenStore.activeToken
+                    logger.logConnectStart(traceId = traceId, hasToken = token != null)
+                    Log.d("SyncSseClient", "attempting SSE connection, token=${token != null}")
+                    val urlBuilder = Request.Builder().url("$baseUrl/api/bridge/events").get()
+                    val call = client.newCall(urlBuilder.build())
+                    activeCall.set(call)
+                    val response = call.execute()
+                    if (!response.isSuccessful) {
                         if (connectionGeneration.get() != generation) {
-                            Log.d("SyncSseClient", "ignoring error from stale generation: ${e.javaClass.simpleName}")
+                            Log.d("SyncSseClient", "ignoring http error from stale generation: ${response.code}")
+                            response.close()
                         } else {
                             _connectionStatus.value = ConnectionStatus.ERROR
-                            _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, e.message))
-                            logger.logConnectFailure(traceId, e)
-                            Log.w("SyncSseClient", "SSE error: ${e.javaClass.simpleName}: ${e.message}")
+                            _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, "http ${response.code}"))
+                            logger.logConnectFailure(traceId, IllegalStateException("http ${response.code}"))
+                            Log.w("SyncSseClient", "SSE connect returned ${response.code}")
+                            response.close()
                         }
+                        return@withContext
                     }
-                    if (currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
-                        delay(3000)
+                    _connectionStatus.value = ConnectionStatus.CONNECTED
+                    _transportSignals.tryEmit(SyncSseSignal.Connected(baseUrl))
+                    logger.logConnectSuccess(traceId = traceId, costMs = System.currentTimeMillis() - startAt)
+                    Log.d("SyncSseClient", "SSE connected successfully")
+                    val bodyStream = response.body?.byteStream()
+                    if (bodyStream == null) {
+                        logger.logStreamClosed(traceId)
+                        response.close()
+                        if (connectionGeneration.get() == generation) {
+                            _transportSignals.tryEmit(SyncSseSignal.StreamClosed(baseUrl))
+                        }
+                        return@withContext
+                    }
+                    val reader = BufferedReader(InputStreamReader(bodyStream))
+                    try {
+                        var line = reader.readLine()
+                        while (line != null && currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
+                            val trimmed = line.trim()
+                            if (trimmed.startsWith("data:")) {
+                                val data = trimmed.removePrefix("data:").trim()
+                                val event = BridgeEventParser.parse(data)
+                                if (event != null) {
+                                    _transportSignals.tryEmit(SyncSseSignal.EventReceived(baseUrl))
+                                    val traceId2 = "notify-${event.type}-${event.sessionId ?: "unknown"}"
+                                    logger.logNotification(event = event, traceId = traceId2)
+                                    Log.d(
+                                        "SyncSseClient",
+                                        "notification: type=${event.type} session=${event.sessionId} message=${event.messageId} part=${event.partId} emitted=${_notifications.tryEmit(event)}"
+                                    )
+                                } else {
+                                    Log.w("SyncSseClient", "parse error: $data")
+                                }
+                            }
+                            line = reader.readLine()
+                        }
+                        if (currentBaseUrl == baseUrl && connectionGeneration.get() == generation) {
+                            _transportSignals.tryEmit(SyncSseSignal.StreamClosed(baseUrl))
+                            logger.logStreamClosed(traceId)
+                        } else {
+                            Log.d("SyncSseClient", "ignoring stream closed from stale generation")
+                        }
+                    } finally {
+                        activeCall.compareAndSet(call, null)
+                        reader.close()
+                        response.close()
+                    }
+                } catch (e: CancellationException) {
+                    Log.d("SyncSseClient", "connect cancelled, propagating")
+                    throw e
+                } catch (e: Exception) {
+                    if (connectionGeneration.get() != generation) {
+                        Log.d("SyncSseClient", "ignoring error from stale generation: ${e.javaClass.simpleName}")
+                    } else {
+                        _connectionStatus.value = ConnectionStatus.ERROR
+                        _transportSignals.tryEmit(SyncSseSignal.Failed(baseUrl, e.message))
+                        logger.logConnectFailure(traceId, e)
+                        Log.w("SyncSseClient", "SSE error: ${e.javaClass.simpleName}: ${e.message}")
                     }
                 }
             }
