@@ -77,31 +77,32 @@ fn parse_porcelain_v1(output: &str) -> Vec<GitStatusEntry> {
         let x = line.chars().next().unwrap_or(' ');
         let y = line.chars().nth(1).unwrap_or(' ');
 
+        let raw_path = &line[3..];
+        let path = decode_git_path(raw_path);
+
         if x == '?' && y == '?' {
-        let path = line[3..].to_string();
-        if path.ends_with('/') {
-            continue;
-        }
-        entries.push(GitStatusEntry {
-            path,
-            status: "untracked".to_string(),
-            old_path: None,
-        });
+            if path.ends_with('/') {
+                continue;
+            }
+            entries.push(GitStatusEntry {
+                path,
+                status: "untracked".to_string(),
+                old_path: None,
+            });
             continue;
         }
 
         if x == 'R' || y == 'R' {
-            let rest = &line[3..];
-            let parts: Vec<&str> = rest.splitn(2, " -> ").collect();
+            let parts: Vec<&str> = raw_path.splitn(2, " -> ").collect();
             if parts.len() == 2 {
                 entries.push(GitStatusEntry {
-                    path: parts[1].to_string(),
+                    path: decode_git_path(parts[1]),
                     status: "renamed".to_string(),
-                    old_path: Some(parts[0].to_string()),
+                    old_path: Some(decode_git_path(parts[0])),
                 });
             } else {
                 entries.push(GitStatusEntry {
-                    path: rest.to_string(),
+                    path,
                     status: "renamed".to_string(),
                     old_path: None,
                 });
@@ -117,7 +118,6 @@ fn parse_porcelain_v1(output: &str) -> Vec<GitStatusEntry> {
             _ => "modified",
         };
 
-        let path = line[3..].to_string();
         entries.push(GitStatusEntry {
             path,
             status: status.to_string(),
@@ -125,6 +125,76 @@ fn parse_porcelain_v1(output: &str) -> Vec<GitStatusEntry> {
         });
     }
     entries
+}
+
+fn decode_git_path(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        decode_octal_escapes(inner)
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn decode_octal_escapes(s: &str) -> String {
+    let mut result = Vec::new();
+    let mut bytes = s.as_bytes().iter();
+    let mut buf = Vec::new();
+    while let Some(&b) = bytes.next() {
+        if b == b'\\' {
+            let mut octal = String::new();
+            for _ in 0..3 {
+                if let Some(&next) = bytes.next() {
+                    if next >= b'0' && next <= b'7' {
+                        octal.push(next as char);
+                    } else {
+                        buf.push(b);
+                        if !octal.is_empty() {
+                            for c in octal.bytes() {
+                                buf.push(c);
+                            }
+                        }
+                        octal.clear();
+                        buf.push(next);
+                        break;
+                    }
+                }
+            }
+            if !octal.is_empty() {
+                if let Ok(byte_val) = u8::from_str_radix(&octal, 8) {
+                    buf.push(byte_val);
+                } else {
+                    buf.push(b'\\');
+                    for c in octal.bytes() {
+                        buf.push(c);
+                    }
+                }
+            }
+        } else {
+            buf.push(b);
+        }
+    }
+    // Collect complete UTF-8 sequences from buf
+    let mut i = 0;
+    while i < buf.len() {
+        let len = utf8_char_len(buf[i]);
+        if i + len <= buf.len() {
+            result.extend_from_slice(&buf[i..i + len]);
+            i += len;
+        } else {
+            result.push(buf[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(result.clone()).unwrap_or_else(|_| String::from_utf8_lossy(&result).into_owned())
+}
+
+fn utf8_char_len(first_byte: u8) -> usize {
+    if first_byte < 0x80 { 1 }
+    else if first_byte < 0xE0 { 2 }
+    else if first_byte < 0xF0 { 3 }
+    else { 4 }
 }
 
 pub fn git_diff(file: &Path) -> Result<String, AppError> {
@@ -318,5 +388,27 @@ mod tests {
         assert!(result.contains("+    println!(\"hi\");\n"));
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_parse_chinese_filename() {
+        let input = r##"A  "test_\344\270\255\346\226\207/\346\265\213\350\257\225\346\226\207\344\273\266.txt""##;
+        let entries = parse_porcelain_v1(input);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "test_中文/测试文件.txt");
+        assert_eq!(entries[0].status, "added");
+    }
+
+    #[test]
+    fn test_decode_octal_escapes() {
+        assert_eq!(decode_octal_escapes(r"\344\270\255\346\226\207"), "中文");
+        assert_eq!(decode_octal_escapes("hello"), "hello");
+        assert_eq!(decode_octal_escapes(r"path/\346\265\213\350\257\225.rs"), "path/测试.rs");
+    }
+
+    #[test]
+    fn test_decode_git_path_quoted() {
+        assert_eq!(decode_git_path(r#""\344\270\255\346\226\207.txt""#), "中文.txt");
+        assert_eq!(decode_git_path("normal.txt"), "normal.txt");
     }
 }

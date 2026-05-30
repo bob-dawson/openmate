@@ -521,68 +521,73 @@ fun AssistantMessageItem(
                         displayItem.result?.let { Json.parseToJsonElement(it).jsonObject }
                     }.getOrNull()
 
-                    if (name == "question" && status == "running") {
-                        val parsedQuestions = remember(input) { parseQuestionArgs(input) }
-                        val matchedRequest = callID?.let { cid ->
+                    if (status == "pending" || status == "running") {
+                        val matchedQ = callID?.let { cid ->
                             pendingQuestions.find { it.tool?.callID == cid }
                         }
-                        if (parsedQuestions != null) {
+                        if (matchedQ != null) {
                             QuestionCard(
-                                questions = parsedQuestions,
-                                matchedRequest = matchedRequest,
-                                onReply = matchedRequest?.let { req ->
-                                    { answers -> onReplyQuestion(req.id, answers) }
-                                },
-                                onReject = matchedRequest?.let { req ->
-                                    { onRejectQuestion(req.id) }
-                                },
+                                questions = matchedQ.questions,
+                                matchedRequest = matchedQ,
+                                onReply = { answers -> onReplyQuestion(matchedQ.id, answers) },
+                                onReject = { onRejectQuestion(matchedQ.id) },
                             )
-                        } else {
-                            InlineToolLine(displayItem, onViewFile)
-                        }
-                    } else if (status == "pending" || status == "running") {
-                        val matchedPerm = callID?.let { cid ->
-                            pendingPermissions.find { it.tool?.callID == cid }
-                        }
-                        if (matchedPerm != null) {
-                            PermissionCard(
-                                request = matchedPerm,
-                                onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
-                            )
-                        } else if (name == "task") {
-                            val summary = toolSummary(name, input, resultText)
-                            val subtaskSessionID = remember(metadata, structuredResult, resultText) {
-                                extractSubtaskSessionId(
-                                    metadata = metadata,
-                                    structured = structuredResult?.jsonObject,
-                                    resultText = resultText,
+                        } else if (name == "question" && status == "running") {
+                            val parsedQuestions = remember(input) { parseQuestionArgs(input) }
+                            if (parsedQuestions != null) {
+                                QuestionCard(
+                                    questions = parsedQuestions,
+                                    matchedRequest = null,
+                                    onReply = null,
+                                    onReject = null,
                                 )
-                            }
-                            val subtaskPerms = subtaskSessionID?.let { sid ->
-                                pendingPermissions.filter { it.sessionID == sid }
-                            } ?: emptyList()
-                            val subtaskQs = subtaskSessionID?.let { sid ->
-                                pendingQuestions.filter { it.sessionID == sid }
-                            } ?: emptyList()
-                            TaskToolLine(
-                                item = displayItem,
-                                summary = summary,
-                                subtaskSessionID = subtaskSessionID,
-                                onNavigate = onNavigateToSubtask,
-                                subtaskPermissions = subtaskPerms,
-                                subtaskQuestions = subtaskQs,
-                                onReplyPermission = onReplyPermission,
-                                onReplyQuestion = onReplyQuestion,
-                                onRejectQuestion = onRejectQuestion,
-                            )
-                        } else if (status == "pending") {
-                            PendingToolLine(displayItem)
-                        } else {
-                            val summary = toolSummary(name, input, resultText)
-                            if (shouldExpandRunningTool(displayItem)) {
-                                BlockToolLine(displayItem, summary, onViewFile, onViewDiff)
                             } else {
-                                RunningToolLine(displayItem, onViewFile)
+                                InlineToolLine(displayItem, onViewFile)
+                            }
+                        } else {
+                            val matchedPerm = callID?.let { cid ->
+                                pendingPermissions.find { it.tool?.callID == cid }
+                            }
+                            if (matchedPerm != null) {
+                                PermissionCard(
+                                    request = matchedPerm,
+                                    onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
+                                )
+                            } else if (name == "task") {
+                                val summary = toolSummary(name, input, resultText)
+                                val subtaskSessionID = remember(metadata, structuredResult, resultText) {
+                                    extractSubtaskSessionId(
+                                        metadata = metadata,
+                                        structured = structuredResult?.jsonObject,
+                                        resultText = resultText,
+                                    )
+                                }
+                                val subtaskPerms = subtaskSessionID?.let { sid ->
+                                    pendingPermissions.filter { it.sessionID == sid }
+                                } ?: emptyList()
+                                val subtaskQs = subtaskSessionID?.let { sid ->
+                                    pendingQuestions.filter { it.sessionID == sid }
+                                } ?: emptyList()
+                                TaskToolLine(
+                                    item = displayItem,
+                                    summary = summary,
+                                    subtaskSessionID = subtaskSessionID,
+                                    onNavigate = onNavigateToSubtask,
+                                    subtaskPermissions = subtaskPerms,
+                                    subtaskQuestions = subtaskQs,
+                                    onReplyPermission = onReplyPermission,
+                                    onReplyQuestion = onReplyQuestion,
+                                    onRejectQuestion = onRejectQuestion,
+                                )
+                            } else if (status == "pending") {
+                                PendingToolLine(displayItem)
+                            } else {
+                                val summary = toolSummary(name, input, resultText)
+                                if (shouldExpandRunningTool(displayItem)) {
+                                    BlockToolLine(displayItem, summary, onViewFile, onViewDiff)
+                                } else {
+                                    RunningToolLine(displayItem, onViewFile)
+                                }
                             }
                         }
                     } else if (name == "task") {
