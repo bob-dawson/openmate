@@ -15,19 +15,18 @@ sealed class ConnEvent : Event {
 
     data class ProbeOk(val route: Route) : ConnEvent()
     data class ProbeFail(val route: Route, val reason: String? = null) : ConnEvent()
-
-    data class SseConnected(val route: Route) : ConnEvent()
-    data class SseFailed(val route: Route, val msg: String? = null) : ConnEvent()
-    data class SseStreamClosed(val route: Route) : ConnEvent()
-
-    data object BackoffExpired : ConnEvent()
-
     data class BridgeNotBridge(val profile: ServerProfile) : ConnEvent()
     data class BridgeNeedsRepair(val profile: ServerProfile) : ConnEvent()
 
     data object NetworkIsWifi : ConnEvent()
     data object NetworkIsMobile : ConnEvent()
     data object NetworkIsNone : ConnEvent()
+
+    data class SseConnected(val route: Route) : ConnEvent()
+    data class SseFailed(val route: Route, val msg: String? = null) : ConnEvent()
+    data class SseStreamClosed(val route: Route) : ConnEvent()
+
+    data object BackoffExpired : ConnEvent()
 
     fun logText(): String = when (this) {
         is Connect -> "Connect profile=${profile.id} iid='${profile.instanceId}'"
@@ -39,14 +38,14 @@ sealed class ConnEvent : Event {
         is AppForegrounded -> "AppForegrounded"
         is ProbeOk -> "ProbeOk route=${route.logText()}"
         is ProbeFail -> "ProbeFail route=${route.logText()} reason=$reason"
-        is SseConnected -> "SseConnected route=${route.logText()}"
-        is SseFailed -> "SseFailed route=${route.logText()} msg=$msg"
-        is SseStreamClosed -> "SseStreamClosed route=${route.logText()}"
-        is BackoffExpired -> "BackoffExpired"
         is BridgeNotBridge -> "BridgeNotBridge"
         is BridgeNeedsRepair -> "BridgeNeedsRepair"
         is NetworkIsWifi -> "NetworkIsWifi"
         is NetworkIsMobile -> "NetworkIsMobile"
         is NetworkIsNone -> "NetworkIsNone"
+        is SseConnected -> "SseConnected route=${route.logText()}"
+        is SseFailed -> "SseFailed route=${route.logText()} msg=$msg"
+        is SseStreamClosed -> "SseStreamClosed route=${route.logText()}"
+        is BackoffExpired -> "BackoffExpired"
     }
 }

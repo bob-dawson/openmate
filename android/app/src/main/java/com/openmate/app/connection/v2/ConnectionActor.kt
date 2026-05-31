@@ -83,14 +83,14 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
     }
 }
 
-    sealed class Route {
-        data class Direct(val address: String, val port: Int) : Route()
-        data class Gateway(val instanceId: String) : Route()
-        fun logText(): String = when (this) {
-            is Direct -> "Direct($address:$port)"
-            is Gateway -> "Gateway($instanceId)"
-        }
+sealed class Route {
+    data class Direct(val address: String, val port: Int) : Route()
+    data class Gateway(val instanceId: String) : Route()
+    fun logText(): String = when (this) {
+        is Direct -> "Direct($address:$port)"
+        is Gateway -> "Gateway($instanceId)"
     }
+}
 
 class ConnectionActor(
     private val onEffect: (ConnEffect) -> Unit,
@@ -117,7 +117,9 @@ class ConnectionActor(
                     targetState = probingNetwork
                     onTriggered {
                         val e = it.event as ConnEvent.Connect
-                        _state.value = ConnState.ProbingNetwork(e.profile)
+                        val ns = ConnState.ProbingNetwork(e.profile)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -129,22 +131,22 @@ class ConnectionActor(
             }
 
             addState(probingNetwork) {
-                onEntry {
-                    val s = _state.value as ConnState.ProbingNetwork
-                    onEffect(ConnEffect.CheckNetwork(s.profile, s.attempt))
-                }
                 transition<ConnEvent.NetworkIsWifi> {
                     targetState = probingDirect
                     onTriggered {
                         val s = _state.value as ConnState.ProbingNetwork
-                        _state.value = ConnState.ProbingDirect(s.profile, s.attempt)
+                        val ns = ConnState.ProbingDirect(s.profile, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.ProbeDirect)
                     }
                 }
                 transition<ConnEvent.NetworkIsMobile> {
-                    targetState = probingGateway
+                    targetState = probingDirect
                     onTriggered {
                         val s = _state.value as ConnState.ProbingNetwork
-                        _state.value = ConnState.ProbingGateway(s.profile, s.attempt)
+                        val ns = ConnState.ProbingDirect(s.profile, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.ProbeDirect)
                     }
                 }
                 transition<ConnEvent.NetworkIsNone> {
@@ -168,14 +170,18 @@ class ConnectionActor(
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.WaitingForNetwork
-                        _state.value = ConnState.ProbingNetwork(s.profile, s.attempt)
+                        val ns = ConnState.ProbingNetwork(s.profile, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.AppForegrounded> {
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.WaitingForNetwork
-                        _state.value = ConnState.ProbingNetwork(s.profile, s.attempt)
+                        val ns = ConnState.ProbingNetwork(s.profile, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -188,16 +194,14 @@ class ConnectionActor(
             }
 
             addState(probingDirect) {
-                onEntry {
-                    val s = _state.value as ConnState.ProbingDirect
-                    onEffect(ConnEffect.ProbeDirect)
-                }
                 transition<ConnEvent.ProbeOk> {
                     targetState = connecting
                     onTriggered {
                         val s = _state.value as ConnState.ProbingDirect
                         val e = it.event as ConnEvent.ProbeOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        val ns = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.StartSse(ns.route))
                     }
                 }
                 transition<ConnEvent.ProbeFail> {
@@ -206,7 +210,9 @@ class ConnectionActor(
                         val s = _state.value as ConnState.ProbingDirect
                         val p = s.profile
                         if (p.instanceId.isNotEmpty()) {
-                            _state.value = ConnState.ProbingGateway(p, s.attempt)
+                            val ns = ConnState.ProbingGateway(p, s.attempt)
+                            _state.value = ns
+                            onEffect(ConnEffect.ProbeGateway)
                         } else {
                             _state.value = ConnState.Failed(p, reason = "Direct unreachable, no gateway configured")
                             targetState = failed
@@ -219,7 +225,9 @@ class ConnectionActor(
                         val s = _state.value as ConnState.ProbingDirect
                         val p = s.profile
                         if (p.instanceId.isNotEmpty()) {
-                            _state.value = ConnState.ProbingGateway(p, s.attempt)
+                            val ns = ConnState.ProbingGateway(p, s.attempt)
+                            _state.value = ns
+                            onEffect(ConnEffect.ProbeGateway)
                         } else {
                             _state.value = ConnState.Failed(p, reason = "Not a Bridge server, no gateway configured")
                             targetState = failed
@@ -244,16 +252,14 @@ class ConnectionActor(
             }
 
             addState(probingGateway) {
-                onEntry {
-                    val s = _state.value as ConnState.ProbingGateway
-                    onEffect(ConnEffect.ProbeGateway)
-                }
                 transition<ConnEvent.ProbeOk> {
                     targetState = connecting
                     onTriggered {
                         val s = _state.value as ConnState.ProbingGateway
                         val e = it.event as ConnEvent.ProbeOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        val ns = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.StartSse(ns.route))
                     }
                 }
                 transition<ConnEvent.ProbeFail> {
@@ -274,23 +280,27 @@ class ConnectionActor(
             }
 
             addState(connecting) {
-                onEntry {
-                    val s = _state.value as ConnState.Connecting
-                    onEffect(ConnEffect.StartSse(s.route))
-                }
                 transition<ConnEvent.SseConnected> {
                     targetState = connected
                     onTriggered {
                         val s = _state.value as ConnState.Connecting
                         val e = it.event as ConnEvent.SseConnected
-                        _state.value = ConnState.Connected(s.profile, e.route, s.attempt)
+                        val ns = ConnState.Connected(s.profile, e.route, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.RefreshSessions)
+                        onEffect(ConnEffect.UpdateLastConnectedAt(ns.profile.id))
+                        if (ns.route is Route.Gateway) {
+                            onEffect(ConnEffect.StartDirectCheckLoop)
+                        }
                     }
                 }
                 transition<ConnEvent.SseFailed> {
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.Connecting
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        val ns = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ns
+                        onEffect(ConnEffect.StartBackoff(backoffMs(ns.attempt)))
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -304,50 +314,52 @@ class ConnectionActor(
             }
 
             addState(connected) {
-                onEntry {
-                    val s = _state.value as ConnState.Connected
-                    onEffect(ConnEffect.RefreshSessions)
-                    onEffect(ConnEffect.UpdateLastConnectedAt(s.profile.id))
-                    if (s.route is Route.Gateway) {
-                        onEffect(ConnEffect.StartDirectCheckLoop)
-                    }
-                }
-                onExit {
-                    onEffect(ConnEffect.StopDirectCheckLoop)
-                }
                 transition<ConnEvent.ProbeOk> {
                     guard = { (event as ConnEvent.ProbeOk).route is Route.Direct && (_state.value as ConnState.Connected).route is Route.Gateway }
                     targetState = connecting
                     onTriggered {
                         val s = _state.value as ConnState.Connected
                         val e = it.event as ConnEvent.ProbeOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        onEffect(ConnEffect.StopDirectCheckLoop)
+                        val ns = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.StartSse(ns.route))
                     }
                 }
                 transition<ConnEvent.SseFailed> {
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.Connected
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        onEffect(ConnEffect.StopDirectCheckLoop)
+                        val ns = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ns
+                        onEffect(ConnEffect.StartBackoff(backoffMs(ns.attempt)))
                     }
                 }
                 transition<ConnEvent.SseStreamClosed> {
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.Connected
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        onEffect(ConnEffect.StopDirectCheckLoop)
+                        val ns = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ns
+                        onEffect(ConnEffect.StartBackoff(backoffMs(ns.attempt)))
                     }
                 }
                 transition<ConnEvent.NetworkLost> {
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.Connected
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        onEffect(ConnEffect.StopDirectCheckLoop)
+                        val ns = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ns
+                        onEffect(ConnEffect.StartBackoff(backoffMs(ns.attempt)))
                     }
                 }
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
+                        onEffect(ConnEffect.StopDirectCheckLoop)
                         onEffect(ConnEffect.StopSse)
                         val s = _state.value as ConnState.Connected
                         _state.value = ConnState.Idle(s.profile)
@@ -356,30 +368,30 @@ class ConnectionActor(
             }
 
             addState(recovering) {
-                onEntry {
-                    val s = _state.value as ConnState.Recovering
-                    onEffect(ConnEffect.StartBackoff(backoffMs(s.attempt)))
-                }
-                onExit {
-                    onEffect(ConnEffect.StopBackoff)
-                }
                 transition<ConnEvent.BackoffExpired> {
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Recovering
-                        _state.value = ConnState.ProbingNetwork(s.profile, attempt = s.attempt)
+                        onEffect(ConnEffect.StopBackoff)
+                        val ns = ConnState.ProbingNetwork(s.profile, attempt = s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.NetworkAvailable> {
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Recovering
-                        _state.value = ConnState.ProbingNetwork(s.profile, attempt = s.attempt)
+                        onEffect(ConnEffect.StopBackoff)
+                        val ns = ConnState.ProbingNetwork(s.profile, attempt = s.attempt)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
+                        onEffect(ConnEffect.StopBackoff)
                         onEffect(ConnEffect.StopSse)
                         val s = _state.value as ConnState.Recovering
                         _state.value = ConnState.Idle(s.profile)
@@ -392,28 +404,36 @@ class ConnectionActor(
                     targetState = probingNetwork
                     onTriggered {
                         val e = it.event as ConnEvent.Connect
-                        _state.value = ConnState.ProbingNetwork(e.profile)
+                        val ns = ConnState.ProbingNetwork(e.profile)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.NetworkAvailable> {
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Failed
-                        _state.value = ConnState.ProbingNetwork(s.profile)
+                        val ns = ConnState.ProbingNetwork(s.profile)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.AppForegrounded> {
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Failed
-                        _state.value = ConnState.ProbingNetwork(s.profile)
+                        val ns = ConnState.ProbingNetwork(s.profile)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.Retry> {
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.Failed
-                        _state.value = ConnState.ProbingNetwork(s.profile)
+                        val ns = ConnState.ProbingNetwork(s.profile)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -430,7 +450,9 @@ class ConnectionActor(
                     targetState = probingNetwork
                     onTriggered {
                         val e = it.event as ConnEvent.Connect
-                        _state.value = ConnState.ProbingNetwork(e.profile)
+                        val ns = ConnState.ProbingNetwork(e.profile)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.RepairCompleted> {
@@ -438,7 +460,9 @@ class ConnectionActor(
                     targetState = probingNetwork
                     onTriggered {
                         val s = _state.value as ConnState.NeedsRepair
-                        _state.value = ConnState.ProbingNetwork(s.profile)
+                        val ns = ConnState.ProbingNetwork(s.profile)
+                        _state.value = ns
+                        onEffect(ConnEffect.CheckNetwork(ns.profile, ns.attempt))
                     }
                 }
                 transition<ConnEvent.Disconnect> {

@@ -4,8 +4,8 @@ import com.openmate.core.domain.model.ServerProfile
 
 sealed class ConnEffect {
     data class CheckNetwork(val profile: ServerProfile, val attempt: Int) : ConnEffect()
-    data object ProbeGateway : ConnEffect()
     data object ProbeDirect : ConnEffect()
+    data object ProbeGateway : ConnEffect()
     data class StartSse(val route: Route) : ConnEffect()
     data object StopSse : ConnEffect()
     data class StartBackoff(val delayMs: Long) : ConnEffect()

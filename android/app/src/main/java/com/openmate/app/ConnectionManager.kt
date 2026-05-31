@@ -359,7 +359,7 @@ class ConnectionManager @Inject constructor(
     }
 
     private fun ConnState.toPhase(): ConnectionPhase = when (this) {
-        is ConnState.Idle -> ConnectionPhase.DISCONNECTED
+      is ConnState.Idle -> ConnectionPhase.DISCONNECTED
         is ConnState.ProbingNetwork -> ConnectionPhase.EVALUATING
         is ConnState.WaitingForNetwork -> ConnectionPhase.DISCONNECTED
         is ConnState.ProbingDirect -> ConnectionPhase.EVALUATING

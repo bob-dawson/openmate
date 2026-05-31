@@ -15,6 +15,7 @@ import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.TokenStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -55,8 +56,8 @@ class EffectExecutor(
     fun execute(effect: ConnEffect) {
         when (effect) {
             is ConnEffect.CheckNetwork -> checkNetwork()
-            is ConnEffect.ProbeGateway -> probeGateway()
             is ConnEffect.ProbeDirect -> probeDirect()
+            is ConnEffect.ProbeGateway -> probeGateway()
             is ConnEffect.StartSse -> startSse(effect.route)
             is ConnEffect.StopSse -> stopSse()
             is ConnEffect.StartBackoff -> startBackoff(effect.delayMs)
@@ -89,23 +90,11 @@ class EffectExecutor(
         }
     }
 
-    private fun probeGateway() {
-        val instanceId = activeProfile()?.instanceId ?: return
-        scope.launch {
-            val success = isGatewayOnline(instanceId)
-            if (success) {
-                sendEvent(ConnEvent.ProbeOk(Route.Gateway(instanceId)))
-            } else {
-                sendEvent(ConnEvent.ProbeFail(Route.Gateway(instanceId)))
-            }
-        }
-    }
-
     private fun probeDirect() {
         val profile = activeProfile() ?: return
         val address = profile.address
         val port = profile.port
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
             try {
                 val status = fetchBridgeStatus(address, port)
                 logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "直连探测 address=$address:$port ok=true version=${status.bridge.version}")
@@ -134,6 +123,18 @@ class EffectExecutor(
             } catch (e: Exception) {
                 logStore.log(SyncLogLevel.Warn, SyncLogCategory.Connection, "直连探测失败 address=$address:$port ${e.javaClass.simpleName}: ${e.message}")
                 sendEvent(ConnEvent.ProbeFail(Route.Direct(address, port)))
+            }
+        }
+    }
+
+    private fun probeGateway() {
+        val instanceId = activeProfile()?.instanceId ?: return
+        scope.launch(Dispatchers.IO) {
+            val success = isGatewayOnline(instanceId)
+            if (success) {
+                sendEvent(ConnEvent.ProbeOk(Route.Gateway(instanceId)))
+            } else {
+                sendEvent(ConnEvent.ProbeFail(Route.Gateway(instanceId)))
             }
         }
     }
