@@ -15,4 +15,7 @@ sealed class ConnEffect {
     data object StartDirectCheckLoop : ConnEffect()
     data object StopDirectCheckLoop : ConnEffect()
     data object RestartDirectCheckLoop : ConnEffect()
+    data class WriteCacheDirect(val profileId: String) : ConnEffect()
+    data class WriteCacheGateway(val profileId: String) : ConnEffect()
+    data class ClearCache(val profileId: String) : ConnEffect()
 }

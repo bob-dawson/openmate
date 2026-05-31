@@ -13,6 +13,10 @@ sealed class ConnEvent : Event {
     data object NetworkLost : ConnEvent()
     data object AppForegrounded : ConnEvent()
 
+    data class CacheDirectOk(val route: Route.Direct) : ConnEvent()
+    data class CacheGatewayOk(val route: Route.Gateway) : ConnEvent()
+    data object CacheNone : ConnEvent()
+
     data class ProbeOk(val route: Route) : ConnEvent()
     data class ProbeFail(val route: Route, val reason: String? = null) : ConnEvent()
     data class BridgeNotBridge(val profile: ServerProfile) : ConnEvent()
@@ -36,6 +40,9 @@ sealed class ConnEvent : Event {
         is NetworkAvailable -> "NetworkAvailable"
         is NetworkLost -> "NetworkLost"
         is AppForegrounded -> "AppForegrounded"
+        is CacheDirectOk -> "CacheDirectOk route=${route.logText()}"
+        is CacheGatewayOk -> "CacheGatewayOk route=${route.logText()}"
+        is CacheNone -> "CacheNone"
         is ProbeOk -> "ProbeOk route=${route.logText()}"
         is ProbeFail -> "ProbeFail route=${route.logText()} reason=$reason"
         is BridgeNotBridge -> "BridgeNotBridge"

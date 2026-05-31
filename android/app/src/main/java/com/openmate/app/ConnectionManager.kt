@@ -11,6 +11,7 @@ import com.openmate.app.connection.v2.ConnEvent
 import com.openmate.app.connection.v2.ConnState
 import com.openmate.app.connection.v2.ConnectionActor
 import com.openmate.app.connection.v2.EffectExecutor
+import com.openmate.core.data.RouteCache
 import com.openmate.app.connection.v2.Route
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.data.sync.SyncLogCategory
@@ -60,6 +61,7 @@ class ConnectionManager @Inject constructor(
     private val logStore: SyncLogStore,
     private val permissionRepository: PermissionRepository,
     private val questionRepository: QuestionRepository,
+    private val routeCache: RouteCache,
 ) : ConnectionRepository, ActiveProfileProvider {
     companion object {
         private const val TAG = "ConnectionManager"
@@ -119,6 +121,7 @@ class ConnectionManager @Inject constructor(
         tokenStore = tokenStore,
         logStore = logStore,
         connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager,
+        routeCache = routeCache,
     )
 
     private val actor = ConnectionActor { effect: ConnEffect ->

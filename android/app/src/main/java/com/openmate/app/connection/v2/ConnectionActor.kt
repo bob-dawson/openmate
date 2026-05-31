@@ -39,6 +39,7 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         val profile: ServerProfile,
         val route: Route,
         val attempt: Int = 0,
+        val fromCache: Boolean = false,
     ) : ConnState("Connecting")
 
     data class Connected(
@@ -75,7 +76,7 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         is WaitingForNetwork -> "WaitingForNetwork(profile=${profile.id}, attempt=$attempt)"
         is ProbingDirect -> "ProbingDirect(profile=${profile.id}, attempt=$attempt)"
         is ProbingGateway -> "ProbingGateway(profile=${profile.id}, attempt=$attempt)"
-        is Connecting -> "Connecting(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
+        is Connecting -> "Connecting(profile=${profile.id}, route=${route.logText()}, attempt=$attempt, fromCache=$fromCache)"
         is Connected -> "Connected(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is Recovering -> "Recovering(profile=${profile.id}, attempt=$attempt)"
         is Failed -> "Failed(profile=${profile.id}, reason=$reason)"
@@ -133,14 +134,23 @@ class ConnectionActor(
                     val s = _state.value as ConnState.ProbingNetwork
                     onEffect(ConnEffect.CheckNetwork(s.profile, s.attempt))
                 }
-                transition<ConnEvent.NetworkIsWifi> {
-                    targetState = probingDirect
+                transition<ConnEvent.CacheDirectOk> {
+                    targetState = connecting
                     onTriggered {
                         val s = _state.value as ConnState.ProbingNetwork
-                        _state.value = ConnState.ProbingDirect(s.profile, s.attempt)
+                        val e = it.event as ConnEvent.CacheDirectOk
+                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt, fromCache = true)
                     }
                 }
-                transition<ConnEvent.NetworkIsMobile> {
+                transition<ConnEvent.CacheGatewayOk> {
+                    targetState = connecting
+                    onTriggered {
+                        val s = _state.value as ConnState.ProbingNetwork
+                        val e = it.event as ConnEvent.CacheGatewayOk
+                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt, fromCache = true)
+                    }
+                }
+                transition<ConnEvent.CacheNone> {
                     targetState = probingDirect
                     onTriggered {
                         val s = _state.value as ConnState.ProbingNetwork
@@ -284,11 +294,20 @@ class ConnectionActor(
                         _state.value = ConnState.Connected(s.profile, e.route, s.attempt)
                     }
                 }
-                transition<ConnEvent.SseFailed> {
-                    targetState = recovering
+transition<ConnEvent.SseFailed> {
                     onTriggered {
                         val s = _state.value as ConnState.Connecting
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        if (s.fromCache && s.route is Route.Direct && s.profile.instanceId.isNotEmpty()) {
+                            onEffect(ConnEffect.ClearCache(s.profile.id))
+                            _state.value = ConnState.ProbingGateway(s.profile, s.attempt)
+                            targetState = probingGateway
+                        } else {
+                            if (s.fromCache) {
+                                onEffect(ConnEffect.ClearCache(s.profile.id))
+                            }
+                            _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                            targetState = recovering
+                        }
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -306,8 +325,12 @@ class ConnectionActor(
                     val s = _state.value as ConnState.Connected
                     onEffect(ConnEffect.RefreshSessions)
                     onEffect(ConnEffect.UpdateLastConnectedAt(s.profile.id))
-                    if (s.route is Route.Gateway) {
-                        onEffect(ConnEffect.StartDirectCheckLoop)
+                    when (s.route) {
+                        is Route.Direct -> onEffect(ConnEffect.WriteCacheDirect(s.profile.id))
+                        is Route.Gateway -> {
+                            onEffect(ConnEffect.WriteCacheGateway(s.profile.id))
+                            onEffect(ConnEffect.StartDirectCheckLoop)
+                        }
                     }
                 }
                 onExit {

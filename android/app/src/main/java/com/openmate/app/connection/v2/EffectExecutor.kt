@@ -4,6 +4,8 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogLevel
+import com.openmate.core.data.CachedRoute
+import com.openmate.core.data.RouteCache
 import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.data.sync.SyncSseHandler
 import com.openmate.core.domain.model.ServerProfile
@@ -40,6 +42,7 @@ class EffectExecutor(
     private val tokenStore: TokenStore,
     private val logStore: SyncLogStore,
     private val connectivityManager: ConnectivityManager,
+    private val routeCache: RouteCache,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -72,20 +75,39 @@ class EffectExecutor(
             is ConnEffect.StartDirectCheckLoop -> startDirectCheckLoop()
             is ConnEffect.StopDirectCheckLoop -> stopDirectCheckLoop()
             is ConnEffect.RestartDirectCheckLoop -> { stopDirectCheckLoop(); startDirectCheckLoop() }
+            is ConnEffect.WriteCacheDirect -> scope.launch { routeCache.setDirect(effect.profileId) }
+            is ConnEffect.WriteCacheGateway -> scope.launch { routeCache.setGateway(effect.profileId) }
+            is ConnEffect.ClearCache -> scope.launch { routeCache.clear(effect.profileId) }
         }
     }
 
     private fun checkNetwork() {
+        val profile = activeProfile()
         scope.launch {
             val activeNetwork = connectivityManager.activeNetwork
             val caps = activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
             val hasNetwork = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-            val isWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网络检测 hasNetwork=$hasNetwork isWifi=$isWifi")
-            when {
-                !hasNetwork -> sendEvent(ConnEvent.NetworkIsNone)
-                isWifi -> sendEvent(ConnEvent.NetworkIsWifi)
-                else -> sendEvent(ConnEvent.NetworkIsMobile)
+            if (!hasNetwork) {
+                logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网络检测 hasNetwork=false")
+                sendEvent(ConnEvent.NetworkIsNone)
+                return@launch
+            }
+            val cached = profile?.id?.let { routeCache.get(it) }
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网络检测 hasNetwork=true cache=$cached")
+            when (cached) {
+                CachedRoute.DIRECT -> {
+                    val p = profile ?: return@launch
+                    sendEvent(ConnEvent.CacheDirectOk(Route.Direct(p.address, p.port)))
+                }
+                CachedRoute.GATEWAY -> {
+                    val p = profile ?: return@launch
+                    if (p.instanceId.isNotEmpty()) {
+                        sendEvent(ConnEvent.CacheGatewayOk(Route.Gateway(p.instanceId)))
+                    } else {
+                        sendEvent(ConnEvent.CacheNone)
+                    }
+                }
+                null -> sendEvent(ConnEvent.CacheNone)
             }
         }
     }
