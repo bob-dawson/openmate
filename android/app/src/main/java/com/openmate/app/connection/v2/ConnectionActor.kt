@@ -366,6 +366,14 @@ transition<ConnEvent.SseFailed> {
                         _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
                     }
                 }
+                transition<ConnEvent.AppBackgrounded> {
+                    targetState = idle
+                    onTriggered {
+                        onEffect(ConnEffect.StopSse)
+                        val s = _state.value as ConnState.Connected
+                        _state.value = ConnState.Idle(s.profile)
+                    }
+                }
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {

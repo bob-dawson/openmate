@@ -176,6 +176,8 @@ class ConnectionManager @Inject constructor(
                     if (s is ConnState.Idle && s.profile != null) {
                         connect(s.profile)
                     }
+                } else {
+                    sendEvent(ConnEvent.AppBackgrounded)
                 }
             }
         }
