@@ -1586,7 +1586,7 @@ class SessionDetailViewModel @Inject constructor(
         observePermissionJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 permissionRepository.observePending().collect { list ->
-                    _pendingPermissions.value = list
+                    _pendingPermissions.value = list.take(1)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observePermissions failed", e)
@@ -1671,6 +1671,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 permissionRepository.reply(requestID, reply, message, currentDirectory.ifBlank { null })
+                permissionRepository.refresh(currentDirectory.ifBlank { "" })
                 sessionMessageRepository.incrementalSync(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "replyPermission failed", e)
