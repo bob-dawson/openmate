@@ -35,12 +35,17 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         val attempt: Int = 0,
     ) : ConnState("ProbingGateway")
 
-    data class Connecting(
+    data class ConnectingCached(
         val profile: ServerProfile,
         val route: Route,
         val attempt: Int = 0,
-        val fromCache: Boolean = false,
-    ) : ConnState("Connecting")
+    ) : ConnState("ConnectingCached")
+
+    data class ConnectingFresh(
+        val profile: ServerProfile,
+        val route: Route,
+        val attempt: Int = 0,
+    ) : ConnState("ConnectingFresh")
 
     data class Connected(
         val profile: ServerProfile,
@@ -63,7 +68,8 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         is WaitingForNetwork -> copy(profile = newProfile)
         is ProbingDirect -> copy(profile = newProfile)
         is ProbingGateway -> copy(profile = newProfile)
-        is Connecting -> copy(profile = newProfile)
+        is ConnectingCached -> copy(profile = newProfile)
+        is ConnectingFresh -> copy(profile = newProfile)
         is Connected -> copy(profile = newProfile)
         is Recovering -> copy(profile = newProfile)
         is Failed -> copy(profile = newProfile)
@@ -76,7 +82,8 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         is WaitingForNetwork -> "WaitingForNetwork(profile=${profile.id}, attempt=$attempt)"
         is ProbingDirect -> "ProbingDirect(profile=${profile.id}, attempt=$attempt)"
         is ProbingGateway -> "ProbingGateway(profile=${profile.id}, attempt=$attempt)"
-        is Connecting -> "Connecting(profile=${profile.id}, route=${route.logText()}, attempt=$attempt, fromCache=$fromCache)"
+        is ConnectingCached -> "ConnectingCached(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
+        is ConnectingFresh -> "ConnectingFresh(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is Connected -> "Connected(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is Recovering -> "Recovering(profile=${profile.id}, attempt=$attempt)"
         is Failed -> "Failed(profile=${profile.id}, reason=$reason)"
@@ -105,7 +112,8 @@ class ConnectionActor(
     private val waitingForNetwork = ConnState.WaitingForNetwork(DUMMY_PROFILE)
     private val probingDirect = ConnState.ProbingDirect(DUMMY_PROFILE)
     private val probingGateway = ConnState.ProbingGateway(DUMMY_PROFILE)
-    private val connecting = ConnState.Connecting(DUMMY_PROFILE, Route.Direct("", 0))
+    private val connectingCached = ConnState.ConnectingCached(DUMMY_PROFILE, Route.Direct("", 0))
+    private val connectingFresh = ConnState.ConnectingFresh(DUMMY_PROFILE, Route.Direct("", 0))
     private val connected = ConnState.Connected(DUMMY_PROFILE, Route.Direct("", 0))
     private val recovering = ConnState.Recovering(DUMMY_PROFILE)
     private val failed = ConnState.Failed(DUMMY_PROFILE)
@@ -135,19 +143,19 @@ class ConnectionActor(
                     onEffect(ConnEffect.CheckNetwork(s.profile, s.attempt))
                 }
                 transition<ConnEvent.CacheDirectOk> {
-                    targetState = connecting
+                    targetState = connectingCached
                     onTriggered {
                         val s = _state.value as ConnState.ProbingNetwork
                         val e = it.event as ConnEvent.CacheDirectOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt, fromCache = true)
+                        _state.value = ConnState.ConnectingCached(s.profile, e.route, s.attempt)
                     }
                 }
                 transition<ConnEvent.CacheGatewayOk> {
-                    targetState = connecting
+                    targetState = connectingCached
                     onTriggered {
                         val s = _state.value as ConnState.ProbingNetwork
                         val e = it.event as ConnEvent.CacheGatewayOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt, fromCache = true)
+                        _state.value = ConnState.ConnectingCached(s.profile, e.route, s.attempt)
                     }
                 }
                 transition<ConnEvent.CacheNone> {
@@ -202,37 +210,25 @@ class ConnectionActor(
                     onEffect(ConnEffect.ProbeDirect)
                 }
                 transition<ConnEvent.ProbeOk> {
-                    targetState = connecting
+                    targetState = connectingFresh
                     onTriggered {
                         val s = _state.value as ConnState.ProbingDirect
                         val e = it.event as ConnEvent.ProbeOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        _state.value = ConnState.ConnectingFresh(s.profile, e.route, s.attempt)
                     }
                 }
                 transition<ConnEvent.ProbeFail> {
                     targetState = probingGateway
                     onTriggered {
                         val s = _state.value as ConnState.ProbingDirect
-                        val p = s.profile
-                        if (p.instanceId.isNotEmpty()) {
-                            _state.value = ConnState.ProbingGateway(p, s.attempt)
-                        } else {
-                            _state.value = ConnState.Failed(p, reason = "Direct unreachable, no gateway configured")
-                            targetState = failed
-                        }
+                        _state.value = ConnState.ProbingGateway(s.profile, s.attempt)
                     }
                 }
                 transition<ConnEvent.BridgeNotBridge> {
                     targetState = probingGateway
                     onTriggered {
                         val s = _state.value as ConnState.ProbingDirect
-                        val p = s.profile
-                        if (p.instanceId.isNotEmpty()) {
-                            _state.value = ConnState.ProbingGateway(p, s.attempt)
-                        } else {
-                            _state.value = ConnState.Failed(p, reason = "Not a Bridge server, no gateway configured")
-                            targetState = failed
-                        }
+                        _state.value = ConnState.ProbingGateway(s.profile, s.attempt)
                     }
                 }
                 transition<ConnEvent.BridgeNeedsRepair> {
@@ -257,11 +253,11 @@ class ConnectionActor(
                     onEffect(ConnEffect.ProbeGateway)
                 }
                 transition<ConnEvent.ProbeOk> {
-                    targetState = connecting
+                    targetState = connectingFresh
                     onTriggered {
                         val s = _state.value as ConnState.ProbingGateway
                         val e = it.event as ConnEvent.ProbeOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        _state.value = ConnState.ConnectingFresh(s.profile, e.route, s.attempt)
                     }
                 }
                 transition<ConnEvent.ProbeFail> {
@@ -281,40 +277,62 @@ class ConnectionActor(
                 }
             }
 
-            addState(connecting) {
+            addState(connectingCached) {
                 onEntry {
-                    val s = _state.value as ConnState.Connecting
+                    val s = _state.value as ConnState.ConnectingCached
                     onEffect(ConnEffect.StartSse(s.route))
                 }
                 transition<ConnEvent.SseConnected> {
                     targetState = connected
                     onTriggered {
-                        val s = _state.value as ConnState.Connecting
+                        val s = _state.value as ConnState.ConnectingCached
                         val e = it.event as ConnEvent.SseConnected
                         _state.value = ConnState.Connected(s.profile, e.route, s.attempt)
                     }
                 }
-transition<ConnEvent.SseFailed> {
+                transition<ConnEvent.SseFailed> {
+                    targetState = probingGateway
                     onTriggered {
-                        val s = _state.value as ConnState.Connecting
-                        if (s.fromCache && s.route is Route.Direct && s.profile.instanceId.isNotEmpty()) {
-                            onEffect(ConnEffect.ClearCache(s.profile.id))
-                            _state.value = ConnState.ProbingGateway(s.profile, s.attempt)
-                            targetState = probingGateway
-                        } else {
-                            if (s.fromCache) {
-                                onEffect(ConnEffect.ClearCache(s.profile.id))
-                            }
-                            _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
-                            targetState = recovering
-                        }
+                        val s = _state.value as ConnState.ConnectingCached
+                        onEffect(ConnEffect.ClearCache(s.profile.id))
+                        _state.value = ConnState.ProbingGateway(s.profile, s.attempt)
                     }
                 }
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {
                         onEffect(ConnEffect.StopSse)
-                        val s = _state.value as ConnState.Connecting
+                        val s = _state.value as ConnState.ConnectingCached
+                        _state.value = ConnState.Idle(s.profile)
+                    }
+                }
+            }
+
+            addState(connectingFresh) {
+                onEntry {
+                    val s = _state.value as ConnState.ConnectingFresh
+                    onEffect(ConnEffect.StartSse(s.route))
+                }
+                transition<ConnEvent.SseConnected> {
+                    targetState = connected
+                    onTriggered {
+                        val s = _state.value as ConnState.ConnectingFresh
+                        val e = it.event as ConnEvent.SseConnected
+                        _state.value = ConnState.Connected(s.profile, e.route, s.attempt)
+                    }
+                }
+                transition<ConnEvent.SseFailed> {
+                    targetState = recovering
+                    onTriggered {
+                        val s = _state.value as ConnState.ConnectingFresh
+                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                    }
+                }
+                transition<ConnEvent.Disconnect> {
+                    targetState = idle
+                    onTriggered {
+                        onEffect(ConnEffect.StopSse)
+                        val s = _state.value as ConnState.ConnectingFresh
                         _state.value = ConnState.Idle(s.profile)
                     }
                 }
@@ -338,11 +356,11 @@ transition<ConnEvent.SseFailed> {
                 }
                 transition<ConnEvent.ProbeOk> {
                     guard = { (event as ConnEvent.ProbeOk).route is Route.Direct && (_state.value as ConnState.Connected).route is Route.Gateway }
-                    targetState = connecting
+                    targetState = connectingFresh
                     onTriggered {
                         val s = _state.value as ConnState.Connected
                         val e = it.event as ConnEvent.ProbeOk
-                        _state.value = ConnState.Connecting(s.profile, e.route, s.attempt)
+                        _state.value = ConnState.ConnectingFresh(s.profile, e.route, s.attempt)
                     }
                 }
                 transition<ConnEvent.SseFailed> {
@@ -489,7 +507,8 @@ transition<ConnEvent.SseFailed> {
             is ConnState.WaitingForNetwork -> s.profile.id
             is ConnState.ProbingDirect -> s.profile.id
             is ConnState.ProbingGateway -> s.profile.id
-            is ConnState.Connecting -> s.profile.id
+            is ConnState.ConnectingCached -> s.profile.id
+            is ConnState.ConnectingFresh -> s.profile.id
             is ConnState.Connected -> s.profile.id
             is ConnState.Recovering -> s.profile.id
             is ConnState.Failed -> s.profile.id

@@ -353,7 +353,8 @@ class ConnectionManager @Inject constructor(
         is ConnState.WaitingForNetwork -> ConnectionStatus.DISCONNECTED
         is ConnState.ProbingDirect -> ConnectionStatus.CONNECTING
         is ConnState.ProbingGateway -> ConnectionStatus.CONNECTING
-        is ConnState.Connecting -> ConnectionStatus.CONNECTING
+        is ConnState.ConnectingCached -> ConnectionStatus.CONNECTING
+        is ConnState.ConnectingFresh -> ConnectionStatus.CONNECTING
         is ConnState.Connected -> when (route) {
             is Route.Gateway -> ConnectionStatus.GATEWAY_CONNECTED
             else -> ConnectionStatus.CONNECTED
@@ -369,7 +370,8 @@ class ConnectionManager @Inject constructor(
         is ConnState.WaitingForNetwork -> ConnectionPhase.DISCONNECTED
         is ConnState.ProbingDirect -> ConnectionPhase.EVALUATING
         is ConnState.ProbingGateway -> ConnectionPhase.EVALUATING
-        is ConnState.Connecting -> ConnectionPhase.CONNECTING
+        is ConnState.ConnectingCached -> ConnectionPhase.CONNECTING
+        is ConnState.ConnectingFresh -> ConnectionPhase.CONNECTING
         is ConnState.Connected -> ConnectionPhase.CONNECTED
         is ConnState.Recovering -> ConnectionPhase.RECOVERING
         is ConnState.Failed -> ConnectionPhase.FAILED
@@ -377,7 +379,8 @@ class ConnectionManager @Inject constructor(
     }
 
     private fun ConnState.toConnectionRoute(): ConnectionRoute? = when (this) {
-        is ConnState.Connecting -> route.toConnectionRoute()
+        is ConnState.ConnectingCached -> route.toConnectionRoute()
+        is ConnState.ConnectingFresh -> route.toConnectionRoute()
         is ConnState.Connected -> route.toConnectionRoute()
         else -> null
     }
@@ -393,7 +396,8 @@ class ConnectionManager @Inject constructor(
         is ConnState.WaitingForNetwork -> profile
         is ConnState.ProbingDirect -> profile
         is ConnState.ProbingGateway -> profile
-        is ConnState.Connecting -> profile
+        is ConnState.ConnectingCached -> profile
+        is ConnState.ConnectingFresh -> profile
         is ConnState.Connected -> profile
         is ConnState.Recovering -> profile
         is ConnState.Failed -> profile
