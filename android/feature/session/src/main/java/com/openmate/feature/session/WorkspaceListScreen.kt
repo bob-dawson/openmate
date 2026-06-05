@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,6 +35,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -195,10 +197,10 @@ fun WorkspaceListScreen(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(padding)
-                            .padding(horizontal = 16.dp),
+                            .padding(padding),
                     ) {
-                        items(workspaces, key = { it.directory }) { workspace ->
+                        itemsIndexed(workspaces, key = { _, w -> w.directory }) { index, workspace ->
+                            if (index > 0) HorizontalDivider()
                             WorkspaceCard(
                                 workspace = workspace,
                                 onClick = { onNavigateToWorkspace(workspace.directory) },
@@ -247,10 +249,10 @@ fun WorkspaceListScreen(
                     } else {
                         LazyColumn(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 16.dp),
+                                .fillMaxSize(),
                         ) {
-                            items(filteredSessions, key = { it.id }) { session ->
+                            itemsIndexed(filteredSessions, key = { _, s -> s.id }) { index, session ->
+                                if (index > 0) HorizontalDivider()
                                 AllSessionCard(
                                     session = session,
                                     onClick = { onNavigateToDetail(session.id) },
@@ -345,44 +347,27 @@ private fun WorkspaceCard(
 ) {
     val dirName = workspace.directory.substringAfterLast("\\").substringAfterLast("/")
 
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = MaterialTheme.shapes.extraSmall,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "\uD83D\uDCC1",
-                fontSize = 16.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = dirName,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = workspace.directory,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            WorkspaceBadge(text = stringResource(R.string.session_count, workspace.sessionCount))
-        }
+        Text(
+            text = dirName,
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = workspace.directory,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -391,93 +376,58 @@ private fun AllSessionCard(
     session: Session,
     onClick: () -> Unit,
 ) {
-    val statusColor: Color
-    val statusLabel: String
-    val cardAlpha: Float
-
-    when {
-        session.isArchived -> {
-            statusColor = Color(0xFF808080)
-            statusLabel = stringResource(R.string.session_archived)
-            cardAlpha = 0.5f
-        }
-        session.status == SessionStatus.ERROR -> {
-            statusColor = Color(0xFFe06c75)
-            statusLabel = stringResource(R.string.session_error)
-            cardAlpha = 1f
-        }
-        session.status == SessionStatus.RUNNING || session.status == SessionStatus.BUSY -> {
-            statusColor = Color(0xFF56b6c2)
-            statusLabel = stringResource(R.string.session_busy)
-            cardAlpha = 1f
-        }
-        else -> {
-            statusColor = Color(0xFF7fd88f)
-            statusLabel = stringResource(R.string.session_idle)
-            cardAlpha = 1f
-        }
+    val statusColor = when (session.status) {
+        SessionStatus.ERROR -> Color(0xFFe06c75)
+        SessionStatus.RUNNING, SessionStatus.BUSY -> Color(0xFF56b6c2)
+        else -> Color(0xFF7fd88f)
+    }
+    val statusLabel = when (session.status) {
+        SessionStatus.ERROR -> stringResource(R.string.session_error)
+        SessionStatus.RUNNING, SessionStatus.BUSY -> stringResource(R.string.session_busy)
+        else -> stringResource(R.string.session_idle)
     }
 
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = MaterialTheme.shapes.extraSmall,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .padding(14.dp)
-                .then(if (cardAlpha < 1f) Modifier else Modifier),
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = session.title.ifBlank { stringResource(R.string.untitled) },
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = statusLabel,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Medium),
+                color = statusColor,
+            )
+        }
+        Spacer(modifier = Modifier.height(2.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = session.title.ifBlank { stringResource(R.string.untitled) },
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = statusLabel,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Medium),
-                    color = statusColor,
-                    modifier = Modifier
-                        .border(BorderStroke(1.dp, statusColor), MaterialTheme.shapes.extraSmall)
-                        .padding(horizontal = 6.dp, vertical = 1.dp),
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = session.directory.substringAfterLast("\\").substringAfterLast("/"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = MaterialTheme.shapes.extraSmall,
-                        )
-                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), MaterialTheme.shapes.extraSmall)
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-                Text(
-                    text = session.updatedAt.toRelativeTimeString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF4a4a4a),
-                    fontSize = 10.sp,
-                )
-            }
+            Text(
+                text = session.directory.substringAfterLast("\\").substringAfterLast("/"),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = session.updatedAt.toRelativeTimeString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 11.sp,
+            )
         }
     }
 }

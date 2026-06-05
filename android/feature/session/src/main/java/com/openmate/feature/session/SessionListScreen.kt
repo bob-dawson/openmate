@@ -16,14 +16,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -163,10 +163,10 @@ fun SessionListScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
+                        .fillMaxSize(),
                 ) {
-                    items(filteredSessions, key = { it.id }) { session ->
+                    itemsIndexed(filteredSessions, key = { _, s -> s.id }) { index, session ->
+                        if (index > 0) HorizontalDivider()
                         SessionCard(
                             session = session,
                             onClick = { onNavigateToDetail(session.id) },
@@ -217,80 +217,55 @@ private fun SessionCard(
 ) {
     val statusColor: Color
     val statusLabel: String
-    val leftBorderColor: Color
-    val cardAlpha: Float
 
     when {
         session.isArchived -> {
             statusColor = Color(0xFF808080)
             statusLabel = stringResource(R.string.session_archived)
-            leftBorderColor = Color(0xFF808080)
-            cardAlpha = 0.5f
         }
         session.status == SessionStatus.ERROR -> {
             statusColor = Color(0xFFe06c75)
             statusLabel = stringResource(R.string.session_error)
-            leftBorderColor = Color(0xFFe06c75)
-            cardAlpha = 1f
         }
         session.status == SessionStatus.RUNNING || session.status == SessionStatus.BUSY -> {
             statusColor = Color(0xFF56b6c2)
             statusLabel = stringResource(R.string.session_busy)
-            leftBorderColor = Color(0xFF56b6c2)
-            cardAlpha = 1f
         }
         else -> {
             statusColor = Color(0xFF7fd88f)
             statusLabel = stringResource(R.string.session_idle)
-            leftBorderColor = Color(0xFF7fd88f)
-            cardAlpha = 1f
         }
     }
 
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = MaterialTheme.shapes.extraSmall,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .padding(14.dp)
-                .then(if (cardAlpha < 1f) Modifier else Modifier),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = session.title.ifBlank { stringResource(R.string.untitled) },
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = statusLabel,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Medium),
-                    color = statusColor,
-                    modifier = Modifier
-                        .border(BorderStroke(1.dp, statusColor), MaterialTheme.shapes.extraSmall)
-                        .padding(horizontal = 6.dp, vertical = 1.dp),
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = session.updatedAt.toRelativeTimeString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color(0xFF4a4a4a),
-                    fontSize = 10.sp,
-                )
-            }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = session.title.ifBlank { stringResource(R.string.untitled) },
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = statusLabel,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Medium),
+                color = statusColor,
+            )
         }
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = session.updatedAt.toRelativeTimeString(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 11.sp,
+        )
     }
 }
 

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -25,6 +26,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -150,11 +152,10 @@ fun InstanceListScreen(
                 )
                 LazyColumn(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                        .fillMaxSize(),
                 ) {
-                    items(profiles, key = { it.profile.id }) { item ->
+                    itemsIndexed(profiles, key = { _, item -> item.profile.id }) { index, item ->
+                        if (index > 0) HorizontalDivider()
                         InstanceCard(
                             profile = item.profile,
                             status = item.status,
@@ -184,19 +185,12 @@ private fun InstanceCard(
     val firstChar = profile.name.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
     var menuExpanded by remember { mutableStateOf(false) }
 
-    androidx.compose.material3.Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = androidx.compose.material3.CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-        ),
-        shape = MaterialTheme.shapes.extraSmall,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
@@ -259,7 +253,6 @@ private fun InstanceCard(
                                 onDelete()
                             },
                         )
-                    }
                 }
             }
         }
