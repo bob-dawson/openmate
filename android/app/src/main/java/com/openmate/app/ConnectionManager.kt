@@ -267,8 +267,24 @@ class ConnectionManager @Inject constructor(
     }
 
     override fun notifyProfileUpdated(profile: ServerProfile) {
+        val prev = _activeProfile.value
         actor.updateProfile(profile)
         _activeProfile.value = profile
+
+        val gatewayChanged = prev?.gatewayEnabled != profile.gatewayEnabled
+        if (!gatewayChanged) return
+
+        scope.launch {
+            val state = actor.state.value
+            if (!profile.gatewayEnabled && state is ConnState.Connected && state.route is Route.Gateway) {
+                logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关已禁用，重连切换直连")
+                actor.processEvent(ConnEvent.Disconnect)
+                actor.processEvent(ConnEvent.Connect(profile))
+            } else if (profile.gatewayEnabled && state is ConnState.Failed) {
+                logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关已启用，重试连接")
+                actor.processEvent(ConnEvent.Retry)
+            }
+        }
     }
 
     override fun clearNeedsRepairing() {

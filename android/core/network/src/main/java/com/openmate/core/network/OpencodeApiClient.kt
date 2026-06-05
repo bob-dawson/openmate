@@ -69,7 +69,7 @@ class OpencodeApiClient(
             return when (route) {
                 is ConnectionRoute.Direct -> "http://${route.address}:${route.port}"
                 is ConnectionRoute.Gateway -> GATEWAY_URL
-                null -> if (profile.instanceId.isNotBlank()) GATEWAY_URL else "http://${profile.address}:${profile.port}"
+                null -> if (profile.gatewayEnabled && profile.instanceId.isNotBlank()) GATEWAY_URL else "http://${profile.address}:${profile.port}"
             }
         }
 
