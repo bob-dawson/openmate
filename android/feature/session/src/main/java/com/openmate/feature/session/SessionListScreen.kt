@@ -165,7 +165,6 @@ fun SessionListScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(filteredSessions, key = { it.id }) { session ->
                         SessionCard(
