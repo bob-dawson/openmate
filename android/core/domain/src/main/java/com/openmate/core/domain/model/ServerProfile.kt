@@ -13,4 +13,5 @@ data class ServerProfile(
     val password: String? = null,
     val createdAt: Long,
     val lastConnectedAt: Long? = null,
+    val gatewayEnabled: Boolean = true,
 )

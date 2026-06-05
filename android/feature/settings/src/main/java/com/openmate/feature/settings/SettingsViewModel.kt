@@ -54,6 +54,9 @@ class SettingsViewModel @Inject constructor(
     private val _compactMode = MutableStateFlow(prefs.getBoolean(KEY_COMPACT_MODE, false))
     val compactMode: StateFlow<Boolean> = _compactMode.asStateFlow()
 
+    private val _gatewayEnabled = MutableStateFlow(true)
+    val gatewayEnabled: StateFlow<Boolean> = _gatewayEnabled.asStateFlow()
+
     private val _opencodeVersion = MutableStateFlow<OpencodeVersionResponse?>(null)
     val opencodeVersion: StateFlow<OpencodeVersionResponse?> = _opencodeVersion.asStateFlow()
 
@@ -109,7 +112,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val profileId = dbProvider.getActiveProfileId()
             if (profileId != null) {
-                _activeProfile.value = profileRepository.getById(profileId)
+                val profile = profileRepository.getById(profileId)
+                _activeProfile.value = profile
+                _gatewayEnabled.value = profile?.gatewayEnabled ?: true
             }
         }
     }
@@ -140,6 +145,15 @@ class SettingsViewModel @Inject constructor(
     fun setCompactMode(enabled: Boolean) {
         _compactMode.value = enabled
         prefs.edit().putBoolean(KEY_COMPACT_MODE, enabled).apply()
+    }
+
+    fun setGatewayEnabled(enabled: Boolean) {
+        _gatewayEnabled.value = enabled
+        val profile = _activeProfile.value ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            profileRepository.save(profile.copy(gatewayEnabled = enabled))
+            connectionRepository.notifyProfileUpdated(profile.copy(gatewayEnabled = enabled))
+        }
     }
 
     fun checkVersion() {

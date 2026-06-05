@@ -158,6 +158,9 @@
     <string name="file_browser_modified">修改时间</string>
 
     <string name="display">显示</string>
+    <string name="connection">连接</string>
+    <string name="gateway_enabled">网关中继</string>
+    <string name="gateway_enabled_subtitle">直连不可用时通过云网关中继连接</string>
     <string name="show_reasoning">显示思考过程</string>
     <string name="show_reasoning_subtitle">显示 AI 助手的思考消息</string>
     <string name="compact_mode">精简模式</string>

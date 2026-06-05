@@ -587,6 +587,24 @@ private fun SettingsContent(
         }
 
         item {
+            SectionHeader(title = stringResource(R.string.connection))
+            SettingsCard {
+                val gatewayEnabled by viewModel.gatewayEnabled.collectAsState()
+                SettingsRow(
+                    title = stringResource(R.string.gateway_enabled),
+                    subtitle = stringResource(R.string.gateway_enabled_subtitle),
+                    showDivider = false,
+                    trailing = {
+                        Switch(
+                            checked = gatewayEnabled,
+                            onCheckedChange = { viewModel.setGatewayEnabled(it) },
+                        )
+                    },
+                )
+            }
+        }
+
+        item {
             SectionHeader(title = stringResource(R.string.cache))
             SettingsCard {
                 SettingsRow(

@@ -101,7 +101,7 @@ class EffectExecutor(
                 }
                 CachedRoute.GATEWAY -> {
                     val p = profile ?: return@launch
-                    if (p.instanceId.isNotEmpty()) {
+                    if (p.instanceId.isNotEmpty() && p.gatewayEnabled) {
                         sendEvent(ConnEvent.CacheGatewayOk(Route.Gateway(p.instanceId)))
                     } else {
                         sendEvent(ConnEvent.CacheNone)
@@ -150,7 +150,13 @@ class EffectExecutor(
     }
 
     private fun probeGateway() {
-        val instanceId = activeProfile()?.instanceId ?: return
+        val profile = activeProfile() ?: return
+        if (!profile.gatewayEnabled) {
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关已禁用，跳过探测")
+            sendEvent(ConnEvent.ProbeFail(Route.Gateway(profile.instanceId)))
+            return
+        }
+        val instanceId = profile.instanceId
         scope.launch(Dispatchers.IO) {
             val success = isGatewayOnline(instanceId)
             if (success) {
@@ -212,6 +218,11 @@ class EffectExecutor(
 
     private fun startSse(route: Route) {
         val profile = activeProfile() ?: return
+        if (route is Route.Gateway && !profile.gatewayEnabled) {
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关已禁用，跳过SSE连接")
+            sendEvent(ConnEvent.SseFailed(route, "Gateway disabled"))
+            return
+        }
         val baseUrl = when (route) {
             is Route.Direct -> "http://${route.address}:${route.port}"
             is Route.Gateway -> GATEWAY_URL
