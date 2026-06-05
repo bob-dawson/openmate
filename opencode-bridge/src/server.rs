@@ -6,6 +6,9 @@ use std::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use crate::auth;
 use crate::bridge;
 use crate::events;
@@ -23,6 +26,8 @@ pub async fn run_server(
     actual_port: Option<Arc<std::sync::atomic::AtomicU16>>,
     ready_notify: Option<Arc<tokio::sync::Notify>>,
 ) -> anyhow::Result<()> {
+    ensure_user_env();
+
     let app_state = create_app_state_with_db_event_source_and_actual_port(
         log_buffer,
         None,
@@ -303,4 +308,109 @@ pub async fn run_server(
     server.await.ok();
     tracing::info!("Server stopped, exiting");
     std::process::exit(0);
+}
+
+fn ensure_user_env() {
+    #[cfg(windows)]
+    {
+        unsafe { std::env::set_var("OPENCODE_EXPERIMENTAL", "true") };
+
+        if get_user_env_var("OPENCODE_EXPERIMENTAL").as_deref() == Some("true") {
+            return;
+        }
+
+        match std::process::Command::new("reg")
+            .args([
+                "add",
+                "HKCU\\Environment",
+                "/v",
+                "OPENCODE_EXPERIMENTAL",
+                "/t",
+                "REG_SZ",
+                "/d",
+                "true",
+                "/f",
+            ])
+            .creation_flags(0x08000000)
+            .output()
+        {
+            Ok(o) if o.status.success() => {
+                tracing::info!("Set user env OPENCODE_EXPERIMENTAL=true via registry");
+            }
+            Ok(o) => {
+                tracing::warn!("reg add failed: {}", String::from_utf8_lossy(&o.stderr));
+            }
+            Err(e) => {
+                tracing::warn!("Failed to run reg add: {}", e);
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        unsafe { std::env::set_var("OPENCODE_EXPERIMENTAL", "true") };
+
+        let home = match std::env::var("HOME") {
+            Ok(h) if !h.is_empty() => h,
+            _ => {
+                tracing::warn!("HOME not set, cannot configure user env");
+                return;
+            }
+        };
+
+        let profile = std::path::PathBuf::from(&home).join(".profile");
+        let marker = "OPENCODE_EXPERIMENTAL=true";
+
+        if let Ok(content) = std::fs::read_to_string(&profile) {
+            if content.contains(marker) {
+                return;
+            }
+        }
+
+        let line = "\n# Added by OpenMate Bridge\nexport OPENCODE_EXPERIMENTAL=true\n";
+        match std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .write(true)
+            .open(&profile)
+        {
+            Ok(mut f) => {
+                use std::io::Write;
+                if let Err(e) = f.write_all(line.as_bytes()) {
+                    tracing::warn!("Failed to write to {}: {}", profile.display(), e);
+                } else {
+                    tracing::info!("Added OPENCODE_EXPERIMENTAL=true to {}", profile.display());
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to open {}: {}", profile.display(), e);
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn get_user_env_var(name: &str) -> Option<String> {
+    let output = std::process::Command::new("reg")
+        .args([
+            "query",
+            "HKCU\\Environment",
+            "/v",
+            name,
+        ])
+        .creation_flags(0x08000000)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().find(|l| l.contains(name))?;
+    let value = line.split_whitespace().nth(2)?;
+    Some(value.to_string())
+}
+
+#[cfg(not(windows))]
+fn get_user_env_var(_name: &str) -> Option<String> {
+    None
 }
