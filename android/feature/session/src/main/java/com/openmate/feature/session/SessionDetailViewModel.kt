@@ -1356,7 +1356,14 @@ class SessionDetailViewModel @Inject constructor(
             val msg = list[i]
             if (msg.type != "assistant") continue
             val obj = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull() ?: continue
-            val t = obj["tokens"]?.jsonObject?.get("total")?.jsonPrimitive?.content?.toLongOrNull() ?: continue
+            val tokensObj = obj["tokens"]?.jsonObject ?: continue
+            val t = tokensObj["total"]?.jsonPrimitive?.content?.toLongOrNull()
+                ?: ((tokensObj["input"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L) +
+                    (tokensObj["output"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L) +
+                    (tokensObj["reasoning"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L) +
+                    (tokensObj["cache"]?.jsonObject?.get("read")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L) +
+                    (tokensObj["cache"]?.jsonObject?.get("write")?.jsonPrimitive?.content?.toLongOrNull() ?: 0L))
+            if (t == 0L) continue
             lastTotalFound = t
             lastCostFound = obj["cost"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0
             var msgPID = obj["providerID"]?.jsonPrimitive?.contentOrNull
