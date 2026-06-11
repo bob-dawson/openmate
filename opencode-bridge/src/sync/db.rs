@@ -43,15 +43,7 @@ impl SyncDb {
     }
 
     pub fn ensure_indexes(&self) -> Result<(), String> {
-        let conn = Connection::open_with_flags(
-            &self.db_path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).map_err(|e| format!("Failed to open opencode.db for index creation: {}", e))?;
-        conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_event_aggregate_seq ON event(aggregate_id, seq);
-             CREATE INDEX IF NOT EXISTS idx_session_message_session_time ON session_message(session_id, time_created DESC);"
-        ).map_err(|e| format!("Failed to create indexes: {}", e))?;
-        tracing::info!("Sync indexes ensured on opencode.db");
+        tracing::info!("Sync indexes skipped (opencode provides required indexes natively)");
         self.indexes_ready.store(true, Ordering::Relaxed);
         Ok(())
     }
