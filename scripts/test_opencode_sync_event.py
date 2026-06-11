@@ -4,8 +4,8 @@ import json
 import time
 import threading
 
-url = "http://127.0.0.1:4098/global/event"
-sessions_url = "http://127.0.0.1:4098/session"
+url = "http://127.0.0.1:6096/global/event"
+sessions_url = "http://127.0.0.1:6096/session"
 
 print("Fetching sessions...")
 req = urllib.request.Request(sessions_url)
@@ -45,7 +45,7 @@ t.start()
 time.sleep(2)
 
 print(f"Sending prompt to {session_id}...")
-prompt_url = f"http://127.0.0.1:4098/session/{session_id}/prompt_async"
+prompt_url = f"http://127.0.0.1:6096/session/{session_id}/prompt_async"
 prompt_data = json.dumps({"content": "say hi in 3 words"}).encode()
 prompt_req = urllib.request.Request(prompt_url, data=prompt_data, method="POST")
 prompt_req.add_header("Content-Type", "application/json")

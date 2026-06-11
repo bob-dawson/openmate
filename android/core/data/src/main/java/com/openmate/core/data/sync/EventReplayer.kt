@@ -375,6 +375,7 @@ class EventReplayer {
                     put("status", "error")
                     put("error", props["error"] ?: buildJsonObject {})
                     put("input", prevState["input"] ?: JsonObject(emptyMap()))
+                    put("metadata", prevState["metadata"] ?: JsonObject(emptyMap()))
                     put("structured", prevState["structured"] ?: JsonObject(emptyMap()))
                     put("content", prevState["content"] ?: JsonArray(emptyList()))
                     props["result"]?.let { put("result", it) }
@@ -431,26 +432,34 @@ class EventReplayer {
             }
 
             "session.next.compaction.started" -> {
-                props["messageID"]?.jsonPrimitive?.contentOrNull?.let { mid ->
-                    pendingCompactionId = mid
-                }
-                return emptyList()
-            }
-
-            "session.next.compaction.ended" -> {
-                val msgId = props["messageID"]?.jsonPrimitive?.contentOrNull
-                    ?: pendingCompactionId
-                    ?: return emptyList()
-                pendingCompactionId = null
+                val msgId = props["messageID"]?.jsonPrimitive?.contentOrNull ?: event.id
+                pendingCompactionId = msgId
                 val data = buildJsonObject {
                     put("reason", props["reason"]?.jsonPrimitive?.contentOrNull ?: "auto")
-                    put("summary", props["text"]?.jsonPrimitive?.contentOrNull ?: "")
-                    props["recent"]?.jsonPrimitive?.contentOrNull?.let { put("recent", it) }
-                    props["include"]?.jsonPrimitive?.contentOrNull?.let { put("include", it) }
+                    put("summary", "")
                     put("time", buildJsonObject { put("created", timestamp) })
                 }
                 setCache(msgId, "compaction", data, timestamp)
                 return listOf(ReplayChange.Insert(entity(msgId, sessionId, "compaction", data, timestamp)))
+            }
+
+            "session.next.compaction.ended" -> {
+                if (cachedType != "compaction") {
+                    val existing = loader(DbLoader.Action.LoadLatestIncompleteCompaction(sessionId)) ?: return emptyList()
+                    val existingData = runCatching { Json.parseToJsonElement(existing.data).jsonObject }.getOrNull() ?: return emptyList()
+                    setCache(existing.id, "compaction", existingData, existing.timeCreated)
+                }
+                val cached = cachedData ?: return emptyList()
+                val updated = cached.toMutableMap()
+                updated["summary"] = JsonPrimitive(props["text"]?.jsonPrimitive?.contentOrNull ?: "")
+                props["include"]?.jsonPrimitive?.contentOrNull?.let { updated["include"] = JsonPrimitive(it) }
+                props["recent"]?.jsonPrimitive?.contentOrNull?.let { updated["recent"] = JsonPrimitive(it) }
+                val timeObj = (updated["time"]?.jsonObject?.toMutableMap() ?: mutableMapOf())
+                timeObj["completed"] = JsonPrimitive(timestamp)
+                updated["time"] = JsonObject(timeObj)
+                val merged = JsonObject(updated)
+                updateCache(merged)
+                return listOf(ReplayChange.Update(cachedId!!, "compaction", merged, timestamp, completedAt = timestamp))
             }
 
             "message.removed" -> {

@@ -2,7 +2,7 @@
 import urllib.request, json, time, threading
 
 BRIDGE = "http://127.0.0.1:4097"
-OPENCODE = "http://127.0.0.1:4098"
+OPENCODE = "http://127.0.0.1:6096"
 TOKEN_FILE = "D:\\openmate\\scripts\\.bridge_token"
 
 def get_token():
