@@ -46,24 +46,6 @@ pub async fn run_server(
     tracing::info!("Allowed paths: {:?}", config.effective_allowed_paths());
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 
-    {
-        let state = app_state.clone();
-        tokio::spawn(async move {
-            loop {
-                match state.sync_db.ensure_indexes() {
-                    Ok(()) => {
-                        tracing::info!("Sync indexes created successfully");
-                        break;
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to create sync indexes (will retry in 5min): {}", e);
-                        tokio::time::sleep(Duration::from_secs(300)).await;
-                    }
-                }
-            }
-        });
-    }
-
     if app_state.opencode_manager.check_health().await {
         tracing::info!("opencode is already running, restarting with OPENCODE_EXPERIMENTAL=true");
         app_state.opencode_manager.stop().await.ok();

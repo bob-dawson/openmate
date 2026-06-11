@@ -4,13 +4,11 @@ use r2d2_sqlite::SqliteConnectionManager;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::Config;
 
 pub struct SyncDb {
     pool: Pool<SqliteConnectionManager>,
     db_path: PathBuf,
-    indexes_ready: AtomicBool,
 }
 
 impl SyncDb {
@@ -31,7 +29,7 @@ impl SyncDb {
                 .ok();
         }
 
-        Self { pool, db_path: db_path.clone(), indexes_ready: AtomicBool::new(false) }
+        Self { pool, db_path: db_path.clone() }
     }
 
     pub fn db_path(&self) -> &PathBuf {
@@ -40,16 +38,6 @@ impl SyncDb {
 
     fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, String> {
         self.pool.get().map_err(|e| format!("DB pool error: {}", e))
-    }
-
-    pub fn ensure_indexes(&self) -> Result<(), String> {
-        tracing::info!("Sync indexes skipped (opencode provides required indexes natively)");
-        self.indexes_ready.store(true, Ordering::Relaxed);
-        Ok(())
-    }
-
-    pub fn indexes_ready(&self) -> bool {
-        self.indexes_ready.load(Ordering::Relaxed)
     }
 
     pub fn get_init_snapshot(&self, session_id: &str, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
