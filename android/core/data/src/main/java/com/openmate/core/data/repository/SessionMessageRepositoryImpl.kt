@@ -438,6 +438,17 @@ class SessionMessageRepositoryImpl @Inject constructor(
                                     message = "revert清除结果 seq=${event.seq} aggId=$aggId rows=$rows seq=${event.seq} trace=$traceId",
                                     sessionId = sessionId,
                                 )
+                            } else if (!hasRevertKey) {
+                                val existing = db.sessionDao().getById(aggId)
+                                if (existing?.revertMessageID != null) {
+                                    val rows = db.sessionDao().updateRevertFields(aggId, null, null, null, null)
+                                    logStore.log(
+                                        level = if (rows == 0) SyncLogLevel.Error else SyncLogLevel.Info,
+                                        category = SyncLogCategory.Sync,
+                                        message = "revert隐式清除(无key) seq=${event.seq} aggId=$aggId rows=$rows seq=${event.seq} trace=$traceId",
+                                        sessionId = sessionId,
+                                    )
+                                }
                             }
                         }
                     }

@@ -27,8 +27,8 @@ feature/settings/       → 设置页 (1 ViewModel)
 ```
 
 ## Build & Run
-- **直接使用 gradlew 构建**: `.\gradlew.bat :app:assembleDebug 2>&1 | Select-String -Pattern "^e:|BUILD"`
-- **Kotlin 编译错误过滤**: `Select-String -Pattern "^e:"`（`^` 锚点很重要，否则会匹配 `core:database:preBuild` 等正常日志）
+- **通过 GradleMcp HTTP 构建**: `Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/run" -Method Post -ContentType "application/json" -Body '{"args":[":app:assembleDebug"],"cwd":"D:\\openmate\\android"}'`
+- **gradlew 不兼容 opencode shell**: 直接使用 `gradlew.bat` 会卡住，必须通过 GradleMcp HTTP 接口调用
 
 ## Key Conventions
 - **不写注释**，除非明确要求

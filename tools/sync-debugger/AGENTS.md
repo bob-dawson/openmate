@@ -5,7 +5,7 @@
 ## 构建
 
 ```powershell
-.\gradlew.bat shadowJar
+Invoke-RestMethod -Uri "http://localhost:5099/api/gradle/run" -Method Post -ContentType "application/json" -Body '{"args":["shadowJar"],"cwd":"D:\\openmate\\tools\\sync-debugger"}'
 # 产出: build/libs/sync-debugger-all.jar
 ```
 
