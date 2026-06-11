@@ -165,6 +165,8 @@ SELECT id, title, status FROM SessionEntity ORDER BY updatedAt DESC;
 
 GradleMcp（端口 5099）同时提供 MCP 协议（`/mcp`）和 REST HTTP 接口。由于 opencode MCP 远程连接空闲后可能断连且不会自动重连，推荐使用 HTTP 接口作为可靠替代。
 
+**注意**: 当前 Gradle daemon 已兼容 opencode shell，Android 和 sync-debugger 构建可直接使用 `gradlew`，不再需要 GradleMcp 或 `--no-daemon` 参数。
+
 ### 端点
 
 | 方法 | 路径 | 说明 |

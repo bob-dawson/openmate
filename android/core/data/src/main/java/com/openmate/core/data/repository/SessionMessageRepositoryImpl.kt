@@ -135,11 +135,12 @@ class SessionMessageRepositoryImpl @Inject constructor(
         Log.d("SyncRepo", "initSync saved cursor seq=$currentSeq")
 
         val response = syncApiClient.init(sessionId, limit)
-        Log.d("SyncRepo", "initSync got ${response.messages.size} messages")
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "initSync got ${response.messages.size} messages ids=${response.messages.take(3).map { it.id }.joinToString(",")}")
         val entities = response.messages.map { dto ->
             val truncatedData = MobileTruncator.truncate(dto.type, dto.data)
             dto.copy(data = truncatedData).let { SessionMessageMapper.dtoToEntity(it) }
         }
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "initSync entities ids=${entities.take(3).map { it.id }.joinToString(",")}")
         db.sessionMessageDao().replaceAllForSession(sessionId, entities)
 
         return SessionMessageSyncResult(
@@ -491,9 +492,15 @@ class SessionMessageRepositoryImpl @Inject constructor(
     }
 
     override suspend fun fetchDiffFiles(sessionId: String, messageId: String, toolName: String, targetFilePath: String?): List<DiffFile> {
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "fetchDiffFiles IN sessionId=$sessionId messageId=$messageId toolName=$toolName targetFilePath=$targetFilePath")
         val response = syncApiClient.full(sessionId, messageId)
         val data = response.data
-        val contentArray = data["content"]?.jsonArray ?: return emptyList()
+        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "fetchDiffFiles RESP id=${response.id} type=${response.type} dataKeys=${data.keys.joinToString(",")}")
+        val contentArray = data["content"]?.jsonArray
+        if (contentArray == null) {
+            logStore.log(SyncLogLevel.Error, SyncLogCategory.Connection, "fetchDiffFiles: content NOT array, raw=${data["content"].toString().take(200)}")
+            return emptyList()
+        }
         for (item in contentArray) {
             val partData = item.jsonObject
             val type = partData["type"]?.jsonPrimitive?.contentOrNull ?: continue
@@ -502,6 +509,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
             val tool = state["tool"]?.jsonPrimitive?.contentOrNull
                 ?: partData["name"]?.jsonPrimitive?.contentOrNull
                 ?: continue
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "fetchDiffFiles: tool=$tool want=$toolName stateKeys=${state.keys.joinToString(",")}")
             if (tool != toolName) continue
 
             val structured = state["structured"]?.jsonObject

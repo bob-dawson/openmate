@@ -5,7 +5,7 @@
 ## 构建
 
 ```powershell
-.\gradlew.bat shadowJar --no-daemon
+.\gradlew.bat shadowJar
 # 产出: build/libs/sync-debugger-all.jar
 ```
 
