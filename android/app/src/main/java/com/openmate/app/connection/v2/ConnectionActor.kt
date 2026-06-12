@@ -58,7 +58,7 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         val attempt: Int = 0,
     ) : ConnState("Recovering")
 
-    data class Failed(val profile: ServerProfile, val reason: String = "No available route") : ConnState("Failed")
+    data class Failed(val profile: ServerProfile, val reason: String = "No available route", val attempt: Int = 0) : ConnState("Failed")
 
     data class NeedsRepair(val profile: ServerProfile) : ConnState("NeedsRepair")
 
@@ -86,7 +86,7 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         is ConnectingFresh -> "ConnectingFresh(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is Connected -> "Connected(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is Recovering -> "Recovering(profile=${profile.id}, attempt=$attempt)"
-        is Failed -> "Failed(profile=${profile.id}, reason=$reason)"
+        is Failed -> "Failed(profile=${profile.id}, reason=$reason, attempt=$attempt)"
         is NeedsRepair -> "NeedsRepair(profile=${profile.id})"
     }
 }
@@ -264,7 +264,7 @@ class ConnectionActor(
                     targetState = failed
                     onTriggered {
                         val s = _state.value as ConnState.ProbingGateway
-                        _state.value = ConnState.Failed(s.profile, reason = "All routes failed")
+                        _state.value = ConnState.Failed(s.profile, reason = "All routes failed", attempt = s.attempt)
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -435,6 +435,20 @@ class ConnectionActor(
             }
 
             addState(failed) {
+                onEntry {
+                    val s = _state.value as ConnState.Failed
+                    onEffect(ConnEffect.StartBackoff(backoffMs(s.attempt)))
+                }
+                onExit {
+                    onEffect(ConnEffect.StopBackoff)
+                }
+                transition<ConnEvent.BackoffExpired> {
+                    targetState = probingNetwork
+                    onTriggered {
+                        val s = _state.value as ConnState.Failed
+                        _state.value = ConnState.ProbingNetwork(s.profile, attempt = s.attempt + 1)
+                    }
+                }
                 transition<ConnEvent.Connect> {
                     targetState = probingNetwork
                     onTriggered {
