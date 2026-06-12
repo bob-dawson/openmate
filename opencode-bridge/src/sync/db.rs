@@ -64,16 +64,13 @@ impl SyncDb {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, session_id, type, time_created, time_updated, data
-             FROM (
-                 SELECT id, session_id, type, time_created, time_updated, data
-                 FROM session_message
-                 WHERE session_id = ?
-                 ORDER BY time_created DESC
-                 LIMIT ?
-             ) ORDER BY time_created ASC"
+             FROM session_message
+             WHERE session_id = ?
+             ORDER BY time_created DESC
+             LIMIT ?"
         ).map_err(|e| format!("Prepare failed: {}", e))?;
 
-        let messages: Vec<Value> = stmt.query_map(params![session_id, limit], |row| {
+        let mut messages: Vec<Value> = stmt.query_map(params![session_id, limit], |row| {
             let id: String = row.get(0)?;
             let sid: String = row.get(1)?;
             let msg_type: String = row.get(2)?;
@@ -92,6 +89,8 @@ impl SyncDb {
         }).map_err(|e| format!("Query failed: {}", e))?
           .filter_map(|r| r.ok())
           .collect();
+
+        messages.reverse();
 
         let max_seq: Option<i64> = conn.query_row(
             "SELECT seq FROM event_sequence WHERE aggregate_id = ?",
