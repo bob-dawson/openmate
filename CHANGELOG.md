@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.20
+
+Released: 2026-06-16
+
+### 新功能
+
+- **App 自动更新**：设置页新增 App 更新卡片，支持检查新版本、下载并安装 APK（jsDelivr CDN + raw.githubusercontent.com 双源 version.json 发现，tag-based 下载）
+- **Bridge 自动更新**：Bridge 支持自更新（下载、校验、helper-script 替换、失败回滚）；Android 设置页可触发 Bridge 更新并查看进度
+
 ## 0.1.19
 
 Released: 2026-06-16
