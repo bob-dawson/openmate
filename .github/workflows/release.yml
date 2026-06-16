@@ -88,15 +88,8 @@ jobs:
           path: openmate-linux-x86_64
 
   bridge-macos:
-    name: Bridge (macOS-${{ matrix.arch }})
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            arch: arm64
-          - runner: macos-13
-            arch: x86_64
-    runs-on: ${{ matrix.runner }}
+    name: Bridge (macOS)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -111,12 +104,12 @@ jobs:
         run: cargo build --release
 
       - name: Rename binary
-        run: cp opencode-bridge/target/release/openmate openmate-darwin-${{ matrix.arch }}
+        run: cp opencode-bridge/target/release/openmate openmate-darwin-arm64
 
       - uses: actions/upload-artifact@v4
         with:
-          name: bridge-macos-${{ matrix.arch }}
-          path: openmate-darwin-${{ matrix.arch }}
+          name: bridge-macos-arm64
+          path: openmate-darwin-arm64
 
   relay-gateway:
     name: Relay Gateway (Linux)
@@ -163,7 +156,6 @@ jobs:
           cp artifacts/bridge-windows/openmate.exe release-files/
           cp artifacts/bridge-linux/openmate-linux-x86_64 release-files/
           cp artifacts/bridge-macos-arm64/openmate-darwin-arm64 release-files/
-          cp artifacts/bridge-macos-x86_64/openmate-darwin-x86_64 release-files/
           cp artifacts/relay-gateway-linux/relay-gateway-linux-x86_64 release-files/
           ls -la release-files/
 
