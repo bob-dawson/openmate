@@ -1,6 +1,10 @@
 # OpenMate
 
 <p align="center">
+  <b>English</b> | <a href="README.zh-CN.md">中文</a>
+</p>
+
+<p align="center">
   <img src="logo/logo.png" width="120" />
 </p>
 
@@ -139,9 +143,7 @@ Same network uses LAN for the fastest response; otherwise the app routes through
 
 **Learn more:**
 - [Installation Guide](docs/INSTALL.md) — Setup instructions
-- [安装指南（中文）](docs/INSTALL.zh-CN.md) — 安装说明
 - [Development Guide](docs/DEVELOPMENT.md) — Architecture and build instructions
-- [开发指南（中文）](docs/DEVELOPMENT.zh-CN.md) — 架构与构建说明
 - [Changelog](CHANGELOG.md) — Version history
 - [Design Documents](docs/design/) — Technical designs
 
