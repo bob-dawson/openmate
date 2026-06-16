@@ -44,4 +44,6 @@
     <string name="delete_dir_confirm">Are you sure you want to delete %1$s?</string>
     <string name="create">Create</string>
     <string name="directory_name_hint">Directory name</string>
+    <string name="app_up_to_date">App is up to date</string>
+    <string name="bridge_up_to_date">Bridge is up to date</string>
 </resources>

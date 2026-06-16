@@ -495,6 +495,14 @@ private fun SettingsContent(
     modifier: Modifier = Modifier,
 ) {
     val activeProfile by viewModel.activeProfile.collectAsState()
+    val updateMessage by viewModel.updateMessage.collectAsState()
+    val context = LocalContext.current
+    LaunchedEffect(updateMessage) {
+        updateMessage?.let {
+            android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show()
+            viewModel.clearUpdateMessage()
+        }
+    }
     var showClearCacheDialog by remember { mutableStateOf(false) }
 
     if (showClearCacheDialog) {
@@ -944,26 +952,16 @@ private fun SettingsContent(
             SectionHeader(title = stringResource(R.string.about))
             SettingsCard {
                 SettingsRow(
-                    title = stringResource(R.string.version),
-                    subtitle = null,
-                    trailing = {
-                        val context = LocalContext.current
-                        val appVersion = remember {
-                            runCatching {
-                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?"
-                            }.getOrDefault("?")
-                        }
-                        Text(
-                            text = appVersion,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                )
-                SettingsRow(
                     title = stringResource(R.string.open_source_licenses),
                     subtitle = null,
                     showDivider = false,
+                    modifier = Modifier.clickable {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://www.apache.org/licenses/LICENSE-2.0")
+                        )
+                        context.startActivity(intent)
+                    },
                     trailing = {
                         Text(
                             text = "\u203A",

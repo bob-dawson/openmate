@@ -78,6 +78,13 @@ class SettingsViewModel @Inject constructor(
     private val _upgradeError = MutableStateFlow<String?>(null)
     val upgradeError: StateFlow<String?> = _upgradeError.asStateFlow()
 
+    private val _updateMessage = MutableStateFlow<String?>(null)
+    val updateMessage: StateFlow<String?> = _updateMessage.asStateFlow()
+
+    fun clearUpdateMessage() {
+        _updateMessage.value = null
+    }
+
     data class AppUpdateInfo(
         val currentVersion: String,
         val latestVersion: String?,
@@ -274,6 +281,9 @@ class SettingsViewModel @Inject constructor(
                     latestVersion = latest?.version,
                     hasUpdate = hasUpdate,
                 )
+                if (!hasUpdate && latest != null) {
+                    _updateMessage.value = appContext.getString(R.string.app_up_to_date)
+                }
             } catch (_: Exception) {
             }
         }
@@ -314,9 +324,16 @@ class SettingsViewModel @Inject constructor(
                 _appDownloadState.value = AppDownloadState(isDownloading = false, progress = 100)
                 FileOpener.installApk(appContext, destFile, destFile.name)
             } catch (e: Exception) {
-                _appDownloadState.value = AppDownloadState(
-                    error = e.message ?: "Download failed",
-                )
+                val destDir = File(appContext.cacheDir, "file_cache")
+                val destFile = File(destDir, ReleaseAssets.apkFilename(tag))
+                if (destFile.exists() && destFile.length() > 0) {
+                    _appDownloadState.value = AppDownloadState(isDownloading = false, progress = 100)
+                    FileOpener.installApk(appContext, destFile, destFile.name)
+                } else {
+                    _appDownloadState.value = AppDownloadState(
+                        error = e.message ?: "Download failed",
+                    )
+                }
             }
         }
     }
@@ -339,6 +356,9 @@ class SettingsViewModel @Inject constructor(
                     latestVersion = latest?.version,
                     hasUpdate = hasUpdate,
                 )
+                if (!hasUpdate && latest != null) {
+                    _updateMessage.value = appContext.getString(R.string.bridge_up_to_date)
+                }
             } catch (_: Exception) {
             }
         }

@@ -245,4 +245,10 @@
     <string name="download_and_install">下载并安装</string>
     <string name="app_download_failed">下载失败，请前往 GitHub Releases 手动下载。</string>
     <string name="check_failed_retry">检查失败，点击重试</string>
+    <string name="bridge_update">Bridge 更新</string>
+    <string name="bridge_upgrade_now">立即升级</string>
+    <string name="bridge_downloading">正在下载 Bridge…</string>
+    <string name="bridge_applying">正在应用更新，Bridge 将重启…</string>
+    <string name="bridge_upgrade_failed">升级失败，请前往 GitHub Releases 手动下载。</string>
+    <string name="bridge_up_to_date">Bridge 已是最新版本</string>
 </resources>

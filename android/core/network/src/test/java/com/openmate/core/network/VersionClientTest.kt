@@ -71,9 +71,17 @@ class VersionClientTest {
     fun downloadReleaseAsset_writesFileAndReportsProgress() = runBlocking<Unit> {
         val bytes = ByteArray(100) { it.toByte() }
         downloadServer.enqueue(
-            MockResponse().setResponseCode(200).setBody(okio.Buffer().write(bytes))
+            MockResponse().setResponseCode(200)
+                .setHeader("Accept-Ranges", "bytes")
+                .setHeader("Content-Length", "100")
         )
-        val c = client(jsdelivrServer.url("/").toString(), rawServer.url("/").toString())
+        downloadServer.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Accept-Ranges", "bytes")
+                .setHeader("Content-Length", "100")
+                .setBody(okio.Buffer().write(bytes))
+        )
+        val c = client(downloadServer.url("/").toString(), rawServer.url("/").toString())
         val dest = File.createTempFile("test", ".apk").apply { delete() }
         var lastDownloaded = 0L
         c.downloadReleaseAsset(
@@ -84,6 +92,57 @@ class VersionClientTest {
         assertThat(dest.exists()).isTrue()
         assertThat(dest.length()).isEqualTo(100L)
         assertThat(lastDownloaded).isAtLeast(100L)
+        dest.delete()
+    }
+
+    @Test
+    fun downloadReleaseAsset_cachedFileComplete_skipsDownload() = runBlocking<Unit> {
+        val bytes = ByteArray(100) { it.toByte() }
+        downloadServer.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Accept-Ranges", "bytes")
+                .setHeader("Content-Length", "100")
+        )
+        val c = client(downloadServer.url("/").toString(), rawServer.url("/").toString())
+        val dest = File.createTempFile("test", ".apk")
+        dest.writeBytes(bytes)
+        var progressCalled = false
+        c.downloadReleaseAsset(
+            url = downloadServer.url("/asset").toString(),
+            destFile = dest,
+            onProgress = { _, _ -> progressCalled = true }
+        )
+        assertThat(dest.length()).isEqualTo(100L)
+        assertThat(progressCalled).isTrue()
+        assertThat(downloadServer.requestCount).isEqualTo(1)
+        dest.delete()
+    }
+
+    @Test
+    fun downloadReleaseAsset_partialFile_resumesDownload() = runBlocking<Unit> {
+        val fullBytes = ByteArray(200) { it.toByte() }
+        val existingBytes = fullBytes.copyOfRange(0, 80)
+        val remainingBytes = fullBytes.copyOfRange(80, 200)
+        val dest = File.createTempFile("test", ".apk")
+        dest.writeBytes(existingBytes)
+
+        downloadServer.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Accept-Ranges", "bytes")
+                .setHeader("Content-Length", "200")
+        )
+        downloadServer.enqueue(
+            MockResponse().setResponseCode(206)
+                .setHeader("Content-Range", "bytes 80-199/200")
+                .setHeader("Content-Length", "120")
+                .setBody(okio.Buffer().write(remainingBytes))
+        )
+        val c = client(downloadServer.url("/").toString(), rawServer.url("/").toString())
+        c.downloadReleaseAsset(
+            url = downloadServer.url("/asset").toString(),
+            destFile = dest,
+        )
+        assertThat(dest.length()).isEqualTo(200L)
         dest.delete()
     }
 }

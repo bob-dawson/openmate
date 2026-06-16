@@ -44,4 +44,6 @@
     <string name="delete_dir_confirm">确定要删除 %1$s 吗？</string>
     <string name="create">创建</string>
     <string name="directory_name_hint">目录名称</string>
+    <string name="app_up_to_date">应用已是最新版本</string>
+    <string name="bridge_up_to_date">Bridge 已是最新版本</string>
 </resources>

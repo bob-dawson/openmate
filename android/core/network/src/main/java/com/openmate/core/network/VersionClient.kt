@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.io.FileOutputStream
 import javax.inject.Named
 
 class VersionClient(
@@ -40,18 +41,39 @@ class VersionClient(
         destFile: File,
         onProgress: ((downloaded: Long, total: Long) -> Unit)? = null,
     ) = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).get().build()
-        val response = releaseClient.newCall(request).execute()
-        if (!response.isSuccessful) {
+        destFile.parentFile?.mkdirs()
+
+        val totalSize = fetchContentLength(url)
+        if (totalSize > 0 && destFile.exists() && destFile.length() == totalSize) {
+            onProgress?.invoke(totalSize, totalSize)
+            return@withContext
+        }
+
+        val existingBytes = if (destFile.exists() && totalSize > 0 && destFile.length() < totalSize) {
+            destFile.length()
+        } else {
+            if (destFile.exists()) destFile.delete()
+            0L
+        }
+
+        val requestBuilder = Request.Builder().url(url)
+        if (existingBytes > 0) {
+            requestBuilder.header("Range", "bytes=$existingBytes-")
+        }
+        val response = releaseClient.newCall(requestBuilder.build()).execute()
+        if (!response.isSuccessful && response.code != 206) {
             throw IllegalStateException("HTTP ${response.code}")
         }
+
+        val isPartial = response.code == 206
         val body = response.body ?: throw IllegalStateException("Empty response body")
         val contentLength = body.contentLength()
-        destFile.parentFile?.mkdirs()
+        val expectedTotal = if (isPartial) totalSize else if (contentLength > 0) contentLength else -1L
+
         body.byteStream().buffered().use { input ->
-            destFile.outputStream().buffered(64 * 1024).use { output ->
+            FileOutputStream(destFile, isPartial).buffered(64 * 1024).use { output ->
                 val buffer = ByteArray(64 * 1024)
-                var downloaded = 0L
+                var downloaded = existingBytes
                 var lastProgressTime = System.currentTimeMillis()
                 while (true) {
                     val read = input.read(buffer)
@@ -60,14 +82,26 @@ class VersionClient(
                     downloaded += read
                     val now = System.currentTimeMillis()
                     if (onProgress != null && now - lastProgressTime >= 1000) {
-                        onProgress.invoke(downloaded, if (contentLength > 0) contentLength else downloaded)
+                        onProgress.invoke(downloaded, if (expectedTotal > 0) expectedTotal else downloaded)
                         lastProgressTime = now
                     }
                 }
                 output.flush()
-                onProgress?.invoke(downloaded, if (contentLength > 0) contentLength else downloaded)
+                onProgress?.invoke(downloaded, if (expectedTotal > 0) expectedTotal else downloaded)
             }
         }
+    }
+
+    private fun fetchContentLength(url: String): Long {
+        return runCatching {
+            val request = Request.Builder().url(url).head().build()
+            versionClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching -1L
+                val contentLength = response.header("Content-Length")?.toLongOrNull() ?: -1L
+                val acceptRanges = response.header("Accept-Ranges")
+                if (acceptRanges == null && contentLength > 0) -1L else contentLength
+            }
+        }.getOrDefault(-1L)
     }
 
     companion object {
