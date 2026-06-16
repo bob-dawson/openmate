@@ -86,10 +86,10 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
    - `git add version.json && git commit -m "chore: update version.json to v{版本号}"`
    - `git push origin main`
 
-10. **清除 jsDelivr CDN 缓存**
-    - `Invoke-RestMethod -Uri "https://purge.jsdelivr.net/gh/bob-dawson/openmate@main/version.json"`
-    - 确认返回状态为 `finished`
-    - 这确保客户端立即能通过 jsDelivr CDN 获取到新版 version.json
+10. **同步 version.json 到 Gateway 服务器**
+    - `scp D:\openmate\version.json root@gateway.clawmate.net:/data/relay-gateway/static/version.json`
+    - 这确保客户端通过 `https://gateway.clawmate.net/version.json`（主源）立即获取到新版
+    - nginx 已配置 `Cache-Control: no-store`，无需额外清缓存
 
 ## CI 产物清单
 
@@ -118,9 +118,10 @@ Linux 二进制为 musl 静态链接，不依赖目标系统的 glibc/openssl，
 ## version.json 与自动更新机制
 
 - `version.json` 位于仓库根目录，按模块记录最新发布版本
-- 客户端通过 jsDelivr CDN（主）和 raw.githubusercontent.com（备）读取该文件判断是否有更新
-- jsDelivr CDN 默认缓存约 12 小时，因此每次更新 version.json 后必须手动 purge
+- 客户端通过 Gateway 服务器（主）和 raw.githubusercontent.com（备）读取该文件判断是否有更新
+- Gateway 服务器：`https://gateway.clawmate.net/version.json`，nginx 配置 `Cache-Control: no-store`，无缓存问题
 - raw.githubusercontent.com 无缓存，几乎实时，作为 fallback 兜底
+- 每次发布后必须 scp version.json 到 Gateway 服务器（步骤 10）
 
 ## 注意事项
 

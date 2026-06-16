@@ -99,7 +99,15 @@ impl UpgradeManager {
         }
 
         let exe_path = platform::current_exe().map_err(|e| format!("Cannot find current exe: {}", e))?;
-        let update_path = std::env::temp_dir().join("openmate.update");
+        let version = {
+            let s = self.state.lock().await;
+            s.version.clone().unwrap_or_default()
+        };
+        let update_path = if version.is_empty() {
+            std::env::temp_dir().join("openmate.update")
+        } else {
+            std::env::temp_dir().join(format!("openmate-{}.update", version))
+        };
         if !update_path.exists() {
             return Err("Update file missing".to_string());
         }
@@ -169,41 +177,83 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>) -> Result<String, String> 
 
     let asset = platform::asset_name();
     let url = format!("{}/{}/{}", GITHUB_BASE, bridge.tag, asset);
-
-    tracing::info!("Downloading bridge update from {}", url);
+    let dest = std::env::temp_dir().join(format!("openmate-{}.update", bridge.version));
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let resp = client
-        .get(&url)
+    let total_size = fetch_content_length(&client, &url).await;
+
+    if total_size > 0 && dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) == total_size {
+        tracing::info!("Update file already downloaded ({} bytes), skipping download", total_size);
+        return Ok(bridge.version);
+    }
+
+    let existing_bytes = if dest.exists() && total_size > 0 {
+        let len = dest.metadata().map(|m| m.len()).unwrap_or(0);
+        if len > 0 && len < total_size {
+            tracing::info!("Resuming download from {} / {} bytes", len, total_size);
+            len
+        } else {
+            if len > 0 {
+                tracing::info!("Existing partial file size {} unexpected (expected {}), re-downloading", len, total_size);
+            }
+            let _ = tokio::fs::remove_file(&dest).await;
+            0
+        }
+    } else {
+        0
+    };
+
+    let mut request = client.get(&url);
+    if existing_bytes > 0 {
+        request = request.header("Range", format!("bytes={}-", existing_bytes));
+    }
+
+    let resp = request
         .send()
         .await
         .map_err(|e| format!("Download request failed: {}", e))?;
 
-    if !resp.status().is_success() {
+    if !resp.status().is_success() && resp.status().as_u16() != 206 {
         return Err(format!("Download HTTP {}", resp.status()));
     }
 
-    let total = resp.content_length().unwrap_or(0);
+    let is_partial = resp.status().as_u16() == 206;
+    let content_length = resp.content_length().unwrap_or(0);
+    let expected_total = if is_partial {
+        total_size
+    } else if content_length > 0 {
+        content_length
+    } else {
+        0
+    };
+
     let mut stream = resp.bytes_stream();
 
-    let dest = std::env::temp_dir().join("openmate.update");
-    let mut file = tokio::fs::File::create(&dest)
-        .await
-        .map_err(|e| format!("Cannot create temp file: {}", e))?;
+    let mut file = if is_partial {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&dest)
+            .await
+            .map_err(|e| format!("Cannot open temp file for append: {}", e))?
+    } else {
+        tokio::fs::File::create(&dest)
+            .await
+            .map_err(|e| format!("Cannot create temp file: {}", e))?
+    };
 
-    let mut downloaded: u64 = 0;
+    let mut downloaded: u64 = existing_bytes;
     while let Some(chunk_result) = stream.next().await {
         let chunk = chunk_result.map_err(|e| format!("Stream error: {}", e))?;
         file.write_all(&chunk)
             .await
             .map_err(|e| format!("Write error: {}", e))?;
         downloaded += chunk.len() as u64;
-        if total > 0 {
-            let pct = std::cmp::min((downloaded * 100) / total, 100);
+        if expected_total > 0 {
+            let pct = std::cmp::min((downloaded * 100) / expected_total, 100);
             let mut s = state.lock().await;
             s.progress = pct;
         }
@@ -212,4 +262,21 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>) -> Result<String, String> 
 
     tracing::info!("Downloaded {} bytes to {}", downloaded, dest.display());
     Ok(bridge.version)
+}
+
+async fn fetch_content_length(client: &reqwest::Client, url: &str) -> u64 {
+    match client.head(url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let cl = resp.headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0);
+            let accept_ranges = resp.headers()
+                .get("accept-ranges")
+                .is_some();
+            if accept_ranges && cl > 0 { cl } else { 0 }
+        }
+        _ => 0,
+    }
 }

@@ -46,4 +46,7 @@
     <string name="directory_name_hint">目录名称</string>
     <string name="app_up_to_date">应用已是最新版本</string>
     <string name="bridge_up_to_date">Bridge 已是最新版本</string>
+    <string name="bridge_download_failed">下载失败，请前往 GitHub Releases 手动更新</string>
+    <string name="bridge_download_timeout">下载超时，请前往 GitHub Releases 手动更新</string>
+    <string name="bridge_upgrade_failed">升级失败，请前往 GitHub Releases 手动更新</string>
 </resources>

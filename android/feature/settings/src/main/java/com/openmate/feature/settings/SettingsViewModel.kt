@@ -392,7 +392,7 @@ class SettingsViewModel @Inject constructor(
                         }
                         "failed" -> {
                             _bridgeUpgradeState.value = BridgeUpgradeState(
-                                error = status.error ?: "下载失败，请前往 GitHub Releases 手动更新",
+                                error = appContext.getString(R.string.bridge_download_failed),
                             )
                             return@launch
                         }
@@ -401,17 +401,30 @@ class SettingsViewModel @Inject constructor(
 
                 if (!downloaded) {
                     _bridgeUpgradeState.value = BridgeUpgradeState(
-                        error = "下载超时，请前往 GitHub Releases 手动更新",
+                        error = appContext.getString(R.string.bridge_download_timeout),
                     )
                     return@launch
                 }
 
                 _bridgeUpgradeState.value = BridgeUpgradeState(isApplying = true)
+                val oldVersion = _bridgeUpdateInfo.value?.currentVersion ?: ""
                 apiClient.bridgeUpgradeApply()
-
-            } catch (e: Exception) {
+                for (i in 0 until 3) {
+                    delay(3000)
+                    try {
+                        val status = apiClient.bridgeStatus()
+                        if (status.bridge.version != oldVersion) {
+                            _bridgeUpgradeState.value = BridgeUpgradeState()
+                            checkBridgeUpdate(true)
+                            return@launch
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+                _bridgeUpgradeState.value = BridgeUpgradeState()
+            } catch (_: Exception) {
                 _bridgeUpgradeState.value = BridgeUpgradeState(
-                    error = e.message ?: "升级失败",
+                    error = appContext.getString(R.string.bridge_upgrade_failed),
                 )
             }
         }

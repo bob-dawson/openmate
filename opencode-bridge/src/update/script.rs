@@ -4,9 +4,14 @@ pub fn generate_ps1(exe: &str, update: &str, pid: u32) -> String {
 $targetPid = {pid}
 $new = '{update}'
 $tgt = '{exe}'
-$deadline = (Get-Date).AddSeconds(30)
+$deadline = (Get-Date).AddSeconds(3)
 while ((Get-Date) -lt $deadline -and (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) {{
     Start-Sleep -Milliseconds 500
+}}
+$proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
+if ($proc) {{
+    Stop-Process -Id $targetPid -Force
+    Start-Sleep -Seconds 1
 }}
 Copy-Item $tgt "$tgt.bak" -Force
 try {{
@@ -17,6 +22,7 @@ try {{
     exit 1
 }}
 Start-Process $tgt -WindowStyle Hidden
+Remove-Item "$tgt.bak" -Force -ErrorAction SilentlyContinue
 Remove-Item $MyInvocation.MyCommand.Path -Force
 "#,
         pid = pid,
@@ -32,7 +38,11 @@ set -e
 OLDPID={pid}
 NEW='{update}'
 TGT='{exe}'
-for i in $(seq 1 60); do kill -0 $OLDPID 2>/dev/null || break; sleep 0.5; done
+for i in $(seq 1 6); do kill -0 $OLDPID 2>/dev/null || break; sleep 0.5; done
+if kill -0 $OLDPID 2>/dev/null; then
+    kill -9 $OLDPID 2>/dev/null || true
+    sleep 1
+fi
 cp "$TGT" "$TGT.bak"
 if ! mv "$NEW" "$TGT"; then
     mv "$TGT.bak" "$TGT"
@@ -41,6 +51,7 @@ if ! mv "$NEW" "$TGT"; then
 fi
 chmod +x "$TGT"
 nohup "$TGT" >/dev/null 2>&1 &
+rm -f "$TGT.bak"
 rm -- "$0"
 "#,
         pid = pid,

@@ -46,4 +46,7 @@
     <string name="directory_name_hint">Directory name</string>
     <string name="app_up_to_date">App is up to date</string>
     <string name="bridge_up_to_date">Bridge is up to date</string>
+    <string name="bridge_download_failed">Download failed. Please update manually from GitHub Releases</string>
+    <string name="bridge_download_timeout">Download timed out. Please update manually from GitHub Releases</string>
+    <string name="bridge_upgrade_failed">Upgrade failed. Please update manually from GitHub Releases</string>
 </resources>

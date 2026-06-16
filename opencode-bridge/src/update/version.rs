@@ -14,23 +14,23 @@ pub struct ModuleVersion {
     pub released_at: Option<String>,
 }
 
-const JSDELIVR_URL: &str =
-    "https://cdn.jsdelivr.net/gh/bob-dawson/openmate@main/version.json";
+const GATEWAY_URL: &str =
+    "https://gateway.clawmate.net/version.json";
 const RAW_URL: &str =
     "https://raw.githubusercontent.com/bob-dawson/openmate/main/version.json";
 
 pub async fn fetch_version_manifest_from(
-    jsdelivr_url: &str,
+    gateway_url: &str,
     raw_url: &str,
 ) -> Option<VersionManifest> {
-    if let Some(m) = fetch_from(jsdelivr_url).await {
+    if let Some(m) = fetch_from(gateway_url).await {
         return Some(m);
     }
     fetch_from(raw_url).await
 }
 
 pub async fn fetch_version_manifest() -> Option<VersionManifest> {
-    fetch_version_manifest_from(JSDELIVR_URL, RAW_URL).await
+    fetch_version_manifest_from(GATEWAY_URL, RAW_URL).await
 }
 
 async fn fetch_from(url: &str) -> Option<VersionManifest> {

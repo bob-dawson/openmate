@@ -5,6 +5,7 @@ import com.openmate.core.network.dto.VersionManifest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.CacheControl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -28,7 +29,10 @@ class VersionClient(
     }
 
     private fun fetchManifest(url: String): VersionManifest? = runCatching {
-        val request = Request.Builder().url(url).get().build()
+        val cacheBustUrl = if ("?" in url) "$url&t=${System.currentTimeMillis()}" else "$url?t=${System.currentTimeMillis()}"
+        val request = Request.Builder().url(cacheBustUrl).get()
+            .cacheControl(CacheControl.FORCE_NETWORK)
+            .build()
         versionClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@runCatching null
             val body = response.body?.string() ?: return@runCatching null
@@ -106,7 +110,7 @@ class VersionClient(
 
     companion object {
         const val DEFAULT_JSDELIVR_URL =
-            "https://cdn.jsdelivr.net/gh/bob-dawson/openmate@main/version.json"
+            "https://gateway.clawmate.net/version.json"
         const val DEFAULT_RAW_URL =
             "https://raw.githubusercontent.com/bob-dawson/openmate/main/version.json"
     }
