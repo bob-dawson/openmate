@@ -18,8 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
@@ -117,6 +119,7 @@ fun WorkspaceListScreen(
     var newSessionDirectory by remember { mutableStateOf("") }
     var showDirPicker by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var showLicense by remember { mutableStateOf(false) }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -270,6 +273,7 @@ fun WorkspaceListScreen(
                         settingsViewModel.disconnect()
                         onBack()
                     },
+                    onShowLicense = { showLicense = true },
                     modifier = Modifier.padding(padding),
                 )
             }
@@ -337,6 +341,10 @@ fun WorkspaceListScreen(
             },
             onDismiss = { showDirPicker = false },
         )
+    }
+
+    if (showLicense) {
+        LicenseDialog(onDismiss = { showLicense = false })
     }
 }
 
@@ -492,6 +500,7 @@ private fun SettingsContent(
     viewModel: SettingsViewModel,
     onNavigateToLocalFileManager: () -> Unit,
     onDisconnect: () -> Unit,
+    onShowLicense: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val activeProfile by viewModel.activeProfile.collectAsState()
@@ -950,27 +959,21 @@ private fun SettingsContent(
 
         item {
             SectionHeader(title = stringResource(R.string.about))
-            SettingsCard {
-                SettingsRow(
-                    title = stringResource(R.string.open_source_licenses),
-                    subtitle = null,
-                    showDivider = false,
-                    modifier = Modifier.clickable {
-                        val intent = android.content.Intent(
-                            android.content.Intent.ACTION_VIEW,
-                            android.net.Uri.parse("https://www.apache.org/licenses/LICENSE-2.0")
-                        )
-                        context.startActivity(intent)
-                    },
-                    trailing = {
-                        Text(
-                            text = "\u203A",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    },
-                )
-            }
+                SettingsCard {
+                    SettingsRow(
+                        title = stringResource(R.string.open_source_licenses),
+                        subtitle = null,
+                        showDivider = false,
+                        modifier = Modifier.clickable { onShowLicense() },
+                        trailing = {
+                            Text(
+                                text = "\u203A",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                    )
+                }
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -1111,6 +1114,90 @@ private fun SettingsToggle(
         }
     }
 }
+
+@Composable
+private fun LicenseDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Apache License 2.0") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = APACHE_LICENSE_TEXT,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.content_desc_close))
+            }
+        },
+    )
+}
+
+private const val APACHE_LICENSE_TEXT = """Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+1. Definitions.
+
+"License" shall mean the terms and conditions for use, reproduction, and distribution as defined by Sections 1 through 9 of this document.
+
+"Licensor" shall mean the copyright owner or entity authorized by the copyright owner that is granting the License.
+
+"You" (or "Your") shall mean an individual or Legal Entity exercising permissions granted by this License.
+
+"Source" form shall mean the preferred form for making modifications, including but not limited to software source code, documentation source, and configuration files.
+
+"Object" form shall mean any form resulting from mechanical transformation or translation of a Source form, including but not limited to compiled object code, generated documentation, and conversions to other media types.
+
+"Work" shall mean the work of authorship, whether in Source or Object form, made available under the License.
+
+"Derivative Works" shall mean any work, whether in Source or Object form, that is based on (or derived from) the Work and for which the editorial revisions, annotations, elaborations, or other modifications represent, as a whole, an original work of authorship.
+
+"Contribution" shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted to Licensor for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner.
+
+"Contributor" shall mean Licensor and any individual or Legal Entity on behalf of whom a Contribution has been received by Licensor and subsequently incorporated within the Work.
+
+2. Grant of Copyright License. Each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare Derivative Works of, publicly display, publicly perform, sublicense, and distribute the Work and such Derivative Works in Source or Object form.
+
+3. Grant of Patent License. Each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Work.
+
+4. Redistribution. You may reproduce and distribute copies of the Work or Derivative Works thereof in any medium, with or without modifications, and in Source or Object form, provided that You give any other recipients of the Work or Derivative Works a copy of this License and cause any modified files to carry prominent notices stating that You changed the files.
+
+5. Submission of Contributions. Unless You explicitly state otherwise, any Contribution intentionally submitted for inclusion in the Work by You to the Licensor shall be under the terms and conditions of this License, without any additional terms or conditions.
+
+6. Trademarks. This License does not grant permission to use the trade names, trademarks, service marks, or product names of the Licensor.
+
+7. Disclaimer of Warranty. Unless required by applicable law or agreed to in writing, Licensor provides the Work on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+8. Limitation of Liability. In no event shall any Contributor be liable to You for damages of any character arising as a result of this License or out of the use or inability to use the Work.
+
+9. Accepting Warranty or Additional Liability. While redistributing the Work, You may choose to offer acceptance of support, warranty, indemnity, or other liability obligations consistent with this License.
+
+END OF TERMS AND CONDITIONS
+
+Copyright 2026 OpenMate
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License."""
 
 @Composable
 private fun SettingsRow(
