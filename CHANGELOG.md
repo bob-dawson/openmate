@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.17
+
+Released: 2026-06-12
+
+### 新功能
+
+- **EventReplayer V2 重写**：适配 opencode 1.17 V2 事件流，重写增量同步核心逻辑，提升同步稳定性
+- **OPENCODE_EXPERIMENTAL 自动设置**：Bridge 启动时自动为当前用户持久化设置环境变量
+
+### 问题修复
+
+- **Compaction 消息**：修复 compaction 开始时不显示、完成后一直计时的问题
+- **上下文使用量**：修复 opencode 升级后 tokens.total 字段缺失导致上下文使用量不显示
+- **Task 子代理导航**：修复 V2 事件流中 task 子代理点击后无法跳转到子会话的问题
+- **Unrevert 恢复**：修复 opencode unrevert 后消息不恢复显示的问题
+- **连接恢复**：修复连接进入 Failed 状态后不再自动重试的问题，加入指数退避自动重连
+- **初始化快照**：简化 SQL 查询避免子查询兼容性问题
+
 ## 0.1.5
 
 Released: 2026-06-05

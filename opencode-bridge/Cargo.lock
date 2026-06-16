@@ -1485,7 +1485,7 @@ dependencies = [
 
 [[package]]
 name = "openmate"
-version = "0.1.5"
+version = "0.1.17"
 dependencies = [
  "anyhow",
  "async-stream",
