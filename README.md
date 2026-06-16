@@ -211,4 +211,4 @@ sudo ./openmate uninstall  # Linux
 
 ## License
 
-Personal open-source project. Feel free to use and contribute.
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
