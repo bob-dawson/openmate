@@ -228,9 +228,10 @@ class ConnectionManager @Inject constructor(
             message = null,
         )
 
+        dbProvider.setActive(profile.id)
+
         scope.launch {
             tokenStore.setActiveProfileId(profile.id)
-            dbProvider.setActive(profile.id)
 
             actor.updateProfile(profile)
             val prevState = actor.state.value

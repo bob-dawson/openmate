@@ -54,8 +54,8 @@ class InstanceListViewModel @Inject constructor(
     }
 
     fun connect(profile: ServerProfile, onNavigate: () -> Unit = {}) {
-        onNavigate()
         connectionManager.connect(profile)
+        onNavigate()
     }
 
     fun deleteProfile(id: String) {
