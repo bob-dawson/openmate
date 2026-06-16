@@ -780,7 +780,7 @@ private fun SettingsContent(
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.clickable(
                                     enabled = !appDownloadState.isDownloading,
-                                    onClick = { viewModel.checkAppUpdate() }
+                                    onClick = { viewModel.checkAppUpdate(userTriggered = true) }
                                 ),
                             )
                         }
@@ -875,7 +875,7 @@ private fun SettingsContent(
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.clickable(
                                     enabled = !bridgeUpgradeState.isDownloading && !bridgeUpgradeState.isApplying,
-                                    onClick = { viewModel.checkBridgeUpdate() }
+                                    onClick = { viewModel.checkBridgeUpdate(userTriggered = true) }
                                 ),
                             )
                         }
