@@ -4,7 +4,7 @@
 
 **Goal:** 实现 Android 客户端的 App 自更新（检查版本 → 下载 APK → 安装），并建立两端共用的版本发现基础设施（`version.json` + jsDelivr/raw 双源 VersionClient）。
 
-**Architecture:** release workflow 发布时更新仓库根 `version.json`；Android 端 VersionClient 经 jsDelivr CDN（优先）/ raw.githubusercontent.com（回退）查询该文件获取最新版本号，按固定格式构造 release asset 下载 URL。设置页新增"App 客户端"更新卡片，镜像现有 opencode 升级卡片样式，复用已有的 `installApk()` / FileProvider / `downloadClient` 模式。
+**Architecture:** 仓库根 `version.json` 按模块（android/bridge）手动维护发布版本；Android 端 VersionClient 经 jsDelivr CDN（优先）/ raw.githubusercontent.com（回退）查询该文件取 android 模块的 `tag`，构造 release asset 下载 URL。设置页新增"App 客户端"更新卡片，镜像现有 opencode 升级卡片样式，复用已有的 `installApk()` / FileProvider / `downloadClient` 模式。
 
 **Tech Stack:** Kotlin, Jetpack Compose, Hilt, OkHttp, kotlinx.serialization, GitHub Actions, jsDelivr CDN
 
@@ -16,12 +16,11 @@
 
 | 文件 | 操作 | 职责 |
 |------|------|------|
-| `version.json`（仓库根） | 创建 + workflow 维护 | 记录当前已发布版本 |
-| `.github/workflows/release.yml` | 修改 | release job 末尾更新 version.json 并 push |
+| `version.json`（仓库根） | 创建（手动维护） | 按模块记录发布版本（android/bridge 各自 version/tag） |
 | `android/core/common/.../AppInfo.kt` | 创建 | 统一 app versionName 读取 |
-| `android/core/network/.../dto/VersionDto.kt` | 创建 | LatestVersionDto + AppUpdateInfo |
-| `android/core/network/.../ReleaseAssets.kt` | 创建 | version → release asset URL 构造（纯函数） |
-| `android/core/network/.../VersionClient.kt` | 创建 | 查 version.json（jsDelivr/raw）+ 下载 release asset |
+| `android/core/network/.../dto/VersionDto.kt` | 创建 | VersionManifest + ModuleVersion |
+| `android/core/network/.../ReleaseAssets.kt` | 创建 | tag → release asset URL 构造（纯函数） |
+| `android/core/network/.../VersionClient.kt` | 创建 | 查 version.json（jsDelivr/raw）取 android 模块 + 下载 release asset |
 | `android/core/network/.../NetworkModule.kt` | 修改 | 新增 @Named("version") + @Named("release") client + VersionClient |
 | `android/feature/settings/.../SettingsViewModel.kt` | 修改 | appUpdateInfo + checkAppUpdate + downloadAndInstallApp |
 | `android/feature/session/.../WorkspaceListScreen.kt` | 修改 | SettingsContent 新增 App 更新卡片 |
@@ -33,56 +32,30 @@
 
 ---
 
-## Task 1: version.json + release workflow 更新
+## Task 1: version.json（手动维护，多模块）
 
 **Files:**
-- Create: `version.json`
-- Modify: `.github/workflows/release.yml`（release job，约 188-199 行 Collect release files 之后）
+- Create: `version.json`（仓库根）
 
 - [ ] **Step 1: 创建初始 version.json**
 
-仓库根创建 `version.json`（对应当前已发布版本 v0.1.19）：
+仓库根创建 `version.json`，按模块分别记录当前已发布版本（对应 v0.1.19）：
 
 ```json
 {
-  "version": "0.1.19",
-  "tag": "v0.1.19",
-  "releasedAt": "2026-06-16"
+  "android": {"version": "0.1.19", "tag": "v0.1.19", "releasedAt": "2026-06-16"},
+  "bridge": {"version": "0.1.19", "tag": "v0.1.19", "releasedAt": "2026-06-16"}
 }
 ```
 
-- [ ] **Step 2: 修改 release.yml，在 release job 末尾加更新 version.json 步骤**
+> **手动维护规则**：此文件不由 release workflow 自动更新。每次发版前，开发者根据各模块是否有实质变更，手动更新对应模块的 `version`/`tag`/`releasedAt`。未变更的模块保持上一版本。
 
-在 `.github/workflows/release.yml` 的 `Run softprops/action-gh-release@v2` 步骤**之后**（release job 的最后一步前），追加：
-
-```yaml
-      - name: Update version.json
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          cat > version.json <<EOF
-          {"version":"$VERSION","tag":"${GITHUB_REF_NAME}","releasedAt":"$(date -u +%Y-%m-%d)"}
-          EOF
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add version.json
-          git commit -m "chore: bump version.json to ${GITHUB_REF_NAME}"
-          git push
-```
-
-注意：release job 的 `permissions` 需含 `contents: write`（已有，见 release.yml line 175）。
-
-- [ ] **Step 3: 验证 YAML 语法**
-
-Run: 在本地检查 yml 缩进正确（heredoc 内容每行前的缩进会被 shell 去掉，确保 `cat > version.json <<EOF` 与 EOF 之间内容无前导空格问题；如担心可用 `printf` 代替 heredoc）。
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
-git add version.json .github/workflows/release.yml
-git commit -m "feat: 添加 version.json 与 release workflow 自动更新"
+git add version.json
+git commit -m "feat: 添加 version.json（按模块记录发布版本）"
 ```
-
-> 验证时机：下次打 tag 发布时，CI 应自动把 version.json 更新为新版本并 push 到 main。可在发布后检查 main 分支的 version.json。
 
 ---
 
@@ -106,7 +79,7 @@ class ReleaseAssetsTest {
 
     @Test
     fun apkUrl_constructsCorrectUrl() {
-        val url = ReleaseAssets.apkUrl("0.1.20")
+        val url = ReleaseAssets.apkUrl("v0.1.20")
         assertThat(url).isEqualTo(
             "https://github.com/bob-dawson/openmate/releases/download/v0.1.20/OpenMate-0.1.20.apk"
         )
@@ -114,7 +87,7 @@ class ReleaseAssetsTest {
 
     @Test
     fun apkFilename_constructsCorrectName() {
-        assertThat(ReleaseAssets.apkFilename("0.1.20")).isEqualTo("OpenMate-0.1.20.apk")
+        assertThat(ReleaseAssets.apkFilename("v0.1.20")).isEqualTo("OpenMate-0.1.20.apk")
     }
 }
 ```
@@ -137,9 +110,12 @@ package com.openmate.core.network
 object ReleaseAssets {
     private const val BASE_URL = "https://github.com/bob-dawson/openmate/releases/download"
 
-    fun apkFilename(version: String): String = "OpenMate-$version.apk"
+    fun apkFilename(tag: String): String {
+        val version = tag.trimStart('v')
+        return "OpenMate-$version.apk"
+    }
 
-    fun apkUrl(version: String): String = "$BASE_URL/v$version/${apkFilename(version)}"
+    fun apkUrl(tag: String): String = "$BASE_URL/$tag/${apkFilename(tag)}"
 }
 ```
 
@@ -211,14 +187,19 @@ git commit -m "feat(common): 添加 AppInfo 统一 versionName 读取"
 ```kotlin
 package com.openmate.core.network.dto
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class LatestVersionDto(
+data class VersionManifest(
+    val android: ModuleVersion? = null,
+    val bridge: ModuleVersion? = null,
+)
+
+@Serializable
+data class ModuleVersion(
     val version: String,
     val tag: String,
-    @SerialName("releasedAt") val releasedAt: String? = null,
+    val releasedAt: String? = null,
 )
 ```
 
@@ -266,33 +247,33 @@ class VersionClientTest {
         )
 
     @Test
-    fun fetchLatestVersion_jsdelivrSucceeds_returnsVersion() = runBlocking {
+    fun fetchAndroidVersion_jsdelivrSucceeds_returnsVersion() = runBlocking {
         jsdelivrServer.enqueue(
-            MockResponse().setResponseCode(200).setBody("""{"version":"0.1.20","tag":"v0.1.20","releasedAt":"2026-06-20"}""")
+            MockResponse().setResponseCode(200).setBody("""{"android":{"version":"0.1.20","tag":"v0.1.20","releasedAt":"2026-06-20"}}""")
         )
         val c = client(jsdelivrServer.url("/").toString(), rawServer.url("/").toString())
-        val result = c.fetchLatestVersion()
-        assertThat(result.version).isEqualTo("0.1.20")
+        val result = c.fetchAndroidVersion()
+        assertThat(result?.version).isEqualTo("0.1.20")
         assertThat(rawServer.requestCount).isEqualTo(0) // 未回退
     }
 
     @Test
-    fun fetchLatestVersion_jsdelivrFails_fallsBackToRaw() = runBlocking {
+    fun fetchAndroidVersion_jsdelivrFails_fallsBackToRaw() = runBlocking {
         jsdelivrServer.enqueue(MockResponse().setResponseCode(500))
         rawServer.enqueue(
-            MockResponse().setResponseCode(200).setBody("""{"version":"0.1.20","tag":"v0.1.20"}""")
+            MockResponse().setResponseCode(200).setBody("""{"android":{"version":"0.1.20","tag":"v0.1.20"}}""")
         )
         val c = client(jsdelivrServer.url("/").toString(), rawServer.url("/").toString())
-        val result = c.fetchLatestVersion()
-        assertThat(result.version).isEqualTo("0.1.20")
+        val result = c.fetchAndroidVersion()
+        assertThat(result?.version).isEqualTo("0.1.20")
     }
 
     @Test
-    fun fetchLatestVersion_bothFail_returnsNull() = runBlocking {
+    fun fetchAndroidVersion_bothFail_returnsNull() = runBlocking {
         jsdelivrServer.enqueue(MockResponse().setResponseCode(500))
         rawServer.enqueue(MockResponse().setResponseCode(500))
         val c = client(jsdelivrServer.url("/").toString(), rawServer.url("/").toString())
-        val result = c.fetchLatestVersion()
+        val result = c.fetchAndroidVersion()
         assertThat(result).isNull()
     }
 
@@ -330,7 +311,8 @@ Expected: FAIL（VersionClient 未定义）
 ```kotlin
 package com.openmate.core.network
 
-import com.openmate.core.network.dto.LatestVersionDto
+import com.openmate.core.network.dto.ModuleVersion
+import com.openmate.core.network.dto.VersionManifest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -347,16 +329,16 @@ class VersionClient @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun fetchLatestVersion(): LatestVersionDto? = withContext(Dispatchers.IO) {
-        fetchFrom(jsdelivrVersionUrl) ?: fetchFrom(rawVersionUrl)
+    suspend fun fetchAndroidVersion(): ModuleVersion? = withContext(Dispatchers.IO) {
+        fetchManifest(jsdelivrVersionUrl)?.android ?: fetchManifest(rawVersionUrl)?.android
     }
 
-    private fun fetchFrom(url: String): LatestVersionDto? = runCatching {
+    private fun fetchManifest(url: String): VersionManifest? = runCatching {
         val request = Request.Builder().url(url).get().build()
         versionClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return@runCatching null
             val body = response.body?.string() ?: return@runCatching null
-            json.decodeFromString<LatestVersionDto>(body)
+            json.decodeFromString<VersionManifest>(body)
         }
     }.getOrNull()
 
@@ -537,15 +519,18 @@ class SettingsViewModel @Inject constructor(
 
     private val _appDownloadState = MutableStateFlow(AppDownloadState())
     val appDownloadState: StateFlow<AppDownloadState> = _appDownloadState.asStateFlow()
+
+    private var latestModuleVersion: ModuleVersion? = null
 ```
 
 新增 import：
 
 ```kotlin
 import com.openmate.core.common.AppInfo
+import com.openmate.core.common.FileOpener
 import com.openmate.core.network.ReleaseAssets
 import com.openmate.core.network.VersionClient
-import com.openmate.core.common.FileOpener
+import com.openmate.core.network.dto.ModuleVersion
 ```
 
 - [ ] **Step 3: 实现 checkAppUpdate() 与 init 调用**
@@ -556,7 +541,8 @@ import com.openmate.core.common.FileOpener
     fun checkAppUpdate() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val latest = versionClient.fetchLatestVersion()
+                val latest = versionClient.fetchAndroidVersion()
+                latestModuleVersion = latest
                 val current = AppInfo.versionName(appContext)
                 val hasUpdate = latest != null && isNewer(latest.version, current)
                 _appUpdateInfo.value = AppUpdateInfo(
@@ -598,14 +584,14 @@ import com.openmate.core.common.FileOpener
 ```kotlin
     fun downloadAndInstallApp() {
         val info = _appUpdateInfo.value ?: return
-        val targetVersion = info.latestVersion ?: return
+        val tag = latestModuleVersion?.tag ?: return
         viewModelScope.launch(Dispatchers.IO) {
             if (_appDownloadState.value.isDownloading) return@launch
             _appDownloadState.value = AppDownloadState(isDownloading = true)
             try {
-                val url = ReleaseAssets.apkUrl(targetVersion)
+                val url = ReleaseAssets.apkUrl(tag)
                 val destDir = File(appContext.cacheDir, "file_cache")
-                val destFile = File(destDir, ReleaseAssets.apkFilename(targetVersion))
+                val destFile = File(destDir, ReleaseAssets.apkFilename(tag))
                 versionClient.downloadReleaseAsset(
                     url = url,
                     destFile = destFile,
@@ -817,7 +803,8 @@ git commit -m "chore: App 自更新 Plan 1 集成验证通过" --allow-empty
 
 ## Self-Review 检查清单（实施完成后对照）
 
-1. **Spec 覆盖**：version.json（Task 1）✅、VersionClient jsDelivr/raw（Task 4）✅、URL 构造（Task 2）✅、App 下载安装（Task 6/7）✅、设置页入口（Task 7）✅
+1. **Spec 覆盖**：version.json 多模块（Task 1）✅、VersionClient jsDelivr/raw（Task 4）✅、URL 构造用 tag（Task 2）✅、App 下载安装（Task 6/7）✅、设置页入口（Task 7）✅
 2. **类型一致**：`AppUpdateInfo` / `AppDownloadState` 在 ViewModel 定义，UI 用 `appUpdateInfo` / `appDownloadState` StateFlow 名称一致 ✅
 3. **无 placeholder**：每个 step 含实际代码 ✅
-4. **测试**：ReleaseAssets（纯函数）+ VersionClient（MockWebServer，含 jsDelivr/raw 回退 + 下载）✅；ViewModel 因依赖 Context/多 repository 较重，以编译 + 手动验证为主（可选手写 fake 测试留作增强）
+4. **测试**：ReleaseAssets（纯函数 tag 参数）+ VersionClient（MockWebServer，含多模块 JSON + jsDelivr/raw 回退 + 下载）✅；ViewModel 因依赖 Context/多 repository 较重，以编译 + 手动验证为主（可选手写 fake 测试留作增强）
+5. **手动维护 version.json**：release workflow 不自动更新，开发者发版前按模块实际变更手动更新对应条目 ✅

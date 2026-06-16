@@ -30,35 +30,29 @@ OpenMate 已改为基于 GitHub Releases 发布：push `v*` tag → GitHub Actio
 
 ## 3. 版本发布与发现机制
 
-### 3.1 `version.json`（仓库根）
+### 3.1 `version.json`（仓库根，手动维护）
 
-发布时由 release workflow 自动维护，记录当前已发布版本：
+按模块分别记录各自最新发布版本。**手动维护**——release workflow 不自动更新此文件。
+
+原因：一次 release tag（如 `v0.1.20`）会构建所有模块产物，但某模块可能无实质变更。按模块记录版本号可精确反映各模块实际最新版本，避免"虚假更新"提示（例：只改了 Android → Bridge 版本号不变 → Bridge 不提示更新）。
 
 ```json
 {
-  "version": "0.1.20",
-  "tag": "v0.1.20",
-  "releasedAt": "2026-06-20"
+  "android": {"version": "0.1.20", "tag": "v0.1.20", "releasedAt": "2026-06-20"},
+  "bridge": {"version": "0.1.19", "tag": "v0.1.19", "releasedAt": "2026-06-16"}
 }
 ```
 
-### 3.2 release workflow 更新（`.github/workflows/release.yml` 的 release job）
+- `version`：纯版本号（不带 v），用于版本比较
+- `tag`：对应的 git tag（带 v），用于构造 release asset 下载 URL
+- 只有改了某模块才更新该模块的条目；未变更的模块保持上一版本
 
-创建 GitHub Release 后，追加一步：更新 `version.json` 并 commit 到 main：
+### 3.2 发版维护流程（手动）
 
-```yaml
-- name: Update version.json
-  run: |
-    VERSION="${GITHUB_REF_NAME#v}"
-    cat > version.json <<EOF
-    {"version":"$VERSION","tag":"${GITHUB_REF_NAME}","releasedAt":"$(date -u +%Y-%m-%d)"}
-    EOF
-    git config user.name github-actions[bot]
-    git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-    git add version.json
-    git commit -m "chore: bump version.json to ${GITHUB_REF_NAME}"
-    git push
-```
+1. 根据本次发版涉及哪些模块的实质变更，更新 `version.json` 中对应模块的 `version`/`tag`/`releasedAt`
+2. commit `version.json` 到 main
+3. 打 tag（`git tag vX.Y.Z && git push origin vX.Y.Z`）→ release workflow 构建所有模块产物
+4. 客户端查询 `version.json` 时各取所需模块版本（Android 取 `android`，Bridge 取 `bridge`）
 
 ### 3.3 客户端查询（双源 fallback）
 
@@ -73,10 +67,12 @@ OpenMate 已改为基于 GitHub Releases 发布：push `v*` tag → GitHub Actio
 
 ### 3.4 下载 URL 构造
 
-客户端拿到 `version` 后，按固定命名规则构造 release asset 直链（不走 API，普通 HTTPS 下载）：
+客户端从 `version.json` 取到目标模块的 `tag` 后，按固定命名规则构造 release asset 直链（不走 API，普通 HTTPS 下载）：
 
-- Bridge：`https://github.com/bob-dawson/openmate/releases/download/v{version}/{产物名}`
-- APK：`https://github.com/bob-dawson/openmate/releases/download/v{version}/OpenMate-{version}.apk`
+- Bridge：`https://github.com/bob-dawson/openmate/releases/download/{tag}/{产物名}`
+- APK：`https://github.com/bob-dawson/openmate/releases/download/{tag}/OpenMate-{version}.apk`
+
+> 注意：`tag` 来自 `version.json` 中该模块的 `tag` 字段（如 `v0.1.19`），可能与全局最新 git tag 不同——这正是手动维护按模块区分版本的意义。
 
 ## 4. 整体架构与数据流
 
@@ -209,9 +205,10 @@ apply 针对普通进程模式。检测到服务模式（Windows Service / syste
 
 ```kotlin
 class VersionClient(@Named("version") client: OkHttpClient) {
-    suspend fun fetchLatestVersion(): LatestVersionDto  // jsDelivr 优先，raw fallback
+    suspend fun fetchAndroidVersion(): ModuleVersion?  // jsDelivr 优先，raw fallback，取 android 字段
 }
-data class LatestVersionDto(version /*去 v*/, tag, releasedAt)
+data class VersionManifest(val android: ModuleVersion?, val bridge: ModuleVersion?)
+data class ModuleVersion(val version: String, val tag: String, val releasedAt: String?)
 ```
 
 DI：`NetworkModule` 新增 `@Named("version")` OkHttpClient（10s/30s 超时，无拦截器）。
