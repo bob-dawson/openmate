@@ -6,21 +6,35 @@
 
 OpenMate is a native Android client for [opencode](https://github.com/sst/opencode), letting you monitor and interact with your AI coding sessions from your phone.
 
-Connect to your PC over LAN or Tailscale, browse workspaces, read conversations, send messages, respond to permission prompts, and manage tasks — all from your Android device.
+Connect to your PC over LAN, or remotely via the cloud relay when you're away. Browse workspaces, read conversations, send messages, respond to permission prompts, and manage tasks — all from your Android device.
 
 ## How It Works
 
-```
-┌──────────────┐        LAN / Tailscale        ┌───────────────────┐
-│  Android App │  ──── HTTP + SSE ────────────▶│  OpenMate Bridge  │──▶ opencode serve
-│  (OpenMate)  │         Bearer Token           │  (Rust)           │   (on your PC)
-└──────────────┘                                └───────────────────┘
+```mermaid
+flowchart LR
+
+    User["📱 User"]
+    Mobile["📱 OpenMate Android"]
+    Relay["🌍 Relay Server"]
+    Bridge["🖥️ OpenMate Bridge"]
+    Opencode["🤖 Opencode"]
+    Workspace["📂 Workspace / Git"]
+
+    User --> Mobile
+
+    Mobile <-->|LAN| Bridge
+    Mobile <-->|Internet| Relay
+    Relay <-->|WebSocket| Bridge
+
+    Bridge --> Opencode
+    Bridge --> Workspace
 ```
 
-OpenMate consists of two components:
+OpenMate consists of three components:
 
 - **Bridge Agent** — A lightweight Rust program that runs on your PC alongside opencode. It handles authentication, process management, and proxies requests between your phone and opencode.
-- **Android App** — A native Kotlin/Jetpack Compose app that connects to the Bridge.
+- **Android App** — A native Kotlin/Jetpack Compose app that connects to the Bridge directly over LAN, or indirectly via the Relay Server when you're on a different network.
+- **Relay Server** — An optional cloud gateway that bridges your phone and PC over the internet using WebSocket tunnels, so you can stay connected even without LAN or Tailscale access.
 
 ## Quick Start
 
