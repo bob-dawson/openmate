@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -103,10 +103,10 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
     <span>Bridge <span id="bridge-version">...</span></span>
   </div>
   <nav class="sidebar-nav">
-    <div class="nav-item active" data-page="overview"><span class="icon">&#x1F4CA;</span> 概览</div>
-    <div class="nav-item" data-page="qr"><span class="icon">&#x1F4F7;</span> 扫码连接</div>
-    <div class="nav-item" data-page="logs"><span class="icon">&#x1F4CB;</span> 日志</div>
-    <div class="nav-item" data-page="settings"><span class="icon">&#x2699;&#xFE0F;</span> 设置</div>
+    <div class="nav-item active" data-page="overview"><span class="icon">&#x1F4CA;</span> <span data-i18n="nav.overview">Overview</span></div>
+    <div class="nav-item" data-page="qr"><span class="icon">&#x1F4F7;</span> <span data-i18n="nav.qr">Scan / Pair</span></div>
+    <div class="nav-item" data-page="logs"><span class="icon">&#x1F4CB;</span> <span data-i18n="nav.logs">Logs</span></div>
+    <div class="nav-item" data-page="settings"><span class="icon">&#x2699;&#xFE0F;</span> <span data-i18n="nav.settings">Settings</span></div>
   </nav>
   <div class="sidebar-footer">
     <span class="dot" id="status-dot"></span> <span id="status-text">opencode: ...</span><br>
@@ -115,7 +115,7 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
 </div>
 
 <div class="main">
-  <div class="topbar" id="topbar-text">概览</div>
+  <div class="topbar" id="topbar-text">Overview</div>
   <div class="content">
 
     <div id="page-overview">
@@ -126,12 +126,12 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
           <div class="sub" id="oc-sub"></div>
         </div>
         <div class="status-card">
-          <div class="label">opencode 版本</div>
+          <div class="label" data-i18n="overview.ocVersion">opencode Version</div>
           <div class="value" id="oc-version">...</div>
           <div class="sub" id="oc-version-sub"></div>
         </div>
         <div class="status-card">
-          <div class="label">已配对设备</div>
+          <div class="label" data-i18n="overview.pairedDevices">Paired Devices</div>
           <div class="value" id="device-count">0</div>
           <div class="sub" id="device-online-sub"></div>
         </div>
@@ -144,16 +144,16 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
 
       <div class="card" id="pending-card" style="display:none">
         <div class="card-header">
-          待批准配对
-          <span style="font-size:11px;color:#eab308" id="pending-count">0 个</span>
+          <span data-i18n="overview.pendingPair">Pending Pairing</span>
+          <span style="font-size:11px;color:#eab308" id="pending-count"></span>
         </div>
         <div class="card-body" id="pending-list" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
 
       <div class="card">
-        <div class="card-header">已配对设备</div>
+        <div class="card-header" data-i18n="overview.pairedDevices">Paired Devices</div>
         <div class="card-body" id="device-list" style="display:flex;flex-direction:column;gap:6px">
-          <div class="empty-state">暂无配对设备</div>
+          <div class="empty-state" data-i18n="overview.noDevices">No paired devices</div>
         </div>
       </div>
     </div>
@@ -161,9 +161,9 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
     <div id="page-qr" style="display:none">
       <div class="card">
         <div class="card-header">
-          扫码连接 / 下载 App
+          <span data-i18n="qr.title">Scan / Download App</span>
           <div>
-            <label style="font-size:11px;color:#64748b;margin-right:6px">网卡:</label>
+            <label style="font-size:11px;color:#64748b;margin-right:6px" data-i18n="qr.interface">Interface:</label>
             <select id="iface-select"></select>
           </div>
         </div>
@@ -171,18 +171,18 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
           <div class="qr-container">
             <div class="qr-image" id="qr-image">...</div>
             <div class="qr-info">
-              <div style="font-size:12px;color:#94a3b8;margin-bottom:2px">Bridge 地址</div>
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:2px" data-i18n="qr.bridgeAddr">Bridge Address</div>
               <div class="qr-url" id="qr-url"></div>
-              <button class="btn btn-ghost btn-sm" id="copy-url-btn" style="margin-bottom:14px">复制</button>
-              <div style="font-size:12px;color:#94a3b8;margin-bottom:6px">APK 下载</div>
-              <button class="btn btn-primary" id="download-apk-btn">下载 OpenMate</button>
+              <button class="btn btn-ghost btn-sm" id="copy-url-btn" style="margin-bottom:14px" data-i18n="common.copy">Copy</button>
+              <div style="font-size:12px;color:#94a3b8;margin-bottom:6px" data-i18n="qr.apkDownload">APK Download</div>
+              <button class="btn btn-primary" id="download-apk-btn" data-i18n="qr.downloadApp">Download OpenMate</button>
               <div style="font-size:11px;color:#64748b;margin-top:4px">openmate.apk</div>
-              <div style="margin-top:16px;font-size:12px;color:#94a3b8">使用步骤</div>
+              <div style="margin-top:16px;font-size:12px;color:#94a3b8" data-i18n="qr.steps">Steps</div>
               <ol style="font-size:11px;color:#cbd5e1;padding-left:16px;margin-top:6px;line-height:2">
-                <li>手机扫码打开页面</li>
-                <li>下载并安装 OpenMate App</li>
-                <li>打开 App，输入 Bridge 地址</li>
-                <li>在概览页批准配对 PIN</li>
+                <li data-i18n="qr.step1">Scan with phone to open page</li>
+                <li data-i18n="qr.step2">Download and install the OpenMate App</li>
+                <li data-i18n="qr.step3">Open the App and enter the Bridge address</li>
+                <li data-i18n="qr.step4">Approve the pairing PIN on the Overview page</li>
               </ol>
             </div>
           </div>
@@ -192,13 +192,13 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
 
     <div id="page-logs" style="display:none">
       <div class="log-toolbar">
-        <input type="text" id="log-search" placeholder="搜索日志...">
+        <input type="text" id="log-search" placeholder="" data-i18n-placeholder="logs.searchPlaceholder">
         <button class="btn btn-ghost btn-sm active" data-level="INFO">INFO</button>
         <button class="btn btn-ghost btn-sm" data-level="WARN" style="border-color:#eab308;color:#eab308">WARN</button>
         <button class="btn btn-ghost btn-sm" data-level="ERROR" style="border-color:#ef4444;color:#ef4444">ERROR</button>
         <span style="flex:1"></span>
-        <button class="btn btn-ghost btn-sm" id="log-pause-btn">暂停</button>
-        <button class="btn btn-ghost btn-sm" id="log-download-btn">下载日志</button>
+        <button class="btn btn-ghost btn-sm" id="log-pause-btn" data-i18n="logs.pause">Pause</button>
+        <button class="btn btn-ghost btn-sm" id="log-download-btn" data-i18n="logs.downloadLogs">Download Logs</button>
       </div>
       <div class="log-viewer" id="log-viewer"></div>
     </div>
@@ -207,47 +207,47 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
       <div class="card">
         <div class="card-header">Bridge</div>
         <div class="card-body" id="bridge-settings">
-          <div style="text-align:center;color:#64748b;font-size:12px">加载中...</div>
+          <div style="text-align:center;color:#64748b;font-size:12px" data-i18n="settings.loading">Loading...</div>
         </div>
       </div>
       <div class="card">
         <div class="card-header">opencode</div>
         <div class="card-body" id="opencode-settings">
-          <div style="text-align:center;color:#64748b;font-size:12px">加载中...</div>
+          <div style="text-align:center;color:#64748b;font-size:12px" data-i18n="settings.loading">Loading...</div>
         </div>
       </div>
       <div class="card">
-        <div class="card-header">网关</div>
+        <div class="card-header" data-i18n="settings.gateway">Gateway</div>
         <div class="card-body" id="gateway-settings">
-          <div style="text-align:center;color:#64748b;font-size:12px">加载中...</div>
+          <div style="text-align:center;color:#64748b;font-size:12px" data-i18n="settings.loading">Loading...</div>
         </div>
       </div>
       <div class="card">
-        <div class="card-header">通用</div>
+        <div class="card-header" data-i18n="settings.general">General</div>
         <div class="card-body">
           <div class="setting-row" id="autostart-row">
             <div>
-              <div class="setting-label" id="autostart-label">开机自动启动</div>
-              <div class="setting-desc" id="autostart-desc">Windows 启动时静默运行 Bridge</div>
+              <div class="setting-label" id="autostart-label" data-i18n="settings.autoStart">Auto-start on boot</div>
+              <div class="setting-desc" id="autostart-desc" data-i18n="settings.autoStartDesc">Run Bridge silently when Windows starts</div>
             </div>
             <div class="toggle" id="autostart-toggle"></div>
           </div>
         </div>
       </div>
       <div class="card">
-        <div class="card-header">危险操作</div>
+        <div class="card-header" data-i18n="settings.dangerZone">Danger Zone</div>
         <div class="card-body">
           <div class="setting-row">
             <div>
-              <div class="setting-label">重置密钥</div>
-              <div class="setting-desc">所有已配对设备需要重新配对</div>
+              <div class="setting-label" data-i18n="settings.resetKey">Reset Secret Key</div>
+              <div class="setting-desc" data-i18n="settings.resetKeyDesc">All paired devices need to re-pair</div>
             </div>
-            <button class="btn btn-danger btn-sm" id="reset-key-btn">重置</button>
+            <button class="btn btn-danger btn-sm" id="reset-key-btn" data-i18n="settings.reset">Reset</button>
           </div>
         </div>
       </div>
       <div style="margin-top:12px;display:flex;gap:8px">
-        <button class="btn btn-primary" id="save-config-btn">保存配置</button>
+        <button class="btn btn-primary" id="save-config-btn" data-i18n="settings.saveConfig">Save Config</button>
         <span id="config-status" style="font-size:12px;color:#64748b"></span>
       </div>
     </div>
@@ -260,22 +260,145 @@ select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:5
 <div id="login-wall" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#0f172a;z-index:999;align-items:center;justify-content:center">
   <div style="text-align:center;max-width:400px;padding:24px">
     <h1 style="font-size:22px;color:#60a5fa;margin-bottom:4px">OpenMate Bridge</h1>
-    <p style="color:#94a3b8;font-size:13px;margin-bottom:24px">扫码后使用 OpenMate App 连接</p>
-    <div id="login-qr" style="width:200px;height:200px;background:#fff;border-radius:12px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#94a3b8">生成二维码中...</div>
+    <p style="color:#94a3b8;font-size:13px;margin-bottom:24px" data-i18n="login.subtitle">Scan to connect with the OpenMate App</p>
+    <div id="login-qr" style="width:200px;height:200px;background:#fff;border-radius:12px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#94a3b8" data-i18n="login.generatingQR">Generating QR code...</div>
     <div id="login-url" style="font-family:monospace;font-size:12px;color:#60a5fa;word-break:break-all;background:#1e293b;border:1px solid #334155;border-radius:6px;padding:10px;margin-bottom:16px"></div>
-    <div id="login-status" style="font-size:12px;color:#eab308;margin-bottom:16px">等待扫码...</div>
-    <a id="login-apk-btn" href="/download/openmate.apk" style="display:inline-block;padding:10px 24px;background:#3b82f6;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600">下载 OpenMate App</a>
-    <div style="margin-top:20px;font-size:11px;color:#475569">已连接？<a href="#" id="login-reload" style="color:#60a5fa;text-decoration:none">重新加载</a></div>
+    <div id="login-status" style="font-size:12px;color:#eab308;margin-bottom:16px" data-i18n="login.waitingScan">Waiting for scan...</div>
+    <a id="login-apk-btn" href="/download/openmate.apk" style="display:inline-block;padding:10px 24px;background:#3b82f6;color:#fff;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600" data-i18n="login.downloadApp">Download OpenMate App</a>
+    <div style="margin-top:20px;font-size:11px;color:#475569"><span data-i18n="login.connected">Already connected?</span> <a href="#" id="login-reload" style="color:#60a5fa;text-decoration:none" data-i18n="login.reload">Reload</a></div>
   </div>
 </div>
 
 <script>
+/* ---- i18n ---- */
+const LANG = (navigator.language || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+const I18N = {
+  'nav.overview': {en:'Overview',zh:'概览'},
+  'nav.qr': {en:'Scan / Pair',zh:'扫码连接'},
+  'nav.logs': {en:'Logs',zh:'日志'},
+  'nav.settings': {en:'Settings',zh:'设置'},
+
+  'overview.ocVersion': {en:'opencode Version',zh:'opencode 版本'},
+  'overview.pairedDevices': {en:'Paired Devices',zh:'已配对设备'},
+  'overview.pendingPair': {en:'Pending Pairing',zh:'待批准配对'},
+  'overview.noDevices': {en:'No paired devices',zh:'暂无配对设备'},
+  'overview.deviceCount': {en:dev=>dev+' device(s)',zh:dev=>dev+' 台设备'},
+  'overview.pendingCount': {en:n=>n+' pending',zh:n+' 个'},
+  'overview.unknown': {en:'Unknown',zh:'未知'},
+
+  'status.running': {en:'Running',zh:'Running'},
+  'status.stopped': {en:'Stopped',zh:'Stopped'},
+  'status.starting': {en:'Starting...',zh:'Starting...'},
+  'status.stopping': {en:'Stopping...',zh:'Stopping...'},
+  'status.crashed': {en:'Crashed',zh:'Crashed'},
+
+  'pair.approve': {en:'Approve',zh:'批准'},
+  'pair.reject': {en:'Reject',zh:'拒绝'},
+  'pair.remaining': {en:s=>'remaining ' + s,zh:'剩余 ' + s},
+  'pair.approved': {en:pin=>'PIN ' + pin + ' approved',zh:pin=>'PIN ' + pin + ' 已批准'},
+  'pair.rejected': {en:pin=>'PIN ' + pin + ' rejected',zh:pin=>'PIN ' + pin + ' 已拒绝'},
+  'pair.approveFailed': {en:e=>'Approve failed: ' + e,zh:'批准失败: ' + e},
+  'pair.rejectFailed': {en:e=>'Reject failed: ' + e,zh:'拒绝失败: ' + e},
+
+  'device.paired': {en:'paired',zh:'配对'},
+  'device.active': {en:'active',zh:'活跃'},
+  'device.rename': {en:'Rename',zh:'改名'},
+  'device.delete': {en:'Delete',zh:'删除'},
+  'device.confirmDelete': {en:'Delete this device?',zh:'确定删除此设备？'},
+  'device.deleted': {en:'Device deleted',zh:'设备已删除'},
+  'device.deleteFailed': {en:e=>'Delete failed: ' + e,zh:'删除失败: ' + e},
+  'device.renamed': {en:'Device renamed',zh:'设备已改名'},
+  'device.renameFailed': {en:e=>'Rename failed: ' + e,zh:'改名失败: ' + e},
+  'device.confirm': {en:'OK',zh:'确定'},
+  'device.cancel': {en:'Cancel',zh:'取消'},
+  'device.devicePrefix': {en:'Device ',zh:'Device '},
+
+  'time.justNow': {en:'just now',zh:'刚刚'},
+  'time.minutesAgo': {en:m=>m+'m ago',zh:m=>m+' 分钟前'},
+  'time.hoursAgo': {en:h=>h+'h ago',zh:h=>h+' 小时前'},
+  'time.daysAgo': {en:d=>d+'d ago',zh:d=>d+' 天前'},
+
+  'version.checking': {en:'Checking...',zh:'检查中...'},
+  'version.upgrade': {en:v=>'Upgrade to ' + v,zh:v=>'升级到 ' + v},
+  'version.latest': {en:'Latest',zh:'最新'},
+  'version.upgradeStarted': {en:'Upgrade started',zh:'升级已开始'},
+  'version.upgradeFailed': {en:e=>'Upgrade failed: ' + e,zh:'升级失败: ' + e},
+
+  'qr.title': {en:'Scan / Download App',zh:'扫码连接 / 下载 App'},
+  'qr.interface': {en:'Interface:',zh:'网卡:'},
+  'qr.bridgeAddr': {en:'Bridge Address',zh:'Bridge 地址'},
+  'qr.apkDownload': {en:'APK Download',zh:'APK 下载'},
+  'qr.downloadApp': {en:'Download OpenMate',zh:'下载 OpenMate'},
+  'qr.steps': {en:'Steps',zh:'使用步骤'},
+  'qr.step1': {en:'Scan with phone to open page',zh:'手机扫码打开页面'},
+  'qr.step2': {en:'Download and install the OpenMate App',zh:'下载并安装 OpenMate App'},
+  'qr.step3': {en:'Open the App and enter the Bridge address',zh:'打开 App，输入 Bridge 地址'},
+  'qr.step4': {en:'Approve the pairing PIN on the Overview page',zh:'在概览页批准配对 PIN'},
+
+  'logs.searchPlaceholder': {en:'Search logs...',zh:'搜索日志...'},
+  'logs.pause': {en:'Pause',zh:'暂停'},
+  'logs.resume': {en:'Resume',zh:'继续'},
+  'logs.downloadLogs': {en:'Download Logs',zh:'下载日志'},
+
+  'settings.loading': {en:'Loading...',zh:'加载中...'},
+  'settings.gateway': {en:'Gateway',zh:'网关'},
+  'settings.general': {en:'General',zh:'通用'},
+  'settings.autoStart': {en:'Auto-start on boot',zh:'开机自动启动'},
+  'settings.autoStartDesc': {en:'Run Bridge silently when Windows starts',zh:'Windows 启动时静默运行 Bridge'},
+  'settings.autoStartSystemd': {en:'Auto-start on boot (systemd)',zh:'系统启动时自动启动 (systemd)'},
+  'settings.autoStartSystemdDesc': {en:'Auto-start via systemd service',zh:'通过 systemd 服务开机自启'},
+  'settings.dangerZone': {en:'Danger Zone',zh:'危险操作'},
+  'settings.resetKey': {en:'Reset Secret Key',zh:'重置密钥'},
+  'settings.resetKeyDesc': {en:'All paired devices need to re-pair',zh:'所有已配对设备需要重新配对'},
+  'settings.reset': {en:'Reset',zh:'重置'},
+  'settings.saveConfig': {en:'Save Config',zh:'保存配置'},
+  'settings.needsRestart': {en:'Restart required',zh:'需重启'},
+  'settings.saving': {en:'Saving...',zh:'保存中...'},
+  'settings.saved': {en:'Saved',zh:'已保存'},
+  'settings.savedNeedsRestart': {en:keys=>'Saved. Restart required for: ' + keys,zh:'已保存。以下配置需要重启生效: ' + keys},
+  'settings.saveFailed': {en:e=>'Save failed: ' + e,zh:'保存失败: ' + e},
+  'settings.autoStartOn': {en:'Auto-start enabled',zh:'已开启自动启动'},
+  'settings.autoStartOff': {en:'Auto-start disabled',zh:'已关闭自动启动'},
+  'settings.setAutoFailed': {en:e=>'Setting failed: ' + e,zh:'设置失败: ' + e},
+  'settings.resetConfirm': {en:'Reset secret key? All paired devices need to re-pair.',zh:'确定要重置密钥？所有已配对设备需要重新配对。'},
+  'settings.resetDone': {en:'Secret key reset. Please restart Bridge.',zh:'密钥已重置，请重启 Bridge'},
+  'settings.resetFailed': {en:e=>'Reset failed: ' + e,zh:'重置失败: ' + e},
+  'settings.portLabel': {en:p=>'Port ' + p,zh:'端口 ' + p},
+
+  'common.copy': {en:'Copy',zh:'复制'},
+  'common.copied': {en:'Copied',zh:'已复制'},
+
+  'login.subtitle': {en:'Scan to connect with the OpenMate App',zh:'扫码后使用 OpenMate App 连接'},
+  'login.generatingQR': {en:'Generating QR code...',zh:'生成二维码中...'},
+  'login.waitingScan': {en:'Waiting for scan...',zh:'等待扫码...'},
+  'login.downloadApp': {en:'Download OpenMate App',zh:'下载 OpenMate App'},
+  'login.connected': {en:'Already connected?',zh:'已连接？'},
+  'login.reload': {en:'Reload',zh:'重新加载'},
+  'login.qrFailed': {en:'QR code generation failed',zh:'二维码生成失败'},
+  'login.retry': {en:'Please retry',zh:'请重试'},
+  'login.waitingAuth': {en:'Waiting for scan authentication...',zh:'等待扫码验证...'},
+  'login.authSuccess': {en:'Authentication successful, logging in...',zh:'验证成功，正在登录...'},
+  'login.qrExpired': {en:'QR code expired, regenerating...',zh:'二维码已过期，重新生成...'},
+};
+function t(key, ...args) {
+  const entry = I18N[key];
+  if (!entry) return key;
+  const val = entry[LANG] || entry['en'];
+  return typeof val === 'function' ? val(...args) : val;
+}
+function applyI18n() {
+  document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+}
+
+/* ---- App ---- */
 const TOKEN_KEY = 'bridge_auth_token';
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
 function clearToken() { localStorage.removeItem(TOKEN_KEY); }
 
-const PAGE_NAMES = {overview:'概览',qr:'扫码连接',logs:'日志',settings:'设置'};
+const PAGE_NAMES = {overview:t('nav.overview'),qr:t('nav.qr'),logs:t('nav.logs'),settings:t('nav.settings')};
 let overviewTimer = null;
 let logEventSource = null;
 let logsPaused = false;
@@ -284,6 +407,8 @@ let logEntries = [];
 let latestVersionChecked = false;
 let qrRefreshTimer = null;
 let loginPollTimer = null;
+
+applyI18n();
 
 document.querySelectorAll('.nav-item').forEach(item => {
   item.addEventListener('click', () => {
@@ -334,47 +459,50 @@ async function loadOverview() {
     const actualPort = s.actual_port || s.port;
     document.getElementById('bridge-port').textContent = actualPort;
     document.getElementById('bridge-ver').textContent = 'v' + s.version;
-    document.getElementById('bridge-port-sub').textContent = '端口 ' + actualPort + (s.actual_port && s.actual_port !== s.port ? ' (配置: ' + s.port + ')' : '');
+    document.getElementById('bridge-port-sub').textContent = t('settings.portLabel', actualPort) + (s.actual_port && s.actual_port !== s.port ? ' (config: ' + s.port + ')' : '');
 
     const statusEl = document.getElementById('oc-status');
     const dot = document.getElementById('status-dot');
     const stxt = document.getElementById('status-text');
-    const map = {running:['Running','green','Running'],stopped:['Stopped','red','Stopped'],starting:['Starting...','yellow','Starting'],stopping:['Stopping...','yellow','Stopping'],crashed:['Crashed','red','Crashed']};
-    const m = map[oc.status] || ['Unknown','','Unknown'];
-    statusEl.textContent = m[0];
-    statusEl.className = 'value ' + m[1];
-    dot.className = 'dot' + (m[1] === 'green' ? '' : (' ' + m[1] === 'red' ? 'off' : ''));
-    if (m[1] === 'red') dot.classList.add('off');
-    stxt.textContent = 'opencode: ' + m[2];
+    const statusMap = {running:'running',stopped:'stopped',starting:'starting',stopping:'stopping',crashed:'crashed'};
+    const colorMap = {running:'green',stopped:'red',starting:'yellow',stopping:'yellow',crashed:'red'};
+    const sk = statusMap[oc.status] || 'unknown';
+    const label = sk === 'unknown' ? t('overview.unknown') : t('status.' + sk);
+    const color = colorMap[oc.status] || '';
+    statusEl.textContent = label;
+    statusEl.className = 'value ' + color;
+    dot.className = 'dot' + (color === 'green' ? '' : (color === 'red' ? ' off' : ''));
+    if (color === 'red') dot.classList.add('off');
+    stxt.textContent = 'opencode: ' + label;
 
     const verEl = document.getElementById('oc-version');
     const verSub = document.getElementById('oc-version-sub');
     if (versionRes.current) {
       verEl.textContent = versionRes.current;
     } else {
-      verEl.textContent = '未知';
+      verEl.textContent = t('overview.unknown');
     }
     if (!latestVersionChecked) {
-      verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
+      verSub.innerHTML = '<span class="badge badge-ok">' + esc(t('version.checking')) + '</span>';
       latestVersionChecked = true;
       checkLatestVersion();
     }
 
     const devices = devicesRes || [];
     document.getElementById('device-count').textContent = devices.length;
-    document.getElementById('device-online-sub').textContent = devices.length + ' 台设备';
+    document.getElementById('device-online-sub').textContent = t('overview.deviceCount', devices.length);
 
     const pending = (pendingRes && pendingRes.pending) ? pendingRes.pending : [];
     const pendingCard = document.getElementById('pending-card');
     const pendingList = document.getElementById('pending-list');
     if (pending.length > 0) {
       pendingCard.style.display = 'block';
-      document.getElementById('pending-count').textContent = pending.length + ' 个';
+      document.getElementById('pending-count').textContent = t('overview.pendingCount', pending.length);
       pendingList.innerHTML = pending.map(p => {
         const remaining = Math.max(0, 300 - Math.floor((Date.now() / 1000) - p.created_at));
         const mins = Math.floor(remaining / 60);
         const secs = remaining % 60;
-        return '<div class="pair-pending"><div><div class="pair-pin">' + p.pin.slice(0,3) + ' ' + p.pin.slice(3) + '</div><div class="pair-timer">' + p.ip + ' &middot; 剩余 ' + mins + ':' + String(secs).padStart(2,'0') + '</div></div><div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="approvePair(\'' + p.pin + '\')">批准</button><button class="btn btn-ghost" onclick="rejectPair(\'' + p.pin + '\')">拒绝</button></div></div>';
+        return '<div class="pair-pending"><div><div class="pair-pin">' + p.pin.slice(0,3) + ' ' + p.pin.slice(3) + '</div><div class="pair-timer">' + esc(p.ip) + ' &middot; ' + t('pair.remaining', mins + ':' + String(secs).padStart(2,'0')) + '</div></div><div style="display:flex;gap:6px"><button class="btn btn-primary" onclick="approvePair(\'' + p.pin + '\')">' + esc(t('pair.approve')) + '</button><button class="btn btn-ghost" onclick="rejectPair(\'' + p.pin + '\')">' + esc(t('pair.reject')) + '</button></div></div>';
       }).join('');
     } else {
       pendingCard.style.display = 'none';
@@ -390,42 +518,40 @@ async function loadOverview() {
 async function checkLatestVersion() {
   const verSub = document.getElementById('oc-version-sub');
   if (!verSub) return;
-  verSub.innerHTML = '<span class="badge badge-ok">检查中...</span>';
+  verSub.innerHTML = '<span class="badge badge-ok">' + esc(t('version.checking')) + '</span>';
   try {
     const res = await api('/api/bridge/opencode/latest-version').then(r => r.json());
-    const verSub = document.getElementById('oc-version-sub');
     if (res.hasUpdate && res.latest) {
-      verSub.innerHTML = '<span class="badge badge-update" id="upgrade-badge">&#x2191; 升级到 ' + esc(res.latest) + '</span>';
+      verSub.innerHTML = '<span class="badge badge-update" id="upgrade-badge">&#x2191; ' + esc(t('version.upgrade', res.latest)) + '</span>';
     } else {
-      verSub.innerHTML = '<span class="badge badge-ok" style="cursor:pointer" onclick="checkLatestVersion()" title="点击重新检测">最新</span>';
+      verSub.innerHTML = '<span class="badge badge-ok" style="cursor:pointer" onclick="checkLatestVersion()">' + esc(t('version.latest')) + '</span>';
     }
   } catch(e) {
-    const verSub = document.getElementById('oc-version-sub');
-    if (verSub) verSub.innerHTML = '<span class="badge badge-ok">最新</span>';
+    if (verSub) verSub.innerHTML = '<span class="badge badge-ok">' + esc(t('version.latest')) + '</span>';
   }
 }
 
 function renderDevices(devices) {
   const el = document.getElementById('device-list');
   if (!devices || devices.length === 0) {
-    el.innerHTML = '<div class="empty-state">暂无配对设备</div>';
+    el.innerHTML = '<div class="empty-state">' + esc(t('overview.noDevices')) + '</div>';
     return;
   }
   el.innerHTML = devices.map(d => {
-    const name = d.name || ('Device ' + d.device_id.slice(0,8));
+    const name = d.name || (t('device.devicePrefix') + d.device_id.slice(0,8));
     const ago = timeAgo(d.last_seen);
     const pairedAgo = timeAgo(d.paired_at);
-    return '<div class="device-item" id="dev-' + d.device_id + '"><div class="device-info"><div class="device-icon">&#x1F4F1;</div><div><div class="device-name">' + esc(name) + '</div><div class="device-meta">' + esc(d.ip) + ' &middot; ' + pairedAgo + '配对 &middot; ' + ago + '活跃</div></div></div><div class="device-actions"><button class="btn btn-ghost btn-sm" onclick="startRename(\'' + d.device_id + '\',\'' + esc(name) + '\')">改名</button><button class="btn btn-danger btn-sm" onclick="deleteDevice(\'' + d.device_id + '\')">删除</button></div></div>';
+    return '<div class="device-item" id="dev-' + d.device_id + '"><div class="device-info"><div class="device-icon">&#x1F4F1;</div><div><div class="device-name">' + esc(name) + '</div><div class="device-meta">' + esc(d.ip) + ' &middot; ' + pairedAgo + ' ' + esc(t('device.paired')) + ' &middot; ' + ago + ' ' + esc(t('device.active')) + '</div></div></div><div class="device-actions"><button class="btn btn-ghost btn-sm" onclick="startRename(\'' + d.device_id + '\',\'' + esc(name) + '\')">' + esc(t('device.rename')) + '</button><button class="btn btn-danger btn-sm" onclick="deleteDevice(\'' + d.device_id + '\')">' + esc(t('device.delete')) + '</button></div></div>';
   }).join('');
 }
 
 function timeAgo(ts) {
   if (!ts) return '';
   const diff = Math.floor(Date.now() / 1000) - Math.floor(ts / 1000);
-  if (diff < 60) return '刚刚';
-  if (diff < 3600) return Math.floor(diff/60) + ' 分钟前';
-  if (diff < 86400) return Math.floor(diff/3600) + ' 小时前';
-  return Math.floor(diff/86400) + ' 天前';
+  if (diff < 60) return t('time.justNow');
+  if (diff < 3600) return t('time.minutesAgo', Math.floor(diff/60));
+  if (diff < 86400) return t('time.hoursAgo', Math.floor(diff/3600));
+  return t('time.daysAgo', Math.floor(diff/86400));
 }
 
 function esc(s) {
@@ -437,31 +563,31 @@ function esc(s) {
 async function approvePair(pin) {
   try {
     await api('/api/bridge/pair/approve', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
-    showToast('PIN ' + pin + ' 已批准');
+    showToast(t('pair.approved', pin));
     loadOverview();
   } catch(e) {
-    showToast('批准失败: ' + e.message, true);
+    showToast(t('pair.approveFailed', e.message), true);
   }
 }
 
 async function rejectPair(pin) {
   try {
     await api('/api/bridge/pair/reject', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});
-    showToast('PIN ' + pin + ' 已拒绝');
+    showToast(t('pair.rejected', pin));
     loadOverview();
   } catch(e) {
-    showToast('拒绝失败: ' + e.message, true);
+    showToast(t('pair.rejectFailed', e.message), true);
   }
 }
 
 async function deleteDevice(id) {
-  if (!confirm('确定删除此设备？')) return;
+  if (!confirm(t('device.confirmDelete'))) return;
   try {
     await api('/api/bridge/devices/' + id, {method:'DELETE'});
-    showToast('设备已删除');
+    showToast(t('device.deleted'));
     loadOverview();
   } catch(e) {
-    showToast('删除失败: ' + e.message, true);
+    showToast(t('device.deleteFailed', e.message), true);
   }
 }
 
@@ -469,7 +595,7 @@ function startRename(id, currentName) {
   const item = document.getElementById('dev-' + id);
   if (!item) return;
   const actionsDiv = item.querySelector('.device-actions');
-  actionsDiv.innerHTML = '<input class="rename-input" value="' + esc(currentName) + '" id="rename-input-' + id + '"><button class="btn btn-primary btn-sm" onclick="doRename(\'' + id + '\')">确定</button><button class="btn btn-ghost btn-sm" onclick="loadOverview()">取消</button>';
+  actionsDiv.innerHTML = '<input class="rename-input" value="' + esc(currentName) + '" id="rename-input-' + id + '"><button class="btn btn-primary btn-sm" onclick="doRename(\'' + id + '\')">' + esc(t('device.confirm')) + '</button><button class="btn btn-ghost btn-sm" onclick="loadOverview()">' + esc(t('device.cancel')) + '</button>';
   const input = document.getElementById('rename-input-' + id);
   input.focus();
   input.select();
@@ -483,10 +609,10 @@ async function doRename(id) {
   if (!name) return;
   try {
     await api('/api/bridge/devices/' + id + '/name', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
-    showToast('设备已改名');
+    showToast(t('device.renamed'));
     loadOverview();
   } catch(e) {
-    showToast('改名失败: ' + e.message, true);
+    showToast(t('device.renameFailed', e.message), true);
   }
 }
 
@@ -494,9 +620,9 @@ document.addEventListener('click', async e => {
   if (e.target.id === 'upgrade-badge') {
     try {
       await api('/api/bridge/opencode/upgrade', {method:'POST'});
-      showToast('升级已开始');
+      showToast(t('version.upgradeStarted'));
     } catch(err) {
-      showToast('升级失败: ' + err.message, true);
+      showToast(t('version.upgradeFailed', err.message), true);
     }
   }
 });
@@ -536,7 +662,7 @@ async function updateQR() {
 
 document.getElementById('copy-url-btn').addEventListener('click', () => {
   const url = document.getElementById('qr-url').textContent;
-  navigator.clipboard.writeText(url).then(() => showToast('已复制'));
+  navigator.clipboard.writeText(url).then(() => showToast(t('common.copied')));
 });
 
 document.getElementById('download-apk-btn').addEventListener('click', () => {
@@ -604,7 +730,7 @@ document.querySelectorAll('[data-level]').forEach(btn => {
 
 document.getElementById('log-pause-btn').addEventListener('click', function() {
   logsPaused = !logsPaused;
-  this.textContent = logsPaused ? '继续' : '暂停';
+  this.textContent = logsPaused ? t('logs.resume') : t('logs.pause');
   this.classList.toggle('active', logsPaused);
 });
 
@@ -640,11 +766,11 @@ async function loadSettings() {
     if (autostartMode === 'unavailable') {
       autostartRow.style.display = 'none';
     } else if (autostartMode === 'systemd') {
-      autostartLabel.textContent = '系统启动时自动启动 (systemd)';
-      autostartDesc.textContent = '通过 systemd 服务开机自启';
+      autostartLabel.textContent = t('settings.autoStartSystemd');
+      autostartDesc.textContent = t('settings.autoStartSystemdDesc');
     } else if (autostartMode === 'windows') {
-      autostartLabel.textContent = '开机自动启动';
-      autostartDesc.textContent = 'Windows 启动时静默运行 Bridge';
+      autostartLabel.textContent = t('settings.autoStart');
+      autostartDesc.textContent = t('settings.autoStartDesc');
     }
 
     configEntries = cfgRes.configs || [];
@@ -674,7 +800,7 @@ function renderConfigGroup(entries) {
     } else {
       inputHtml = '<input class="' + inputClass + '" data-key="' + esc(e.key) + '" value="' + esc(e.value) + '">';
     }
-    const badge = e.needs_restart ? '<span class="needs-restart-badge">需重启</span>' : '';
+    const badge = e.needs_restart ? '<span class="needs-restart-badge">' + esc(t('settings.needsRestart')) + '</span>' : '';
     return '<div class="config-row"><div><div class="config-label">' + esc(e.description) + '</div><div class="config-desc">' + esc(e.key) + '</div></div><div class="config-right">' + badge + inputHtml + '</div></div>';
   }).join('');
 }
@@ -685,7 +811,7 @@ function toggleConfig(el) {
 
 document.getElementById('save-config-btn').addEventListener('click', async () => {
   const statusEl = document.getElementById('config-status');
-  statusEl.textContent = '保存中...';
+  statusEl.textContent = t('settings.saving');
   statusEl.style.color = '#eab308';
 
   const configs = [];
@@ -704,15 +830,15 @@ document.getElementById('save-config-btn').addEventListener('click', async () =>
     }).then(r => r.json());
 
     if (res.needs_restart) {
-      statusEl.textContent = '已保存。以下配置需要重启生效: ' + res.restart_keys.join(', ');
+      statusEl.textContent = t('settings.savedNeedsRestart', res.restart_keys.join(', '));
       statusEl.style.color = '#eab308';
     } else {
-      statusEl.textContent = '已保存';
+      statusEl.textContent = t('settings.saved');
       statusEl.style.color = '#22c55e';
     }
     setTimeout(() => statusEl.textContent = '', 5000);
   } catch(e) {
-    statusEl.textContent = '保存失败: ' + e.message;
+    statusEl.textContent = t('settings.saveFailed', e.message);
     statusEl.style.color = '#ef4444';
   }
 });
@@ -723,19 +849,19 @@ document.getElementById('autostart-toggle').addEventListener('click', async func
     await api('/api/bridge/autostart', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});
     if (enabled) this.classList.add('on');
     else this.classList.remove('on');
-    showToast(enabled ? '已开启自动启动' : '已关闭自动启动');
+    showToast(enabled ? t('settings.autoStartOn') : t('settings.autoStartOff'));
   } catch(e) {
-    showToast('设置失败: ' + e.message, true);
+    showToast(t('settings.setAutoFailed', e.message), true);
   }
 });
 
 document.getElementById('reset-key-btn').addEventListener('click', async () => {
-  if (!confirm('确定要重置密钥？所有已配对设备需要重新配对。')) return;
+  if (!confirm(t('settings.resetConfirm'))) return;
   try {
     await api('/api/bridge/reset-secret', {method:'POST'});
-    showToast('密钥已重置，请重启 Bridge');
+    showToast(t('settings.resetDone'));
   } catch(e) {
-    showToast('重置失败: ' + e.message, true);
+    showToast(t('settings.resetFailed', e.message), true);
   }
 });
 
@@ -761,11 +887,11 @@ async function startLoginFlow() {
     const qrRes = await fetch('/api/bridge/login/qrcode').then(r => r.json());
     currentScanToken = qrRes.session_id;
     document.getElementById('login-qr').innerHTML = '<img src="/api/bridge/login/qr-image?session=' + encodeURIComponent(qrRes.session_id) + '" alt="QR" style="width:180px;height:180px">';
-    document.getElementById('login-status').textContent = '等待扫码验证...';
+    document.getElementById('login-status').textContent = t('login.waitingAuth');
     startLoginPoll(qrRes.session_id);
   } catch(e) {
-    document.getElementById('login-qr').textContent = '二维码生成失败';
-    document.getElementById('login-status').textContent = '请重试';
+    document.getElementById('login-qr').textContent = t('login.qrFailed');
+    document.getElementById('login-status').textContent = t('login.retry');
   }
 }
 
@@ -776,11 +902,11 @@ async function startLoginPoll(sessionId) {
       const res = await fetch('/api/bridge/login/poll?session=' + encodeURIComponent(sessionId)).then(r => r.json());
       if (res.status === 'confirmed') {
         setToken(res.token);
-        document.getElementById('login-status').textContent = '验证成功，正在登录...';
+        document.getElementById('login-status').textContent = t('login.authSuccess');
         if (loginPollTimer) clearInterval(loginPollTimer);
         setTimeout(() => location.reload(), 500);
       } else if (res.status === 'expired') {
-        document.getElementById('login-status').textContent = '二维码已过期，重新生成...';
+        document.getElementById('login-status').textContent = t('login.qrExpired');
         if (loginPollTimer) clearInterval(loginPollTimer);
         startLoginFlow();
       }

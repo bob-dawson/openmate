@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OpenMate - 连接 Bridge</title>
+<title>OpenMate - Connect Bridge</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -26,21 +26,39 @@ h1{font-size:20px;color:#60a5fa;margin-bottom:4px}
 <body>
 <div class="card">
   <h1>OpenMate</h1>
-  <div class="version">连接 Bridge</div>
+  <div class="version" data-i18n="connectBridge">Connect Bridge</div>
   <div class="url-box" id="bridge-url"></div>
-  <button class="btn btn-ghost" id="copy-btn">复制地址</button>
-  <a class="btn btn-primary" id="apk-btn" href="/download/openmate.apk">下载 OpenMate App</a>
+  <button class="btn btn-ghost" id="copy-btn" data-i18n="copyAddr">Copy Address</button>
+  <a class="btn btn-primary" id="apk-btn" href="/download/openmate.apk" data-i18n="downloadApp">Download OpenMate App</a>
   <div class="steps">
-    <h2>使用步骤</h2>
+    <h2 data-i18n="steps">Steps</h2>
     <ol>
-      <li>点击上方按钮下载并安装 OpenMate App</li>
-      <li>打开 App，输入 Bridge 地址</li>
-      <li>在 Bridge 管理页面批准配对 PIN</li>
+      <li data-i18n="step1">Click the button above to download and install the OpenMate App</li>
+      <li data-i18n="step2">Open the App and enter the Bridge address</li>
+      <li data-i18n="step3">Approve the pairing PIN on the Bridge admin page</li>
     </ol>
   </div>
 </div>
 <div class="toast" id="toast"></div>
 <script>
+const LANG = (navigator.language || 'en').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+const I18N = {
+  'connectBridge': {en:'Connect Bridge',zh:'连接 Bridge'},
+  'copyAddr': {en:'Copy Address',zh:'复制地址'},
+  'downloadApp': {en:'Download OpenMate App',zh:'下载 OpenMate App'},
+  'steps': {en:'Steps',zh:'使用步骤'},
+  'step1': {en:'Click the button above to download and install the OpenMate App',zh:'点击上方按钮下载并安装 OpenMate App'},
+  'step2': {en:'Open the App and enter the Bridge address',zh:'打开 App，输入 Bridge 地址'},
+  'step3': {en:'Approve the pairing PIN on the Bridge admin page',zh:'在 Bridge 管理页面批准配对 PIN'},
+  'copied': {en:'Copied',zh:'已复制'},
+};
+function t(key) {
+  const e = I18N[key];
+  return e ? (e[LANG] || e.en) : key;
+}
+document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+
 const host = window.location.hostname;
 const port = window.location.port || '4097';
 const url = 'http://' + host + ':' + port;
@@ -49,7 +67,7 @@ document.getElementById('bridge-url').textContent = url;
 document.getElementById('copy-btn').addEventListener('click', () => {
   navigator.clipboard.writeText(url).then(() => {
     const t = document.getElementById('toast');
-    t.textContent = '已复制';
+    t.textContent = I18N.copied[LANG];
     t.className = 'toast show';
     setTimeout(() => t.className = 'toast', 2000);
   });

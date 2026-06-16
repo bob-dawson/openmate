@@ -98,6 +98,35 @@ openmate approve 123456
 
 </details>
 
+## Screenshots
+
+### Bridge — Pairing QR Code
+
+<p align="center">
+  <img src="screenshot/bridge/console-qrcode.png" width="480" alt="Bridge console QR code" />
+</p>
+
+The Bridge prints a pairing QR code in the terminal (and the admin web UI), so you can pair your phone with a single scan — even over SSH.
+
+### Android App
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshot/android/1-instances.jpg" width="200" alt="Instances" /></td>
+    <td align="center"><img src="screenshot/android/2-workspaces.jpg" width="200" alt="Workspaces" /></td>
+    <td align="center"><img src="screenshot/android/3-session.jpg" width="200" alt="Session" /></td>
+    <td align="center"><img src="screenshot/android/4-files.jpg" width="200" alt="Files" /></td>
+    <td align="center"><img src="screenshot/android/5-settings.jpg" width="200" alt="Settings" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Instances</sub></td>
+    <td align="center"><sub>Workspaces</sub></td>
+    <td align="center"><sub>Session</sub></td>
+    <td align="center"><sub>Files</sub></td>
+    <td align="center"><sub>Settings</sub></td>
+  </tr>
+</table>
+
 ## Features
 
 - **Workspace & Session Browsing** — View all workspaces, sessions, and conversation history
