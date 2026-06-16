@@ -100,13 +100,33 @@ openmate approve 123456
 
 ## Screenshots
 
-### Bridge — Pairing QR Code
+### Bridge — Pairing
 
-<p align="center">
-  <img src="screenshot/bridge/console-qrcode.png" width="480" alt="Bridge console QR code" />
-</p>
+<table>
+  <tr>
+    <td align="center"><img src="screenshot/bridge/console-qrcode.png" width="420" alt="Console QR code" /></td>
+    <td align="center"><img src="screenshot/bridge/scan-pair.png" width="420" alt="Scan to pair" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Terminal QR code (also in admin UI)</sub></td>
+    <td align="center"><sub>Scan with the Android app to pair</sub></td>
+  </tr>
+</table>
 
 The Bridge prints a pairing QR code in the terminal (and the admin web UI), so you can pair your phone with a single scan — even over SSH.
+
+### Bridge — Admin UI
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshot/bridge/admin.png" width="420" alt="Admin dashboard" /></td>
+    <td align="center"><img src="screenshot/bridge/settings.png" width="420" alt="Settings page" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Admin dashboard at <code>http://127.0.0.1:4097/ui/</code></sub></td>
+    <td align="center"><sub>Settings (port, opencode path, allowed paths, …)</sub></td>
+  </tr>
+</table>
 
 ### Android App
 
