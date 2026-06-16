@@ -123,6 +123,7 @@ Get the latest release from the [Releases page](../../releases).
 ## Documentation
 
 - [Development Guide](docs/DEVELOPMENT.md) — Architecture, build instructions, and API reference
+- [开发指南（中文）](docs/DEVELOPMENT.zh.md) — 架构、构建说明和 API 参考
 - [Changelog](CHANGELOG.md) — Version history
 - [Design Documents](docs/design/) — Technical design docs
 
