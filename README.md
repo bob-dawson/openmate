@@ -4,11 +4,26 @@
   <img src="logo/logo.png" width="120" />
 </p>
 
-OpenMate is a native Android client for [opencode](https://github.com/sst/opencode), letting you monitor and interact with your AI coding sessions from your phone.
+**Control your AI coding agent from anywhere — monitor sessions, approve decisions, and browse code changes, all from your phone.**
 
-Connect to your PC over LAN, or remotely via the cloud relay when you're away. Browse workspaces, read conversations, send messages, respond to permission prompts, and manage tasks — all from your Android device.
+## Why OpenMate?
 
-## How It Works
+AI coding agents run on your desktop where they make decisions and changes. But you're not always at your desk.
+
+OpenMate bridges this gap: you can approve permissions, monitor progress, and review code changes from your phone — whether you're on the same network or on the other side of the world.
+
+If you use [opencode](https://github.com/sst/opencode), OpenMate connects directly to it without extra setup.
+
+## What You Can Do
+
+- **Approve & Control** — Instantly respond to permission requests and questions without being at your desk
+- **Monitor Sessions** — Watch real-time conversation history and task progress as your AI agent works
+- **Browse & Review** — View workspace directories, read diffs, and download files
+- **Full Chat** — Send messages, receive streaming responses with full Markdown rendering
+- **Flexible Connectivity** — Connect over LAN for instant response, or use the cloud relay when you're away
+- **Simple Pairing** — Scan a QR code to pair your phone in seconds
+
+## System Overview
 
 ```mermaid
 flowchart LR
@@ -30,24 +45,17 @@ flowchart LR
     Bridge --> Workspace
 ```
 
-OpenMate consists of three components:
+OpenMate has three components:
 
-- **Bridge Agent** — A lightweight Rust program that runs on your PC alongside opencode. It handles authentication, process management, and proxies requests between your phone and opencode.
-- **Android App** — A native Kotlin/Jetpack Compose app that connects to the Bridge directly over LAN, or indirectly via the Relay Server when you're on a different network.
-- **Relay Server** — An optional cloud gateway that bridges your phone and PC over the internet using WebSocket tunnels, so you can stay connected even without LAN or Tailscale access.
+- **Bridge Agent** — Lightweight Rust program on your PC alongside opencode. Handles auth, process management, and proxies requests.
+- **Android App** — Native Kotlin/Jetpack Compose app. Connects to Bridge directly over LAN, or via Relay when you're on a different network.
+- **Relay Server** — Optional cloud gateway. Bridges your phone and PC over the internet using WebSocket, so you stay connected anywhere.
 
-## Quick Start
+## Get Started in 5 Minutes
 
-### 1. Install the Bridge
+### 1. Install Bridge
 
-Download the latest release for your platform:
-
-- **Windows**: `openmate.exe`
-- **Linux**: `openmate-linux-x86_64`
-
-Make sure [opencode](https://github.com/sst/opencode) is installed and available in your PATH.
-
-Run the Bridge:
+Download for your platform from [Releases](../../releases):
 
 ```bash
 # Windows
@@ -57,46 +65,23 @@ openmate.exe
 ./openmate
 ```
 
-Or install it as a system service (auto-starts on boot):
+The Bridge auto-starts opencode and waits for connections. Make sure [opencode](https://github.com/sst/opencode) is in your PATH.
 
-```bash
-# Windows
-openmate.exe install
+### 2. Install Android App
 
-# Linux
-sudo ./openmate install
-```
+Download `OpenMate-{version}.apk` from [Releases](../../releases) and install on your phone.
 
-The Bridge automatically starts `opencode serve` and begins listening for connections.
+### 3. Pair Your Phone
 
-### 2. Install the Android App
+The Bridge shows a **QR code in the terminal** (also in the web UI at `http://127.0.0.1:4097/ui/`):
 
-Download `OpenMate-{version}.apk` from [Releases](../../releases) and install it on your phone.
+1. Open the OpenMate app
+2. Scan the QR code
+3. Done! You're paired and connected
 
-### 3. Pair Your Device
+If you're not on the same LAN, the app automatically connects via the cloud relay.
 
-Pairing is done by scanning a QR code:
-
-1. **Get the QR code** — The Bridge displays it in the admin web UI (`http://127.0.0.1:4097/ui/`, auto-opened on Windows). On Linux, the QR code is also printed directly in the terminal — handy for SSH sessions where opening a browser isn't convenient.
-2. **Scan** — Open the app and scan the QR code. Pairing and connection are automatic.
-3. If you're not on the same LAN, the app automatically connects via the cloud relay.
-
-<details>
-<summary>Manual pairing via PIN (alternative)</summary>
-
-If QR scanning isn't available, you can pair with a PIN code:
-
-1. Add an instance in the app with your PC's IP and Bridge port (default: `4097`)
-2. The app displays a 6-digit PIN
-3. Approve it on your PC:
-
-```bash
-openmate approve 123456
-```
-
-4. Tap **Confirm** in the app
-
-</details>
+**Alternative: Manual PIN pairing** — If QR scanning isn't available, add an instance manually with your PC's IP and port (default: `4097`), then approve the PIN using `openmate approve 123456`.
 
 ## Screenshots
 
@@ -108,14 +93,12 @@ openmate approve 123456
     <td align="center"><img src="screenshot/bridge/scan-pair.png" width="420" alt="Scan to pair" /></td>
   </tr>
   <tr>
-    <td align="center"><sub>Terminal QR code (also in admin UI)</sub></td>
-    <td align="center"><sub>Scan with the Android app to pair</sub></td>
+    <td align="center"><sub>QR code in terminal (also in web UI)</sub></td>
+    <td align="center"><sub>Scan with the OpenMate app</sub></td>
   </tr>
 </table>
 
-The Bridge prints a pairing QR code in the terminal (and the admin web UI), so you can pair your phone with a single scan — even over SSH.
-
-### Bridge — Admin UI
+### Bridge — Admin Dashboard
 
 <table>
   <tr>
@@ -123,8 +106,8 @@ The Bridge prints a pairing QR code in the terminal (and the admin web UI), so y
     <td align="center"><img src="screenshot/bridge/settings.png" width="420" alt="Settings page" /></td>
   </tr>
   <tr>
-    <td align="center"><sub>Admin dashboard at <code>http://127.0.0.1:4097/ui/</code></sub></td>
-    <td align="center"><sub>Settings (port, opencode path, allowed paths, …)</sub></td>
+    <td align="center"><sub>Dashboard at <code>http://127.0.0.1:4097/ui/</code></sub></td>
+    <td align="center"><sub>Configure settings (port, paths, etc.)</sub></td>
   </tr>
 </table>
 
@@ -141,44 +124,82 @@ The Bridge prints a pairing QR code in the terminal (and the admin web UI), so y
   <tr>
     <td align="center"><sub>Instances</sub></td>
     <td align="center"><sub>Workspaces</sub></td>
-    <td align="center"><sub>Session</sub></td>
-    <td align="center"><sub>Files</sub></td>
+    <td align="center"><sub>Session chat</sub></td>
+    <td align="center"><sub>File browser</sub></td>
     <td align="center"><sub>Settings</sub></td>
   </tr>
 </table>
 
 ## Features
 
-- **Workspace & Session Browsing** — View all workspaces, sessions, and conversation history
-- **Real-time Chat** — Send messages and receive streaming responses with full Markdown rendering
-- **Permission & Question Responses** — Approve/deny tool permissions and answer questions directly from your phone
-- **TODO List Tracking** — Monitor task progress (in-progress / pending / completed)
-- **Model & Skill Selection** — Switch AI models and select skills
-- **File Browser** — Browse workspace directories, view and download files
-- **Session Operations** — Abort, compact, or fork sessions
-- **Cloud Relay (Optional)** — Connect remotely via a gateway when you're away from your LAN
-- **Secure Authentication** — HMAC-SHA256 token-based auth with PIN pairing
+- **Workspace & Session Browsing** — View workspaces, sessions, and full conversation history
+- **Real-time Chat** — Send messages and receive streaming responses with Markdown rendering
+- **Permission Responses** — Approve/deny tool permissions and answer questions instantly
+- **TODO Tracking** — Monitor task progress (pending, in-progress, completed)
+- **Model & Skill Selection** — Switch AI models and select skills on the fly
+- **File Browser** — Browse workspace directories, view files, and download them
+- **Session Operations** — Abort, compact, or fork sessions from your phone
+- **Cloud Relay** — Connect remotely via gateway when away from LAN
+- **Secure Auth** — HMAC-SHA256 token-based auth with simple PIN pairing
 
-## Configuration
+## Requirements
 
-The Bridge stores all configuration in a SQLite database (`~/.openmate/bridge.db`) — no config files needed. Settings are managed through the **admin web UI**:
+- [opencode](https://github.com/sst/opencode) installed on your PC
+- Android 8.0+ (API 26+)
+- PC and phone on same network (LAN or Tailscale), or cloud relay enabled
 
-1. Open `http://127.0.0.1:4097/ui/` in your browser (the Bridge opens this automatically on Windows)
-2. Adjust settings and save — most take effect immediately; port/hostname changes require a Bridge restart
+## Download & Documentation
 
-Key configurable options:
+**Get started:** [Releases page](../../releases)
+
+**Learn more:**
+- [Installation Guide](docs/INSTALL.md) — Setup instructions
+- [安装指南（中文）](docs/INSTALL.zh-CN.md) — 安装说明
+- [Development Guide](docs/DEVELOPMENT.md) — Architecture and build instructions
+- [开发指南（中文）](docs/DEVELOPMENT.zh-CN.md) — 架构与构建说明
+- [Changelog](CHANGELOG.md) — Version history
+- [Design Documents](docs/design/) — Technical designs
+
+---
+
+## Advanced Configuration & Technical Details
+
+### Configuration
+
+The Bridge stores all configuration in a SQLite database (`~/.openmate/bridge.db`). Manage settings via the **admin web UI**:
+
+1. Open `http://127.0.0.1:4097/ui/`
+2. Adjust settings — most take effect immediately; port/hostname changes require restart
+
+**Key Options:**
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `bridge.port` | `4097` | Bridge listen port (requires restart) |
-| `bridge.hostname` | `0.0.0.0` | Listen address (requires restart) |
+| `bridge.port` | `4097` | Bridge listen port (restart required) |
+| `bridge.hostname` | `0.0.0.0` | Listen address (restart required) |
 | `opencode.binary` | `opencode` | Path to opencode executable |
 | `opencode.port` | `4096` | opencode serve port |
 | `opencode.auto_start` | `true` | Auto-start opencode on Bridge launch |
 | `opencode.auto_restart` | `true` | Auto-restart opencode on crash |
-| `fs.allowed_paths` | *(empty = all)* | Filesystem path whitelist |
+| `fs.allowed_paths` | *(empty = all)* | Filesystem whitelist |
 
-## Bridge CLI
+### Installing Bridge as System Service
+
+For auto-startup on boot:
+
+```bash
+# Windows
+openmate.exe install
+
+# Linux
+sudo ./openmate install
+
+# Uninstall
+openmate.exe uninstall  # Windows
+sudo ./openmate uninstall  # Linux
+```
+
+### Bridge CLI Commands
 
 | Command | Description |
 |---------|-------------|
@@ -187,25 +208,6 @@ Key configurable options:
 | `openmate uninstall` | Uninstall system service |
 | `openmate approve <pin>` | Approve a pairing PIN |
 | `openmate reset-token` | Reset secret key (invalidates all tokens) |
-
-## Requirements
-
-- [opencode](https://github.com/sst/opencode) installed on your PC
-- Android 8.0+ (API 26+)
-- PC and phone on the same network (LAN or Tailscale), or cloud relay enabled
-
-## Download
-
-Get the latest release from the [Releases page](../../releases).
-
-## Documentation
-
-- [Installation Guide](docs/INSTALL.md) — Setup instructions for Bridge and Android app
-- [安装指南（中文）](docs/INSTALL.zh-CN.md) — Bridge 和 Android 客户端安装说明
-- [Development Guide](docs/DEVELOPMENT.md) — Architecture, build instructions, and API reference
-- [开发指南（中文）](docs/DEVELOPMENT.zh-CN.md) — 架构、构建说明和 API 参考
-- [Changelog](CHANGELOG.md) — Version history
-- [Design Documents](docs/design/) — Technical design docs
 
 ## License
 
