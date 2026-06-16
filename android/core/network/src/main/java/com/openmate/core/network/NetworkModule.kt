@@ -85,6 +85,35 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @Named("version")
+    fun provideVersionOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @Named("release")
+    fun provideReleaseOkHttpClient(): OkHttpClient {
+        return OkHttpClient.Builder()
+            .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
+            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideVersionClient(
+        @Named("version") versionClient: OkHttpClient,
+        @Named("release") releaseClient: OkHttpClient,
+    ): VersionClient {
+        return VersionClient(versionClient, releaseClient)
+    }
+
+    @Provides
+    @Singleton
     fun provideSyncApiClient(@Named("api") client: OkHttpClient, opencodeApiClient: OpencodeApiClient): SyncApiClient {
         return SyncApiClient(client, opencodeApiClient)
     }

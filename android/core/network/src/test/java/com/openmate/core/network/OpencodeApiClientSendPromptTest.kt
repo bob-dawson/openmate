@@ -19,7 +19,13 @@ class OpencodeApiClientSendPromptTest {
         server.start()
         client = OpencodeApiClient(
             client = OkHttpClient(),
-            baseUrl = server.url("/").toString().removeSuffix("/"),
+            activeProfileProvider = object : ActiveProfileProvider {
+                override fun getActiveProfile() = null
+                override fun getActiveRoute() = com.openmate.core.domain.model.ConnectionRoute.Direct(
+                    address = server.hostName,
+                    port = server.port,
+                )
+            },
         )
     }
 
