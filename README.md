@@ -75,15 +75,28 @@ Download `OpenMate-{version}.apk` from [Releases](../../releases) and install it
 
 ### 3. Pair Your Device
 
-1. Open the app and add a new instance with your PC's IP address and Bridge port (default: `4097`)
-2. The app displays a 6-digit PIN code
-3. On your PC, approve the pairing:
+Pairing is done by scanning a QR code:
+
+1. **Get the QR code** — The Bridge displays it in the admin web UI (`http://127.0.0.1:4097/ui/`, auto-opened on Windows). On Linux, the QR code is also printed directly in the terminal — handy for SSH sessions where opening a browser isn't convenient.
+2. **Scan** — Open the app and scan the QR code. Pairing and connection are automatic.
+3. If you're not on the same LAN, the app automatically connects via the cloud relay.
+
+<details>
+<summary>Manual pairing via PIN (alternative)</summary>
+
+If QR scanning isn't available, you can pair with a PIN code:
+
+1. Add an instance in the app with your PC's IP and Bridge port (default: `4097`)
+2. The app displays a 6-digit PIN
+3. Approve it on your PC:
 
 ```bash
-openmate.exe approve 123456
+openmate approve 123456
 ```
 
-4. Tap **Confirm** in the app — done! The pairing token is saved for future connections.
+4. Tap **Confirm** in the app
+
+</details>
 
 ## Features
 

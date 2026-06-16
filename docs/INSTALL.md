@@ -35,7 +35,7 @@ Transfer `OpenMate-*.apk` to your phone and install it.
 
 When you first open the app, it enters the QR code pairing screen:
 
-1. The Bridge displays a **QR code** (in the terminal or the admin page)
+1. **Get the QR code** — The Bridge displays it in the admin web UI (`http://127.0.0.1:4097/ui/`, auto-opened on Windows). On Linux, the QR code is also printed directly in the terminal — useful for SSH sessions where opening a browser isn't convenient.
 2. Scan the QR code in the app — pairing and connection are automatic
 3. If you're not on the same LAN, the app automatically connects via the cloud relay gateway
 
