@@ -11,7 +11,7 @@ namespace GradleMcp
     [McpServerToolType]
     public static class GradleTools
     {
-        private static readonly TimeSpan OutputIdleTimeout = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan OutputIdleTimeout = TimeSpan.FromSeconds(300);
         private static readonly Regex AnsiEscapeRegex = new(@"\x1B\[[0-?]*[ -/]*[@-~]", RegexOptions.Compiled);
         private static readonly object Sync = new();
         private static readonly object LogSync = new();
