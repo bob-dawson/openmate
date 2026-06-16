@@ -104,9 +104,9 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
     const sessionID = p.sessionID as string
     const errorMessage = (p.error as { message?: string })?.message ?? ""
 
-    log("step.failed", `session=${sessionID} error=${errorMessage}`)
-
     if (!shouldRetryStepFailed(config, errorMessage)) return
+
+    log("step.failed", `session=${sessionID} error=${errorMessage}`)
 
     const state = getSession(sessionID)
     if (state.finished || state.retryInProgress) return
@@ -226,8 +226,6 @@ export function createMonitor(input: PluginInput, config: WorkHardConfig) {
         break
       }
       case "session.error": {
-        const props = event.properties as { sessionID?: string; error?: any }
-        log("error", `session=${props.sessionID}`, props.error?.message ?? props.error)
         break
       }
     }
