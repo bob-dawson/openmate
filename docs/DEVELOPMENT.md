@@ -10,13 +10,13 @@ A native Android client for opencode. Connect to your PC's opencode instance ove
 │  (OpenMate)  │          Bearer Token              │  (Rust, port 4097)  │
 │              │                                  │    ├─ auth (HMAC)    │
 │              │                                  │    ├─ proxy ────────▶│ opencode serve
-│              │                                  │    ├─ process mgr    │  (port 4098)
+│              │                                  │    ├─ process mgr    │  (port 4096)
 │              │                                  │    ├─ fs API         │
 │              │                                  │    └─ SSE proxy      │
 └──────────────┘                                  └─────────────────────┘
 ```
 
-**Bridge-only mode**: The Android client only connects to the Bridge (port 4097), never directly to opencode. The Bridge acts as a reverse proxy + process manager + file server + authentication gateway, forwarding all REST/SSE requests to opencode (port 4098) and providing extended filesystem APIs. The connection verifies Bridge status; non-Bridge endpoints return `NOT_BRIDGE`.
+**Bridge-only mode**: The Android client only connects to the Bridge (port 4097), never directly to opencode. The Bridge acts as a reverse proxy + process manager + file server + authentication gateway, forwarding all REST/SSE requests to opencode (port 4096) and providing extended filesystem APIs. The connection verifies Bridge status; non-Bridge endpoints return `NOT_BRIDGE`.
 
 ## Getting Started
 
@@ -52,26 +52,9 @@ sudo ./target/release/openmate install
 # sudo ./target/release/openmate uninstall
 ```
 
-The Bridge automatically starts `opencode serve` (default port 4098) on launch. Make sure `opencode` is in your PATH.
+The Bridge automatically starts `opencode serve` (default port 4096) on launch. Make sure `opencode` is in your PATH.
 
-**Configuration file** (optional): Create `bridge.toml` in the same directory as the `openmate` executable:
-
-```toml
-[bridge]
-port = 4097          # Bridge listen port
-hostname = "0.0.0.0" # Listen address
-auth_enabled = true  # Enable authentication (default: on)
-
-[opencode]
-binary = "opencode"    # opencode executable name or path
-hostname = "127.0.0.1"
-port = 4098
-auto_start = true      # Auto-start opencode on Bridge launch
-auto_restart = true    # Auto-restart opencode on crash
-
-[fs]
-allowed_paths = []     # Empty = allow all paths
-```
+**Configuration**: All settings are stored in a SQLite database (`~/.openmate/bridge.db`) and managed via the admin web UI at `http://127.0.0.1:4097/ui/`. No config files needed. See [README.md](../README.md#configuration) for the full list of configurable options.
 
 ### 2. Build the Android Client
 
@@ -147,7 +130,6 @@ openmate.exe reset-token
 | Command | Description |
 |---------|-------------|
 | `openmate` | Run in foreground |
-| `openmate -c config.toml` | Specify config file |
 | `openmate install` | Install as system service and start |
 | `openmate uninstall` | Uninstall system service |
 | `openmate service` | Run in service mode (called by the system) |
@@ -247,7 +229,7 @@ SSE:  SseClient (+ Bearer token) → SseParser → SseData → EventDispatcher �
 | Async | Tokio 1 (full), tokio-stream, tokio-util |
 | Auth | HMAC-SHA256 (hmac + sha2) + random key (getrandom) |
 | Service | Windows: windows-service crate / Linux: systemd |
-| Config | TOML (bridge.toml) |
+| Config | SQLite (`~/.openmate/bridge.db`) + admin UI (`/ui/`) |
 | CLI | Clap 4 (derive) |
 
 ### Bridge Source Structure

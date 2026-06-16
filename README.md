@@ -85,20 +85,22 @@ openmate.exe approve 123456
 
 ## Configuration
 
-The Bridge reads optional configuration from `bridge.toml`:
+The Bridge stores all configuration in a SQLite database (`~/.openmate/bridge.db`) — no config files needed. Settings are managed through the **admin web UI**:
 
-```toml
-[bridge]
-port = 4097            # Listen port
-hostname = "0.0.0.0"   # Listen address
-auth_enabled = true    # Enable authentication
+1. Open `http://127.0.0.1:4097/ui/` in your browser (the Bridge opens this automatically on Windows)
+2. Adjust settings and save — most take effect immediately; port/hostname changes require a Bridge restart
 
-[opencode]
-binary = "opencode"   # Path to opencode executable
-port = 4098            # opencode serve port
-auto_start = true      # Auto-start opencode
-auto_restart = true    # Auto-restart on crash
-```
+Key configurable options:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `bridge.port` | `4097` | Bridge listen port (requires restart) |
+| `bridge.hostname` | `0.0.0.0` | Listen address (requires restart) |
+| `opencode.binary` | `opencode` | Path to opencode executable |
+| `opencode.port` | `4096` | opencode serve port |
+| `opencode.auto_start` | `true` | Auto-start opencode on Bridge launch |
+| `opencode.auto_restart` | `true` | Auto-restart opencode on crash |
+| `fs.allowed_paths` | *(empty = all)* | Filesystem path whitelist |
 
 ## Bridge CLI
 
