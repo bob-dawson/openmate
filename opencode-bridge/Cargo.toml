@@ -59,6 +59,7 @@ windows = { version = "0.59", features = [
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 tempfile = "3"
+mockito = "1"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

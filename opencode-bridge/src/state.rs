@@ -49,7 +49,8 @@ pub struct AppStateInner {
     pub scan_confirm_results: RwLock<HashMap<String, ScanConfirmResult>>,
     pub login_sessions: RwLock<HashMap<String, auth::login::LoginSession>>,
     pub event_source: Arc<SharedEventSource>,
-pub actual_port: Arc<AtomicU16>,
+    pub actual_port: Arc<AtomicU16>,
+    pub upgrade_manager: crate::update::UpgradeManager,
     pub shutdown_tx: tokio::sync::watch::Sender<bool>,
 }
 
@@ -119,6 +120,12 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
 
     let bridge_port = config.bridge.port;
 
+    let shutdown_tx = shutdown.map_or_else(
+        || tokio::sync::watch::channel(false).0,
+        |(tx, _)| tx,
+    );
+    let upgrade_manager = crate::update::UpgradeManager::new(shutdown_tx.clone());
+
     Arc::new(AppStateInner {
         config,
         opencode_status: RwLock::new(OpencodeStatus::Stopped),
@@ -142,9 +149,7 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
         bridge_id,
         event_source: event_source.unwrap_or_else(|| Arc::new(SharedEventSource::new())),
         actual_port: actual_port.unwrap_or_else(|| Arc::new(AtomicU16::new(bridge_port))),
-        shutdown_tx: shutdown.map_or_else(
-            || tokio::sync::watch::channel(false).0,
-            |(tx, _)| tx,
-        ),
+        upgrade_manager,
+        shutdown_tx,
     })
 }

@@ -147,6 +147,37 @@ pub async fn upgrade_opencode(
     Json(json!({ "status": "started" }))
 }
 
+pub async fn bridge_upgrade_download(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    if state.upgrade_manager.start_download() {
+        Json(json!({ "status": "started" }))
+    } else {
+        Json(json!({ "status": "already_in_progress" }))
+    }
+}
+
+pub async fn bridge_upgrade_status(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let s = state.upgrade_manager.get_status().await;
+    Json(json!({
+        "state": s.phase.as_str(),
+        "progress": s.progress,
+        "version": s.version,
+        "error": s.error,
+    }))
+}
+
+pub async fn bridge_upgrade_apply(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    match state.upgrade_manager.apply().await {
+        Ok(()) => Json(json!({ "status": "applying" })),
+        Err(e) => Json(json!({ "status": "error", "error": e })),
+    }
+}
+
 fn is_newer_version(new: &str, old: &str) -> bool {
     let parse = |v: &str| -> Vec<u32> {
         v.trim_start_matches('v')

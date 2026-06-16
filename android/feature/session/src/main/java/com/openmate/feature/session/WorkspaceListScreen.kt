@@ -838,6 +838,109 @@ private fun SettingsContent(
         }
 
         item {
+            val bridgeUpdateInfo by viewModel.bridgeUpdateInfo.collectAsState()
+            val bridgeUpgradeState by viewModel.bridgeUpgradeState.collectAsState()
+
+            SectionHeader(title = stringResource(R.string.bridge_update))
+            SettingsCard {
+                SettingsRow(
+                    title = stringResource(R.string.app_latest_version),
+                    subtitle = null,
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = when {
+                                    bridgeUpgradeState.isDownloading -> stringResource(R.string.bridge_downloading)
+                                    bridgeUpgradeState.isApplying -> stringResource(R.string.bridge_applying)
+                                    bridgeUpdateInfo?.latestVersion != null -> "v${bridgeUpdateInfo?.latestVersion}"
+                                    else -> stringResource(R.string.check_failed_retry)
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (bridgeUpdateInfo?.hasUpdate == true)
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.check_for_updates),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable(
+                                    enabled = !bridgeUpgradeState.isDownloading && !bridgeUpgradeState.isApplying,
+                                    onClick = { viewModel.checkBridgeUpdate() }
+                                ),
+                            )
+                        }
+                    },
+                )
+                if (bridgeUpgradeState.isDownloading) {
+                    SettingsRow(
+                        title = stringResource(R.string.bridge_downloading),
+                        subtitle = "${bridgeUpgradeState.progress}%",
+                        showDivider = false,
+                        trailing = {
+                            CircularProgressIndicator(
+                                progress = { bridgeUpgradeState.progress / 100f },
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        },
+                    )
+                } else if (bridgeUpgradeState.isApplying) {
+                    SettingsRow(
+                        title = stringResource(R.string.bridge_applying),
+                        subtitle = null,
+                        showDivider = false,
+                        trailing = {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        },
+                    )
+                } else if (bridgeUpgradeState.error != null) {
+                    SettingsRow(
+                        title = stringResource(R.string.bridge_upgrade_failed),
+                        subtitle = bridgeUpgradeState.error,
+                        showDivider = false,
+                        modifier = Modifier.clickable { viewModel.clearBridgeUpgradeError() },
+                        trailing = {
+                            Text(
+                                text = stringResource(R.string.check_for_updates),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                } else if (bridgeUpdateInfo?.hasUpdate == true) {
+                    SettingsRow(
+                        title = stringResource(R.string.bridge_upgrade_now),
+                        subtitle = null,
+                        showDivider = false,
+                        modifier = Modifier.clickable { viewModel.upgradeBridge() },
+                        trailing = {
+                            Text(
+                                text = "\u203A",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                } else if (bridgeUpdateInfo?.hasUpdate == false) {
+                    SettingsRow(
+                        title = stringResource(R.string.app_current_version),
+                        subtitle = null,
+                        showDivider = false,
+                        trailing = {
+                            Text(
+                                text = "v${bridgeUpdateInfo?.currentVersion ?: "?"}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+
+        item {
             SectionHeader(title = stringResource(R.string.about))
             SettingsCard {
                 SettingsRow(

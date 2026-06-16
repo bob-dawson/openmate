@@ -98,6 +98,27 @@ class SettingsViewModel @Inject constructor(
 
     private var latestModuleVersion: ModuleVersion? = null
 
+    data class BridgeUpdateInfo(
+        val currentVersion: String,
+        val latestVersion: String?,
+        val hasUpdate: Boolean,
+    )
+
+    data class BridgeUpgradeState(
+        val isDownloading: Boolean = false,
+        val progress: Int = 0,
+        val isApplying: Boolean = false,
+        val error: String? = null,
+    )
+
+    private val _bridgeUpdateInfo = MutableStateFlow<BridgeUpdateInfo?>(null)
+    val bridgeUpdateInfo: StateFlow<BridgeUpdateInfo?> = _bridgeUpdateInfo.asStateFlow()
+
+    private val _bridgeUpgradeState = MutableStateFlow(BridgeUpgradeState())
+    val bridgeUpgradeState: StateFlow<BridgeUpgradeState> = _bridgeUpgradeState.asStateFlow()
+
+    private var latestBridgeVersion: ModuleVersion? = null
+
     private val cacheDir get() = File(appContext.cacheDir, "file_cache")
 
     init {
@@ -105,6 +126,7 @@ class SettingsViewModel @Inject constructor(
         refreshCacheInfo()
         checkVersion()
         checkAppUpdate()
+        checkBridgeUpdate()
     }
 
     fun refreshCacheInfo() {
@@ -301,5 +323,81 @@ class SettingsViewModel @Inject constructor(
 
     fun clearAppDownloadError() {
         _appDownloadState.value = AppDownloadState()
+    }
+
+    fun checkBridgeUpdate() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val latest = versionClient.fetchBridgeVersion()
+                latestBridgeVersion = latest
+                val current = _opencodeVersion.value?.let { ver ->
+                    apiClient.bridgeStatus().bridge.version
+                } ?: "0.0.0"
+                val hasUpdate = latest != null && isNewer(latest.version, current)
+                _bridgeUpdateInfo.value = BridgeUpdateInfo(
+                    currentVersion = current,
+                    latestVersion = latest?.version,
+                    hasUpdate = hasUpdate,
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun upgradeBridge() {
+        if (_bridgeUpgradeState.value.isDownloading || _bridgeUpgradeState.value.isApplying) return
+        val info = _bridgeUpdateInfo.value ?: return
+        if (!info.hasUpdate) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _bridgeUpgradeState.value = BridgeUpgradeState(isDownloading = true)
+            try {
+                apiClient.bridgeUpgradeDownload()
+
+                val maxPolls = 120
+                var downloaded = false
+                for (i in 0 until maxPolls) {
+                    delay(3000)
+                    val status = apiClient.bridgeUpgradeStatus()
+                    when (status.state) {
+                        "downloading" -> {
+                            _bridgeUpgradeState.value = BridgeUpgradeState(
+                                isDownloading = true,
+                                progress = status.progress.toInt(),
+                            )
+                        }
+                        "downloaded" -> {
+                            downloaded = true
+                            break
+                        }
+                        "failed" -> {
+                            _bridgeUpgradeState.value = BridgeUpgradeState(
+                                error = status.error ?: "下载失败，请前往 GitHub Releases 手动更新",
+                            )
+                            return@launch
+                        }
+                    }
+                }
+
+                if (!downloaded) {
+                    _bridgeUpgradeState.value = BridgeUpgradeState(
+                        error = "下载超时，请前往 GitHub Releases 手动更新",
+                    )
+                    return@launch
+                }
+
+                _bridgeUpgradeState.value = BridgeUpgradeState(isApplying = true)
+                apiClient.bridgeUpgradeApply()
+
+            } catch (e: Exception) {
+                _bridgeUpgradeState.value = BridgeUpgradeState(
+                    error = e.message ?: "升级失败",
+                )
+            }
+        }
+    }
+
+    fun clearBridgeUpgradeError() {
+        _bridgeUpgradeState.value = BridgeUpgradeState()
     }
 }

@@ -17,6 +17,7 @@ pub mod server;
 pub mod state;
 pub mod sync;
 pub mod ui;
+pub mod update;
 
 #[cfg(target_os = "windows")]
 pub mod service_windows;

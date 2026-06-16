@@ -171,3 +171,11 @@ data class BridgeGitStatusEntry(
     val status: String = "",
     val oldPath: String? = null,
 )
+
+@Serializable
+data class BridgeUpgradeStatusDto(
+    val state: String = "idle",
+    val progress: Long = 0,
+    val version: String? = null,
+    val error: String? = null,
+)

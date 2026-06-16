@@ -246,6 +246,11 @@
     <string name="download_and_install">Download &amp; Install</string>
     <string name="app_download_failed">Download failed. Please download manually from GitHub Releases.</string>
     <string name="check_failed_retry">Check failed, retry</string>
+    <string name="bridge_update">Bridge Update</string>
+    <string name="bridge_upgrade_now">Upgrade Now</string>
+    <string name="bridge_downloading">Downloading Bridge…</string>
+    <string name="bridge_applying">Applying update, Bridge will restart…</string>
+    <string name="bridge_upgrade_failed">Upgrade failed. Please update manually from GitHub Releases.</string>
     <string name="init_session">Initialize Session</string>
     <string name="init_failed">Failed to initialize session</string>
 </resources>

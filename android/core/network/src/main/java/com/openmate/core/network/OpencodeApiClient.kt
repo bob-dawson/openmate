@@ -13,6 +13,7 @@ import com.openmate.core.network.dto.BridgeRootEntryDto
 import com.openmate.core.network.dto.BridgeSearchRequest
 import com.openmate.core.network.dto.BridgeSearchResultDto
 import com.openmate.core.network.dto.BridgeStatusResponse
+import com.openmate.core.network.dto.BridgeUpgradeStatusDto
 import com.openmate.core.network.dto.BridgeWriteRequest
 import com.openmate.core.network.dto.FileNodeDto
 import com.openmate.core.network.dto.HealthDto
@@ -599,6 +600,18 @@ class OpencodeApiClient(
 
     suspend fun bridgeOpencodeRestart() {
         postUnit("/api/bridge/opencode/restart", JsonObject(emptyMap()))
+    }
+
+    suspend fun bridgeUpgradeDownload(): JsonObject {
+        return post("/api/bridge/upgrade/download", JsonObject(emptyMap()))
+    }
+
+    suspend fun bridgeUpgradeStatus(): BridgeUpgradeStatusDto {
+        return get("/api/bridge/upgrade/status")
+    }
+
+    suspend fun bridgeUpgradeApply(): JsonObject {
+        return post("/api/bridge/upgrade/apply", JsonObject(emptyMap()))
     }
 
     suspend fun bridgeDownloadFile(
