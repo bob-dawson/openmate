@@ -744,6 +744,100 @@ private fun SettingsContent(
         }
 
         item {
+            val appUpdateInfo by viewModel.appUpdateInfo.collectAsState()
+            val appDownloadState by viewModel.appDownloadState.collectAsState()
+
+            SectionHeader(title = stringResource(R.string.app_update))
+            SettingsCard {
+                SettingsRow(
+                    title = stringResource(R.string.app_latest_version),
+                    subtitle = null,
+                    trailing = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = when {
+                                    appDownloadState.isDownloading -> stringResource(R.string.downloading)
+                                    appUpdateInfo?.latestVersion != null -> "v${appUpdateInfo?.latestVersion}"
+                                    else -> stringResource(R.string.check_failed_retry)
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (appUpdateInfo?.hasUpdate == true)
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.check_for_updates),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable(
+                                    enabled = !appDownloadState.isDownloading,
+                                    onClick = { viewModel.checkAppUpdate() }
+                                ),
+                            )
+                        }
+                    },
+                )
+                if (appUpdateInfo?.hasUpdate == true && !appDownloadState.isDownloading) {
+                    SettingsRow(
+                        title = stringResource(R.string.download_and_install),
+                        subtitle = null,
+                        showDivider = appDownloadState.error != null,
+                        modifier = Modifier.clickable { viewModel.downloadAndInstallApp() },
+                        trailing = {
+                            Text(
+                                text = "\u203A",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                }
+                if (appDownloadState.isDownloading) {
+                    SettingsRow(
+                        title = stringResource(R.string.downloading),
+                        subtitle = "${appDownloadState.progress}%",
+                        showDivider = false,
+                        trailing = {
+                            CircularProgressIndicator(
+                                progress = { appDownloadState.progress / 100f },
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        },
+                    )
+                } else if (appDownloadState.error != null) {
+                    SettingsRow(
+                        title = stringResource(R.string.app_download_failed),
+                        subtitle = null,
+                        showDivider = false,
+                        modifier = Modifier.clickable { viewModel.clearAppDownloadError() },
+                        trailing = {
+                            Text(
+                                text = stringResource(R.string.check_for_updates),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                } else if (appUpdateInfo?.hasUpdate == false) {
+                    SettingsRow(
+                        title = stringResource(R.string.app_current_version),
+                        subtitle = null,
+                        showDivider = false,
+                        trailing = {
+                            Text(
+                                text = "v${appUpdateInfo?.currentVersion ?: "?"}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+
+        item {
             SectionHeader(title = stringResource(R.string.about))
             SettingsCard {
                 SettingsRow(

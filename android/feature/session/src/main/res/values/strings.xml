@@ -239,6 +239,13 @@
     <string name="up_to_date">Up to date</string>
     <string name="latest_version">Latest version</string>
     <string name="current_version">Current version</string>
+    <string name="app_update">App Update</string>
+    <string name="app_latest_version">Latest Version</string>
+    <string name="app_current_version">Current Version</string>
+    <string name="app_up_to_date">Up to date</string>
+    <string name="download_and_install">Download &amp; Install</string>
+    <string name="app_download_failed">Download failed. Please download manually from GitHub Releases.</string>
+    <string name="check_failed_retry">Check failed, retry</string>
     <string name="init_session">Initialize Session</string>
     <string name="init_failed">Failed to initialize session</string>
 </resources>
