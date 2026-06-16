@@ -269,7 +269,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun checkAppUpdate() {
+    fun checkAppUpdate(userTriggered: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val latest = versionClient.fetchAndroidVersion()
@@ -281,7 +281,7 @@ class SettingsViewModel @Inject constructor(
                     latestVersion = latest?.version,
                     hasUpdate = hasUpdate,
                 )
-                if (!hasUpdate && latest != null) {
+                if (!hasUpdate && latest != null && userTriggered) {
                     _updateMessage.value = appContext.getString(R.string.app_up_to_date)
                 }
             } catch (_: Exception) {
@@ -342,7 +342,7 @@ class SettingsViewModel @Inject constructor(
         _appDownloadState.value = AppDownloadState()
     }
 
-    fun checkBridgeUpdate() {
+    fun checkBridgeUpdate(userTriggered: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val latest = versionClient.fetchBridgeVersion()
@@ -356,7 +356,7 @@ class SettingsViewModel @Inject constructor(
                     latestVersion = latest?.version,
                     hasUpdate = hasUpdate,
                 )
-                if (!hasUpdate && latest != null) {
+                if (!hasUpdate && latest != null && userTriggered) {
                     _updateMessage.value = appContext.getString(R.string.bridge_up_to_date)
                 }
             } catch (_: Exception) {
