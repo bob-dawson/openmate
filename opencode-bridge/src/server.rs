@@ -196,7 +196,7 @@ pub async fn run_server(
     let port = actual_port;
     tracing::info!("Bridge listening on {}", listener.local_addr()?);
 
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     {
         let scan_token = {
             let st = app_state.scan_token.read().await;

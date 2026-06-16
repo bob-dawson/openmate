@@ -312,7 +312,7 @@ impl OpencodeManager {
         None
     }
 
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     async fn find_pid_by_port(&self) -> Option<u32> {
         let port = *self.port;
         let output = tokio::process::Command::new("ss")
@@ -334,6 +334,21 @@ impl OpencodeManager {
             }
         }
         None
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn find_pid_by_port(&self) -> Option<u32> {
+        let port = *self.port;
+        let output = tokio::process::Command::new("lsof")
+            .args(["-ti", &format!(":{}", port)])
+            .output()
+            .await
+            .ok()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let pid: u32 = stdout.lines().next()?.trim().parse().ok()?;
+        tracing::info!("Found opencode pid {} by port {}", pid, port);
+        Some(pid)
     }
 
     pub async fn set_status(&self, new_status: OpencodeStatus) {

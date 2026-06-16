@@ -87,6 +87,37 @@ jobs:
           name: bridge-linux
           path: openmate-linux-x86_64
 
+  bridge-macos:
+    name: Bridge (macOS-${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-13
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: opencode-bridge
+
+      - name: Build
+        working-directory: opencode-bridge
+        run: cargo build --release
+
+      - name: Rename binary
+        run: cp opencode-bridge/target/release/openmate openmate-darwin-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridge-macos-${{ matrix.arch }}
+          path: openmate-darwin-${{ matrix.arch }}
+
   relay-gateway:
     name: Relay Gateway (Linux)
     runs-on: ubuntu-latest
@@ -114,7 +145,7 @@ jobs:
   release:
     name: GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, bridge-windows, bridge-linux, relay-gateway]
+    needs: [android, bridge-windows, bridge-linux, bridge-macos, relay-gateway]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -131,6 +162,8 @@ jobs:
           cp artifacts/android-apk/*.apk release-files/
           cp artifacts/bridge-windows/openmate.exe release-files/
           cp artifacts/bridge-linux/openmate-linux-x86_64 release-files/
+          cp artifacts/bridge-macos-arm64/openmate-darwin-arm64 release-files/
+          cp artifacts/bridge-macos-x86_64/openmate-darwin-x86_64 release-files/
           cp artifacts/relay-gateway-linux/relay-gateway-linux-x86_64 release-files/
           ls -la release-files/
 

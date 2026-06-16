@@ -121,6 +121,19 @@ async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
         });
     }
 
+    #[cfg(target_os = "macos")]
+    {
+        let ap = actual_port.clone();
+        let ready = ready_notify.clone();
+        tokio::spawn(async move {
+            ready.notified().await;
+            let port = ap.load(std::sync::atomic::Ordering::Relaxed);
+            let url = format!("http://127.0.0.1:{}/ui/", port);
+            tracing::info!("Opening browser: {}", url);
+            let _ = open::that(&url);
+        });
+    }
+
     #[cfg(target_os = "windows")]
     {
         let (tx, rx) = std::sync::mpsc::channel::<openmate::tray::TrayEvent>();

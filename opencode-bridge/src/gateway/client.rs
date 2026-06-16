@@ -78,7 +78,7 @@ impl GatewayClient {
             let _ = socket2::SockRef::from(&*sock).set_tcp_keepalive(&ka);
         }
 
-        #[cfg(target_os = "linux")]
+        #[cfg(unix)]
         {
             use std::os::unix::io::{AsRawFd, FromRawFd};
             let inner: &MaybeTlsStream<tokio::net::TcpStream> = ws_stream.get_ref();
