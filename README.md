@@ -56,6 +56,16 @@ OpenMate has three components:
 - **Android App** — Native Kotlin/Jetpack Compose app. Connects to Bridge directly over LAN, or via Relay when you're on a different network.
 - **Relay Server** — Cloud gateway that bridges your phone and PC over the internet using WebSocket tunnels, so you stay connected anywhere.
 
+## Supported Platforms
+
+| Platform | Status |
+|----------|--------|
+| Windows | ✅ Supported |
+| Linux (x86_64, arm64) | ✅ Supported |
+| macOS (Apple Silicon) | ⚠️ Should work, but not yet tested |
+
+Linux binaries are statically linked (musl) and run on any distribution regardless of glibc version. Prebuilt binaries for all platforms are on the [Releases](../../releases) page. The Android app requires Android 8.0+ (API 26+).
+
 ## Get Started in 5 Minutes
 
 > **Prerequisites:** [opencode](https://github.com/sst/opencode) installed on your PC · Android 8.0+ (API 26+) · PC & phone on the same network, or internet access for the cloud relay

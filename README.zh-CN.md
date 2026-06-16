@@ -56,6 +56,16 @@ OpenMate 由三个组件构成：
 - **Android 客户端** — 原生 Kotlin / Jetpack Compose 应用。通过局域网直连 Bridge，或在不同网络时经由中继服务器连接。
 - **中继服务器** — 云端网关，通过 WebSocket 隧道在手机与 PC 之间建立互联，让你在任何地方都能保持连接。
 
+## 支持的平台
+
+| 平台 | 状态 |
+|----------|--------|
+| Windows | ✅ 支持 |
+| Linux (x86_64, arm64) | ✅ 支持 |
+| macOS (Apple Silicon) | ⚠️ 应该可用，但尚未测试 |
+
+Linux 二进制为静态链接（musl），可在任意发行版上运行，无 glibc 版本要求。各平台预编译二进制均可在 [Releases](../../releases) 页面下载。Android 客户端需 Android 8.0+（API 26+）。
+
 ## 5 分钟快速上手
 
 > **前置条件：** PC 上已安装 [opencode](https://github.com/sst/opencode) · Android 8.0+（API 26+）· 手机与 PC 处于同一网络，或可通过互联网访问云中继
