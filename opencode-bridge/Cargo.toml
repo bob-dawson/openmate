@@ -1,6 +1,6 @@
 [package]
 name = "openmate"
-version = "0.1.18"
+version = "0.1.19"
 edition = "2024"
 description = "OpenMate Bridge - proxy, process management, file serving, and authentication"
 

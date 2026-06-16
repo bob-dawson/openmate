@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.19
+
+Released: 2026-06-16
+
+### 新功能
+
+- **Linux 兼容性大幅提升**：Bridge Linux 版本改为静态链接（musl），不再依赖系统 glibc 版本，可在任意 Linux 发行版上运行（Ubuntu/Debian/CentOS/Alpine 等均可）
+- **新增 Linux arm64 支持**：Bridge 提供 arm64 架构预编译二进制，支持 ARM 服务器与设备
+
+### 问题修复
+
+- 修复网络断开后重连时可能崩溃的问题（No active database）
+
 ## 0.1.17
 
 Released: 2026-06-12
