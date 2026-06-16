@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Create local.properties
+        working-directory: android
+        run: |
+          echo "RELEASE_STORE_PASSWORD=${{ secrets.RELEASE_STORE_PASSWORD }}" > local.properties
+          echo "RELEASE_KEY_PASSWORD=${{ secrets.RELEASE_KEY_PASSWORD }}" >> local.properties
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp android/app/build/outputs/apk/release/app-release.apk OpenMate-${VERSION}.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: OpenMate-*.apk
+
+  bridge-windows:
+    name: Bridge (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: opencode-bridge
+
+      - name: Build
+        working-directory: opencode-bridge
+        run: cargo build --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridge-windows
+          path: opencode-bridge/target/release/openmate.exe
+
+  bridge-linux:
+    name: Bridge (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: opencode-bridge
+
+      - name: Build
+        working-directory: opencode-bridge
+        run: cargo build --release
+
+      - name: Rename binary
+        run: cp opencode-bridge/target/release/openmate openmate-linux-x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridge-linux
+          path: openmate-linux-x86_64
+
+  relay-gateway:
+    name: Relay Gateway (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server/relay-gateway
+
+      - name: Build
+        working-directory: server/relay-gateway
+        run: cargo build --release
+
+      - name: Rename binary
+        run: cp server/relay-gateway/target/release/relay-gateway relay-gateway-linux-x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: relay-gateway-linux
+          path: relay-gateway-linux-x86_64
+
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, bridge-windows, bridge-linux, relay-gateway]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+          cp artifacts/android-apk/*.apk release-files/
+          cp artifacts/bridge-windows/openmate.exe release-files/
+          cp artifacts/bridge-linux/openmate-linux-x86_64 release-files/
+          cp artifacts/relay-gateway-linux/relay-gateway-linux-x86_64 release-files/
+          ls -la release-files/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-files/*
+          generate_release_notes: true
