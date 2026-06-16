@@ -8,8 +8,13 @@ import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SseEventRepository
+import com.openmate.core.common.AppInfo
+import com.openmate.core.common.FileOpener
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.ReleaseAssets
+import com.openmate.core.network.VersionClient
+import com.openmate.core.network.dto.ModuleVersion
 import com.openmate.core.network.dto.OpencodeVersionResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.openmate.feature.settings.R
@@ -35,6 +40,7 @@ class SettingsViewModel @Inject constructor(
     private val sseEventRepository: SseEventRepository,
     private val dbProvider: ActiveDatabaseProvider,
     private val apiClient: OpencodeApiClient,
+    private val versionClient: VersionClient,
 ) : ViewModel() {
 
     private val prefs: SharedPreferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -72,12 +78,33 @@ class SettingsViewModel @Inject constructor(
     private val _upgradeError = MutableStateFlow<String?>(null)
     val upgradeError: StateFlow<String?> = _upgradeError.asStateFlow()
 
+    data class AppUpdateInfo(
+        val currentVersion: String,
+        val latestVersion: String?,
+        val hasUpdate: Boolean,
+    )
+
+    data class AppDownloadState(
+        val isDownloading: Boolean = false,
+        val progress: Int = 0,
+        val error: String? = null,
+    )
+
+    private val _appUpdateInfo = MutableStateFlow<AppUpdateInfo?>(null)
+    val appUpdateInfo: StateFlow<AppUpdateInfo?> = _appUpdateInfo.asStateFlow()
+
+    private val _appDownloadState = MutableStateFlow(AppDownloadState())
+    val appDownloadState: StateFlow<AppDownloadState> = _appDownloadState.asStateFlow()
+
+    private var latestModuleVersion: ModuleVersion? = null
+
     private val cacheDir get() = File(appContext.cacheDir, "file_cache")
 
     init {
         loadActiveProfile()
         refreshCacheInfo()
         checkVersion()
+        checkAppUpdate()
     }
 
     fun refreshCacheInfo() {
@@ -211,5 +238,68 @@ class SettingsViewModel @Inject constructor(
                 _isRestarting.value = false
             }
         }
+    }
+
+    fun checkAppUpdate() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val latest = versionClient.fetchAndroidVersion()
+                latestModuleVersion = latest
+                val current = AppInfo.versionName(appContext)
+                val hasUpdate = latest != null && isNewer(latest.version, current)
+                _appUpdateInfo.value = AppUpdateInfo(
+                    currentVersion = current,
+                    latestVersion = latest?.version,
+                    hasUpdate = hasUpdate,
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun isNewer(latest: String, current: String): Boolean {
+        val a = latest.trimStart('v').split('.').mapNotNull { it.toIntOrNull() }
+        val b = current.trimStart('v').split('.').mapNotNull { it.toIntOrNull() }
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrNull(i) ?: 0
+            val y = b.getOrNull(i) ?: 0
+            if (x != y) return x > y
+        }
+        return false
+    }
+
+    fun downloadAndInstallApp() {
+        val info = _appUpdateInfo.value ?: return
+        val tag = latestModuleVersion?.tag ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            if (_appDownloadState.value.isDownloading) return@launch
+            _appDownloadState.value = AppDownloadState(isDownloading = true)
+            try {
+                val url = ReleaseAssets.apkUrl(tag)
+                val destDir = File(appContext.cacheDir, "file_cache")
+                val destFile = File(destDir, ReleaseAssets.apkFilename(tag))
+                versionClient.downloadReleaseAsset(
+                    url = url,
+                    destFile = destFile,
+                    onProgress = { downloaded, total ->
+                        if (total > 0) {
+                            _appDownloadState.value = _appDownloadState.value.copy(
+                                progress = ((downloaded * 100) / total).toInt(),
+                            )
+                        }
+                    },
+                )
+                _appDownloadState.value = AppDownloadState(isDownloading = false, progress = 100)
+                FileOpener.installApk(appContext, destFile, destFile.name)
+            } catch (e: Exception) {
+                _appDownloadState.value = AppDownloadState(
+                    error = e.message ?: "Download failed",
+                )
+            }
+        }
+    }
+
+    fun clearAppDownloadError() {
+        _appDownloadState.value = AppDownloadState()
     }
 }
