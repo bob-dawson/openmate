@@ -1,13 +1,13 @@
-# OpenMate 安装指南
+# OpenMate Installation Guide
 
-## 1. 运行 Bridge
+## 1. Run the Bridge
 
-Bridge 是连接 Android 客户端与 opencode 的代理服务。
+The Bridge is the proxy service that connects the Android client to opencode.
 
 ### Windows
 
-1. 双击 `openmate.exe` 运行
-2. Bridge 启动后在终端或管理页面显示 **QR 码**
+1. Double-click `openmate.exe` to run
+2. After the Bridge starts, a **QR code** is displayed in the terminal or the admin page
 
 ### Linux
 
@@ -16,40 +16,40 @@ chmod +x openmate
 ./openmate
 ```
 
-Bridge 启动后在终端显示 **QR 码**。
+After the Bridge starts, a **QR code** is displayed in the terminal.
 
-### 安装为系统服务（可选）
+### Install as a System Service (Optional)
 
 ```bash
-./openmate install     # Windows 服务 / Linux systemd
-./openmate uninstall   # 卸载
+./openmate install     # Windows Service / Linux systemd
+./openmate uninstall   # Uninstall
 ```
 
-Windows 下一般不推荐作为服务运行，因为需要用户单独设置服务的账号密码。普通应用运行即可，开机自启可在管理页面设置。
+On Windows, running as a service is generally not recommended because it requires setting up a separate service account and password. Running as a regular application is sufficient — auto-start on boot can be configured in the admin page.
 
-## 2. 安装 Android APK
+## 2. Install the Android APK
 
-将 `OpenMate-*.apk` 传输到手机，打开安装。
+Transfer `OpenMate-*.apk` to your phone and install it.
 
-## 3. 扫码配对
+## 3. Scan to Pair
 
-首次打开 App 会进入扫码配对页面：
+When you first open the app, it enters the QR code pairing screen:
 
-1. Bridge 运行后会显示 **QR 码**（终端显示或管理页面查看）
-2. 在 App 中扫描 QR 码，自动完成配对并连接
-3. 如果不在同一局域网，App 会自动通过网关中继连接
+1. The Bridge displays a **QR code** (in the terminal or the admin page)
+2. Scan the QR code in the app — pairing and connection are automatic
+3. If you're not on the same LAN, the app automatically connects via the cloud relay gateway
 
-### 手动配对（备选）
+### Manual Pairing (Alternative)
 
-如果无法扫码，可使用 PIN 码配对：
+If QR scanning isn't available, you can pair using a PIN code:
 
-1. App 显示 **6 位 PIN 码**
-2. 在 Bridge 运行的电脑上执行：
+1. The app displays a **6-digit PIN code**
+2. On the PC running the Bridge, execute:
    ```
    openmate approve <PIN>
    ```
-3. App 自动完成配对并连接
+3. The app automatically completes pairing and connects
 
-### 手动添加实例
+### Add Instance Manually
 
-在 App 中添加实例，地址填 Bridge 所在电脑的 IP，端口默认 `4097`。
+In the app, add an instance with the IP address of the PC running the Bridge, default port `4097`.

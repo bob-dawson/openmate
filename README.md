@@ -122,8 +122,10 @@ Get the latest release from the [Releases page](../../releases).
 
 ## Documentation
 
+- [Installation Guide](docs/INSTALL.md) — Setup instructions for Bridge and Android app
+- [安装指南（中文）](docs/INSTALL.zh-CN.md) — Bridge 和 Android 客户端安装说明
 - [Development Guide](docs/DEVELOPMENT.md) — Architecture, build instructions, and API reference
-- [开发指南（中文）](docs/DEVELOPMENT.zh.md) — 架构、构建说明和 API 参考
+- [开发指南（中文）](docs/DEVELOPMENT.zh-CN.md) — 架构、构建说明和 API 参考
 - [Changelog](CHANGELOG.md) — Version history
 - [Design Documents](docs/design/) — Technical design docs
 
