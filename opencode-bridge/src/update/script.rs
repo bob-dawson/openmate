@@ -18,10 +18,10 @@ try {{
     Move-Item $new $tgt -Force
 }} catch {{
     Move-Item "$tgt.bak" $tgt -Force
-    Start-Process $tgt -WindowStyle Hidden
+    Start-Process $tgt -ArgumentList "--tray" -WindowStyle Hidden
     exit 1
 }}
-Start-Process $tgt -WindowStyle Hidden
+Start-Process $tgt -ArgumentList "--tray" -WindowStyle Hidden
 Remove-Item "$tgt.bak" -Force -ErrorAction SilentlyContinue
 Remove-Item $MyInvocation.MyCommand.Path -Force
 "#,
