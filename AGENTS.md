@@ -1,5 +1,12 @@
 # AGENTS.md — OpenMate Workspace
 
+## Repository
+
+- **GitHub**: https://github.com/bob-dawson/openmate
+- **License**: Apache 2.0
+- **Release Notes**: https://github.com/bob-dawson/openmate/releases
+- **Changelog**: [`CHANGELOG.md`](CHANGELOG.md)
+
 ## Project Structure
 
 - **Android 客户端**: `D:\openmate\android` — 详见 [`android/AGENTS.md`](android/AGENTS.md)（架构、构建、约定、API 等）
