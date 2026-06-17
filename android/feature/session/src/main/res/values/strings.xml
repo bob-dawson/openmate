@@ -253,4 +253,25 @@
     <string name="bridge_upgrade_failed">Upgrade failed. Please update manually from GitHub Releases.</string>
     <string name="init_session">Initialize Session</string>
     <string name="init_failed">Failed to initialize session</string>
+
+    <string name="reverted_message">Message reverted</string>
+    <string name="unrevert">Unrevert</string>
+    <string name="revert_dialog_title">Revert</string>
+    <string name="revert_dialog_message">Revert to the previous user message? This will undo all subsequent conversations and file changes.</string>
+    <string name="revert_confirm">Revert</string>
+    <string name="custom">Custom</string>
+    <string name="debug">Debug</string>
+    <string name="auto_retrying">Auto-retrying</string>
+    <string name="retry_attempt"> · Attempt %1$d</string>
+    <string name="retry_in_seconds"> · Retry in %1$ds</string>
+    <string name="tool_count"> · %1$d tools</string>
+    <string name="step_continuing"> · Continuing</string>
+    <string name="step_error"> · Error</string>
+    <string name="revert_to_here">Revert to here</string>
+    <string name="not_git_repo">This directory is not in a Git repository</string>
+    <string name="no_uncommitted_changes">No uncommitted changes</string>
+    <string name="invalid_regex">Invalid regex</string>
+    <string name="duration_hms">%1$dh %2$dm %3$ds</string>
+    <string name="duration_ms">%1$dm %2$ds</string>
+    <string name="duration_s">%1$ds</string>
 </resources>

@@ -127,11 +127,12 @@ internal fun shouldScrollToBottomOnInitialLoad(
     return messageCount > 0 && previousMessageCount == 0 && !hasSavedScrollPosition
 }
 
+@Composable
 internal fun sessionDetailMenuItems(): List<String> = listOf(
     "Rename",
     "Delete",
     "Skill",
-    "同步日志",
+    stringResource(R.string.sync_logs),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -513,7 +514,7 @@ fun SessionDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
-                                    "调试",
+                                    stringResource(R.string.debug),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.outline,
                                 )
@@ -702,13 +703,13 @@ fun SessionDetailScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "已回滚消息",
+                        text = stringResource(R.string.reverted_message),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                     TextButton(onClick = { viewModel.unrevert(sessionID) }) {
                         Text(
-                            text = "恢复",
+                            text = stringResource(R.string.unrevert),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer,
                         )
@@ -771,6 +772,9 @@ fun SessionDetailScreen(
                             )
                         }
                     }
+                    val hmsFmt = stringResource(R.string.duration_hms)
+                    val msFmt = stringResource(R.string.duration_ms)
+                    val sFmt = stringResource(R.string.duration_s)
                     val retryStatus = sessionRetryStatus
                     if (retryStatus != null) {
                         SessionRetryCard(retryStatus)
@@ -800,6 +804,9 @@ fun SessionDetailScreen(
                                             currentBusyStart = busyStart,
                                             now = busyStart + maxOf(0L, elapsed),
                                         ) ?: 0L,
+                                        formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
+                                        formatMs = { m, s -> msFmt.format(m, s) },
+                                        formatS = { s -> sFmt.format(s) },
                                     ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
@@ -807,7 +814,11 @@ fun SessionDetailScreen(
                             }
                         } else if (sessionTotalDuration != null) {
                             Text(
-                                text = formatDurationMillis(sessionTotalDuration!!),
+                                text = formatDurationMillis(sessionTotalDuration!!,
+                                    formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
+                                    formatMs = { m, s -> msFmt.format(m, s) },
+                                    formatS = { s -> sFmt.format(s) },
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1053,7 +1064,7 @@ fun SessionDetailScreen(
                             value = customCount,
                             onValueChange = { customCount = it },
                             modifier = Modifier.width(80.dp),
-                            placeholder = { Text("自定义") },
+                            placeholder = { Text(stringResource(R.string.custom)) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 keyboardType = KeyboardType.Number,
@@ -1088,14 +1099,14 @@ fun SessionDetailScreen(
     if (showRevertDialog) {
         AlertDialog(
             onDismissRequest = { showRevertDialog = false },
-            title = { Text("回滚") },
-            text = { Text("确定回滚到上一条消息？此操作将撤销之后的所有对话和文件变更。") },
+            title = { Text(stringResource(R.string.revert_dialog_title)) },
+            text = { Text(stringResource(R.string.revert_dialog_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.revertToLastMessage(sessionID)
                     showRevertDialog = false
                 }) {
-                    Text("回滚")
+                    Text(stringResource(R.string.revert_confirm))
                 }
             },
             dismissButton = {
@@ -1245,9 +1256,9 @@ private fun SessionRetryCard(status: SessionRetryStatus) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 val detail = buildString {
-                    append("自动重试中")
-                    status.attempt?.let { append(" · 第 ${it} 次") }
-                    remainingSeconds?.let { append(" · ${it} 秒后重试") }
+                    append(stringResource(R.string.auto_retrying))
+                    status.attempt?.let { append(stringResource(R.string.retry_attempt, it)) }
+                    remainingSeconds?.let { append(stringResource(R.string.retry_in_seconds, it)) }
                 }
                 Text(
                     text = detail,

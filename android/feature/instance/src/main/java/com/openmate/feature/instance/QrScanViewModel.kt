@@ -1,5 +1,6 @@
 package com.openmate.feature.instance
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,6 +12,7 @@ import com.openmate.core.network.TempHttpClient
 import com.openmate.core.network.TokenStore
 import com.openmate.core.network.dto.ScanPairConfirmResponse
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +27,7 @@ private const val GATEWAY_URL = "https://gateway.clawmate.net"
 
 @HiltViewModel
 class QrScanViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val tokenStore: TokenStore,
     private val profileRepository: ServerProfileRepository,
     private val installationIdProvider: InstallationIdProvider,
@@ -111,10 +114,10 @@ class QrScanViewModel @Inject constructor(
 
     private suspend fun performLogin(parsed: ParsedQrUrl) {
         val profile = profileRepository.getAll().firstOrNull { it.instanceId == parsed.instanceId }
-            ?: throw Exception("此 Bridge 尚未配对，请先在 Bridge 管理页面完成设备配对")
+            ?: throw Exception(context.getString(R.string.bridge_not_paired))
 
         val token = tokenStore.getToken(profile.id)
-            ?: throw Exception("未找到设备凭证，请重新配对")
+            ?: throw Exception(context.getString(R.string.device_credentials_not_found))
 
         if (parsed.instanceId.isNotBlank()) {
             val online = TempHttpClient.isGatewayBridgeOnline(GATEWAY_URL, parsed.instanceId)
@@ -130,7 +133,7 @@ class QrScanViewModel @Inject constructor(
         }
 
         if (profile.address.isBlank()) {
-            throw Exception("Bridge 地址未知且不在线")
+            throw Exception(context.getString(R.string.bridge_address_unknown_offline))
         }
         loginViaLan(profile, token, parsed.sessionId)
     }

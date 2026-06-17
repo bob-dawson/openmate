@@ -238,6 +238,27 @@
     <string name="current_version">当前版本</string>
     <string name="init_session">初始化会话</string>
     <string name="init_failed">初始化会话失败</string>
+
+    <string name="reverted_message">已回滚消息</string>
+    <string name="unrevert">恢复</string>
+    <string name="revert_dialog_title">回滚</string>
+    <string name="revert_dialog_message">确定回滚到上一条消息？此操作将撤销之后的所有对话和文件变更。</string>
+    <string name="revert_confirm">回滚</string>
+    <string name="custom">自定义</string>
+    <string name="debug">调试</string>
+    <string name="auto_retrying">自动重试中</string>
+    <string name="retry_attempt"> · 第 %1$d 次</string>
+    <string name="retry_in_seconds"> · %1$d 秒后重试</string>
+    <string name="tool_count"> · %1$d 工具</string>
+    <string name="step_continuing"> · 继续执行</string>
+    <string name="step_error"> · 出错</string>
+    <string name="revert_to_here">回滚至此</string>
+    <string name="not_git_repo">此目录不在 Git 仓库中</string>
+    <string name="no_uncommitted_changes">没有未提交的变更</string>
+    <string name="invalid_regex">正则无效</string>
+    <string name="duration_hms">%1$d小时%2$d分%3$d秒</string>
+    <string name="duration_ms">%1$d分%2$d秒</string>
+    <string name="duration_s">%1$d秒</string>
     <string name="app_update">应用更新</string>
     <string name="app_latest_version">最新版本</string>
     <string name="app_current_version">当前版本</string>

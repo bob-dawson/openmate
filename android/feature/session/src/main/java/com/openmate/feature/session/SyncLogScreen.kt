@@ -66,7 +66,7 @@ fun SyncLogScreen(
 
     var previousVisibleLogs by remember { mutableStateOf(categoryFiltered.map { it.renderedText }) }
     val renderedLogs = categoryFiltered.map { it.renderedText }
-    val filterResult = filterRenderedLogs(renderedLogs, query, previousVisibleLogs)
+    val filterResult = filterRenderedLogs(renderedLogs, query, previousVisibleLogs, stringResource(R.string.invalid_regex))
     previousVisibleLogs = filterResult.visibleLogs
 
     val visibleCount = filterResult.visibleLogs.size
