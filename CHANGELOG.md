@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.25
+
+Released: 2026-06-17
+
+### 问题修复
+
+- **Bridge 升级后无法启动**：修复升级流程中 shutdown 信号与脚本 spawn 竞态导致升级脚本未执行、Bridge 退出后不重启的问题
+
 ## 0.1.24
 
 Released: 2026-06-17
