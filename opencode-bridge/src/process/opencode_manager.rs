@@ -713,22 +713,6 @@ async fn restart_loop(
     }
 }
 
-#[cfg(windows)]
-unsafe fn restore_hidden_console() {
-    use windows::Win32::System::Console::*;
-    unsafe {
-        let _ = AllocConsole();
-        let hwnd = GetConsoleWindow();
-        if !hwnd.is_invalid() {
-            let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
-                hwnd,
-                windows::Win32::UI::WindowsAndMessaging::SW_HIDE,
-            );
-        }
-        let _ = SetConsoleCtrlHandler(None, true);
-    }
-}
-
 async fn send_sigint(pid: u32) {
     #[cfg(windows)]
     {
@@ -740,24 +724,35 @@ async fn send_sigint(pid: u32) {
             return;
         }
 
-        tracing::info!("CTRL_BREAK_EVENT failed for pid {}, trying AttachConsole", pid);
-        unsafe {
-            if FreeConsole().is_ok() {
-                if AttachConsole(pid).is_ok() {
-                    let _ = SetConsoleCtrlHandler(None, true);
-                    let r = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, 0);
-                    let _ = FreeConsole();
-                    let _ = SetConsoleCtrlHandler(None, false);
-                    if r.is_ok() {
-                        tracing::info!("CTRL_BREAK_EVENT sent via AttachConsole to pid {}", pid);
-                        restore_hidden_console();
-                        return;
-                    }
-                }
-                restore_hidden_console();
+        tracing::info!("CTRL_BREAK_EVENT failed for pid {}, spawning helper to AttachConsole", pid);
+        let script = format!(
+            r#"$t = Add-Type -MemberDefinition @"
+[DllImport("kernel32")] public static extern bool FreeConsole();
+[DllImport("kernel32")] public static extern bool AttachConsole(int p);
+[DllImport("kernel32")] public static extern bool GenerateConsoleCtrlEvent(uint e, uint g);
+"@ -Name C -Namespace K -PassThru; $t::FreeConsole()|Out-Null; if($t::AttachConsole({pid})){{ $t::GenerateConsoleCtrlEvent(1,0)|Out-Null; Start-Sleep -Milliseconds 500 }} "#,
+            pid = pid
+        );
+        let output = tokio::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .creation_flags(0x08000000)
+            .output()
+            .await;
+        match output {
+            Ok(out) if out.status.success() => {
+                tracing::info!("CTRL_BREAK_EVENT sent via helper to pid {}", pid);
+            }
+            Ok(out) => {
+                tracing::warn!(
+                    "AttachConsole helper exited {}: {}",
+                    out.status,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Failed to spawn AttachConsole helper: {}", e);
             }
         }
-        tracing::warn!("All console signal methods failed for pid {}", pid);
     }
 
     #[cfg(not(windows))]
