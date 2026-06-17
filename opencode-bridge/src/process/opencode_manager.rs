@@ -275,14 +275,6 @@ impl OpencodeManager {
     pub async fn restart(&self) -> Result<(), String> {
         if self.is_running().await {
             self.stop().await?;
-            for _ in 0..10 {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                let client = reqwest::Client::new();
-                if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_err() {
-                    break;
-                }
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
         self.start().await
     }
