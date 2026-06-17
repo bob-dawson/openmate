@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.24
+
+Released: 2026-06-17
+
+### 问题修复
+
+- **Bridge 升级重启端口占用**：修复 Bridge 升级重启时端口未正确释放导致新实例无法监听相同端口的问题，改为优雅退出立即释放端口后再启动新实例
+- **Bridge 重启不中断 opencode**：Bridge 重启时检测到 opencode 已在运行则直接接管，不再无意义重启（从 0.1.23 起修复，此次补充验证）
+- **opencode 优雅退出**：修复 Windows 上重启 opencode 时被强制终止导致端口占用的问题，通过 console 信号和独立 helper 进程实现优雅退出
+
 ## 0.1.23
 
 Released: 2026-06-17
