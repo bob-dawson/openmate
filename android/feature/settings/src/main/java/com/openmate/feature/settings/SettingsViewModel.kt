@@ -347,9 +347,7 @@ class SettingsViewModel @Inject constructor(
             try {
                 val latest = versionClient.fetchBridgeVersion()
                 latestBridgeVersion = latest
-                val current = _opencodeVersion.value?.let { ver ->
-                    apiClient.bridgeStatus().bridge.version
-                } ?: "0.0.0"
+                val current = apiClient.bridgeStatus().bridge.version
                 val hasUpdate = latest != null && isNewer(latest.version, current)
                 _bridgeUpdateInfo.value = BridgeUpdateInfo(
                     currentVersion = current,
