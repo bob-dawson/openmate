@@ -1,4 +1,4 @@
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{OpenFlags, params};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde_json::{Value, json};
