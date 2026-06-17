@@ -239,11 +239,16 @@ impl OpencodeManager {
         if let Some(pid) = signal_pid {
             send_sigint(pid).await;
 
+            let health_client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_millis(500))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new());
+            let health_url = format!("{}/global/health", self.opencode_url);
+
             let mut exited = false;
-            for _ in 0..15 {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                let client = reqwest::Client::new();
-                if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_err() {
+            for _ in 0..30 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                if health_client.get(&health_url).send().await.is_err() {
                     tracing::info!("opencode exited after SIGINT");
                     exited = true;
                     break;
