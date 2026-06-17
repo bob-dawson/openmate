@@ -239,32 +239,21 @@ impl OpencodeManager {
         if let Some(pid) = signal_pid {
             send_sigint(pid).await;
 
-            for _ in 0..10 {
+            let mut exited = false;
+            for _ in 0..15 {
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 let client = reqwest::Client::new();
                 if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_err() {
                     tracing::info!("opencode exited after SIGINT");
+                    exited = true;
                     break;
                 }
             }
 
-            let client = reqwest::Client::new();
-            if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_ok() {
-                tracing::warn!("opencode did not exit after SIGINT, sending SIGINT again");
-                send_sigint(pid).await;
-                for _ in 0..5 {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                    if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_err() {
-                        tracing::info!("opencode exited after second SIGINT");
-                        break;
-                    }
-                }
-            }
-
-            let client = reqwest::Client::new();
-            if client.get(format!("{}/global/health", self.opencode_url)).send().await.is_ok() {
-                tracing::warn!("opencode still running after two SIGINTs, force killing");
+            if !exited {
+                tracing::warn!("opencode did not exit after SIGINT, force killing");
                 force_kill(pid).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             }
         }
 
