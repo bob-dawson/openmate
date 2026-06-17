@@ -1,0 +1,11 @@
+services:
+  openmate:
+    build:
+      context: .
+    image: openmate-bridge:latest
+    container_name: openmate-bridge
+    ports:
+      - "4097:4097"
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
