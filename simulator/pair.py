@@ -1,11 +1,11 @@
 """
 OpenMate Android Emulator Pairing Script
-Uses uiautomator2 to automate the pairing flow in the Android emulator.
+Automates the full pairing flow: Add Instance -> Test Connection -> Save -> Approve PIN -> Confirm.
 
 Prerequisites:
     - Docker container running: docker compose up -d (in D:\\openmate\\docker)
-- Android emulator running with OpenMate APK installed
-- uiautomator2 installed: pip install uiautomator2
+    - Android emulator running with OpenMate APK installed
+    - uiautomator2 installed: pip install uiautomator2
 
 Usage:
     python pair.py                          # Full auto-pair with defaults
@@ -13,15 +13,22 @@ Usage:
     python pair.py --host 10.0.2.2          # Custom Bridge host
     python pair.py --port 4097              # Custom Bridge port
     python pair.py --container openmate-bridge  # Custom container name
+
+State guard: Script verifies it starts from the instance list page (with "Add Instance" or "Scan QR Code").
+If not on the correct page, it exits with an error.
 """
 
 import argparse
+import os
 import re
 import subprocess
 import sys
 import time
 
 import uiautomator2 as u2
+
+sys.path.insert(0, os.path.dirname(__file__))
+from look import look
 
 BRIDGE_CONTAINER = "openmate-bridge"
 DEFAULT_NAME = "Test-Bridge"
@@ -32,18 +39,6 @@ EMULATOR_SERIAL = "emulator-5554"
 
 def run(cmd, **kwargs):
     return subprocess.run(cmd, check=True, capture_output=True, text=True, **kwargs)
-
-
-def look(d, label):
-    xml = d.dump_hierarchy()
-    d.screenshot(f"D:\\openmate\\simulator\\screens\\{label}.png")
-    texts = re.findall(r'text="([^"]+)"', xml)
-    descs = re.findall(r'content-desc="([^"]+)"', xml)
-    texts = [t for t in texts if t and not re.match(r"^\d+:\d+", t)]
-    descs = [t for t in descs if t]
-    print(f"[{label}] Texts: {texts}")
-    print(f"[{label}] Descs: {descs}")
-    return xml, texts, descs
 
 
 def dismiss_keyboard(d):
@@ -62,6 +57,10 @@ def wait_for_app(d, timeout=10):
     return False
 
 
+def is_instance_list(d):
+    return d(description="Add Instance").exists or d(description="Scan QR Code").exists
+
+
 def approve_pin(container, pin):
     result = run(["docker", "exec", container, "/usr/local/bin/openmate", "approve", pin])
     output = result.stdout.strip()
@@ -77,12 +76,13 @@ def extract_pin(texts):
 
 
 def pair(d, name, host, port, container):
-    print("=== Step 1: Navigate to Add Instance ===")
-    if not d(description="Add Instance").exists and not d(text="Add Instance").exists:
-        if d(description="Back").exists:
-            d(description="Back").click()
-            time.sleep(1)
+    # State guard: must be on instance list page
+    if not is_instance_list(d):
+        print("ERROR: Not on instance list page. Navigate to the instance list first.")
+        print("  Expected: 'Add Instance' or 'Scan QR Code' button visible")
+        return False
 
+    print("=== Step 1: Navigate to Add Instance ===")
     d(description="Add Instance").click()
     time.sleep(2)
 
@@ -90,7 +90,7 @@ def pair(d, name, host, port, container):
         print("ERROR: Could not reach Add Instance form")
         return False
 
-    look(d, "form")
+    look(d, "pair_form")
 
     print("=== Step 2: Fill form ===")
     fields = d(className="android.widget.EditText")
@@ -107,12 +107,12 @@ def pair(d, name, host, port, container):
 
     dismiss_keyboard(d)
     time.sleep(0.5)
-    look(d, "filled")
+    look(d, "pair_filled")
 
     print("=== Step 3: Test Connection ===")
     d(text="Test Connection").click()
     time.sleep(3)
-    _, texts, _ = look(d, "tested")
+    _, texts, _ = look(d, "pair_tested")
 
     if not any("connected" in t.lower() for t in texts):
         print("ERROR: Test Connection failed - Bridge not connected")
@@ -139,7 +139,7 @@ def pair(d, name, host, port, container):
     print("=== Step 6: Confirm ===")
     d(text="Confirm").click()
     time.sleep(3)
-    _, texts, _ = look(d, "confirmed")
+    _, texts, _ = look(d, "pair_confirmed")
 
     if any("instances" in t.lower() for t in texts):
         instance_name = next((t for t in texts if t == name), None)

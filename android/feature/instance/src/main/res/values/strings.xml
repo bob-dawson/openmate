@@ -52,4 +52,8 @@
     <string name="share">Share</string>
     <string name="crash_detail">Crash Detail</string>
     <string name="delete_confirm">Are you sure to clear all crash logs?</string>
+
+    <string name="bridge_not_paired">This Bridge has not been paired. Please complete device pairing on the Bridge management page first.</string>
+    <string name="device_credentials_not_found">Device credentials not found. Please pair again.</string>
+    <string name="bridge_address_unknown_offline">Bridge address unknown and not online</string>
 </resources>

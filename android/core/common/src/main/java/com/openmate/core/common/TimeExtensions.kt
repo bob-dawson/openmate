@@ -32,15 +32,20 @@ fun Long.toTimeString(): String {
     return sdf.format(this)
 }
 
-fun formatDurationMillis(millis: Long): String {
+fun formatDurationMillis(
+    millis: Long,
+    formatHms: (h: Long, m: Long, s: Long) -> String = { h, m, s -> "${h}h ${m}m ${s}s" },
+    formatMs: (m: Long, s: Long) -> String = { m, s -> "${m}m ${s}s" },
+    formatS: (s: Long) -> String = { s -> "${s}s" },
+): String {
     val totalSeconds = millis / 1000
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
     return when {
-        hours > 0 -> "${hours}小时${minutes}分${seconds}秒"
-        minutes > 0 -> "${minutes}分${seconds}秒"
-        else -> "${seconds}秒"
+        hours > 0 -> formatHms(hours, minutes, seconds)
+        minutes > 0 -> formatMs(minutes, seconds)
+        else -> formatS(seconds)
     }
 }
 

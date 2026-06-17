@@ -229,7 +229,7 @@ fun SessionMessageSearchPanel(
                             )
                             if (message.type == "user") {
                                 DropdownMenuItem(
-                                    text = { Text("回滚至此") },
+                                    text = { Text(stringResource(R.string.revert_to_here)) },
                                     onClick = {
                                         onRevertToMessage(message.id)
                                         contextMenuMessage = null

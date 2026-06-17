@@ -25,12 +25,13 @@ fun filterRenderedLogs(
     renderedLogs: List<String>,
     query: String,
     previousVisibleLogs: List<String>,
+    regexErrorMessage: String = "Invalid regex",
 ): SyncLogFilterResult {
     if (query.isBlank()) return SyncLogFilterResult(renderedLogs, null)
     return try {
         val regex = Regex(query, setOf(RegexOption.IGNORE_CASE))
         SyncLogFilterResult(renderedLogs.filter { regex.containsMatchIn(it) }, null)
     } catch (_: IllegalArgumentException) {
-        SyncLogFilterResult(previousVisibleLogs, "正则无效")
+        SyncLogFilterResult(previousVisibleLogs, regexErrorMessage)
     }
 }

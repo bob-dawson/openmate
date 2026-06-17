@@ -42,4 +42,8 @@
     <string name="scan_login_success_message">浏览器登录已确认</string>
     <string name="camera_permission_required">需要相机权限才能扫描二维码</string>
     <string name="retry_scan">重试</string>
+
+    <string name="bridge_not_paired">此 Bridge 尚未配对，请先在 Bridge 管理页面完成设备配对</string>
+    <string name="device_credentials_not_found">未找到设备凭证，请重新配对</string>
+    <string name="bridge_address_unknown_offline">Bridge 地址未知且不在线</string>
 </resources>

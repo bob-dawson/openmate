@@ -331,6 +331,10 @@ private fun MessageMetadata(
     if (timeCreated <= 0) return
     val timeText = timeCreated.toTimeString()
 
+    val hmsFmt = stringResource(R.string.duration_hms)
+    val msFmt = stringResource(R.string.duration_ms)
+    val sFmt = stringResource(R.string.duration_s)
+
     val durationText = if (isStepRunning) {
         val phoneAnchor = runningAnchors[messageId] ?: SystemClock.elapsedRealtime()
         var elapsed by remember { mutableStateOf(SystemClock.elapsedRealtime() - phoneAnchor) }
@@ -340,17 +344,25 @@ private fun MessageMetadata(
                 elapsed = SystemClock.elapsedRealtime() - phoneAnchor
             }
         }
-        formatDurationMillis(elapsed)
+        formatDurationMillis(elapsed,
+            formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
+            formatMs = { m, s -> msFmt.format(m, s) },
+            formatS = { s -> sFmt.format(s) },
+        )
     } else if (completedAt != null && completedAt > timeCreated) {
-        formatDurationMillis(completedAt - timeCreated)
+        formatDurationMillis(completedAt - timeCreated,
+            formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
+            formatMs = { m, s -> msFmt.format(m, s) },
+            formatS = { s -> sFmt.format(s) },
+        )
     } else ""
 
     val modelText = modelName?.let { " · $it" } ?: ""
-    val toolText = if (toolCount > 0) " · $toolCount 工具" else ""
+    val toolText = if (toolCount > 0) stringResource(R.string.tool_count, toolCount) else ""
     val finishText = when {
         isStepRunning -> ""
-        finish == "tool-calls" -> " · 继续执行"
-        finish == "error" -> " · 出错"
+        finish == "tool-calls" -> stringResource(R.string.step_continuing)
+        finish == "error" -> stringResource(R.string.step_error)
         finish == "stop" -> ""
         else -> ""
     }
@@ -457,7 +469,7 @@ fun UserMessageItem(
                 },
             )
             DropdownMenuItem(
-                text = { Text("回滚至此") },
+                text = { Text(stringResource(R.string.revert_to_here)) },
                 onClick = {
                     onRevertToMessage(messageID)
                     showMenu = false

@@ -28,6 +28,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.res.stringResource
+import com.openmate.feature.session.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -87,7 +89,7 @@ fun GitChangesScreen(
                 }
                 state.isNotGitRepo -> {
                     Text(
-                        text = "此目录不在 Git 仓库中",
+                        text = stringResource(R.string.not_git_repo),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.align(Alignment.Center),
@@ -105,7 +107,7 @@ fun GitChangesScreen(
                     val files = state.files!!
                     if (files.isEmpty()) {
                         Text(
-                            text = "没有未提交的变更",
+                            text = stringResource(R.string.no_uncommitted_changes),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.align(Alignment.Center),
@@ -154,7 +156,7 @@ private fun FileList(
                                 context.startActivity(intent)
                             }
                             "deleted" -> {
-                                android.widget.Toast.makeText(context, "文件已被删除", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.file_deleted), android.widget.Toast.LENGTH_SHORT).show()
                             }
                             else -> onOpenDiff(entry.path, directory)
                         }
