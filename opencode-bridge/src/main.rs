@@ -90,8 +90,30 @@ fn init_capture_logging() -> openmate::log_capture::SharedLogBuffer {
     buffer
 }
 
+#[cfg(windows)]
+fn setup_hidden_console() {
+    use windows::Win32::System::Console::{
+        AllocConsole, GetConsoleWindow, SetConsoleCtrlHandler,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+
+    unsafe {
+        if AllocConsole().is_ok() {
+            let hwnd = GetConsoleWindow();
+            if !hwnd.is_invalid() {
+                let _ = ShowWindow(hwnd, SW_HIDE);
+            }
+            let _ = SetConsoleCtrlHandler(None, true);
+            tracing::info!("Allocated hidden console for child process signal handling");
+        }
+    }
+}
+
 async fn run_gui_mode(_args: Args) -> anyhow::Result<()> {
     let buffer = init_capture_logging();
+
+    #[cfg(windows)]
+    setup_hidden_console();
 
     let bridge_db = openmate::bridge_db::BridgeDb::open().map_err(|e| anyhow::anyhow!("{}", e))?;
     bridge_db.init_default_configs().map_err(|e| anyhow::anyhow!("{}", e))?;

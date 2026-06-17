@@ -47,12 +47,8 @@ pub async fn run_server(
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 
     if app_state.opencode_manager.check_health().await {
-        tracing::info!("opencode is already running, restarting with OPENCODE_EXPERIMENTAL=true");
-        app_state.opencode_manager.stop().await.ok();
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        if let Err(e) = app_state.opencode_manager.start().await {
-            tracing::warn!("Restart failed: {}", e);
-        }
+        tracing::info!("opencode is already running, adopting");
+        app_state.opencode_manager.set_status(crate::state::OpencodeStatus::Running).await;
     } else if config.opencode.auto_start {
         tracing::info!("Auto-starting opencode...");
         if let Err(e) = app_state.opencode_manager.start().await {

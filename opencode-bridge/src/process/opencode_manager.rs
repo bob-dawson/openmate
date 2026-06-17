@@ -232,8 +232,11 @@ impl OpencodeManager {
         *status = OpencodeStatus::Stopping;
         drop(status);
 
-        let pid = self.find_pid_by_port().await;
-        if let Some(pid) = pid {
+        let stored_pid = { self.pid.read().await.clone() };
+        let port_pid = self.find_pid_by_port().await;
+        let signal_pid = stored_pid.or(port_pid);
+
+        if let Some(pid) = signal_pid {
             send_sigint(pid).await;
 
             for _ in 0..10 {
@@ -559,7 +562,7 @@ fn spawn_opencode(
             .env("OPENCODE_EXPERIMENTAL", "true")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
-            .creation_flags(0x08000000)
+            .creation_flags(0x00000200)
             .spawn()
             .map_err(|e| format!("Failed to spawn opencode: {}", e))?
     };
@@ -727,11 +730,11 @@ async fn restart_loop(
 async fn send_sigint(pid: u32) {
     #[cfg(windows)]
     {
-        use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_C_EVENT};
+        use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
 
-        let result = unsafe { GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid) };
+        let result = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) };
         if result.is_ok() {
-            tracing::info!("CTRL_C_EVENT sent to pid {}", pid);
+            tracing::info!("CTRL_BREAK_EVENT sent to process group {}", pid);
         } else {
             let err = result.unwrap_err();
             tracing::warn!("GenerateConsoleCtrlEvent failed for pid {}: {}", pid, err);
