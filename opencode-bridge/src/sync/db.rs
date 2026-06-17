@@ -14,6 +14,23 @@ pub struct SyncDb {
 impl SyncDb {
     pub fn new(config: &Config) -> Self {
         let db_path = config.db_path();
+
+        if !db_path.exists() {
+            tracing::info!("opencode.db not found, creating empty database at {}", db_path.display());
+            if let Some(parent) = db_path.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            let create_manager = SqliteConnectionManager::file(&db_path)
+                .with_flags(OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_NO_MUTEX);
+            let create_pool = Pool::builder()
+                .max_size(1)
+                .build(create_manager)
+                .expect("Failed to create SQLite connection pool for DB initialization");
+            let conn = create_pool.get().expect("Failed to get DB connection for initialization");
+            conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
+                .ok();
+        }
+
         let manager = SqliteConnectionManager::file(&db_path)
             .with_flags(OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX);
         let pool = Pool::builder()
