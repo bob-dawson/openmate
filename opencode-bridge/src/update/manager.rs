@@ -130,10 +130,6 @@ impl UpgradeManager {
                 .ok();
         }
 
-        tracing::info!("Sending shutdown signal before spawning update script");
-        let _ = self.shutdown_tx.send(true);
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -153,7 +149,8 @@ impl UpgradeManager {
                 .map_err(|e| format!("Failed to spawn update script: {}", e))?;
         }
 
-        tracing::info!("Update script spawned (pid={})", pid);
+        tracing::info!("Update script spawned (pid={}), sending shutdown signal", pid);
+        let _ = self.shutdown_tx.send(true);
         Ok(())
     }
 }
