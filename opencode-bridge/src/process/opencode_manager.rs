@@ -745,11 +745,11 @@ async fn send_sigint(pid: u32) {
             if FreeConsole().is_ok() {
                 if AttachConsole(pid).is_ok() {
                     let _ = SetConsoleCtrlHandler(None, true);
-                    let r = GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+                    let r = GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, 0);
                     let _ = FreeConsole();
                     let _ = SetConsoleCtrlHandler(None, false);
                     if r.is_ok() {
-                        tracing::info!("CTRL_C_EVENT sent via AttachConsole to pid {}", pid);
+                        tracing::info!("CTRL_BREAK_EVENT sent via AttachConsole to pid {}", pid);
                         restore_hidden_console();
                         return;
                     }
