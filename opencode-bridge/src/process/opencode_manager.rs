@@ -727,18 +727,51 @@ async fn restart_loop(
     }
 }
 
+#[cfg(windows)]
+unsafe fn restore_hidden_console() {
+    use windows::Win32::System::Console::*;
+    unsafe {
+        let _ = AllocConsole();
+        let hwnd = GetConsoleWindow();
+        if !hwnd.is_invalid() {
+            let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
+                hwnd,
+                windows::Win32::UI::WindowsAndMessaging::SW_HIDE,
+            );
+        }
+        let _ = SetConsoleCtrlHandler(None, true);
+    }
+}
+
 async fn send_sigint(pid: u32) {
     #[cfg(windows)]
     {
-        use windows::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
+        use windows::Win32::System::Console::*;
 
         let result = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) };
         if result.is_ok() {
             tracing::info!("CTRL_BREAK_EVENT sent to process group {}", pid);
-        } else {
-            let err = result.unwrap_err();
-            tracing::warn!("GenerateConsoleCtrlEvent failed for pid {}: {}", pid, err);
+            return;
         }
+
+        tracing::info!("CTRL_BREAK_EVENT failed for pid {}, trying AttachConsole", pid);
+        unsafe {
+            if FreeConsole().is_ok() {
+                if AttachConsole(pid).is_ok() {
+                    let _ = SetConsoleCtrlHandler(None, true);
+                    let r = GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0);
+                    let _ = FreeConsole();
+                    let _ = SetConsoleCtrlHandler(None, false);
+                    if r.is_ok() {
+                        tracing::info!("CTRL_C_EVENT sent via AttachConsole to pid {}", pid);
+                        restore_hidden_console();
+                        return;
+                    }
+                }
+                restore_hidden_console();
+            }
+        }
+        tracing::warn!("All console signal methods failed for pid {}", pid);
     }
 
     #[cfg(not(windows))]
