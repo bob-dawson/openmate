@@ -178,10 +178,9 @@ pub async fn run_server(
             );
             let fallback_addr = format!("{}:0", config.bridge.hostname);
             let l = tokio::net::TcpListener::bind(&fallback_addr).await?;
-            let actual = l.local_addr()?.port();
             tracing::info!(
                 "Bridge listening on random port {} (configured: {})",
-                actual,
+                l.local_addr()?.port(),
                 configured_port
             );
             l
@@ -292,12 +291,13 @@ pub async fn run_server(
     )
     .with_graceful_shutdown(async move {
         shutdown_rx.changed().await.ok();
-        tracing::info!("Shutdown signal received, server shutting down");
+        tracing::info!("Shutdown signal received, exiting immediately to release port");
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        std::process::exit(0);
     });
 
     server.await.ok();
-    tracing::info!("Server stopped, exiting");
-    std::process::exit(0);
+    Ok(())
 }
 
 fn ensure_user_env() {

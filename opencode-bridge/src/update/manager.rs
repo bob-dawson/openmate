@@ -58,14 +58,14 @@ impl UpgradeManager {
         self.state.lock().await.clone()
     }
 
-    pub fn start_download(&self) -> bool {
+    pub fn start_download(&self, force: bool) -> bool {
         if self.in_progress.swap(true, Ordering::Relaxed) {
             return false;
         }
         let state = self.state.clone();
         let in_progress = self.in_progress.clone();
         tokio::spawn(async move {
-            let result = do_download(state.clone()).await;
+            let result = do_download(state.clone(), force).await;
             {
                 let mut s = state.lock().await;
                 match result {
@@ -130,6 +130,10 @@ impl UpgradeManager {
                 .ok();
         }
 
+        tracing::info!("Sending shutdown signal before spawning update script");
+        let _ = self.shutdown_tx.send(true);
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -149,13 +153,12 @@ impl UpgradeManager {
                 .map_err(|e| format!("Failed to spawn update script: {}", e))?;
         }
 
-        tracing::info!("Update script spawned (pid={}), sending shutdown signal", pid);
-        let _ = self.shutdown_tx.send(true);
+        tracing::info!("Update script spawned (pid={})", pid);
         Ok(())
     }
 }
 
-async fn do_download(state: Arc<Mutex<UpgradeState>>) -> Result<String, String> {
+async fn do_download(state: Arc<Mutex<UpgradeState>>, force: bool) -> Result<String, String> {
     {
         let mut s = state.lock().await;
         s.phase = UpgradePhase::Downloading;
@@ -171,7 +174,7 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>) -> Result<String, String> 
         .ok_or("No bridge version in version.json")?;
 
     let current = env!("CARGO_PKG_VERSION");
-    if !version::is_newer(&bridge.version, current) {
+    if !force && !version::is_newer(&bridge.version, current) {
         return Err(format!("Already up to date ({})", current));
     }
 
@@ -186,7 +189,7 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>) -> Result<String, String> 
 
     let total_size = fetch_content_length(&client, &url).await;
 
-    if total_size > 0 && dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) == total_size {
+    if total_size > 0 && dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) == total_size && !force {
         tracing::info!("Update file already downloaded ({} bytes), skipping download", total_size);
         return Ok(bridge.version);
     }

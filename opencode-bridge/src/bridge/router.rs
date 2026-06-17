@@ -149,8 +149,10 @@ pub async fn upgrade_opencode(
 
 pub async fn bridge_upgrade_download(
     State(state): State<AppState>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
-    if state.upgrade_manager.start_download() {
+    let force = params.get("force").map(|v| v == "true" || v == "1").unwrap_or(false);
+    if state.upgrade_manager.start_download(force) {
         Json(json!({ "status": "started" }))
     } else {
         Json(json!({ "status": "already_in_progress" }))

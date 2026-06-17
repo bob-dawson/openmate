@@ -4,7 +4,7 @@ pub fn generate_ps1(exe: &str, update: &str, pid: u32) -> String {
 $targetPid = {pid}
 $new = '{update}'
 $tgt = '{exe}'
-$deadline = (Get-Date).AddSeconds(3)
+$deadline = (Get-Date).AddSeconds(10)
 while ((Get-Date) -lt $deadline -and (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) {{
     Start-Sleep -Milliseconds 500
 }}
