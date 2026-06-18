@@ -32,9 +32,8 @@ class SyncSseHandler @Inject constructor(
     fun stop() {
         collectJob?.cancel()
         collectJob = null
-        activeSessionId = null
         activeSyncs.clear()
-        Log.d("SyncSseHandler", "stop: cancelled collectJob, cleared activeSessionId and activeSyncs")
+        Log.d("SyncSseHandler", "stop: cancelled collectJob, cleared activeSyncs (activeSessionId=$activeSessionId)")
     }
 
     override fun start() {
