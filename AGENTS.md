@@ -16,6 +16,7 @@
 - **调试脚本**: `D:\openmate\scripts\`
 - **sync-debugger**: `D:\openmate\tools\sync-debugger` — 详见 [`tools/sync-debugger/AGENTS.md`](tools/sync-debugger/AGENTS.md)（纯 Kotlin/JVM CLI，重放 EventReplayer 增量同步排查 bug）
 - **GradleMcp**: `D:\openmate\GradleMcp\GradleMcp` — .NET 10 Windows 服务，提供 Gradle 构建能力，端口 5099
+- **Simulator & Docker**: `D:\openmate\simulator` — 详见 [`simulator/AGENTS.md`](simulator/AGENTS.md)（Android 模拟器 + Docker Bridge 容器端到端自动化测试环境）
 
 ## Key Paths
 
