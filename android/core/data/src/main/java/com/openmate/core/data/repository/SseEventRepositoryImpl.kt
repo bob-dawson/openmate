@@ -52,8 +52,6 @@ class SseEventRepositoryImpl @Inject constructor(
     }
 
     override fun disconnect() {
-        eventDispatcher.activeDirectory = ""
-        eventDispatcher.messageSyncEnabled = false
         syncSseClient.disconnect("sse-repository")
     }
 
