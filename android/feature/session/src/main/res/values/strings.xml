@@ -31,7 +31,11 @@
     <string name="browse_files">Browse Files</string>
     <string name="refresh">Refresh</string>
     <string name="resync">Resync</string>
-    <string name="resync_desc">Current seq: %s\nResync recent events to fix sync issues. Select how many events to resync:</string>
+    <string name="resync_desc">Total messages: %1$d | Earliest: %2$s\nSync messages from a specific date/time:</string>
+    <string name="resync_date_label">Date</string>
+    <string name="resync_time_label">Time</string>
+    <string name="resync_message_count">Messages from this time: %d</string>
+    <string name="resyncing">Syncing…</string>
     <string name="rename">Rename</string>
     <string name="no_messages">No messages yet</string>
     <string name="rename_session">Rename</string>

@@ -7,4 +7,5 @@ import androidx.room.PrimaryKey
 data class SyncStateEntity(
     @PrimaryKey val sessionId: String,
     val lastSeq: Long,
+    val lastTimeUpdated: Long = 0,
 )

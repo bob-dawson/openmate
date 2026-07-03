@@ -21,7 +21,7 @@ import com.openmate.core.database.entity.TodoEntity
         SyncStateEntity::class,
         TodoEntity::class,
     ],
-    version = 5,
+    version = 7,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

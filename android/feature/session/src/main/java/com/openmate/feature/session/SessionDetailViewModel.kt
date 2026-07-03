@@ -32,6 +32,7 @@ import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.TodoRepository
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.SyncApiClient
 import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
@@ -82,6 +83,7 @@ class SessionDetailViewModel @Inject constructor(
     private val syncDebugController: SyncDebugController,
     private val syncSseStarter: SyncSseStarter,
     internal val apiClient: OpencodeApiClient,
+    private val syncApiClient: SyncApiClient,
     private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
@@ -700,32 +702,43 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    fun resync(eventCount: Int) {
+    fun resync(sinceTimeUpdated: Long) {
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                sessionMessageRepository.rollbackSeq(sid, eventCount.toLong())
-                _messages.value = emptyList()
-                _hasOlderMessages.value = false
-                _isStreaming.value = false
-                messageWindowState = SessionMessageWindowManager.State(
-                    messages = emptyList(),
-                    loadedCount = 0,
-                    hasOlderMessages = false,
-                )
-                sessionMessageRepository.incrementalSync(sid)
+                _isResyncing.value = true
+                sessionMessageRepository.resyncFrom(sid, sinceTimeUpdated)
+                rebuildInitialWindow(sid)
                 refreshRetryStatus(sid)
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "resync failed", e)
                 _errorMessage.value = appContext.getString(R.string.resync_failed)
+            } finally {
+                _isResyncing.value = false
             }
         }
     }
 
-    suspend fun getCurrentSeq(): Long? {
-        val sid = currentSessionID ?: return null
-        return sessionMessageRepository.getLastSeq(sid)
+    private val _isResyncing = MutableStateFlow(false)
+    val isResyncing: StateFlow<Boolean> = _isResyncing.asStateFlow()
+
+    suspend fun getSessionStats(): Pair<Long, Long?> {
+        val sid = currentSessionID ?: return Pair(0, null)
+        return try {
+            val stats = syncApiClient.sessionStats(sid)
+            Pair(stats.totalCount, stats.minTimeCreated)
+        } catch (e: Exception) {
+            Log.w(TAG, "getSessionStats failed", e)
+            val localCount = sessionMessageRepository.countBySession(sid).toLong()
+            val localMin = sessionMessageRepository.getMinTimeCreated(sid)
+            Pair(localCount, localMin)
+        }
+    }
+
+    suspend fun countBySessionAfterTimeCreated(since: Long): Int {
+        val sid = currentSessionID ?: return 0
+        return sessionMessageRepository.countBySessionAfterTimeCreated(sid, since)
     }
 
     private val _isUploadingDb = MutableStateFlow(false)

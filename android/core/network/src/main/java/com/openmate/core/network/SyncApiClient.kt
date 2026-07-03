@@ -81,6 +81,24 @@ class SyncApiClient @Inject constructor(
             val parsed = json.decodeFromString<ResolveEvtIDResponseDto>(body)
             parsed.evtID
         }
+
+    suspend fun messages(sessionId: String, since: Long, limit: Int = 100): MessagesResponseDto =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/messages?since=$since&limit=$limit"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            json.decodeFromString<MessagesResponseDto>(body)
+        }
+
+    suspend fun sessionStats(sessionId: String): SessionStatsDto =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/stats"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            json.decodeFromString<SessionStatsDto>(body)
+        }
 }
 
 @kotlinx.serialization.Serializable

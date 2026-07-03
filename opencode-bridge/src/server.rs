@@ -2,6 +2,7 @@ use axum::Router;
 use axum::routing::{any, get, post};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
@@ -45,6 +46,24 @@ pub async fn run_server(
     tracing::info!("Allowed paths: {:?}", config.effective_allowed_paths());
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 
+    {
+        let state = app_state.clone();
+        tokio::spawn(async move {
+            loop {
+                match state.sync_db.ensure_indexes() {
+                    Ok(()) => {
+                        tracing::info!("Sync indexes created successfully");
+                        break;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to create sync indexes (will retry in 5min): {}", e);
+                        tokio::time::sleep(Duration::from_secs(300)).await;
+                    }
+                }
+            }
+        });
+    }
+
     if app_state.opencode_manager.check_health().await {
         tracing::info!("opencode is already running, adopting");
         app_state.opencode_manager.set_status(crate::state::OpencodeStatus::Running).await;
@@ -80,6 +99,8 @@ pub async fn run_server(
     let app = Router::new()
         .route("/api/bridge/sync/sessions", get(sync::router::sessions))
         .route("/api/bridge/sync/session/{sessionID}/init", get(sync::router::init))
+        .route("/api/bridge/sync/session/{sessionID}/messages", get(sync::router::messages))
+        .route("/api/bridge/sync/session/{sessionID}/stats", get(sync::router::session_stats))
         .route("/api/bridge/sync/session/{sessionID}/events", get(sync::router::events))
         .route("/api/bridge/sync/session/{sessionID}/message/{messageID}/full", get(sync::router::full))
         .route("/api/bridge/sync/session/{sessionID}/resolve-message-id", get(sync::router::resolve_message_id))

@@ -21,6 +21,13 @@ pub struct EventsQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagesQuery {
+    pub since: Option<i64>,
+    pub limit: Option<i64>,
+}
+
 pub async fn init(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -56,7 +63,7 @@ pub async fn events(
     let after_seq = query.after_seq.unwrap_or(0);
     let limit = query.limit.unwrap_or(100);
     let (events, max_seq) = state.sync_db
-        .get_events(&session_id, after_seq, limit)
+        .get_events_filtered(&session_id, after_seq, limit)
         .map_err(|e| AppError::DatabaseError(e))?;
 
     let truncated: Vec<Value> = events.into_iter().map(|mut evt| {
@@ -71,6 +78,35 @@ pub async fn events(
     Ok(Json(json!({
         "events": truncated,
         "maxSeq": max_seq,
+    })))
+}
+
+pub async fn messages(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Query(query): Query<MessagesQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let since = query.since.unwrap_or(0);
+    let limit = query.limit.unwrap_or(100);
+    let (messages, has_more, max_time_updated) = state.sync_db
+        .get_messages_since(&session_id, since, limit)
+        .map_err(|e| AppError::DatabaseError(e))?;
+
+    let truncated: Vec<Value> = messages.into_iter().map(|mut msg| {
+        if let Some(data_str) = msg["data"].as_str() {
+            if let Ok(data_val) = serde_json::from_str::<Value>(data_str) {
+                let msg_type = msg["type"].as_str().unwrap_or("");
+                let truncated_data = super::truncate::truncate_message(msg_type, &data_val);
+                msg["data"] = truncated_data;
+            }
+        }
+        msg
+    }).collect();
+
+    Ok(Json(json!({
+        "messages": truncated,
+        "hasMore": has_more,
+        "maxTimeUpdated": max_time_updated,
     })))
 }
 
@@ -134,4 +170,18 @@ pub async fn sessions(
         .map_err(|e| AppError::DatabaseError(e))?;
 
     Ok(Json(json!({ "sessions": sessions })))
+}
+
+pub async fn session_stats(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let (count, min_time_created) = state.sync_db
+        .get_session_stats(&session_id)
+        .map_err(|e| AppError::DatabaseError(e))?;
+
+    Ok(Json(json!({
+        "totalCount": count,
+        "minTimeCreated": min_time_created,
+    })))
 }

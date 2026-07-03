@@ -66,6 +66,15 @@ interface SessionMessageDao {
     @Query("SELECT COUNT(*) FROM session_message WHERE sessionId = :sessionId")
     suspend fun countBySession(sessionId: String): Int
 
+    @Query("SELECT COUNT(*) FROM session_message WHERE sessionId = :sessionId AND timeCreated >= :since")
+    suspend fun countBySessionAfterTimeCreated(sessionId: String, since: Long): Int
+
+    @Query("SELECT MIN(timeCreated) FROM session_message WHERE sessionId = :sessionId")
+    suspend fun getMinTimeCreated(sessionId: String): Long?
+
+    @Query("DELETE FROM session_message WHERE sessionId = :sessionId AND timeUpdated < :beforeTimeUpdated")
+    suspend fun deleteBySessionBeforeTimeUpdated(sessionId: String, beforeTimeUpdated: Long)
+
     @Query("""
         SELECT * FROM session_message
         WHERE sessionId = :sessionId

@@ -54,6 +54,13 @@ data class SessionsResponseDto(
 )
 
 @Serializable
+data class MessagesResponseDto(
+    val messages: List<SyncMessageDto> = emptyList(),
+    @SerialName("hasMore") val hasMore: Boolean = false,
+    @SerialName("maxTimeUpdated") val maxTimeUpdated: Long? = null,
+)
+
+@Serializable
 data class SyncSessionDto(
     val id: String = "",
     val title: String = "",
@@ -63,4 +70,10 @@ data class SyncSessionDto(
     @SerialName("timeUpdated") val timeUpdated: Long = 0,
     @SerialName("hasEvents") val hasEvents: Boolean = false,
     @SerialName("maxSeq") val maxSeq: Long? = null,
+)
+
+@Serializable
+data class SessionStatsDto(
+    @SerialName("totalCount") val totalCount: Long = 0,
+    @SerialName("minTimeCreated") val minTimeCreated: Long? = null,
 )

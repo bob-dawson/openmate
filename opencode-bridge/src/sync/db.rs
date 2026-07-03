@@ -4,11 +4,13 @@ use r2d2_sqlite::SqliteConnectionManager;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::Config;
 
 pub struct SyncDb {
     pool: Pool<SqliteConnectionManager>,
     db_path: PathBuf,
+    indexes_ready: AtomicBool,
 }
 
 impl SyncDb {
@@ -46,7 +48,7 @@ impl SyncDb {
                 .ok();
         }
 
-        Self { pool, db_path: db_path.clone() }
+        Self { pool, db_path: db_path.clone(), indexes_ready: AtomicBool::new(false) }
     }
 
     pub fn db_path(&self) -> &PathBuf {
@@ -55,6 +57,25 @@ impl SyncDb {
 
     fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, String> {
         self.pool.get().map_err(|e| format!("DB pool error: {}", e))
+    }
+
+    pub fn ensure_indexes(&self) -> Result<(), String> {
+        let conn = rusqlite::Connection::open_with_flags(
+            &self.db_path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ).map_err(|e| format!("Failed to open DB for index creation: {}", e))?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
+            .ok();
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_session_message_session_time_updated ON session_message(session_id, time_updated);"
+        ).map_err(|e| format!("Failed to create index: {}", e))?;
+        tracing::info!("Sync index (session_id, time_updated) ensured on opencode.db");
+        self.indexes_ready.store(true, Ordering::Relaxed);
+        Ok(())
+    }
+
+    pub fn indexes_ready(&self) -> bool {
+        self.indexes_ready.load(Ordering::Relaxed)
     }
 
     pub fn get_init_snapshot(&self, session_id: &str, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
@@ -118,6 +139,50 @@ impl SyncDb {
         Ok((messages, max_seq))
     }
 
+    pub fn get_messages_since(&self, session_id: &str, since: i64, limit: i64) -> Result<(Vec<Value>, bool, Option<i64>), String> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, type, time_created, time_updated, data
+             FROM session_message
+             WHERE session_id = ? AND time_updated > ?
+             ORDER BY time_updated ASC
+             LIMIT ?"
+        ).map_err(|e| format!("Prepare messages_since failed: {}", e))?;
+
+        let messages: Vec<Value> = stmt.query_map(params![session_id, since, limit + 1], |row| {
+            let id: String = row.get(0)?;
+            let sid: String = row.get(1)?;
+            let msg_type: String = row.get(2)?;
+            let time_created: i64 = row.get(3)?;
+            let time_updated: i64 = row.get(4)?;
+            let data_str: String = row.get(5)?;
+            let data_val: Value = serde_json::from_str(&data_str).unwrap_or(Value::String(data_str.clone()));
+            Ok(json!({
+                "id": id,
+                "sessionId": sid,
+                "type": msg_type,
+                "timeCreated": time_created,
+                "timeUpdated": time_updated,
+                "data": data_val,
+            }))
+        }).map_err(|e| format!("Query messages_since failed: {}", e))?
+          .filter_map(|r| r.ok())
+          .collect();
+
+        let has_more = messages.len() > limit as usize;
+        let result_messages: Vec<Value> = if has_more {
+            messages[..limit as usize].to_vec()
+        } else {
+            messages
+        };
+
+        let max_time_updated: Option<i64> = result_messages.iter()
+            .filter_map(|m| m.get("timeUpdated").and_then(|v| v.as_i64()))
+            .max();
+
+        Ok((result_messages, has_more, max_time_updated))
+    }
+
     pub fn get_events(&self, session_id: &str, after_seq: i64, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
@@ -143,6 +208,44 @@ impl SyncDb {
                 "data": data_val,
             }))
         }).map_err(|e| format!("Query failed: {}", e))?
+          .filter_map(|r| r.ok())
+          .collect();
+
+        let actual_max: Option<i64> = conn.query_row(
+            "SELECT seq FROM event_sequence WHERE aggregate_id = ?",
+            params![session_id],
+            |row| row.get(0),
+        ).ok();
+
+        Ok((events, actual_max))
+    }
+
+    pub fn get_events_filtered(&self, session_id: &str, after_seq: i64, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, aggregate_id, seq, type, data
+             FROM event
+             WHERE aggregate_id = ? AND seq > ?
+               AND type IN ('message.removed.1', 'session.updated.1')
+             ORDER BY seq
+             LIMIT ?"
+        ).map_err(|e| format!("Prepare events_filtered failed: {}", e))?;
+
+        let events: Vec<Value> = stmt.query_map(params![session_id, after_seq, limit], |row| {
+            let id: String = row.get(0)?;
+            let aggregate_id: String = row.get(1)?;
+            let seq: i64 = row.get(2)?;
+            let event_type: String = row.get(3)?;
+            let data_str: String = row.get(4)?;
+            let data_val: Value = serde_json::from_str(&data_str).unwrap_or(Value::String(data_str.clone()));
+            Ok(json!({
+                "id": id,
+                "aggregateId": aggregate_id,
+                "seq": seq,
+                "type": event_type,
+                "data": data_val,
+            }))
+        }).map_err(|e| format!("Query events_filtered failed: {}", e))?
           .filter_map(|r| r.ok())
           .collect();
 
@@ -191,6 +294,21 @@ impl SyncDb {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(format!("Query failed: {}", e)),
         }
+    }
+
+    pub fn get_session_stats(&self, session_id: &str) -> Result<(i64, Option<i64>), String> {
+        let conn = self.conn()?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM session_message WHERE session_id = ?",
+            params![session_id],
+            |row| row.get(0),
+        ).map_err(|e| format!("Query count failed: {}", e))?;
+        let min_time: Option<i64> = conn.query_row(
+            "SELECT MIN(time_created) FROM session_message WHERE session_id = ?",
+            params![session_id],
+            |row| row.get(0),
+        ).ok();
+        Ok((count, min_time))
     }
 
     pub fn resolve_evt_id(&self, session_id: &str, message_id: &str) -> Result<Option<String>, String> {

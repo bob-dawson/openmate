@@ -19,6 +19,9 @@ interface SessionMessageRepository {
     suspend fun fetchFullMessage(sessionId: String, messageId: String)
     suspend fun fetchDiffFiles(sessionId: String, messageId: String, toolName: String, targetFilePath: String?): List<DiffFile>
     suspend fun getLastSeq(sessionId: String): Long?
-    suspend fun rollbackSeq(sessionId: String, count: Long)
+    suspend fun resyncFrom(sessionId: String, sinceTimeUpdated: Long)
+    suspend fun getMinTimeCreated(sessionId: String): Long?
+    suspend fun countBySessionAfterTimeCreated(sessionId: String, since: Long): Int
+    suspend fun countBySession(sessionId: String): Int
     suspend fun deleteMessage(sessionId: String, messageId: String)
 }

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.0
+
+Released: 2026-07-04
+
+### 新功能
+
+- **增量同步重写**：消息同步从基于 V2 事件的 EventReplayer 切换到基于 `time_updated` 的直接拉取，大幅减少传输量并提高可靠性
+- **Bridge `/messages` 端点**：新增按 `time_updated` 增量拉取消息的 API，支持 `since` + `limit` 分页
+- **Bridge `/stats` 端点**：新增会话统计 API，返回消息总数和最早消息时间
+- **Bridge 索引自动创建**：启动时自动为 opencode 数据库创建 `(session_id, time_updated)` 索引，创建失败则每 5 分钟重试
+- **重新同步 UI 重做**：从基于 seq 回退事件数改为基于日期时间选择，显示总消息数、最早消息时间和统计消息数
+
+### 问题修复
+
+- **SSE 重连后增量同步中断**：修复 SSE 重连后 `activeSessionId` 和 `messageSyncEnabled` 丢失导致增量同步不触发的问题
+- **Bridge 升级重启不打开浏览器**：升级重启时带 `--tray` 参数启动，不再弹出浏览器窗口
+
 ## 0.1.25
 
 Released: 2026-06-17

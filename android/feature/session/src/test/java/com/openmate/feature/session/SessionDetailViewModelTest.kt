@@ -1053,7 +1053,13 @@ class SessionDetailViewModelTest {
 
         override suspend fun getLastSeq(sessionId: String): Long? = lastSeq
 
-        override suspend fun rollbackSeq(sessionId: String, count: Long) = Unit
+        override suspend fun resyncFrom(sessionId: String, sinceTimeUpdated: Long) = Unit
+
+        override suspend fun getMinTimeCreated(sessionId: String): Long? = null
+
+        override suspend fun countBySessionAfterTimeCreated(sessionId: String, since: Long): Int = 0
+
+        override suspend fun countBySession(sessionId: String): Int = 0
 
         override suspend fun deleteMessage(sessionId: String, messageId: String) = Unit
 
