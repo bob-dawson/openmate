@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1
+
+Released: 2026-07-04
+
+### 新功能
+
+- **消息同步数据源切换**：Bridge 同步 API 从读取 `session_message` 表切换到读取 `message`+`part` 表，解决 opencode 本地 TUI 不再实时写入 `session_message` 导致增量同步失效的问题
+- **Bridge 索引扩展**：启动时自动为 `message` 和 `part` 表创建 `(session_id, time_updated)` 索引，确保增量查询性能
+
+### 问题修复
+
+- **增量同步无新消息**：修复因 opencode V1 `SessionProcessor` 只写入 `message`+`part` 表、不再写入 `session_message` 表，导致 Bridge 增量同步始终返回空结果的问题
+- **消息删除兼容**：切换到 `message`+`part` 后，`message.removed` 事件中的 `messageID` 与 `message` 表 ID 一致，删除检测自然兼容
+
 ## 0.2.0
 
 Released: 2026-07-04
