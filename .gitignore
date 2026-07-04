@@ -16,3 +16,4 @@ obj
 /GradleMcp/Client/*.user
 /GradleMcp/GradleMcp/*.user
 /scripts/.bridge_token
+/docker/openmate-linux-x86_64
