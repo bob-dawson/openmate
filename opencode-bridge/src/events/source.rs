@@ -179,17 +179,24 @@ mod tests {
         );
 
         let frames = parse_upstream_frames(chunk);
-        let retained: Vec<Value> = frames
+        let bridge_events: Vec<Value> = frames
             .iter()
             .filter_map(|event| event.bridge_event.clone())
             .collect();
+        let live_events: Vec<Value> = frames
+            .iter()
+            .filter_map(|event| event.live_event.clone())
+            .collect();
 
-        assert_eq!(frames.len(), 1);
-        assert_eq!(retained, vec![json!({
+        assert_eq!(bridge_events, vec![json!({
             "type": "session.error",
             "properties": {
                 "sessionID": "ses_1"
             }
+        })]);
+        assert_eq!(live_events, vec![json!({
+            "type": "message.part.delta",
+            "properties": { "sessionID": "ses_1" }
         })]);
     }
 }

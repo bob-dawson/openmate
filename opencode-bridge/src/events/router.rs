@@ -1,7 +1,8 @@
-use axum::extract::State;
+use axum::extract::{State, Query};
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use async_stream::stream;
+use serde::Deserialize;
 use serde_json::Value;
 use std::convert::Infallible;
 use std::pin::Pin;
@@ -11,12 +12,21 @@ use crate::state::AppState;
 
 type BoxStream<T> = Pin<Box<dyn tokio_stream::Stream<Item = T> + Send + 'static>>;
 
-pub async fn events_sse(State(state): State<AppState>) -> impl IntoResponse {
-    let stream = create_events_stream(state);
+#[derive(Deserialize)]
+pub struct EventsQuery {
+    live: Option<String>,
+}
+
+pub async fn events_sse(
+    State(state): State<AppState>,
+    Query(query): Query<EventsQuery>,
+) -> impl IntoResponse {
+    let live = query.live.as_deref() == Some("1");
+    let stream = create_events_stream(state, live);
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
-fn create_events_stream(state: AppState) -> BoxStream<Result<Event, Infallible>> {
+fn create_events_stream(state: AppState, live: bool) -> BoxStream<Result<Event, Infallible>> {
     Box::pin(stream! {
         let mut rx = state.event_source.subscribe(&state).await;
         let mut shutdown_rx = state.shutdown_tx.subscribe();
@@ -26,7 +36,12 @@ fn create_events_stream(state: AppState) -> BoxStream<Result<Event, Infallible>>
                 result = rx.recv() => {
                     match result {
                         Ok(event) => {
-                            if let Some(filtered) = project_bridge_event(&event) {
+                            let filtered = if live {
+                                event.live_event.or(event.bridge_event)
+                            } else {
+                                event.bridge_event
+                            };
+                            if let Some(filtered) = filtered {
                                 yield Ok(Event::default().data(filtered.to_string()));
                             }
                         }
@@ -67,10 +82,6 @@ fn parse_sse_frames(chunk: &str) -> Vec<Value> {
 fn parse_sse_data_frame(data: &str) -> Option<Value> {
     let parsed = serde_json::from_str::<Value>(data).ok()?;
     filter_event(&parsed)
-}
-
-fn project_bridge_event(event: &crate::events::filter::SharedEvent) -> Option<Value> {
-    event.bridge_event.clone()
 }
 
 pub fn test_parse_bridge_events_frames(chunk: &str) -> Vec<Value> {

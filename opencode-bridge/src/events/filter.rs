@@ -6,6 +6,7 @@ use crate::sync::truncate::truncate_event;
 pub struct SharedEvent {
     pub bridge_event: Option<Value>,
     pub sync_notification: Option<Value>,
+    pub live_event: Option<Value>,
 }
 
 pub fn filter_event(input: &Value) -> Option<Value> {
@@ -17,19 +18,31 @@ pub fn build_shared_event(input: &Value) -> Option<SharedEvent> {
     let normalized = normalize_event(input)?;
     let bridge_event = filter_event_from_normalized(&normalized);
     let sync_notification = build_sync_notification(input, &normalized);
+    let live_event = filter_live_event_from_normalized(&normalized);
 
-    if bridge_event.is_none() && sync_notification.is_none() {
+    if bridge_event.is_none() && sync_notification.is_none() && live_event.is_none() {
         return None;
     }
 
     Some(SharedEvent {
         bridge_event,
         sync_notification,
+        live_event,
     })
 }
 
 fn filter_event_from_normalized(normalized: &Value) -> Option<Value> {
     filter_normalized_event(normalized)
+}
+
+fn filter_live_event_from_normalized(normalized: &Value) -> Option<Value> {
+    let event_type = normalized.get("type")?.as_str()?;
+    match event_type {
+        "message.part.delta" | "message.part.updated" | "message.part.removed" => {
+            Some(normalized.clone())
+        }
+        _ => None,
+    }
 }
 
 fn filter_normalized_event(normalized: &Value) -> Option<Value> {
@@ -422,7 +435,9 @@ mod tests {
             "type": "message.part.delta",
             "properties": { "sessionID": "ses_1" }
         });
-        assert!(build_shared_event(&dropped).is_none());
+        let shared = build_shared_event(&dropped).expect("live event should survive");
+        assert!(shared.bridge_event.is_none());
+        assert!(shared.live_event.is_some());
 
         let retained = json!({
             "type": "session.error",
