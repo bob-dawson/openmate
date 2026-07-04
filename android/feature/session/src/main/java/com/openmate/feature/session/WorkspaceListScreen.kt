@@ -623,11 +623,22 @@ private fun SettingsContent(
                 SettingsRow(
                     title = stringResource(R.string.compact_mode),
                     subtitle = stringResource(R.string.compact_mode_subtitle),
-                    showDivider = false,
                     trailing = {
                         Switch(
                             checked = compactMode,
                             onCheckedChange = { viewModel.setCompactMode(it) },
+                        )
+                    },
+                )
+                val liveMessages by viewModel.liveMessages.collectAsState()
+                SettingsRow(
+                    title = stringResource(R.string.live_messages),
+                    subtitle = stringResource(R.string.live_messages_subtitle),
+                    showDivider = false,
+                    trailing = {
+                        Switch(
+                            checked = liveMessages,
+                            onCheckedChange = { viewModel.setLiveMessages(it) },
                         )
                     },
                 )

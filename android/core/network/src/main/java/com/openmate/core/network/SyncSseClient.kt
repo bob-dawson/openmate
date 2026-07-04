@@ -43,7 +43,7 @@ class SyncSseClient @Inject constructor(
     private val activeCall = AtomicReference<Call?>(null)
     private val connectionGeneration = AtomicLong(0)
 
-    override suspend fun connect(baseUrl: String, forceRestart: Boolean) {
+    override suspend fun connect(baseUrl: String, forceRestart: Boolean, liveMessages: Boolean) {
         if (!forceRestart && currentBaseUrl == baseUrl) {
             Log.d("SyncSseClient", "connect skipped: already connected to $baseUrl")
             return
@@ -63,7 +63,8 @@ class SyncSseClient @Inject constructor(
                     val token = tokenStore.activeToken
                     logger.logConnectStart(traceId = traceId, hasToken = token != null)
                     Log.d("SyncSseClient", "attempting SSE connection, token=${token != null}")
-                    val urlBuilder = Request.Builder().url("$baseUrl/api/bridge/events").get()
+                    val url = if (liveMessages) "$baseUrl/api/bridge/events?live=1" else "$baseUrl/api/bridge/events"
+                    val urlBuilder = Request.Builder().url(url).get()
                     val call = client.newCall(urlBuilder.build())
                     activeCall.set(call)
                     val response = call.execute()

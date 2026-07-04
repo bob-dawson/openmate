@@ -1,5 +1,6 @@
 package com.openmate.app.connection.v2
 
+import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.openmate.core.data.sync.SyncLogCategory
@@ -28,6 +29,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 class EffectExecutor(
     private val scope: CoroutineScope,
@@ -43,6 +45,7 @@ class EffectExecutor(
     private val logStore: SyncLogStore,
     private val connectivityManager: ConnectivityManager,
     private val routeCache: RouteCache,
+    @ApplicationContext private val appContext: Context,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -233,7 +236,9 @@ class EffectExecutor(
         syncSseHandler.start()
         syncSseClient.instanceId = instanceId
         sseJob = scope.launch {
-            syncSseClient.connect(baseUrl, forceRestart = true)
+            val liveMessages = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getBoolean("live_messages", false)
+            syncSseClient.connect(baseUrl, forceRestart = true, liveMessages = liveMessages)
         }
     }
 

@@ -122,6 +122,7 @@ class ConnectionManager @Inject constructor(
         logStore = logStore,
         connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager,
         routeCache = routeCache,
+        appContext = context,
     )
 
     private val actor = ConnectionActor { effect: ConnEffect ->
