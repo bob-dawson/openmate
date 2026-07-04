@@ -67,9 +67,11 @@ impl SyncDb {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")
             .ok();
         conn.execute_batch(
-            "CREATE INDEX IF NOT EXISTS idx_session_message_session_time_updated ON session_message(session_id, time_updated);"
+            "CREATE INDEX IF NOT EXISTS idx_session_message_session_time_updated ON session_message(session_id, time_updated);
+             CREATE INDEX IF NOT EXISTS idx_message_session_time_updated ON message(session_id, time_updated);
+             CREATE INDEX IF NOT EXISTS idx_part_session_time_updated ON part(session_id, time_updated);"
         ).map_err(|e| format!("Failed to create index: {}", e))?;
-        tracing::info!("Sync index (session_id, time_updated) ensured on opencode.db");
+        tracing::info!("Sync indexes ensured on opencode.db (session_message, message, part)");
         self.indexes_ready.store(true, Ordering::Relaxed);
         Ok(())
     }
@@ -79,14 +81,9 @@ impl SyncDb {
     }
 
     pub fn get_init_snapshot(&self, session_id: &str, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
-        let (messages, max_seq) = self.get_session_message_snapshot(session_id, limit)?;
-        if !messages.is_empty() {
-            let seq = max_seq.or_else(|| self.query_max_seq(session_id));
-            return Ok((messages, seq));
-        }
-        let fallback = self.get_legacy_message_snapshot(session_id, limit)?;
+        let messages = self.get_legacy_message_snapshot(session_id, limit)?;
         let seq = self.query_max_seq(session_id);
-        Ok((fallback, seq))
+        Ok((messages, seq))
     }
 
     fn query_max_seq(&self, aggregate_id: &str) -> Option<i64> {
@@ -98,6 +95,7 @@ impl SyncDb {
         ).ok().flatten()
     }
 
+    #[allow(dead_code)]
     fn get_session_message_snapshot(&self, session_id: &str, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
@@ -141,46 +139,107 @@ impl SyncDb {
 
     pub fn get_messages_since(&self, session_id: &str, since: i64, limit: i64) -> Result<(Vec<Value>, bool, Option<i64>), String> {
         let conn = self.conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, session_id, type, time_created, time_updated, data
-             FROM session_message
+        let mut msg_stmt = conn.prepare(
+            "SELECT id, session_id, time_created, time_updated, data
+             FROM message
              WHERE session_id = ? AND time_updated > ?
              ORDER BY time_updated ASC
              LIMIT ?"
         ).map_err(|e| format!("Prepare messages_since failed: {}", e))?;
 
-        let messages: Vec<Value> = stmt.query_map(params![session_id, since, limit + 1], |row| {
+        #[derive(Clone)]
+        struct MsgRow {
+            id: String,
+            session_id: String,
+            time_created: i64,
+            time_updated: i64,
+            data: Value,
+        }
+
+        let msg_rows: Vec<MsgRow> = msg_stmt.query_map(params![session_id, since, limit + 1], |row| {
             let id: String = row.get(0)?;
             let sid: String = row.get(1)?;
-            let msg_type: String = row.get(2)?;
-            let time_created: i64 = row.get(3)?;
-            let time_updated: i64 = row.get(4)?;
-            let data_str: String = row.get(5)?;
-            let data_val: Value = serde_json::from_str(&data_str).unwrap_or(Value::String(data_str.clone()));
-            Ok(json!({
-                "id": id,
-                "sessionId": sid,
-                "type": msg_type,
-                "timeCreated": time_created,
-                "timeUpdated": time_updated,
-                "data": data_val,
-            }))
+            let tc: i64 = row.get(2)?;
+            let tu: i64 = row.get(3)?;
+            let data_str: String = row.get(4)?;
+            Ok(MsgRow {
+                id,
+                session_id: sid,
+                time_created: tc,
+                time_updated: tu,
+                data: serde_json::from_str(&data_str).unwrap_or(Value::Null),
+            })
         }).map_err(|e| format!("Query messages_since failed: {}", e))?
           .filter_map(|r| r.ok())
           .collect();
 
-        let has_more = messages.len() > limit as usize;
-        let result_messages: Vec<Value> = if has_more {
-            messages[..limit as usize].to_vec()
+        let has_more = msg_rows.len() > limit as usize;
+        let result_rows: Vec<MsgRow> = if has_more {
+            msg_rows[..limit as usize].to_vec()
         } else {
-            messages
+            msg_rows
         };
 
-        let max_time_updated: Option<i64> = result_messages.iter()
+        if result_rows.is_empty() {
+            return Ok((vec![], false, None));
+        }
+
+        let msg_ids: Vec<&str> = result_rows.iter().map(|m| m.id.as_str()).collect();
+        let placeholders: Vec<String> = msg_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+        let sql = format!(
+            "SELECT message_id, data FROM part WHERE message_id IN ({}) ORDER BY time_created ASC",
+            placeholders.join(",")
+        );
+        let mut part_stmt = conn.prepare(&sql).map_err(|e| format!("Part query prepare failed: {}", e))?;
+
+        let mut parts_by_msg: HashMap<String, Vec<Value>> = HashMap::new();
+        for msg_id in &msg_ids {
+            parts_by_msg.insert(msg_id.to_string(), vec![]);
+        }
+
+        let params: Vec<&dyn rusqlite::ToSql> = msg_ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let part_rows = part_stmt.query_map(params.as_slice(), |row| {
+            let mid: String = row.get(0)?;
+            let data_str: String = row.get(1)?;
+            Ok((mid, data_str))
+        }).map_err(|e| format!("Part query failed: {}", e))?;
+
+        for pr in part_rows {
+            if let Ok((mid, data_str)) = pr {
+                if let Ok(pdata) = serde_json::from_str::<Value>(&data_str) {
+                    if let Some(vec) = parts_by_msg.get_mut(&mid) {
+                        vec.push(pdata);
+                    }
+                }
+            }
+        }
+
+        let mut messages: Vec<Value> = Vec::new();
+        for msg in result_rows {
+            let msg_type = match msg.data.get("role").and_then(|r| r.as_str()) {
+                Some("user") => "user".to_string(),
+                Some("assistant") => "assistant".to_string(),
+                _ => continue,
+            };
+
+            let parts = parts_by_msg.get(&msg.id).cloned().unwrap_or_default();
+            let session_msg_data = self.build_legacy_session_message_data(&msg_type, &msg.data, &parts);
+
+            messages.push(json!({
+                "id": msg.id,
+                "sessionId": msg.session_id,
+                "type": msg_type,
+                "timeCreated": msg.time_created,
+                "timeUpdated": msg.time_updated,
+                "data": session_msg_data,
+            }));
+        }
+
+        let max_time_updated: Option<i64> = messages.iter()
             .filter_map(|m| m.get("timeUpdated").and_then(|v| v.as_i64()))
             .max();
 
-        Ok((result_messages, has_more, max_time_updated))
+        Ok((messages, has_more, max_time_updated))
     }
 
     pub fn get_events(&self, session_id: &str, after_seq: i64, limit: i64) -> Result<(Vec<Value>, Option<i64>), String> {
@@ -261,25 +320,52 @@ impl SyncDb {
     pub fn get_full_message(&self, message_id: &str) -> Result<Option<Value>, String> {
         let conn = self.conn()?;
         let result = conn.query_row(
-            "SELECT id, type, data FROM session_message WHERE id = ?",
+            "SELECT id, session_id, time_created, time_updated, data FROM message WHERE id = ?",
             params![message_id],
             |row| {
                 let id: String = row.get(0)?;
-                let msg_type: String = row.get(1)?;
-                let data_str: String = row.get(2)?;
-                let data_val: Value = serde_json::from_str(&data_str).unwrap_or(Value::String(data_str.clone()));
-                Ok(json!({
-                    "id": id,
-                    "type": msg_type,
-                    "data": data_val,
-                }))
+                let sid: String = row.get(1)?;
+                let tc: i64 = row.get(2)?;
+                let tu: i64 = row.get(3)?;
+                let data_str: String = row.get(4)?;
+                Ok((id, sid, tc, tu, data_str))
             },
         );
-        match result {
-            Ok(val) => Ok(Some(val)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(format!("Query failed: {}", e)),
-        }
+        let (id, session_id, time_created, time_updated, data_str) = match result {
+            Ok(val) => val,
+            Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+            Err(e) => return Err(format!("Query failed: {}", e)),
+        };
+
+        let msg_data: Value = serde_json::from_str(&data_str).unwrap_or(Value::Null);
+        let msg_type = match msg_data.get("role").and_then(|r| r.as_str()) {
+            Some("user") => "user".to_string(),
+            Some("assistant") => "assistant".to_string(),
+            other => other.unwrap_or("unknown").to_string(),
+        };
+
+        let mut part_stmt = conn.prepare(
+            "SELECT data FROM part WHERE message_id = ? ORDER BY time_created ASC"
+        ).map_err(|e| format!("Part prepare failed: {}", e))?;
+
+        let parts: Vec<Value> = part_stmt.query_map(params![message_id], |row| {
+            let data_str: String = row.get(0)?;
+            Ok(data_str)
+        }).map_err(|e| format!("Part query failed: {}", e))?
+          .filter_map(|r| r.ok())
+          .filter_map(|data_str| serde_json::from_str::<Value>(&data_str).ok())
+          .collect();
+
+        let session_msg_data = self.build_legacy_session_message_data(&msg_type, &msg_data, &parts);
+
+        Ok(Some(json!({
+            "id": id,
+            "sessionId": session_id,
+            "type": msg_type,
+            "timeCreated": time_created,
+            "timeUpdated": time_updated,
+            "data": session_msg_data,
+        })))
     }
 
     pub fn resolve_message_id(&self, session_id: &str, time_created: i64) -> Result<Option<String>, String> {
@@ -299,12 +385,12 @@ impl SyncDb {
     pub fn get_session_stats(&self, session_id: &str) -> Result<(i64, Option<i64>), String> {
         let conn = self.conn()?;
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM session_message WHERE session_id = ?",
+            "SELECT COUNT(*) FROM message WHERE session_id = ?",
             params![session_id],
             |row| row.get(0),
         ).map_err(|e| format!("Query count failed: {}", e))?;
         let min_time: Option<i64> = conn.query_row(
-            "SELECT MIN(time_created) FROM session_message WHERE session_id = ?",
+            "SELECT MIN(time_created) FROM message WHERE session_id = ?",
             params![session_id],
             |row| row.get(0),
         ).ok();
@@ -470,7 +556,10 @@ impl SyncDb {
         Ok(results)
     }
 
-    fn build_legacy_session_message_data(&self, msg_type: &str, msg_data: &Value, parts: &[Value]) -> Value {
+    fn build_legacy_session_message_data(&self, msg_type: &str, msg_data: &Value, raw_parts: &[Value]) -> Value {
+        let parts: Vec<&Value> = raw_parts.iter()
+            .filter(|p| !p.get("synthetic").and_then(|v| v.as_bool()).unwrap_or(false))
+            .collect();
         match msg_type {
             "user" => {
                 let text = parts.iter()

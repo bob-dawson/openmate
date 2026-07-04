@@ -39,12 +39,10 @@ pub async fn init(
         .map_err(|e| AppError::DatabaseError(e))?;
 
     let truncated: Vec<Value> = messages.into_iter().map(|mut msg| {
-        if let Some(data_str) = msg["data"].as_str() {
-            if let Ok(data_val) = serde_json::from_str::<Value>(data_str) {
-                let msg_type = msg["type"].as_str().unwrap_or("");
-                let truncated_data = super::truncate::truncate_message(msg_type, &data_val);
-                msg["data"] = truncated_data;
-            }
+        if let Some(data_val) = msg.get("data") {
+            let msg_type = msg["type"].as_str().unwrap_or("");
+            let truncated_data = super::truncate::truncate_message(msg_type, data_val);
+            msg["data"] = truncated_data;
         }
         msg
     }).collect();
@@ -93,12 +91,10 @@ pub async fn messages(
         .map_err(|e| AppError::DatabaseError(e))?;
 
     let truncated: Vec<Value> = messages.into_iter().map(|mut msg| {
-        if let Some(data_str) = msg["data"].as_str() {
-            if let Ok(data_val) = serde_json::from_str::<Value>(data_str) {
-                let msg_type = msg["type"].as_str().unwrap_or("");
-                let truncated_data = super::truncate::truncate_message(msg_type, &data_val);
-                msg["data"] = truncated_data;
-            }
+        if let Some(data_val) = msg.get("data") {
+            let msg_type = msg["type"].as_str().unwrap_or("");
+            let truncated_data = super::truncate::truncate_message(msg_type, data_val);
+            msg["data"] = truncated_data;
         }
         msg
     }).collect();

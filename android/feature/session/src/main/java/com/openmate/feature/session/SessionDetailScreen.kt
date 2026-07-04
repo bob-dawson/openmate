@@ -1102,6 +1102,7 @@ fun SessionDetailScreen(
                     onClick = {
                         val ts = parseDateTimeToEpochMillis(selectedDate, selectedTime) ?: return@TextButton
                         viewModel.resync(ts)
+                        showResyncDialog = false
                     },
                     enabled = !resyncing && messageCount != null,
                 ) {
