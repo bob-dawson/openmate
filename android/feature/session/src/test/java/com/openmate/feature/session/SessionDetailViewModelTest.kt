@@ -92,7 +92,7 @@ class SessionDetailViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
-        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+        appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
             .edit()
             .clear()
             .apply()
@@ -101,7 +101,7 @@ class SessionDetailViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
-        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+        appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
             .edit()
             .clear()
             .apply()
@@ -567,7 +567,7 @@ class SessionDetailViewModelTest {
 
     @Test
     fun loadProviders_andVariantPreference_areScopedByProfileId_notDirectoryOrName() = runTest(dispatcher) {
-        val prefs = appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+        val prefs = appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
         val profileOneProviders = ProviderListDto(
             all = listOf(
                 ProviderInfoDto(
@@ -935,7 +935,7 @@ class SessionDetailViewModelTest {
             setActive("profile-default")
         },
     ): SessionDetailViewModel {
-        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+        appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
             .edit()
             .putString("recent_models", "provider::model::Model")
             .apply()

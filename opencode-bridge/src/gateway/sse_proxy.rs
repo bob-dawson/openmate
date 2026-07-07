@@ -60,13 +60,16 @@ pub async fn proxy_sse_to_tunnel(
             Ok(bytes) => {
                 buffer.push_str(&String::from_utf8_lossy(&bytes));
                 while let Some(pos) = buffer.find("\n\n") {
-                    let event = buffer[..pos + 2].to_string();
+                    let frame = buffer[..pos].to_string();
                     buffer = buffer[pos + 2..].to_string();
-                    if tunnel_tx
-                        .send(GatewayOutgoing::Json(TunnelFrame::sse_event(request_id, &event)))
-                        .is_err()
-                    {
-                        return;
+                    let data = extract_sse_data(&frame);
+                    if !data.is_empty() {
+                        if tunnel_tx
+                            .send(GatewayOutgoing::Json(TunnelFrame::sse_event(request_id, &data)))
+                            .is_err()
+                        {
+                            return;
+                        }
                     }
                 }
             }
@@ -78,8 +81,19 @@ pub async fn proxy_sse_to_tunnel(
     }
 
     if !buffer.trim().is_empty() {
-        let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::sse_event(request_id, &buffer)));
+        let data = extract_sse_data(&buffer);
+        if !data.is_empty() {
+            let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::sse_event(request_id, &data)));
+        }
     }
 
     let _ = tunnel_tx.send(GatewayOutgoing::Json(TunnelFrame::sse_close(request_id)));
+}
+
+fn extract_sse_data(frame: &str) -> String {
+    frame
+        .lines()
+        .filter_map(|line| line.strip_prefix("data:").map(|s| s.trim_start().to_string()))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

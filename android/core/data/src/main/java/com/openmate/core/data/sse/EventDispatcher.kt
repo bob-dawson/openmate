@@ -5,6 +5,7 @@ import com.openmate.core.network.SseData
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
@@ -16,6 +17,7 @@ data class LivePartEvent(
     val eventType: String,
     val partType: String?,
     val text: String?,
+    val isComplete: Boolean,
     val properties: JsonObject,
 )
 
@@ -81,17 +83,41 @@ class EventDispatcher @Inject constructor(
             type.startsWith("message.") -> {
                 if (type.startsWith("message.part.")) {
                     val sessionId = event.properties["sessionID"]?.jsonPrimitive?.content ?: return
-                    val messageId = event.properties["messageID"]?.jsonPrimitive?.content ?: return
-                    val partId = event.properties["partID"]?.jsonPrimitive?.content ?: return
-                    val partType = event.properties["type"]?.jsonPrimitive?.contentOrNull
-                    val text = event.properties["text"]?.jsonPrimitive?.contentOrNull
+                    val messageId: String
+                    val partId: String
+                    val partType: String?
+                    val text: String?
+                    val isComplete: Boolean
                     val liveType = when {
-                        type.endsWith(".delta") -> "delta"
-                        type.endsWith(".updated") -> "updated"
-                        type.endsWith(".removed") -> "removed"
+                        type.endsWith(".delta") -> {
+                            messageId = event.properties["messageID"]?.jsonPrimitive?.content ?: return
+                            partId = event.properties["partID"]?.jsonPrimitive?.content ?: return
+                            partType = null
+                            text = event.properties["delta"]?.jsonPrimitive?.contentOrNull
+                            isComplete = false
+                            "delta"
+                        }
+                        type.endsWith(".updated") -> {
+                            val part = event.properties["part"]?.jsonObject ?: return
+                            messageId = part["messageID"]?.jsonPrimitive?.content ?: return
+                            partId = part["id"]?.jsonPrimitive?.content ?: return
+                            partType = part["type"]?.jsonPrimitive?.contentOrNull
+                            text = part["text"]?.jsonPrimitive?.contentOrNull
+                            val timeObj = part["time"]?.jsonObject
+                            isComplete = timeObj?.containsKey("end") == true
+                            "updated"
+                        }
+                        type.endsWith(".removed") -> {
+                            messageId = event.properties["messageID"]?.jsonPrimitive?.content ?: return
+                            partId = event.properties["partID"]?.jsonPrimitive?.content ?: return
+                            partType = null
+                            text = null
+                            isComplete = true
+                            "removed"
+                        }
                         else -> return
                     }
-                    _livePartEvents.tryEmit(LivePartEvent(sessionId, messageId, partId, liveType, partType, text, event.properties))
+                    _livePartEvents.tryEmit(LivePartEvent(sessionId, messageId, partId, liveType, partType, text, isComplete, event.properties))
                 }
             }
             type.startsWith("permission.") -> permissionHandler.handle(type, event)

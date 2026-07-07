@@ -83,6 +83,7 @@ class WorkspaceListViewModel @Inject constructor(
             _errorMessage.value = null
             try {
                 sessionRepository.getSessions(null, null, null)
+                sessionRepository.refreshSessionStatuses(null)
             } catch (e: Exception) {
                 Log.w(TAG, "refresh skipped: ${e.javaClass.simpleName}")
             }

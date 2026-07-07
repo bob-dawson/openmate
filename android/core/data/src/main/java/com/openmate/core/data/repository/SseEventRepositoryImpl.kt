@@ -3,6 +3,7 @@ package com.openmate.core.data.repository
 import android.util.Log
 import com.openmate.core.data.sse.EventDispatcher
 import com.openmate.core.domain.model.ConnectionStatus
+import com.openmate.core.domain.model.LivePartEvent
 import com.openmate.core.domain.model.SseEvent
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.network.BridgeEvent
@@ -13,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,6 +72,20 @@ class SseEventRepositoryImpl @Inject constructor(
 
     override fun observeSessionErrors(): Flow<Pair<String, String>> {
         return eventDispatcher.sessionErrors
+    }
+
+    override fun observeLivePartEvents(): Flow<LivePartEvent> {
+        return eventDispatcher.livePartEvents.map { ev ->
+            LivePartEvent(
+                sessionId = ev.sessionId,
+                messageId = ev.messageId,
+                partId = ev.partId,
+                eventType = ev.eventType,
+                partType = ev.partType,
+                text = ev.text,
+                isComplete = ev.isComplete,
+            )
+        }
     }
 
     override fun setActiveSessionScope(directory: String?, enabled: Boolean) {

@@ -22,6 +22,7 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.PermissionReply
+import com.openmate.core.domain.model.LivePartEvent
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
@@ -86,7 +87,7 @@ class SessionDetailViewModel @Inject constructor(
     private val syncApiClient: SyncApiClient,
     private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
-    private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private val _sessionRevert = MutableStateFlow<SessionRevert?>(null)
     val sessionRevert: StateFlow<SessionRevert?> = _sessionRevert.asStateFlow()
@@ -206,6 +207,17 @@ class SessionDetailViewModel @Inject constructor(
     private val _revertedPrompt = MutableStateFlow<String?>(null)
     val revertedPrompt: StateFlow<String?> = _revertedPrompt.asStateFlow()
 
+    data class LivePart(
+        val partId: String,
+        val messageId: String,
+        val partType: String,
+        val text: String,
+        val isComplete: Boolean,
+    )
+
+    private val _liveParts = MutableStateFlow<List<LivePart>>(emptyList())
+    val liveParts: StateFlow<List<LivePart>> = _liveParts.asStateFlow()
+
     data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
 
     private fun resolveModelName(providerID: String, modelID: String, fallback: String? = null): String {
@@ -294,6 +306,7 @@ class SessionDetailViewModel @Inject constructor(
     private var observeSessionErrorJob: Job? = null
     private var observeRetryStatusJob: Job? = null
     private var observeSyncLogsJob: Job? = null
+    private var observeLivePartJob: Job? = null
 
     init {
         observeSyncLogs()
@@ -542,6 +555,7 @@ class SessionDetailViewModel @Inject constructor(
         observeMessageSyncJob?.cancel()
         observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
+        observeLivePartJob?.cancel()
         pollJob?.cancel()
         _selectedModel.value = null
         val profileKey = activeProfileKey()
@@ -569,6 +583,7 @@ class SessionDetailViewModel @Inject constructor(
         _isLoadingOlder.value = false
         _hasOlderMessages.value = false
         _sessionRevert.value = null
+        _liveParts.value = emptyList()
         wasBusy = false
         isModelOverridden = false
         isAgentOverridden = false
@@ -643,6 +658,7 @@ class SessionDetailViewModel @Inject constructor(
         observePermissions()
         observeSyncEvents(sessionID)
         observeRetryStatus(sessionID)
+        observeLiveParts(sessionID)
         startPolling(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -656,6 +672,7 @@ class SessionDetailViewModel @Inject constructor(
                 val hasLocalMessages = messageWindowState.messages.isNotEmpty()
                 if (lastSeq != null && lastSeq > 0 && hasLocalMessages) {
                     sessionMessageRepository.incrementalSync(sessionID)
+                    rebuildInitialWindow(sessionID)
                 } else {
                     applySyncResult(sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE))
                 }
@@ -825,7 +842,9 @@ class SessionDetailViewModel @Inject constructor(
         observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
         observeSyncLogsJob?.cancel()
+        observeLivePartJob?.cancel()
         pollJob?.cancel()
+        _liveParts.value = emptyList()
         sseEventRepository.setActiveSessionScope(null, enabled = false)
         syncSseStarter.setActiveSession(null)
         val sid = currentSessionID
@@ -1290,6 +1309,7 @@ class SessionDetailViewModel @Inject constructor(
             messages = recent,
         )
         recalculateMessageDerivedState(recent)
+        cleanupSyncedLiveParts()
     }
 
     private fun applySyncResult(result: SessionMessageSyncResult) {
@@ -1310,6 +1330,7 @@ class SessionDetailViewModel @Inject constructor(
         if (result.changes.isNotEmpty()) {
             recalculateMessageDerivedState(messageWindowState.messages)
         }
+        cleanupSyncedLiveParts()
         if (result.hasTodoEvent) {
             val sid = currentSessionID ?: return
             viewModelScope.launch(Dispatchers.IO) {
@@ -1659,6 +1680,68 @@ class SessionDetailViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "observeSessionErrors failed", e)
             }
+        }
+    }
+
+    private fun observeLiveParts(sessionId: String) {
+        observeLivePartJob?.cancel()
+        if (!prefs.getBoolean("live_messages", false)) return
+        observeLivePartJob = viewModelScope.launch(Dispatchers.IO) {
+            sseEventRepository.observeLivePartEvents()
+                .collect { event ->
+                    if (event.sessionId != sessionId) return@collect
+                    val current = _liveParts.value.toMutableList()
+                    val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
+                    when (event.eventType) {
+                        "delta" -> {
+                            val text = event.text ?: ""
+                            if (existingIdx >= 0) {
+                                current[existingIdx] = current[existingIdx].copy(
+                                    text = current[existingIdx].text + text,
+                                )
+                            } else {
+                                current.add(LivePart(
+                                    partId = event.partId,
+                                    messageId = event.messageId,
+                                    partType = event.partType ?: "text",
+                                    text = text,
+                                    isComplete = false,
+                                ))
+                            }
+                        }
+                        "updated" -> {
+                            val text = event.text ?: ""
+                            if (existingIdx >= 0) {
+                                current[existingIdx] = current[existingIdx].copy(
+                                    text = text,
+                                    isComplete = event.isComplete,
+                                )
+                            } else {
+                                current.add(LivePart(
+                                    partId = event.partId,
+                                    messageId = event.messageId,
+                                    partType = event.partType ?: "text",
+                                    text = text,
+                                    isComplete = event.isComplete,
+                                ))
+                            }
+                        }
+                        "removed" -> {
+                            if (existingIdx >= 0) {
+                                current.removeAt(existingIdx)
+                            }
+                        }
+                    }
+                    _liveParts.value = current
+                }
+        }
+    }
+
+    private fun cleanupSyncedLiveParts() {
+        val msgIds = _messages.value.map { it.id }.toSet()
+        val filtered = _liveParts.value.filter { !it.isComplete || it.messageId !in msgIds }
+        if (filtered.size != _liveParts.value.size) {
+            _liveParts.value = filtered
         }
     }
 

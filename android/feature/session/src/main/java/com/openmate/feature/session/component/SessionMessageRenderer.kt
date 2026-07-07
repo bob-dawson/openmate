@@ -150,6 +150,7 @@ fun SessionMessageRenderer(
     compactMode: Boolean = false,
     isQueued: Boolean = false,
     userModelName: String? = null,
+    reasoningDefaultExpanded: Boolean = false,
     onFullContentRequest: (messageId: String) -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
     pendingQuestions: List<QuestionRequest> = emptyList(),
@@ -216,6 +217,7 @@ fun SessionMessageRenderer(
                     messageId = entity.id,
                     showReasoning = showReasoning,
                     compactMode = compactMode,
+                    reasoningDefaultExpanded = reasoningDefaultExpanded,
                     onNavigateToSubtask = onNavigateToSubtask,
                     pendingQuestions = pendingQuestions,
                     pendingPermissions = pendingPermissions,
@@ -247,6 +249,9 @@ fun SessionMessageRenderer(
                 data = dataJson,
                 runningAnchors = runningAnchors,
             )
+        }
+        "live" -> {
+            LivePartItem(dataJson)
         }
         else -> { }
     }
@@ -299,6 +304,88 @@ private fun CompactionMessageItem(
                     isTextSelectable = true,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun LivePartItem(data: JsonObject) {
+    val partType = data["partType"]?.jsonPrimitive?.contentOrNull ?: "text"
+    val text = data["text"]?.jsonPrimitive?.contentOrNull ?: ""
+    val isComplete = data["isComplete"]?.jsonPrimitive?.contentOrNull?.toBoolean() ?: false
+
+    if (text.isBlank()) return
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+        when (partType) {
+            "reasoning" -> {
+                ReasoningBlock(text = text, defaultExpanded = true, showProgress = !isComplete, filterRedacted = false)
+            }
+            else -> {
+                MessageBubble(text = text, isUser = false, modifier = Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReasoningBlock(
+    text: String,
+    defaultExpanded: Boolean = false,
+    showProgress: Boolean = false,
+    filterRedacted: Boolean = true,
+) {
+    if (text.isBlank()) return
+    val expanded = remember { mutableStateOf(defaultExpanded) }
+    val displayText = remember(text, filterRedacted) {
+        if (filterRedacted) text.replace(Regex("\\[REDACTED\\][\\s\\S]*?\\[REDACTED\\]"), "[REDACTED]")
+        else text
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 8.dp, top = 4.dp)
+            .clickable { expanded.value = !expanded.value },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .height(16.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = if (expanded.value) "▼ Thinking" else "▶ Thinking",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        )
+        if (showProgress) {
+            Spacer(modifier = Modifier.width(4.dp))
+            CircularProgressIndicator(
+                modifier = Modifier.size(10.dp),
+                strokeWidth = 1.5.dp,
+            )
+        }
+    }
+    AnimatedVisibility(visible = expanded.value) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(2.dp)
+                    .fillMaxWidth()
+                    .padding(start = 8.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = displayText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+            )
         }
     }
 }
@@ -485,6 +572,7 @@ fun AssistantMessageItem(
     messageId: String = "",
     showReasoning: Boolean = true,
     compactMode: Boolean = false,
+    reasoningDefaultExpanded: Boolean = false,
     onNavigateToSubtask: (String, String) -> Unit = { _, _ -> },
     pendingQuestions: List<QuestionRequest> = emptyList(),
     pendingPermissions: List<PermissionRequest> = emptyList(),
@@ -495,7 +583,6 @@ fun AssistantMessageItem(
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
 ) {
     val content = data["content"]?.jsonArray ?: return
-    val reasoningExpanded = remember { mutableStateOf(false) }
     val toolItems = remember(data) { extractToolItems(data, sessionId, messageId) }
     var toolIndex = 0
 
@@ -633,47 +720,7 @@ fun AssistantMessageItem(
                 "reasoning" -> {
                     val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: ""
                     if (text.isNotBlank() && showReasoning) {
-                        val filtered = text.replace(Regex("\\[REDACTED\\][\\s\\S]*?\\[REDACTED\\]"), "[REDACTED]")
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(start = 8.dp, top = 4.dp)
-                                .clickable { reasoningExpanded.value = !reasoningExpanded.value },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(2.dp)
-                                    .height(16.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (reasoningExpanded.value) "▼ Thinking" else "▶ Thinking",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            )
-                        }
-                        AnimatedVisibility(visible = reasoningExpanded.value) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .width(2.dp)
-                                        .fillMaxWidth()
-                                        .padding(start = 8.dp)
-                                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = filtered,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
-                                )
-                            }
-                        }
+                        ReasoningBlock(text = text, defaultExpanded = reasoningDefaultExpanded)
                     }
                 }
                 "step-start" -> {}

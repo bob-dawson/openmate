@@ -1,6 +1,7 @@
 package com.openmate.core.domain.repository
 
 import com.openmate.core.domain.model.ConnectionStatus
+import com.openmate.core.domain.model.LivePartEvent
 import com.openmate.core.domain.model.SseEvent
 import kotlinx.coroutines.flow.Flow
 
@@ -13,4 +14,5 @@ interface SseEventRepository {
     fun setActiveSessionScope(directory: String?, enabled: Boolean)
     fun observeMessageSyncNeeded(): Flow<String>
     fun observeSessionErrors(): Flow<Pair<String, String>>
+    fun observeLivePartEvents(): Flow<LivePartEvent>
 }

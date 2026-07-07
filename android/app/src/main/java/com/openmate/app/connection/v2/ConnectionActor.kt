@@ -392,6 +392,13 @@ class ConnectionActor(
                         _state.value = ConnState.Idle(s.profile)
                     }
                 }
+                transition<ConnEvent.Retry> {
+                    targetState = connectingFresh
+                    onTriggered {
+                        val s = _state.value as ConnState.Connected
+                        _state.value = ConnState.ConnectingFresh(s.profile, s.route, s.attempt)
+                    }
+                }
                 transition<ConnEvent.Disconnect> {
                     targetState = idle
                     onTriggered {

@@ -142,7 +142,10 @@ impl SyncDb {
         let mut msg_stmt = conn.prepare(
             "SELECT id, session_id, time_created, time_updated, data
              FROM message
-             WHERE session_id = ? AND time_updated > ?
+             WHERE session_id = ? AND (
+               time_updated > ?
+               OR id IN (SELECT DISTINCT message_id FROM part WHERE session_id = ? AND time_updated > ?)
+             )
              ORDER BY time_updated ASC
              LIMIT ?"
         ).map_err(|e| format!("Prepare messages_since failed: {}", e))?;
@@ -156,7 +159,7 @@ impl SyncDb {
             data: Value,
         }
 
-        let msg_rows: Vec<MsgRow> = msg_stmt.query_map(params![session_id, since, limit + 1], |row| {
+        let msg_rows: Vec<MsgRow> = msg_stmt.query_map(params![session_id, since, session_id, since, limit + 1], |row| {
             let id: String = row.get(0)?;
             let sid: String = row.get(1)?;
             let tc: i64 = row.get(2)?;
@@ -214,30 +217,94 @@ impl SyncDb {
             }
         }
 
+        let compaction_summary_by_parent: HashMap<String, (String, Option<i64>)> = {
+            let mut map = HashMap::new();
+            for msg in &result_rows {
+                if msg.data.get("mode").and_then(|m| m.as_str()) == Some("compaction") {
+                    if let Some(parent_id) = msg.data.get("parentID").and_then(|p| p.as_str()) {
+                        let parts = parts_by_msg.get(&msg.id).cloned().unwrap_or_default();
+                        let summary_text = parts.iter()
+                            .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+                            .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let completed_at = msg.data.get("time")
+                            .and_then(|t| t.get("completed"))
+                            .and_then(|c| c.as_i64());
+                        map.insert(parent_id.to_string(), (summary_text, completed_at));
+                    }
+                }
+            }
+            map
+        };
+
         let mut messages: Vec<Value> = Vec::new();
-        for msg in result_rows {
+        let mut max_time_updated: Option<i64> = None;
+        for msg in &result_rows {
+            if msg.time_updated > since {
+                max_time_updated = Some(max_time_updated.map_or(msg.time_updated, |m| m.max(msg.time_updated)));
+            }
+
+            if msg.data.get("mode").and_then(|m| m.as_str()) == Some("compaction") {
+                continue;
+            }
+
+            let parts = parts_by_msg.get(&msg.id).cloned().unwrap_or_default();
+            let has_compaction_part = parts.iter().any(|p| {
+                p.get("type").and_then(|t| t.as_str()) == Some("compaction")
+            });
             let msg_type = match msg.data.get("role").and_then(|r| r.as_str()) {
-                Some("user") => "user".to_string(),
-                Some("assistant") => "assistant".to_string(),
+                Some("user") => {
+                    if has_compaction_part { "compaction" } else { "user" }
+                }
+                Some("assistant") => "assistant",
                 _ => continue,
             };
 
-            let parts = parts_by_msg.get(&msg.id).cloned().unwrap_or_default();
-            let session_msg_data = self.build_legacy_session_message_data(&msg_type, &msg.data, &parts);
+            let compaction_summary = if msg_type == "compaction" {
+                compaction_summary_by_parent.get(&msg.id).cloned()
+            } else {
+                None
+            };
 
-            messages.push(json!({
+            let session_msg_data = self.build_legacy_session_message_data(msg_type, &msg.data, &parts, compaction_summary.as_ref());
+
+            let mut result_msg = json!({
                 "id": msg.id,
                 "sessionId": msg.session_id,
                 "type": msg_type,
                 "timeCreated": msg.time_created,
                 "timeUpdated": msg.time_updated,
                 "data": session_msg_data,
-            }));
+            });
+            if let Some((_, Some(completed_at))) = compaction_summary {
+                if let Some(obj) = result_msg.as_object_mut() {
+                    obj.insert("completedAt".to_string(), json!(completed_at));
+                }
+            }
+
+            messages.push(result_msg);
         }
 
-        let max_time_updated: Option<i64> = messages.iter()
-            .filter_map(|m| m.get("timeUpdated").and_then(|v| v.as_i64()))
-            .max();
+        if !result_rows.is_empty() {
+            let ids: Vec<&str> = result_rows.iter().map(|m| m.id.as_str()).collect();
+            let ph: Vec<String> = ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 1)).collect();
+            let sql = format!("SELECT message_id, MAX(time_updated) FROM part WHERE message_id IN ({}) AND time_updated > ? GROUP BY message_id", ph.join(","));
+            if let Ok(mut stmt) = conn.prepare(&sql) {
+                let mut params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+                params.push(&since);
+                if let Ok(rows) = stmt.query_map(params.as_slice(), |row| {
+                    let mid: String = row.get(0)?;
+                    let max_ptu: i64 = row.get(1)?;
+                    Ok((mid, max_ptu))
+                }) {
+                    for r in rows.flatten() {
+                        let (_, ptu): (String, i64) = r;
+                        max_time_updated = Some(max_time_updated.map_or(ptu, |m| m.max(ptu)));
+                    }
+                }
+            }
+        }
 
         Ok((messages, has_more, max_time_updated))
     }
@@ -338,11 +405,10 @@ impl SyncDb {
         };
 
         let msg_data: Value = serde_json::from_str(&data_str).unwrap_or(Value::Null);
-        let msg_type = match msg_data.get("role").and_then(|r| r.as_str()) {
-            Some("user") => "user".to_string(),
-            Some("assistant") => "assistant".to_string(),
-            other => other.unwrap_or("unknown").to_string(),
-        };
+
+        if msg_data.get("mode").and_then(|m| m.as_str()) == Some("compaction") {
+            return Ok(None);
+        }
 
         let mut part_stmt = conn.prepare(
             "SELECT data FROM part WHERE message_id = ? ORDER BY time_created ASC"
@@ -356,16 +422,77 @@ impl SyncDb {
           .filter_map(|data_str| serde_json::from_str::<Value>(&data_str).ok())
           .collect();
 
-        let session_msg_data = self.build_legacy_session_message_data(&msg_type, &msg_data, &parts);
+        let has_compaction_part = parts.iter().any(|p| {
+            p.get("type").and_then(|t| t.as_str()) == Some("compaction")
+        });
+        let msg_type = match msg_data.get("role").and_then(|r| r.as_str()) {
+            Some("user") => {
+                if has_compaction_part { "compaction" } else { "user" }
+            }
+            Some("assistant") => "assistant",
+            other => other.unwrap_or("unknown"),
+        };
 
-        Ok(Some(json!({
+        let compaction_summary: Option<(String, Option<i64>)> = if msg_type == "compaction" {
+            let summary_msg = conn.query_row(
+                "SELECT data FROM message WHERE json_extract(data, '$.parentID') = ? AND json_extract(data, '$.mode') = 'compaction'",
+                params![message_id],
+                |row| {
+                    let data_str: String = row.get(0)?;
+                    Ok(data_str)
+                },
+            );
+            match summary_msg {
+                Ok(summary_data_str) => {
+                    let summary_msg_data: Value = serde_json::from_str(&summary_data_str).unwrap_or(Value::Null);
+                    let mut summary_part_stmt = conn.prepare(
+                        "SELECT data FROM part WHERE message_id = (SELECT id FROM message WHERE json_extract(data, '$.parentID') = ? AND json_extract(data, '$.mode') = 'compaction') ORDER BY time_created ASC"
+                    ).ok();
+                    let summary_text = if let Some(ref mut stmt) = summary_part_stmt {
+                        stmt.query_map(params![message_id], |row| {
+                            let d: String = row.get(0)?;
+                            Ok(d)
+                        }).ok()
+                          .map(|rows| {
+                              rows.filter_map(|r| r.ok())
+                                  .filter_map(|d| serde_json::from_str::<Value>(&d).ok())
+                                  .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+                                  .filter_map(|p| p.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
+                                  .collect::<Vec<_>>()
+                                  .join("\n")
+                          })
+                          .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    let completed_at = summary_msg_data.get("time")
+                        .and_then(|t| t.get("completed"))
+                        .and_then(|c| c.as_i64());
+                    Some((summary_text, completed_at))
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
+        let session_msg_data = self.build_legacy_session_message_data(msg_type, &msg_data, &parts, compaction_summary.as_ref());
+
+        let mut result_msg = json!({
             "id": id,
             "sessionId": session_id,
             "type": msg_type,
             "timeCreated": time_created,
             "timeUpdated": time_updated,
             "data": session_msg_data,
-        })))
+        });
+        if let Some((_, Some(completed_at))) = compaction_summary {
+            if let Some(obj) = result_msg.as_object_mut() {
+                obj.insert("completedAt".to_string(), json!(completed_at));
+            }
+        }
+
+        Ok(Some(result_msg))
     }
 
     pub fn resolve_message_id(&self, session_id: &str, time_created: i64) -> Result<Option<String>, String> {
@@ -533,30 +660,74 @@ impl SyncDb {
         }
 
         let mut results: Vec<Value> = Vec::new();
+
+        let compaction_summary_by_parent: HashMap<String, (String, Option<i64>)> = {
+            let mut map = HashMap::new();
+            for msg in &msg_rows {
+                if msg.data.get("mode").and_then(|m| m.as_str()) == Some("compaction") {
+                    if let Some(parent_id) = msg.data.get("parentID").and_then(|p| p.as_str()) {
+                        let parts = parts_by_msg.get(&msg.id).cloned().unwrap_or_default();
+                        let summary_text = parts.iter()
+                            .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+                            .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let completed_at = msg.data.get("time")
+                            .and_then(|t| t.get("completed"))
+                            .and_then(|c| c.as_i64());
+                        map.insert(parent_id.to_string(), (summary_text, completed_at));
+                    }
+                }
+            }
+            map
+        };
+
         for msg in msg_rows {
+            if msg.data.get("mode").and_then(|m| m.as_str()) == Some("compaction") {
+                continue;
+            }
+
+            let parts = parts_by_msg.get(&msg.id).cloned().unwrap_or_default();
+            let has_compaction_part = parts.iter().any(|p| {
+                p.get("type").and_then(|t| t.as_str()) == Some("compaction")
+            });
             let msg_type = match msg.data.get("role").and_then(|r| r.as_str()) {
-                Some("user") => "user".to_string(),
-                Some("assistant") => "assistant".to_string(),
+                Some("user") => {
+                    if has_compaction_part { "compaction" } else { "user" }
+                }
+                Some("assistant") => "assistant",
                 _ => continue,
             };
 
-            let parts = parts_by_msg.get(&msg.id).cloned().unwrap_or_default();
-            let session_msg_data = self.build_legacy_session_message_data(&msg_type, &msg.data, &parts);
+            let compaction_summary = if msg_type == "compaction" {
+                compaction_summary_by_parent.get(&msg.id).cloned()
+            } else {
+                None
+            };
 
-            results.push(json!({
+            let session_msg_data = self.build_legacy_session_message_data(msg_type, &msg.data, &parts, compaction_summary.as_ref());
+
+            let mut result_msg = json!({
                 "id": msg.id,
                 "sessionId": msg.session_id,
                 "type": msg_type,
                 "timeCreated": msg.time_created,
                 "timeUpdated": msg.time_updated,
                 "data": session_msg_data,
-            }));
+            });
+            if let Some((_, Some(completed_at))) = compaction_summary {
+                if let Some(obj) = result_msg.as_object_mut() {
+                    obj.insert("completedAt".to_string(), json!(completed_at));
+                }
+            }
+
+            results.push(result_msg);
         }
 
         Ok(results)
     }
 
-    fn build_legacy_session_message_data(&self, msg_type: &str, msg_data: &Value, raw_parts: &[Value]) -> Value {
+    fn build_legacy_session_message_data(&self, msg_type: &str, msg_data: &Value, raw_parts: &[Value], compaction_summary: Option<&(String, Option<i64>)>) -> Value {
         let parts: Vec<&Value> = raw_parts.iter()
             .filter(|p| !p.get("synthetic").and_then(|v| v.as_bool()).unwrap_or(false))
             .collect();
@@ -656,7 +827,16 @@ impl SyncDb {
                             content.push(json!({"type": "subtask", "description": description, "prompt": prompt}));
                         }
                         "compaction" => {
-                            content.push(json!({"type": "compaction"}));
+                            let mut item = json!({"type": "compaction"});
+                            if let Some(obj) = item.as_object_mut() {
+                                if let Some(auto) = part.get("auto") {
+                                    obj.insert("auto".to_string(), auto.clone());
+                                }
+                                if let Some(overflow) = part.get("overflow") {
+                                    obj.insert("overflow".to_string(), overflow.clone());
+                                }
+                            }
+                            content.push(item);
                         }
                         "retry" => {
                             let mut item = json!({"type": "retry"});
@@ -703,6 +883,29 @@ impl SyncDb {
                     }
                 }
 
+                result
+            }
+            "compaction" => {
+                let mut result = json!({});
+                if let Some(obj) = result.as_object_mut() {
+                    let auto = raw_parts.iter().any(|p| {
+                        p.get("type").and_then(|t| t.as_str()) == Some("compaction")
+                            && p.get("auto").and_then(|a| a.as_bool()).unwrap_or(false)
+                    });
+                    obj.insert("reason".to_string(), json!(if auto { "auto" } else { "manual" }));
+                    if let Some((summary_text, _)) = compaction_summary {
+                        if !summary_text.is_empty() {
+                            obj.insert("summary".to_string(), json!(summary_text));
+                        }
+                    }
+                    let mut time = msg_data.get("time").cloned().unwrap_or(json!({}));
+                    if let Some((_, Some(completed_at))) = compaction_summary {
+                        if let Some(time_obj) = time.as_object_mut() {
+                            time_obj.insert("completed".to_string(), json!(completed_at));
+                        }
+                    }
+                    obj.insert("time".to_string(), time);
+                }
                 result
             }
             _ => json!({}),
