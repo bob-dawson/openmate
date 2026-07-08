@@ -210,6 +210,7 @@ class SettingsViewModel @Inject constructor(
     fun setLiveMessages(enabled: Boolean) {
         _liveMessages.value = enabled
         prefs.edit().putBoolean(KEY_LIVE_MESSAGES, enabled).apply()
+        connectionRepository.reconnect()
     }
 
     fun setGatewayEnabled(enabled: Boolean) {

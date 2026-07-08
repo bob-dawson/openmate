@@ -95,6 +95,29 @@ class SessionDetailViewModel @Inject constructor(
     private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
     val messages: StateFlow<List<SessionMessage>> = _messages.asStateFlow()
 
+    private fun updateMessages(newList: List<SessionMessage>) {
+        val cur = _messages.value
+        if (newList === cur) return
+        val newlyCompleted = if (cur.size == newList.size) {
+            val ids = mutableSetOf<String>()
+            for (i in cur.indices) {
+                if (cur[i].completedAt == null && newList[i].completedAt != null && cur[i].id == newList[i].id) {
+                    ids.add(cur[i].id)
+                }
+            }
+            ids
+        } else {
+            val curCompleted = cur.mapNotNull { if (it.completedAt != null) it.id else null }.toSet()
+            newList.mapNotNull { if (it.completedAt != null && it.id !in curCompleted) it.id else null }.toSet()
+        }
+        val lastChanged = cur.isEmpty() || cur.last().id != newList.last().id || cur.last().completedAt != newList.last().completedAt
+        if (newlyCompleted.isEmpty() && cur.size == newList.size && !lastChanged) return
+        _messages.value = newList
+        if (newlyCompleted.isNotEmpty()) {
+            cleanupLivePartsByMsgIds(newlyCompleted)
+        }
+    }
+
     private var messageWindowState = SessionMessageWindowManager.State(
         messages = emptyList(),
         loadedCount = 30,
@@ -217,6 +240,12 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _liveParts = MutableStateFlow<List<LivePart>>(emptyList())
     val liveParts: StateFlow<List<LivePart>> = _liveParts.asStateFlow()
+
+    private val livePartChunkFlows = mutableMapOf<String, kotlinx.coroutines.flow.MutableSharedFlow<String>>()
+
+    fun getLivePartChunkFlow(partId: String): kotlinx.coroutines.flow.Flow<String>? {
+        return livePartChunkFlows[partId]
+    }
 
     data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
 
@@ -572,7 +601,7 @@ class SessionDetailViewModel @Inject constructor(
             loadedCount = MESSAGE_WINDOW_PAGE_SIZE,
             hasOlderMessages = false,
         )
-        _messages.value = emptyList()
+        updateMessages(emptyList())
         _sessionTotalDuration.value = null
         _currentBusyStart.value = null
         _sessionRetryStatus.value = null
@@ -671,10 +700,18 @@ class SessionDetailViewModel @Inject constructor(
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
                 val hasLocalMessages = messageWindowState.messages.isNotEmpty()
                 if (lastSeq != null && lastSeq > 0 && hasLocalMessages) {
-                    sessionMessageRepository.incrementalSync(sessionID)
+                    try {
+                        sessionMessageRepository.incrementalSync(sessionID)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "incrementalSync failed", e)
+                    }
                     rebuildInitialWindow(sessionID)
                 } else {
-                    applySyncResult(sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE))
+                    try {
+                        applySyncResult(sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "initSync failed", e)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "sync failed", e)
@@ -872,8 +909,9 @@ class SessionDetailViewModel @Inject constructor(
         val agent = _selectedAgent.value
         val variant = _selectedVariant.value
         val files = _attachedFiles.value
-        val sendModelPID = if (isModelOverridden) model?.providerID else null
-        val sendModelMID = if (isModelOverridden) model?.modelID else null
+        val hasHistoryAssistant = _messages.value.any { it.type == "assistant" }
+        val sendModelPID = if (isModelOverridden || !hasHistoryAssistant) model?.providerID else null
+        val sendModelMID = if (isModelOverridden || !hasHistoryAssistant) model?.modelID else null
         val sendAgent = if (isAgentOverridden) agent else null
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -1247,7 +1285,7 @@ class SessionDetailViewModel @Inject constructor(
                     olderPage = older,
                     hasOlderMessages = older.size == MESSAGE_WINDOW_PAGE_SIZE,
                 )
-                _messages.value = messageWindowState.messages
+                updateMessages(messageWindowState.messages)
                 _hasOlderMessages.value = messageWindowState.hasOlderMessages
                 recalculateMessageDerivedState(messageWindowState.messages)
             } catch (e: Exception) {
@@ -1279,7 +1317,7 @@ class SessionDetailViewModel @Inject constructor(
                         olderPage = older,
                         hasOlderMessages = true,
                     )
-                    _messages.value = messageWindowState.messages
+                    updateMessages(messageWindowState.messages)
                     _hasOlderMessages.value = messageWindowState.hasOlderMessages
                     recalculateMessageDerivedState(messageWindowState.messages)
                 } else {
@@ -1301,7 +1339,7 @@ class SessionDetailViewModel @Inject constructor(
             loadedCount = recent.size,
             hasOlderMessages = recent.size == MESSAGE_WINDOW_PAGE_SIZE,
         )
-        _messages.value = recent
+        updateMessages(recent)
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
         logMessageWindowState(
             sessionId = sessionId,
@@ -1318,7 +1356,7 @@ class SessionDetailViewModel @Inject constructor(
         if (hadNoMessages && result.changes.size >= MESSAGE_WINDOW_PAGE_SIZE) {
             messageWindowState = messageWindowState.copy(hasOlderMessages = true)
         }
-        _messages.value = messageWindowState.messages
+        updateMessages(messageWindowState.messages)
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
         currentSessionID?.let { sessionId ->
             logMessageWindowState(
@@ -1459,8 +1497,10 @@ class SessionDetailViewModel @Inject constructor(
         val isReverting = _sessionRevert.value != null
         val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting
         _isStreaming.value = lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting)
-        _queuedMessageIds.value = buildQueuedMessageIds(list)
-        _userModelMap.value = buildUserModelMap(list)
+        val newQueued = buildQueuedMessageIds(list)
+        if (_queuedMessageIds.value != newQueued) _queuedMessageIds.value = newQueued
+        val newUserModelMap = buildUserModelMap(list)
+        if (_userModelMap.value != newUserModelMap) _userModelMap.value = newUserModelMap
 
         val localBusy = _isStreaming.value
         if (localBusy) {
@@ -1528,7 +1568,7 @@ class SessionDetailViewModel @Inject constructor(
             }
         }
         anchors.keys.retainAll { id -> list.any { it.id == id && it.completedAt == null } }
-        _runningAnchors.value = anchors
+        if (_runningAnchors.value != anchors) _runningAnchors.value = anchors
     }
 
     private suspend fun refreshRetryStatus(sessionId: String) {
@@ -1568,6 +1608,7 @@ class SessionDetailViewModel @Inject constructor(
 
     private fun buildUserModelMap(list: List<SessionMessage>): Map<String, String> {
         val map = mutableMapOf<String, String>()
+        val unmappedUserIds = mutableListOf<String>()
         var currentModel: String? = null
         for (msg in list) {
             when (msg.type) {
@@ -1584,10 +1625,17 @@ class SessionDetailViewModel @Inject constructor(
                     val provider = model?.get("providerID")?.jsonPrimitive?.contentOrNull ?: ""
                     val modelId = model?.get("id")?.jsonPrimitive?.contentOrNull ?: ""
                     val m = if (provider.isNotBlank()) "$provider/$modelId" else modelId.ifBlank { null }
-                    if (m != null) currentModel = m
+                    if (m != null) {
+                        currentModel = m
+                        for (uid in unmappedUserIds) {
+                            map[uid] = m
+                        }
+                        unmappedUserIds.clear()
+                    }
                 }
                 "user" -> {
                     if (currentModel != null) map[msg.id] = currentModel
+                    else unmappedUserIds.add(msg.id)
                 }
             }
         }
@@ -1615,7 +1663,7 @@ class SessionDetailViewModel @Inject constructor(
         observeQuestionJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 questionRepository.observePending().collect { list ->
-                    _pendingQuestions.value = list
+                    if (_pendingQuestions.value != list) _pendingQuestions.value = list
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeQuestions failed", e)
@@ -1627,7 +1675,8 @@ class SessionDetailViewModel @Inject constructor(
         observePermissionJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 permissionRepository.observePending().collect { list ->
-                    _pendingPermissions.value = list.take(1)
+                    val taken = list.take(1)
+                    if (_pendingPermissions.value != taken) _pendingPermissions.value = taken
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observePermissions failed", e)
@@ -1640,7 +1689,11 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 sessionMessageRepository.observeSyncEvents().collect { event ->
                     if (event.sessionId == sessionId) {
-                        applySyncResult(event.result)
+                        try {
+                            applySyncResult(event.result)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "applySyncResult failed in collect", e)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -1687,60 +1740,87 @@ class SessionDetailViewModel @Inject constructor(
         observeLivePartJob?.cancel()
         if (!prefs.getBoolean("live_messages", false)) return
         observeLivePartJob = viewModelScope.launch(Dispatchers.IO) {
-            sseEventRepository.observeLivePartEvents()
-                .collect { event ->
-                    if (event.sessionId != sessionId) return@collect
-                    val current = _liveParts.value.toMutableList()
-                    val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
-                    when (event.eventType) {
-                        "delta" -> {
-                            val text = event.text ?: ""
-                            if (existingIdx >= 0) {
-                                current[existingIdx] = current[existingIdx].copy(
-                                    text = current[existingIdx].text + text,
-                                )
-                            } else {
-                                current.add(LivePart(
-                                    partId = event.partId,
-                                    messageId = event.messageId,
-                                    partType = event.partType ?: "text",
-                                    text = text,
-                                    isComplete = false,
-                                ))
+            livePartChunkFlows.clear()
+            _liveParts.value = emptyList()
+
+            try {
+                sseEventRepository.observeLivePartEvents()
+                    .collect { event ->
+                        if (event.sessionId != sessionId) return@collect
+                        val current = _liveParts.value.toMutableList()
+                        val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
+                        when (event.eventType) {
+                            "delta" -> {
+                                val text = event.text ?: ""
+                                livePartChunkFlows.getOrPut(event.partId) {
+                                    kotlinx.coroutines.flow.MutableSharedFlow<String>()
+                                }.tryEmit(text)
+                                if (existingIdx >= 0) {
+                                    current[existingIdx] = current[existingIdx].copy(
+                                        text = current[existingIdx].text + text,
+                                    )
+                                } else {
+                                    current.add(LivePart(
+                                        partId = event.partId,
+                                        messageId = event.messageId,
+                                        partType = event.partType ?: "text",
+                                        text = text,
+                                        isComplete = false,
+                                    ))
+                                }
+                            }
+                            "updated" -> {
+                                if (event.isComplete) {
+                                    if (existingIdx >= 0) {
+                                        current[existingIdx] = current[existingIdx].copy(isComplete = true)
+                                    }
+                                } else {
+                                    val text = event.text ?: ""
+                                    livePartChunkFlows.remove(event.partId)
+                                    if (existingIdx >= 0) {
+                                        current[existingIdx] = current[existingIdx].copy(text = text)
+                                    } else {
+                                        current.add(LivePart(
+                                            partId = event.partId,
+                                            messageId = event.messageId,
+                                            partType = event.partType ?: "text",
+                                            text = text,
+                                            isComplete = false,
+                                        ))
+                                    }
+                                }
+                            }
+                            "removed" -> {
+                                if (existingIdx >= 0) {
+                                    current.removeAt(existingIdx)
+                                }
+                                livePartChunkFlows.remove(event.partId)
                             }
                         }
-                        "updated" -> {
-                            val text = event.text ?: ""
-                            if (existingIdx >= 0) {
-                                current[existingIdx] = current[existingIdx].copy(
-                                    text = text,
-                                    isComplete = event.isComplete,
-                                )
-                            } else {
-                                current.add(LivePart(
-                                    partId = event.partId,
-                                    messageId = event.messageId,
-                                    partType = event.partType ?: "text",
-                                    text = text,
-                                    isComplete = event.isComplete,
-                                ))
-                            }
-                        }
-                        "removed" -> {
-                            if (existingIdx >= 0) {
-                                current.removeAt(existingIdx)
-                            }
-                        }
+                        _liveParts.value = current.toList()
                     }
-                    _liveParts.value = current
-                }
+            } finally {
+                livePartChunkFlows.clear()
+            }
         }
     }
 
     private fun cleanupSyncedLiveParts() {
-        val msgIds = _messages.value.map { it.id }.toSet()
-        val filtered = _liveParts.value.filter { !it.isComplete || it.messageId !in msgIds }
+        if (_liveParts.value.isEmpty()) return
+        val syncedMsgIds = _messages.value.map { it.id }.toSet()
+        val filtered = _liveParts.value.filter { it.messageId !in syncedMsgIds }
         if (filtered.size != _liveParts.value.size) {
+            filtered.forEach { livePartChunkFlows.remove(it.partId) }
+            _liveParts.value = filtered
+        }
+    }
+
+    private fun cleanupLivePartsByMsgIds(completedMsgIds: Set<String>) {
+        if (_liveParts.value.isEmpty() || completedMsgIds.isEmpty()) return
+        val filtered = _liveParts.value.filter { it.messageId !in completedMsgIds }
+        if (filtered.size != _liveParts.value.size) {
+            val removed = _liveParts.value.filter { it.messageId in completedMsgIds }
+            removed.forEach { livePartChunkFlows.remove(it.partId) }
             _liveParts.value = filtered
         }
     }

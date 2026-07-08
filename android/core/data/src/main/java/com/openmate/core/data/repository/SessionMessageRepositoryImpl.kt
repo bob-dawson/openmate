@@ -41,7 +41,7 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 64)
+    private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(replay = 1, extraBufferCapacity = 64)
 
     private val syncingSessions = ConcurrentHashMap<String, Unit>()
 

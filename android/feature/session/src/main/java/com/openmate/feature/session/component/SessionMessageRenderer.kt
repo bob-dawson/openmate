@@ -30,6 +30,12 @@ import com.openmate.core.ui.component.MessageBubble
 import com.openmate.feature.session.R
 import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
+import com.openmate.feature.session.SessionDetailViewModel
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.rememberStreamingMarkdownState
+import com.mikepenz.markdown.model.collectAsStreamingMarkdownState
 import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.delay
 import com.openmate.core.domain.model.ToolCallState
@@ -250,9 +256,7 @@ fun SessionMessageRenderer(
                 runningAnchors = runningAnchors,
             )
         }
-        "live" -> {
-            LivePartItem(dataJson)
-        }
+        "live" -> { }
         else -> { }
     }
 }
@@ -309,22 +313,51 @@ private fun CompactionMessageItem(
 }
 
 @Composable
-private fun LivePartItem(data: JsonObject) {
-    val partType = data["partType"]?.jsonPrimitive?.contentOrNull ?: "text"
-    val text = data["text"]?.jsonPrimitive?.contentOrNull ?: ""
-    val isComplete = data["isComplete"]?.jsonPrimitive?.contentOrNull?.toBoolean() ?: false
-
-    if (text.isBlank()) return
-
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
-        when (partType) {
-            "reasoning" -> {
-                ReasoningBlock(text = text, defaultExpanded = true, showProgress = !isComplete, filterRedacted = false)
-            }
-            else -> {
-                MessageBubble(text = text, isUser = false, modifier = Modifier.fillMaxWidth())
+internal fun LivePartItem(part: SessionDetailViewModel.LivePart, chunkFlow: kotlinx.coroutines.flow.Flow<String>?) {
+    if (chunkFlow != null) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+            when (part.partType) {
+                "reasoning" -> {
+                    ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
+                }
+                else -> {
+                    LiveStreamingText(chunkFlow = chunkFlow, fallbackText = part.text)
+                }
             }
         }
+    } else {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+            when (part.partType) {
+                "reasoning" -> {
+                    ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
+                }
+                else -> {
+                    MarkdownText(
+                        markdown = part.text,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveStreamingText(chunkFlow: kotlinx.coroutines.flow.Flow<String>, fallbackText: String) {
+    val state = chunkFlow.collectAsStreamingMarkdownState()
+    val snapshot by state.snapshot.collectAsState()
+    if (snapshot.stableAst.isEmpty() && snapshot.unstableAstTail.isEmpty() && fallbackText.isNotBlank()) {
+        MarkdownText(
+            markdown = fallbackText,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    } else {
+        Markdown(
+            streamingMarkdownState = state,
+            modifier = Modifier.fillMaxWidth(),
+            colors = markdownColor(),
+            typography = markdownTypography(),
+        )
     }
 }
 

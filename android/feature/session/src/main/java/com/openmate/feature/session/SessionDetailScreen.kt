@@ -105,6 +105,7 @@ import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.FileViewer
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
+import com.openmate.feature.session.component.LivePartItem
 import com.openmate.feature.session.component.SessionMessageSearchPanel
 import com.openmate.feature.session.component.AgentPickerSheet
 import com.openmate.feature.session.component.McpPickerSheet
@@ -262,7 +263,7 @@ fun SessionDetailScreen(
 
     val contentUpdateKey = remember(messages) {
         val last = messages.lastOrNull()
-        if (last == null) "" else listOf(last.id, last.timeUpdated, last.completedAt, last.data).joinToString("|")
+        if (last == null) "" else listOf(last.id, last.completedAt).joinToString("|")
     }
     LaunchedEffect(contentUpdateKey) {
         if (messages.isNotEmpty() && prevMessageCount.intValue == messages.size) {
@@ -551,7 +552,7 @@ fun SessionDetailScreen(
         },
     ) { padding ->
         val isBusy = currentBusyStart != null || sessionRetryStatus != null
-        val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert, liveParts, showLiveMessages) {
+        val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert, showLiveMessages) {
             val revertFromId = sessionRevert?.from
             val filtered = if (revertFromId != null) {
                 val revertTs = extractMsgTimestamp(revertFromId)
@@ -567,28 +568,15 @@ fun SessionDetailScreen(
                 }
                 rest + queued
             }
-            if (!showLiveMessages || liveParts.isEmpty()) base
+            if (!showLiveMessages) base
+            else base.filterNot { (it.type == "assistant" || it.type == "compaction") && it.completedAt == null }
+        }
+
+        val visibleLiveParts = remember(liveParts, displayMessages, showLiveMessages) {
+            if (!showLiveMessages || liveParts.isEmpty()) emptyList()
             else {
-                val activeLiveMessageIds = liveParts.filter { !it.isComplete }.map { it.messageId }.toSet()
-                val dedupedBase = if (activeLiveMessageIds.isEmpty()) base
-                    else base.filterNot { it.id in activeLiveMessageIds }
-                val liveMessages = liveParts.map { part ->
-                    SessionMessage(
-                        id = "live_${part.partId}",
-                        sessionId = sessionID,
-                        type = "live",
-                        data = buildString {
-                            append("{\"partType\":\"${part.partType}\",")
-                            append("\"text\":${kotlinx.serialization.json.Json.encodeToString(part.text)},")
-                            append("\"isComplete\":${part.isComplete},")
-                            append("\"messageId\":\"${part.messageId}\",")
-                            append("\"partId\":\"${part.partId}\"}")
-                        },
-                        timeCreated = 0L,
-                        timeUpdated = 0L,
-                    )
-                }
-                dedupedBase + liveMessages
+                val completedMsgIds = displayMessages.map { it.id }.toSet()
+                liveParts.filter { it.messageId !in completedMsgIds }
             }
         }
 
@@ -699,6 +687,11 @@ fun SessionDetailScreen(
                             },
                             onRevertToMessage = { messageID -> viewModel.revertToMessage(sessionID, messageID) },
                         )
+                    }
+                    if (visibleLiveParts.isNotEmpty()) {
+                        item(key = "live_streaming") {
+                            LiveStreamingRenderer(visibleLiveParts, viewModel)
+                        }
                     }
                     if (displayMessages.isEmpty()) {
                         item {
@@ -1422,4 +1415,14 @@ private fun formatEpochMillis(ts: Long?): String {
     if (ts == null || ts == 0L) return "-"
     val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
     return sdf.format(java.util.Date(ts))
+}
+
+@Composable
+private fun LiveStreamingRenderer(parts: List<SessionDetailViewModel.LivePart>, viewModel: SessionDetailViewModel) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        parts.forEach { part ->
+            val chunkFlow = remember(part.partId) { viewModel.getLivePartChunkFlow(part.partId) }
+            LivePartItem(part, chunkFlow)
+        }
+    }
 }

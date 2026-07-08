@@ -52,7 +52,10 @@ object SessionMessageWindowManager {
             }
         }
 
-        return state.copy(messages = messages.distinctBy { it.id })
+        return state.copy(
+            messages = messages.distinctBy { it.id }
+                .sortedWith(compareBy(SessionMessage::timeCreated, SessionMessage::id))
+        )
     }
 
     fun prependOlderPage(state: State, olderPage: List<SessionMessage>, hasOlderMessages: Boolean): State {
