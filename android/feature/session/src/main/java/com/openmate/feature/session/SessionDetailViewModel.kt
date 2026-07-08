@@ -1746,8 +1746,15 @@ class SessionDetailViewModel @Inject constructor(
                     delay(100)
                     if (dirty) {
                         flushCount++
-                        Log.d("LiveMsg", "flush #$flushCount parts=${pendingParts.get().size} deltaSinceLastFlush=$deltaCount")
-                        _liveParts.value = pendingParts.get()
+                        val parts = pendingParts.get()
+                        val syncedMsgTypes = _messages.value.associate { it.id to it.type }
+                        val filtered = parts.filter { syncedMsgTypes[it.messageId] == null || syncedMsgTypes[it.messageId] == "assistant" }
+                        if (filtered.size != parts.size) {
+                            Log.d("LiveMsg", "flush filtered out ${parts.size - filtered.size} non-assistant parts")
+                            pendingParts.set(filtered)
+                        }
+                        Log.d("LiveMsg", "flush #$flushCount parts=${filtered.size} deltaSinceLastFlush=$deltaCount")
+                        _liveParts.value = filtered
                         dirty = false
                         deltaCount = 0
                     }
@@ -1758,6 +1765,8 @@ class SessionDetailViewModel @Inject constructor(
                 sseEventRepository.observeLivePartEvents()
                     .collect { event ->
                         if (event.sessionId != sessionId) return@collect
+                        val msgType = _messages.value.find { it.id == event.messageId }?.type
+                        if (msgType != null && msgType != "assistant") return@collect
                         val partType = event.partType
                         val skipPart = partType == "step-start" || partType == "step-finish" || partType == "tool"
                         when (event.eventType) {
@@ -1795,7 +1804,7 @@ class SessionDetailViewModel @Inject constructor(
                                 val current = pendingParts.get().toMutableList()
                                 val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
                                 if (event.isComplete) {
-                                    Log.d("LiveMsg", "part complete partId=${event.partId} msgId=${event.messageId}")
+                                    Log.d("LiveMsg", "part complete partId=${event.partId} msgId=${event.messageId} type=$partType")
                                     if (existingIdx >= 0) {
                                         current[existingIdx] = current[existingIdx].copy(isComplete = true)
                                     }
@@ -1842,6 +1851,7 @@ class SessionDetailViewModel @Inject constructor(
         val syncedMsgIds = _messages.value.map { it.id }.toSet()
         val filtered = _liveParts.value.filter { it.messageId !in syncedMsgIds }
         if (filtered.size != _liveParts.value.size) {
+            Log.d("LiveMsg", "cleanupSyncedLiveParts removed=${_liveParts.value.size - filtered.size} remaining=${filtered.size}")
             _liveParts.value = filtered
         }
     }
@@ -1852,8 +1862,7 @@ class SessionDetailViewModel @Inject constructor(
         if (messagesWithData.isEmpty()) return
         val filtered = _liveParts.value.filter { it.messageId !in messagesWithData }
         if (filtered.size != _liveParts.value.size) {
-            val removed = _liveParts.value.filter { it.messageId in messagesWithData }
-            Log.d("LiveMsg", "cleanupLivePartsByMsgIds removed=${removed.size} remaining=${filtered.size} msgIds=$messagesWithData")
+            Log.d("LiveMsg", "cleanupLivePartsByMsgIds removed=${_liveParts.value.size - filtered.size} remaining=${filtered.size}")
             _liveParts.value = filtered
         }
     }

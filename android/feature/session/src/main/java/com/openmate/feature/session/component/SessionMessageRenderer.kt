@@ -35,6 +35,7 @@ import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.rememberMarkdownState
+import com.mikepenz.markdown.model.rememberStreamingMarkdownState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -370,12 +371,28 @@ internal fun LivePartItem(part: SessionDetailViewModel.LivePart) {
                 ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
             }
             else -> {
-                Markdown(
-                    markdownState = rememberMarkdownState(part.text, retainState = true),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = markdownColor(),
-                    typography = markdownTypography(),
-                )
+                val streamingState = rememberStreamingMarkdownState()
+                val prevTextLen = remember { mutableIntStateOf(0) }
+                LaunchedEffect(part.text) {
+                    val currentLen = part.text.length
+                    if (currentLen > prevTextLen.intValue && prevTextLen.intValue >= 0) {
+                        val chunk = part.text.substring(prevTextLen.intValue)
+                        streamingState.append(chunk)
+                    } else if (prevTextLen.intValue == 0 && currentLen > 0) {
+                        streamingState.append(part.text)
+                    }
+                    prevTextLen.intValue = currentLen
+                }
+                val snapshot by streamingState.snapshot.collectAsState()
+                val hasContent = snapshot.stableAst.isNotEmpty() || snapshot.unstableAstTail.isNotEmpty()
+                if (hasContent) {
+                    Markdown(
+                        streamingMarkdownState = streamingState,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = markdownColor(),
+                        typography = markdownTypography(),
+                    )
+                }
             }
         }
     }
