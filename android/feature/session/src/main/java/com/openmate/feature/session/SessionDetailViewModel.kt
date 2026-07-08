@@ -242,12 +242,6 @@ class SessionDetailViewModel @Inject constructor(
     private val _liveParts = MutableStateFlow<List<LivePart>>(emptyList())
     val liveParts: StateFlow<List<LivePart>> = _liveParts.asStateFlow()
 
-    private val livePartChunkFlows = mutableMapOf<String, kotlinx.coroutines.flow.MutableSharedFlow<String>>()
-
-    fun getLivePartChunkFlow(partId: String): kotlinx.coroutines.flow.Flow<String>? {
-        return livePartChunkFlows[partId]
-    }
-
     data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
 
     private fun resolveModelName(providerID: String, modelID: String, fallback: String? = null): String {
@@ -1741,7 +1735,6 @@ class SessionDetailViewModel @Inject constructor(
         observeLivePartJob?.cancel()
         if (!prefs.getBoolean("live_messages", false)) return
         observeLivePartJob = viewModelScope.launch(Dispatchers.IO) {
-            livePartChunkFlows.clear()
             _liveParts.value = emptyList()
 
             val pendingParts = java.util.concurrent.atomic.AtomicReference<List<LivePart>>(_liveParts.value)
@@ -1765,16 +1758,15 @@ class SessionDetailViewModel @Inject constructor(
                 sseEventRepository.observeLivePartEvents()
                     .collect { event ->
                         if (event.sessionId != sessionId) return@collect
-                        val current = pendingParts.get().toMutableList()
-                        val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
+                        val partType = event.partType
+                        val skipPart = partType == "step-start" || partType == "step-finish" || partType == "tool"
                         when (event.eventType) {
                             "delta" -> {
+                                if (skipPart) return@collect
                                 deltaCount++
                                 val text = event.text ?: ""
-                                val emitOk = livePartChunkFlows.getOrPut(event.partId) {
-                                    kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 64)
-                                }.tryEmit(text)
-                                if (!emitOk) Log.w("LiveMsg", "chunkFlow tryEmit FAILED partId=${event.partId} len=${text.length}")
+                                val current = pendingParts.get().toMutableList()
+                                val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
                                 if (existingIdx >= 0) {
                                     current[existingIdx] = current[existingIdx].copy(
                                         text = current[existingIdx].text + text,
@@ -1783,18 +1775,33 @@ class SessionDetailViewModel @Inject constructor(
                                     current.add(LivePart(
                                         partId = event.partId,
                                         messageId = event.messageId,
-                                        partType = event.partType ?: "text",
+                                        partType = partType ?: "text",
                                         text = text,
                                         isComplete = false,
                                     ))
                                 }
+                                pendingParts.set(current.toList())
+                                dirty = true
                             }
                             "updated" -> {
+                                if (skipPart) {
+                                    if (event.isComplete) {
+                                        try {
+                                            sessionMessageRepository.incrementalSync(sessionId)
+                                        } catch (_: Exception) {}
+                                    }
+                                    return@collect
+                                }
+                                val current = pendingParts.get().toMutableList()
+                                val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
                                 if (event.isComplete) {
                                     Log.d("LiveMsg", "part complete partId=${event.partId} msgId=${event.messageId}")
                                     if (existingIdx >= 0) {
                                         current[existingIdx] = current[existingIdx].copy(isComplete = true)
                                     }
+                                    try {
+                                        sessionMessageRepository.incrementalSync(sessionId)
+                                    } catch (_: Exception) {}
                                 } else {
                                     val text = event.text ?: ""
                                     if (existingIdx >= 0) {
@@ -1803,27 +1810,29 @@ class SessionDetailViewModel @Inject constructor(
                                         current.add(LivePart(
                                             partId = event.partId,
                                             messageId = event.messageId,
-                                            partType = event.partType ?: "text",
+                                            partType = partType ?: "text",
                                             text = text,
                                             isComplete = false,
                                         ))
                                     }
                                 }
+                                pendingParts.set(current.toList())
+                                dirty = true
                             }
                             "removed" -> {
+                                val current = pendingParts.get().toMutableList()
+                                val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
                                 if (existingIdx >= 0) {
                                     current.removeAt(existingIdx)
+                                    pendingParts.set(current.toList())
+                                    dirty = true
                                 }
-                                livePartChunkFlows.remove(event.partId)
                             }
                         }
-                        pendingParts.set(current.toList())
-                        dirty = true
                     }
             } finally {
                 flushJob.cancel()
                 if (dirty) _liveParts.value = pendingParts.get()
-                livePartChunkFlows.clear()
             }
         }
     }
@@ -1833,18 +1842,18 @@ class SessionDetailViewModel @Inject constructor(
         val syncedMsgIds = _messages.value.map { it.id }.toSet()
         val filtered = _liveParts.value.filter { it.messageId !in syncedMsgIds }
         if (filtered.size != _liveParts.value.size) {
-            filtered.forEach { livePartChunkFlows.remove(it.partId) }
             _liveParts.value = filtered
         }
     }
 
     private fun cleanupLivePartsByMsgIds(completedMsgIds: Set<String>) {
         if (_liveParts.value.isEmpty() || completedMsgIds.isEmpty()) return
-        val filtered = _liveParts.value.filter { it.messageId !in completedMsgIds }
+        val messagesWithData = _messages.value.filter { it.id in completedMsgIds && it.data.isNotBlank() }.map { it.id }.toSet()
+        if (messagesWithData.isEmpty()) return
+        val filtered = _liveParts.value.filter { it.messageId !in messagesWithData }
         if (filtered.size != _liveParts.value.size) {
-            val removed = _liveParts.value.filter { it.messageId in completedMsgIds }
-            Log.d("LiveMsg", "cleanupLivePartsByMsgIds removed=${removed.size} remaining=${filtered.size} msgIds=$completedMsgIds")
-            removed.forEach { livePartChunkFlows.remove(it.partId) }
+            val removed = _liveParts.value.filter { it.messageId in messagesWithData }
+            Log.d("LiveMsg", "cleanupLivePartsByMsgIds removed=${removed.size} remaining=${filtered.size} msgIds=$messagesWithData")
             _liveParts.value = filtered
         }
     }

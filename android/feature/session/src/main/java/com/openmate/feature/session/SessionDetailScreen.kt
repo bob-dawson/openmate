@@ -659,7 +659,6 @@ fun SessionDetailScreen(
                             userModelName = userModelName,
                             reasoningDefaultExpanded = showLiveMessages,
                             liveParts = if (hasActiveLiveParts) livePartsForMsg else null,
-                            chunkFlowProvider = if (hasActiveLiveParts) viewModel::getLivePartChunkFlow else null,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },

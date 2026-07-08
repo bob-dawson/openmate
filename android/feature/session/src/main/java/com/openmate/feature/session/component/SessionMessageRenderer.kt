@@ -35,10 +35,8 @@ import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.rememberMarkdownState
-import com.mikepenz.markdown.model.rememberStreamingMarkdownState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import com.openmate.core.domain.model.ToolCallState
 import kotlinx.serialization.json.*
@@ -160,7 +158,6 @@ fun SessionMessageRenderer(
     userModelName: String? = null,
     reasoningDefaultExpanded: Boolean = false,
     liveParts: List<SessionDetailViewModel.LivePart>? = null,
-    chunkFlowProvider: ((String) -> kotlinx.coroutines.flow.Flow<String>?)? = null,
     onFullContentRequest: (messageId: String) -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
     pendingQuestions: List<QuestionRequest> = emptyList(),
@@ -208,11 +205,22 @@ fun SessionMessageRenderer(
             val isStepRunning = entity.completedAt == null && finish == null
             val toolCount = if (compactMode) 0 else content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0
 
-            if (liveParts != null && liveParts.isNotEmpty() && entity.completedAt == null) {
+            val hasSyncedContent = content?.any { item ->
+                val obj = item.jsonObject
+                val type = obj["type"]?.jsonPrimitive?.contentOrNull
+                when (type) {
+                    "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                    "tool" -> true
+                    "reasoning" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                    "file" -> true
+                    else -> false
+                }
+            } == true || errorMessage != null
+
+            if (liveParts != null && liveParts.isNotEmpty() && (!hasSyncedContent || entity.completedAt == null)) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     liveParts.forEach { part ->
-                        val chunkFlow = chunkFlowProvider?.invoke(part.partId)
-                        LivePartItem(part, chunkFlow)
+                        LivePartItem(part)
                     }
                     MessageMetadata(
                         messageId = entity.id,
@@ -275,11 +283,12 @@ fun SessionMessageRenderer(
             }
         }
         "compaction" -> {
-            if (liveParts != null && liveParts.isNotEmpty() && entity.completedAt == null) {
+            val summary = dataJson["summary"]?.jsonPrimitive?.contentOrNull
+            val hasSyncedContent = !summary.isNullOrBlank()
+            if (liveParts != null && liveParts.isNotEmpty() && (!hasSyncedContent || entity.completedAt == null)) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     liveParts.forEach { part ->
-                        val chunkFlow = chunkFlowProvider?.invoke(part.partId)
-                        LivePartItem(part, chunkFlow)
+                        LivePartItem(part)
                     }
                     MessageMetadata(
                         messageId = entity.id,
@@ -353,66 +362,22 @@ private fun CompactionMessageItem(
 }
 
 @Composable
-internal fun LivePartItem(part: SessionDetailViewModel.LivePart, chunkFlow: kotlinx.coroutines.flow.Flow<String>?) {
-    if (part.text.isBlank() && chunkFlow == null) return
+internal fun LivePartItem(part: SessionDetailViewModel.LivePart) {
+    if (part.text.isBlank()) return
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
         when (part.partType) {
             "reasoning" -> {
-                if (part.text.isNotBlank()) {
-                    ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
-                }
+                ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
             }
             else -> {
-                if (chunkFlow != null) {
-                    LiveStreamingText(chunkFlow = chunkFlow, fallbackText = part.text)
-                } else if (part.text.isNotBlank()) {
-                    Markdown(
-                        markdownState = rememberMarkdownState(part.text),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = markdownColor(),
-                        typography = markdownTypography(),
-                    )
-                }
+                Markdown(
+                    markdownState = rememberMarkdownState(part.text, retainState = true),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = markdownColor(),
+                    typography = markdownTypography(),
+                )
             }
         }
-    }
-}
-
-@Composable
-private fun LiveStreamingText(chunkFlow: kotlinx.coroutines.flow.Flow<String>, fallbackText: String) {
-    val state = rememberStreamingMarkdownState()
-    LaunchedEffect(chunkFlow) {
-        var chunkCount = 0
-        var totalLen = 0
-        chunkFlow.collect { chunk ->
-            chunkCount++
-            totalLen += chunk.length
-            if (chunkCount % 20 == 0 || chunkCount <= 3) {
-                android.util.Log.d("LiveMsg", "append chunk #$chunkCount len=${chunk.length} totalLen=$totalLen")
-            }
-            withContext(Dispatchers.Default) {
-                state.append(chunk)
-            }
-        }
-        android.util.Log.d("LiveMsg", "chunkFlow DONE chunks=$chunkCount totalLen=$totalLen")
-    }
-    val snapshot by state.snapshot.collectAsState()
-    val hasContent = snapshot.stableAst.isNotEmpty() || snapshot.unstableAstTail.isNotEmpty()
-    if (!hasContent && fallbackText.isBlank()) return
-    if (!hasContent) {
-        Markdown(
-            markdownState = rememberMarkdownState(fallbackText),
-            modifier = Modifier.fillMaxWidth(),
-            colors = markdownColor(),
-            typography = markdownTypography(),
-        )
-    } else {
-        Markdown(
-            streamingMarkdownState = state,
-            modifier = Modifier.fillMaxWidth(),
-            colors = markdownColor(),
-            typography = markdownTypography(),
-        )
     }
 }
 
