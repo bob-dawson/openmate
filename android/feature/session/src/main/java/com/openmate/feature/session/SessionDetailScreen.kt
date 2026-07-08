@@ -105,7 +105,6 @@ import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.FileViewer
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
-import com.openmate.feature.session.component.LivePartItem
 import com.openmate.feature.session.component.SessionMessageSearchPanel
 import com.openmate.feature.session.component.AgentPickerSheet
 import com.openmate.feature.session.component.McpPickerSheet
@@ -552,13 +551,13 @@ fun SessionDetailScreen(
         },
     ) { padding ->
         val isBusy = currentBusyStart != null || sessionRetryStatus != null
-        val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert, showLiveMessages) {
+        val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
             val revertFromId = sessionRevert?.from
             val filtered = if (revertFromId != null) {
                 val revertTs = extractMsgTimestamp(revertFromId)
                 messages.filter { extractMsgTimestamp(it.id) < revertTs }
             } else messages
-            val base = if (!isBusy || queuedMessageIds.isEmpty()) filtered
+            if (!isBusy || queuedMessageIds.isEmpty()) filtered
             else {
                 val queued = mutableListOf<SessionMessage>()
                 val rest = mutableListOf<SessionMessage>()
@@ -568,16 +567,10 @@ fun SessionDetailScreen(
                 }
                 rest + queued
             }
-            if (!showLiveMessages) base
-            else base.filterNot { (it.type == "assistant" || it.type == "compaction") && it.completedAt == null }
         }
 
-        val visibleLiveParts = remember(liveParts, displayMessages, showLiveMessages) {
-            if (!showLiveMessages || liveParts.isEmpty()) emptyList()
-            else {
-                val completedMsgIds = displayMessages.map { it.id }.toSet()
-                liveParts.filter { it.messageId !in completedMsgIds }
-            }
+        val livePartsByMessageId = remember(liveParts) {
+            liveParts.groupBy { it.messageId }
         }
 
         val previousUserMessageIndex by remember(displayMessages) {
@@ -656,6 +649,8 @@ fun SessionDetailScreen(
                 ) {
                     items(displayMessages, key = { it.id }) { entity ->
                         val userModelName = if (entity.type == "user") userModelMap[entity.id] else null
+                        val livePartsForMsg = livePartsByMessageId[entity.id]
+                        val hasActiveLiveParts = showLiveMessages && livePartsForMsg != null && entity.completedAt == null
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning && !compactMode,
@@ -663,6 +658,8 @@ fun SessionDetailScreen(
                             isQueued = entity.id in queuedMessageIds,
                             userModelName = userModelName,
                             reasoningDefaultExpanded = showLiveMessages,
+                            liveParts = if (hasActiveLiveParts) livePartsForMsg else null,
+                            chunkFlowProvider = if (hasActiveLiveParts) viewModel::getLivePartChunkFlow else null,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },
@@ -687,11 +684,6 @@ fun SessionDetailScreen(
                             },
                             onRevertToMessage = { messageID -> viewModel.revertToMessage(sessionID, messageID) },
                         )
-                    }
-                    if (visibleLiveParts.isNotEmpty()) {
-                        item(key = "live_streaming") {
-                            LiveStreamingRenderer(visibleLiveParts, viewModel)
-                        }
                     }
                     if (displayMessages.isEmpty()) {
                         item {
@@ -1417,12 +1409,3 @@ private fun formatEpochMillis(ts: Long?): String {
     return sdf.format(java.util.Date(ts))
 }
 
-@Composable
-private fun LiveStreamingRenderer(parts: List<SessionDetailViewModel.LivePart>, viewModel: SessionDetailViewModel) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        parts.forEach { part ->
-            val chunkFlow = remember(part.partId) { viewModel.getLivePartChunkFlow(part.partId) }
-            LivePartItem(part, chunkFlow)
-        }
-    }
-}

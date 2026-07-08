@@ -34,9 +34,11 @@ import com.openmate.feature.session.SessionDetailViewModel
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.rememberMarkdownState
 import com.mikepenz.markdown.model.rememberStreamingMarkdownState
-import com.mikepenz.markdown.model.collectAsStreamingMarkdownState
-import dev.jeziellago.compose.markdowntext.MarkdownText
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import com.openmate.core.domain.model.ToolCallState
 import kotlinx.serialization.json.*
@@ -157,6 +159,8 @@ fun SessionMessageRenderer(
     isQueued: Boolean = false,
     userModelName: String? = null,
     reasoningDefaultExpanded: Boolean = false,
+    liveParts: List<SessionDetailViewModel.LivePart>? = null,
+    chunkFlowProvider: ((String) -> kotlinx.coroutines.flow.Flow<String>?)? = null,
     onFullContentRequest: (messageId: String) -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
     pendingQuestions: List<QuestionRequest> = emptyList(),
@@ -197,66 +201,106 @@ fun SessionMessageRenderer(
         "assistant" -> {
             val content = dataJson["content"]?.jsonArray
             val errorMessage = extractAssistantErrorMessage(dataJson)
-            val hasVisible = content?.any { item ->
-                val obj = item.jsonObject
-                val type = obj["type"]?.jsonPrimitive?.contentOrNull
-                when (type) {
-                    "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
-                    "tool" -> !compactMode
-                    "reasoning" -> !compactMode && obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
-                    "file" -> true
-                    "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> !compactMode
-                    else -> false
-                }
-            } == true || errorMessage != null
-            if (!hasVisible) return
             val modelObj = dataJson["model"]?.jsonObject
             val modelName = modelObj?.get("name")?.jsonPrimitive?.contentOrNull
                 ?: modelObj?.get("id")?.jsonPrimitive?.contentOrNull
             val finish = dataJson["finish"]?.jsonPrimitive?.contentOrNull
             val isStepRunning = entity.completedAt == null && finish == null
             val toolCount = if (compactMode) 0 else content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0
-            Column(modifier = Modifier.fillMaxWidth()) {
-                AssistantMessageItem(
-                    data = dataJson,
-                    sessionId = entity.sessionId,
-                    messageId = entity.id,
-                    showReasoning = showReasoning,
-                    compactMode = compactMode,
-                    reasoningDefaultExpanded = reasoningDefaultExpanded,
-                    onNavigateToSubtask = onNavigateToSubtask,
-                    pendingQuestions = pendingQuestions,
-                    pendingPermissions = pendingPermissions,
-                    onReplyQuestion = onReplyQuestion,
-                    onRejectQuestion = onRejectQuestion,
-                    onReplyPermission = onReplyPermission,
-                    onViewFile = onViewFile,
-                    onViewDiff = onViewDiff,
-                )
-                if (errorMessage != null) {
-                    AssistantErrorCard(errorMessage)
+
+            if (liveParts != null && liveParts.isNotEmpty() && entity.completedAt == null) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    liveParts.forEach { part ->
+                        val chunkFlow = chunkFlowProvider?.invoke(part.partId)
+                        LivePartItem(part, chunkFlow)
+                    }
+                    MessageMetadata(
+                        messageId = entity.id,
+                        timeCreated = entity.timeCreated,
+                        completedAt = entity.completedAt,
+                        modelName = modelName,
+                        isQueued = false,
+                        isStepRunning = isStepRunning,
+                        toolCount = toolCount,
+                        finish = finish,
+                        runningAnchors = runningAnchors,
+                    )
                 }
-                MessageMetadata(
-                    messageId = entity.id,
-                    timeCreated = entity.timeCreated,
-                    completedAt = entity.completedAt,
-                    modelName = modelName,
-                    isQueued = false,
-                    isStepRunning = isStepRunning,
-                    toolCount = toolCount,
-                    finish = finish,
+            } else {
+                val hasVisible = content?.any { item ->
+                    val obj = item.jsonObject
+                    val type = obj["type"]?.jsonPrimitive?.contentOrNull
+                    when (type) {
+                        "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                        "tool" -> !compactMode
+                        "reasoning" -> !compactMode && obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                        "file" -> true
+                        "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> !compactMode
+                        else -> false
+                    }
+                } == true || errorMessage != null
+                if (!hasVisible) return
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    AssistantMessageItem(
+                        data = dataJson,
+                        sessionId = entity.sessionId,
+                        messageId = entity.id,
+                        showReasoning = showReasoning,
+                        compactMode = compactMode,
+                        reasoningDefaultExpanded = reasoningDefaultExpanded,
+                        onNavigateToSubtask = onNavigateToSubtask,
+                        pendingQuestions = pendingQuestions,
+                        pendingPermissions = pendingPermissions,
+                        onReplyQuestion = onReplyQuestion,
+                        onRejectQuestion = onRejectQuestion,
+                        onReplyPermission = onReplyPermission,
+                        onViewFile = onViewFile,
+                        onViewDiff = onViewDiff,
+                    )
+                    if (errorMessage != null) {
+                        AssistantErrorCard(errorMessage)
+                    }
+                    MessageMetadata(
+                        messageId = entity.id,
+                        timeCreated = entity.timeCreated,
+                        completedAt = entity.completedAt,
+                        modelName = modelName,
+                        isQueued = false,
+                        isStepRunning = isStepRunning,
+                        toolCount = toolCount,
+                        finish = finish,
+                        runningAnchors = runningAnchors,
+                    )
+                }
+            }
+        }
+        "compaction" -> {
+            if (liveParts != null && liveParts.isNotEmpty() && entity.completedAt == null) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    liveParts.forEach { part ->
+                        val chunkFlow = chunkFlowProvider?.invoke(part.partId)
+                        LivePartItem(part, chunkFlow)
+                    }
+                    MessageMetadata(
+                        messageId = entity.id,
+                        timeCreated = entity.timeCreated,
+                        completedAt = entity.completedAt,
+                        modelName = null,
+                        isQueued = false,
+                        isStepRunning = true,
+                        toolCount = 0,
+                        finish = null,
+                        runningAnchors = runningAnchors,
+                    )
+                }
+            } else {
+                CompactionMessageItem(
+                    entity = entity,
+                    data = dataJson,
                     runningAnchors = runningAnchors,
                 )
             }
         }
-        "compaction" -> {
-            CompactionMessageItem(
-                entity = entity,
-                data = dataJson,
-                runningAnchors = runningAnchors,
-            )
-        }
-        "live" -> { }
         else -> { }
     }
 }
@@ -295,17 +339,13 @@ private fun CompactionMessageItem(
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 4.dp),
             ) {
-                MarkdownText(
-                    markdown = summary,
+                Markdown(
+                    markdownState = rememberMarkdownState(summary),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    syntaxHighlightColor = CompactionCodeBlockBackground,
-                    syntaxHighlightTextColor = CompactionCodeBlockText,
-                    isTextSelectable = true,
+                    colors = markdownColor(),
+                    typography = markdownTypography(),
                 )
             }
         }
@@ -314,27 +354,23 @@ private fun CompactionMessageItem(
 
 @Composable
 internal fun LivePartItem(part: SessionDetailViewModel.LivePart, chunkFlow: kotlinx.coroutines.flow.Flow<String>?) {
-    if (chunkFlow != null) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
-            when (part.partType) {
-                "reasoning" -> {
+    if (part.text.isBlank() && chunkFlow == null) return
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
+        when (part.partType) {
+            "reasoning" -> {
+                if (part.text.isNotBlank()) {
                     ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
-                }
-                else -> {
-                    LiveStreamingText(chunkFlow = chunkFlow, fallbackText = part.text)
                 }
             }
-        }
-    } else {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
-            when (part.partType) {
-                "reasoning" -> {
-                    ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
-                }
-                else -> {
-                    MarkdownText(
-                        markdown = part.text,
+            else -> {
+                if (chunkFlow != null) {
+                    LiveStreamingText(chunkFlow = chunkFlow, fallbackText = part.text)
+                } else if (part.text.isNotBlank()) {
+                    Markdown(
+                        markdownState = rememberMarkdownState(part.text),
                         modifier = Modifier.fillMaxWidth(),
+                        colors = markdownColor(),
+                        typography = markdownTypography(),
                     )
                 }
             }
@@ -344,12 +380,31 @@ internal fun LivePartItem(part: SessionDetailViewModel.LivePart, chunkFlow: kotl
 
 @Composable
 private fun LiveStreamingText(chunkFlow: kotlinx.coroutines.flow.Flow<String>, fallbackText: String) {
-    val state = chunkFlow.collectAsStreamingMarkdownState()
+    val state = rememberStreamingMarkdownState()
+    LaunchedEffect(chunkFlow) {
+        var chunkCount = 0
+        var totalLen = 0
+        chunkFlow.collect { chunk ->
+            chunkCount++
+            totalLen += chunk.length
+            if (chunkCount % 20 == 0 || chunkCount <= 3) {
+                android.util.Log.d("LiveMsg", "append chunk #$chunkCount len=${chunk.length} totalLen=$totalLen")
+            }
+            withContext(Dispatchers.Default) {
+                state.append(chunk)
+            }
+        }
+        android.util.Log.d("LiveMsg", "chunkFlow DONE chunks=$chunkCount totalLen=$totalLen")
+    }
     val snapshot by state.snapshot.collectAsState()
-    if (snapshot.stableAst.isEmpty() && snapshot.unstableAstTail.isEmpty() && fallbackText.isNotBlank()) {
-        MarkdownText(
-            markdown = fallbackText,
+    val hasContent = snapshot.stableAst.isNotEmpty() || snapshot.unstableAstTail.isNotEmpty()
+    if (!hasContent && fallbackText.isBlank()) return
+    if (!hasContent) {
+        Markdown(
+            markdownState = rememberMarkdownState(fallbackText),
             modifier = Modifier.fillMaxWidth(),
+            colors = markdownColor(),
+            typography = markdownTypography(),
         )
     } else {
         Markdown(

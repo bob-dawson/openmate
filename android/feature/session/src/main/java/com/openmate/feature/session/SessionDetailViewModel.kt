@@ -114,6 +114,7 @@ class SessionDetailViewModel @Inject constructor(
         if (newlyCompleted.isEmpty() && cur.size == newList.size && !lastChanged) return
         _messages.value = newList
         if (newlyCompleted.isNotEmpty()) {
+            Log.d("LiveMsg", "updateMessages newlyCompleted=${newlyCompleted.size} ids=$newlyCompleted")
             cleanupLivePartsByMsgIds(newlyCompleted)
         }
     }
@@ -1743,18 +1744,37 @@ class SessionDetailViewModel @Inject constructor(
             livePartChunkFlows.clear()
             _liveParts.value = emptyList()
 
+            val pendingParts = java.util.concurrent.atomic.AtomicReference<List<LivePart>>(_liveParts.value)
+            var dirty = false
+            var deltaCount = 0
+            var flushCount = 0
+            val flushJob = launch {
+                while (isActive) {
+                    delay(100)
+                    if (dirty) {
+                        flushCount++
+                        Log.d("LiveMsg", "flush #$flushCount parts=${pendingParts.get().size} deltaSinceLastFlush=$deltaCount")
+                        _liveParts.value = pendingParts.get()
+                        dirty = false
+                        deltaCount = 0
+                    }
+                }
+            }
+
             try {
                 sseEventRepository.observeLivePartEvents()
                     .collect { event ->
                         if (event.sessionId != sessionId) return@collect
-                        val current = _liveParts.value.toMutableList()
+                        val current = pendingParts.get().toMutableList()
                         val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
                         when (event.eventType) {
                             "delta" -> {
+                                deltaCount++
                                 val text = event.text ?: ""
-                                livePartChunkFlows.getOrPut(event.partId) {
-                                    kotlinx.coroutines.flow.MutableSharedFlow<String>()
+                                val emitOk = livePartChunkFlows.getOrPut(event.partId) {
+                                    kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 64)
                                 }.tryEmit(text)
+                                if (!emitOk) Log.w("LiveMsg", "chunkFlow tryEmit FAILED partId=${event.partId} len=${text.length}")
                                 if (existingIdx >= 0) {
                                     current[existingIdx] = current[existingIdx].copy(
                                         text = current[existingIdx].text + text,
@@ -1771,12 +1791,12 @@ class SessionDetailViewModel @Inject constructor(
                             }
                             "updated" -> {
                                 if (event.isComplete) {
+                                    Log.d("LiveMsg", "part complete partId=${event.partId} msgId=${event.messageId}")
                                     if (existingIdx >= 0) {
                                         current[existingIdx] = current[existingIdx].copy(isComplete = true)
                                     }
                                 } else {
                                     val text = event.text ?: ""
-                                    livePartChunkFlows.remove(event.partId)
                                     if (existingIdx >= 0) {
                                         current[existingIdx] = current[existingIdx].copy(text = text)
                                     } else {
@@ -1797,9 +1817,12 @@ class SessionDetailViewModel @Inject constructor(
                                 livePartChunkFlows.remove(event.partId)
                             }
                         }
-                        _liveParts.value = current.toList()
+                        pendingParts.set(current.toList())
+                        dirty = true
                     }
             } finally {
+                flushJob.cancel()
+                if (dirty) _liveParts.value = pendingParts.get()
                 livePartChunkFlows.clear()
             }
         }
@@ -1820,6 +1843,7 @@ class SessionDetailViewModel @Inject constructor(
         val filtered = _liveParts.value.filter { it.messageId !in completedMsgIds }
         if (filtered.size != _liveParts.value.size) {
             val removed = _liveParts.value.filter { it.messageId in completedMsgIds }
+            Log.d("LiveMsg", "cleanupLivePartsByMsgIds removed=${removed.size} remaining=${filtered.size} msgIds=$completedMsgIds")
             removed.forEach { livePartChunkFlows.remove(it.partId) }
             _liveParts.value = filtered
         }

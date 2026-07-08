@@ -12,12 +12,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import dev.jeziellago.compose.markdowntext.MarkdownText
-
-private val CodeBlockBackground = Color(0xFF2a2a3a)
-private val CodeBlockText = Color(0xFFe0e0f0)
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.rememberMarkdownState
 
 @Composable
 fun MessageBubble(
@@ -41,33 +40,23 @@ fun MessageBubble(
                     )
                 },
         ) {
-            MarkdownText(
-                markdown = text,
+            Markdown(
+                markdownState = rememberMarkdownState(text),
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 9.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onBackground,
-                ),
-                syntaxHighlightColor = CodeBlockBackground,
-                syntaxHighlightTextColor = CodeBlockText,
-                isTextSelectable = isTextSelectable,
-                enableSoftBreakAddsNewLine = true,
+                colors = markdownColor(),
+                typography = markdownTypography(),
             )
         }
     } else {
-        MarkdownText(
-            markdown = text,
+        Markdown(
+            markdownState = rememberMarkdownState(text),
             modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.bodyLarge.copy(
-                color = MaterialTheme.colorScheme.onBackground,
-            ),
-            syntaxHighlightColor = CodeBlockBackground,
-            syntaxHighlightTextColor = CodeBlockText,
-            isTextSelectable = isTextSelectable,
-            enableSoftBreakAddsNewLine = true,
+            colors = markdownColor(),
+            typography = markdownTypography(),
         )
     }
 }
