@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.2
+
+Released: 2026-07-10
+
+### 新功能
+
+- **实时消息流式输出**：开启后可实时显示消息生成过程（思考、文本输出等），标记为实验性功能
+- **Bridge SSE 实时事件转发**：Bridge 的 `/api/bridge/events` 端点支持 `?live=1` 参数，转发实时消息事件流
+
+### 问题修复
+
+- **实时消息跳帧**：流式文本渲染改用增量 Markdown 解析（`rememberStreamingMarkdownState` + `append`），消除每次文本变化时全量重新解析导致的 45-57 帧跳帧
+- **非 assistant 消息 LivePart 残留**：修复用户消息的 SSE 事件被误创建为 LivePart、清理后又因 pendingParts 竞态重新添加的问题，双层过滤（collect 层 + flush 层）确保仅 assistant 消息拥有 LivePart
+- **live→completed 转场抖动**：去掉 Crossfade 避免 LazyColumn item 内同时保持两个 composable 导致高度不稳定；统一 live 和 synced 渲染的 reasoning 展开/折叠状态，减少转场时高度差异
+
 ## 0.2.1
 
 Released: 2026-07-04
