@@ -1,6 +1,7 @@
 package com.openmate.feature.session.component
 
 import android.os.SystemClock
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -218,10 +219,11 @@ fun SessionMessageRenderer(
                 }
             } == true || errorMessage != null
 
-            if (liveParts != null && liveParts.isNotEmpty() && (!hasSyncedContent || entity.completedAt == null)) {
+            val showLive = liveParts != null && liveParts.isNotEmpty() && (!hasSyncedContent || entity.completedAt == null)
+            if (showLive) {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     liveParts.forEach { part ->
-                        LivePartItem(part)
+                        LivePartItem(part, reasoningDefaultExpanded = reasoningDefaultExpanded)
                     }
                     MessageMetadata(
                         messageId = entity.id,
@@ -248,38 +250,39 @@ fun SessionMessageRenderer(
                         else -> false
                     }
                 } == true || errorMessage != null
-                if (!hasVisible) return
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    AssistantMessageItem(
-                        data = dataJson,
-                        sessionId = entity.sessionId,
-                        messageId = entity.id,
-                        showReasoning = showReasoning,
-                        compactMode = compactMode,
-                        reasoningDefaultExpanded = reasoningDefaultExpanded,
-                        onNavigateToSubtask = onNavigateToSubtask,
-                        pendingQuestions = pendingQuestions,
-                        pendingPermissions = pendingPermissions,
-                        onReplyQuestion = onReplyQuestion,
-                        onRejectQuestion = onRejectQuestion,
-                        onReplyPermission = onReplyPermission,
-                        onViewFile = onViewFile,
-                        onViewDiff = onViewDiff,
-                    )
-                    if (errorMessage != null) {
-                        AssistantErrorCard(errorMessage)
+                if (hasVisible) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        AssistantMessageItem(
+                            data = dataJson,
+                            sessionId = entity.sessionId,
+                            messageId = entity.id,
+                            showReasoning = showReasoning,
+                            compactMode = compactMode,
+                            reasoningDefaultExpanded = reasoningDefaultExpanded,
+                            onNavigateToSubtask = onNavigateToSubtask,
+                            pendingQuestions = pendingQuestions,
+                            pendingPermissions = pendingPermissions,
+                            onReplyQuestion = onReplyQuestion,
+                            onRejectQuestion = onRejectQuestion,
+                            onReplyPermission = onReplyPermission,
+                            onViewFile = onViewFile,
+                            onViewDiff = onViewDiff,
+                        )
+                        if (errorMessage != null) {
+                            AssistantErrorCard(errorMessage)
+                        }
+                        MessageMetadata(
+                            messageId = entity.id,
+                            timeCreated = entity.timeCreated,
+                            completedAt = entity.completedAt,
+                            modelName = modelName,
+                            isQueued = false,
+                            isStepRunning = isStepRunning,
+                            toolCount = toolCount,
+                            finish = finish,
+                            runningAnchors = runningAnchors,
+                        )
                     }
-                    MessageMetadata(
-                        messageId = entity.id,
-                        timeCreated = entity.timeCreated,
-                        completedAt = entity.completedAt,
-                        modelName = modelName,
-                        isQueued = false,
-                        isStepRunning = isStepRunning,
-                        toolCount = toolCount,
-                        finish = finish,
-                        runningAnchors = runningAnchors,
-                    )
                 }
             }
         }
@@ -363,12 +366,12 @@ private fun CompactionMessageItem(
 }
 
 @Composable
-internal fun LivePartItem(part: SessionDetailViewModel.LivePart) {
+internal fun LivePartItem(part: SessionDetailViewModel.LivePart, reasoningDefaultExpanded: Boolean = true) {
     if (part.text.isBlank()) return
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
         when (part.partType) {
             "reasoning" -> {
-                ReasoningBlock(text = part.text, defaultExpanded = true, showProgress = !part.isComplete, filterRedacted = false)
+                ReasoningBlock(text = part.text, defaultExpanded = reasoningDefaultExpanded, showProgress = !part.isComplete, filterRedacted = false)
             }
             else -> {
                 val streamingState = rememberStreamingMarkdownState()

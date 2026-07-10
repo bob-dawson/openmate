@@ -170,7 +170,8 @@
     <string name="compact_mode">精简模式</string>
     <string name="compact_mode_subtitle">隐藏工具调用和思考过程，仅显示文本</string>
     <string name="live_messages">实时消息</string>
-    <string name="live_messages_subtitle">开启后实时显示消息的生成过程（思考、文本输出等）</string>
+    <string name="live_messages_subtitle">开启后实时显示消息的生成过程，可能增加流量消耗与耗电</string>
+    <string name="experimental">实验性</string>
 
     <string name="download_and_open">下载并打开</string>
     <string name="delete_file">删除文件</string>

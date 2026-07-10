@@ -635,6 +635,9 @@ private fun SettingsContent(
                     title = stringResource(R.string.live_messages),
                     subtitle = stringResource(R.string.live_messages_subtitle),
                     showDivider = false,
+                    badge = {
+                        ExperimentalBadge()
+                    },
                     trailing = {
                         Switch(
                             checked = liveMessages,
@@ -1216,6 +1219,7 @@ private fun SettingsRow(
     subtitle: String?,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
+    badge: @Composable (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     Column(modifier = modifier) {
@@ -1226,11 +1230,17 @@ private fun SettingsRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    if (badge != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        badge()
+                    }
+                }
                 if (subtitle != null) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -1251,5 +1261,22 @@ private fun SettingsRow(
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
         }
+    }
+}
+
+
+@Composable
+private fun ExperimentalBadge() {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.experimental),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
     }
 }

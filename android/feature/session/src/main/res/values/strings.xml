@@ -173,7 +173,8 @@
     <string name="compact_mode">Compact mode</string>
     <string name="compact_mode_subtitle">Hide tool calls and reasoning, show text only</string>
     <string name="live_messages">Live messages</string>
-    <string name="live_messages_subtitle">Show message generation in real time (thinking, text output, etc.)</string>
+    <string name="live_messages_subtitle">Show message generation in real time. May increase data usage and battery consumption.</string>
+    <string name="experimental">Experimental</string>
 
     <string name="download_and_open">Download and open</string>
     <string name="delete_file">Delete file</string>
