@@ -1,4 +1,4 @@
 {
-  "android": {"version": "0.2.0", "tag": "v0.2.0", "releasedAt": "2026-07-04"},
-  "bridge": {"version": "0.2.0", "tag": "v0.2.0", "releasedAt": "2026-07-04"}
+  "android": {"version": "0.2.2", "tag": "v0.2.2", "releasedAt": "2026-07-13"},
+  "bridge": {"version": "0.2.2", "tag": "v0.2.2", "releasedAt": "2026-07-13"}
 }
