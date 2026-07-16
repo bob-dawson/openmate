@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3
+
+Released: 2026-07-16
+
+### 问题修复
+
+- **扫码崩溃**：修复 AGP 9.x 升级后 R8 strict full mode 默认启用，ML Kit / CameraX 类被错误优化导致扫码页面 NullPointerException 崩溃
+- **Proguard 规则补全**：为 Kotlin Serialization、KStateMachine、Coil 3、markdown 渲染器等反射依赖库补充 keep 规则，防止 release 构建运行时崩溃
+
 ## 0.2.2
 
 Released: 2026-07-10
