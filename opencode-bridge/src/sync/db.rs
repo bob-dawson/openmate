@@ -298,7 +298,7 @@ impl SyncDb {
 
         let sessions: Vec<Value> = stmt.query_map([], |row| {
             let id: String = row.get(0)?;
-            let title: String = row.get(1)?;
+            let title: Option<String> = row.get(1)?;
             let agent: Option<String> = row.get(2)?;
             let model_json: Option<String> = row.get(3)?;
             let time_created: i64 = row.get(4)?;
@@ -309,7 +309,7 @@ impl SyncDb {
                 .and_then(|s| serde_json::from_str(&s).ok());
             Ok(json!({
                 "id": id,
-                "title": title,
+                "title": title.unwrap_or_default(),
                 "agent": agent,
                 "model": model,
                 "timeCreated": time_created,

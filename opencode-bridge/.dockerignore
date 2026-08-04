@@ -1,0 +1,5 @@
+target/
+release/
+*.db
+*.db-wal
+*.db-shm
