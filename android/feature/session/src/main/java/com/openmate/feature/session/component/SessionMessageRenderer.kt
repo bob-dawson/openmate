@@ -248,7 +248,6 @@ fun SessionMessageRenderer(
                 runningAnchors = runningAnchors,
             )
         }
-        "synthetic" -> { }
         else -> { }
     }
 }

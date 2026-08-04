@@ -352,7 +352,10 @@ impl SyncDb {
         Ok(results)
     }
 
-    fn build_legacy_session_message_data(&self, msg_type: &str, msg_data: &Value, parts: &[Value]) -> Value {
+    fn build_legacy_session_message_data(&self, msg_type: &str, msg_data: &Value, raw_parts: &[Value]) -> Value {
+        let parts: Vec<&Value> = raw_parts.iter()
+            .filter(|p| !p.get("synthetic").and_then(|v| v.as_bool()).unwrap_or(false))
+            .collect();
         match msg_type {
             "user" => {
                 let text = parts.iter()
