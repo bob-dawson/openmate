@@ -1,9 +1,9 @@
 [versions]
-agp = "8.11.0"
-kotlin = "2.2.0"
-ksp = "2.2.0-2.0.2"
+agp = "9.1.0"
+kotlin = "2.3.21"
+ksp = "2.3.9"
 compose-bom = "2025.12.01"
-hilt = "2.56.2"
+hilt = "2.60"
 hilt-navigation-compose = "1.2.0"
 room = "2.7.2"
 okhttp = "5.1.0"
@@ -24,9 +24,11 @@ turbine = "1.2.1"
 robolectric = "4.15.1"
 coil3 = "3.0.4"
 compose-markdown = "0.7.2"
+multiplatform-markdown-renderer = "0.42.0"
 mlkit-barcode = "17.3.0"
 camerax = "1.4.2"
 kstatemachine = "0.36.0"
+error-prone-annotations = "2.38.0"
 
 [libraries]
 # AndroidX Core
@@ -89,6 +91,7 @@ compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-mani
 
 # Markdown
 compose-markdown = { group = "com.github.jeziellago", name = "compose-markdown", version.ref = "compose-markdown" }
+multiplatform-markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "multiplatform-markdown-renderer" }
 
 # Coil 3 (required by compose-markdown)
 coil3 = { group = "io.coil-kt.coil3", name = "coil", version.ref = "coil3" }
@@ -107,11 +110,11 @@ camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = 
 # KStateMachine
 kstatemachine = { group = "io.github.nsk90", name = "kstatemachine", version.ref = "kstatemachine" }
 kstatemachine-coroutines = { group = "io.github.nsk90", name = "kstatemachine-coroutines", version.ref = "kstatemachine" }
+error-prone-annotations = { group = "com.google.errorprone", name = "error_prone_annotations", version.ref = "error-prone-annotations" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
