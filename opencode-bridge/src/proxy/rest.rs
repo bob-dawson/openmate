@@ -57,6 +57,10 @@ async fn do_proxy(
         }
     }
 
+    if let Some(auth) = state.config.opencode_auth_header() {
+        req_builder = req_builder.header("authorization", auth);
+    }
+
     if !body_bytes.is_empty() {
         req_builder = req_builder.body(body_bytes.to_vec());
     }

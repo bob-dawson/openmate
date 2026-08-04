@@ -40,6 +40,15 @@ class EventDispatcher @Inject constructor(
         val isMessageScoped =
             type.startsWith("message.") ||
                 type.startsWith("todo.") ||
+                type.startsWith("session.text.") ||
+                type.startsWith("session.reasoning.") ||
+                type.startsWith("session.tool.") ||
+                type.startsWith("session.step.") ||
+                type.startsWith("session.compaction.") ||
+                type.startsWith("session.shell.") ||
+                type.startsWith("session.revert.") ||
+                type.startsWith("session.input.") ||
+                type.startsWith("session.execution.") ||
                 type.startsWith("session.next.")
 
         if (isMessageScoped) {
@@ -58,7 +67,12 @@ class EventDispatcher @Inject constructor(
         }
 
         when {
-            type.startsWith("session.") -> {
+            type.startsWith("session.created") ||
+            type.startsWith("session.updated") ||
+            type.startsWith("session.deleted") ||
+            type.startsWith("session.status") ||
+            type.startsWith("session.error") ||
+            type.startsWith("session.renamed") -> {
                 val result = sessionHandler.handle(type, event)
                 if (result != null) {
                     _sessionErrors.tryEmit(result)

@@ -45,6 +45,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.serializer
 import okhttp3.MediaType.Companion.toMediaType
@@ -84,41 +86,44 @@ class OpencodeApiClient(
 
     suspend fun listSessions(directory: String?, limit: Int?, start: Long?): List<SessionDto> {
         val params = mutableMapOf<String, String>()
-        params["roots"] = "true"
-        directory?.let { params["directory"] = it }
+        directory?.let { params["location[directory]"] = it }
         limit?.let { params["limit"] = it.toString() }
-        start?.let { params["start"] = it.toString() }
-        return getList("/experimental/session", params)
+        start?.let { params["cursor"] = it.toString() }
+        return getV2List("/api/session", params)
     }
 
     suspend fun getSession(id: String): SessionDto {
-        return get("/session/$id")
+        return getV2Data("/api/session/$id")
     }
 
     suspend fun createSession(title: String? = null, directory: String? = null): SessionDto {
         val body = mutableMapOf<String, String>()
         title?.let { body["title"] = it }
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        return post("/session", body, params)
+        directory?.let { params["location[directory]"] = it }
+        return postV2Data("/api/session", body, params)
     }
 
     suspend fun deleteSession(id: String) {
-        delete("/session/$id")
+        val params = mutableMapOf<String, String>()
+        params["location[directory]"] = "/"
+        deleteV2("/api/session/$id", params)
     }
 
     suspend fun updateSession(id: String, title: String? = null) {
         val body = mutableMapOf<String, String>()
         title?.let { body["title"] = it }
-        patch("/session/$id", body)
+        val params = mutableMapOf<String, String>()
+        params["location[directory]"] = "/"
+        postV2Unit("/api/session/$id/rename", body, params)
     }
 
     suspend fun getMessageHeaders(sessionID: String, limit: Int, before: String?, directory: String? = null): MessageHeadersPage {
         val params = mutableMapOf<String, String>()
         params["limit"] = limit.toString()
-        before?.let { params["before"] = it }
-        directory?.let { params["directory"] = it }
-        val request = requestBuilder("GET", "/session/$sessionID/message", params)
+        before?.let { params["cursor"] = it }
+        directory?.let { params["location[directory]"] = it }
+        val request = requestBuilder("GET", "/api/session/$sessionID/message", params)
             .get()
             .build()
         val response = client.newCall(request).execute()
@@ -126,8 +131,9 @@ class OpencodeApiClient(
         if (!response.isSuccessful) {
             throw ServerUnavailableException("HTTP ${response.code}: $body")
         }
-        val items: List<MessageHeaderDto> = json.decodeFromString(body)
-        val nextCursor = response.header("X-Next-Cursor")
+        val root = Json.parseToJsonElement(body).jsonObject
+        val items: List<MessageHeaderDto> = Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), root["data"] ?: JsonArray(emptyList())))
+        val nextCursor = root["cursor"]?.jsonObject?.get("next")?.jsonPrimitive?.contentOrNull
         return MessageHeadersPage(items, nextCursor)
     }
 
@@ -176,14 +182,14 @@ class OpencodeApiClient(
         val bodyMap = parts + extraFields
         val body = mapToJson(bodyMap)
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/session/$sessionID/prompt_async", body, params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/session/$sessionID/prompt", body, params)
     }
 
     suspend fun abortSession(sessionID: String, directory: String? = null) {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/session/$sessionID/abort", emptyMap<String, String>(), params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/session/$sessionID/interrupt", emptyMap<String, String>(), params)
     }
 
     suspend fun revertSession(sessionID: String, messageID: String, partID: String? = null, directory: String? = null) {
@@ -191,20 +197,21 @@ class OpencodeApiClient(
         body["messageID"] = messageID
         partID?.let { body["partID"] = it }
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/session/$sessionID/revert", body, params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/session/$sessionID/revert/stage", body, params)
+        postV2Unit("/api/session/$sessionID/revert/commit", emptyMap<String, String>(), params)
     }
 
     suspend fun unrevertSession(sessionID: String, directory: String? = null) {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/session/$sessionID/unrevert", emptyMap<String, String>(), params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/session/$sessionID/revert/clear", emptyMap<String, String>(), params)
     }
 
     suspend fun listPermissions(directory: String? = null): List<PermissionDto> {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        return getList("/permission", params)
+        directory?.let { params["location[directory]"] = it }
+        return getV2List("/api/permission/request", params)
     }
 
     suspend fun replyPermission(requestID: String, reply: String, message: String?, directory: String? = null) {
@@ -212,79 +219,80 @@ class OpencodeApiClient(
         body["reply"] = reply
         message?.let { body["message"] = it }
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/permission/$requestID/reply", body, params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/permission/request/$requestID/reply", body, params)
     }
 
     suspend fun listQuestions(directory: String? = null): List<QuestionDto> {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        return getList("/question", params)
+        directory?.let { params["location[directory]"] = it }
+        return getV2List("/api/question/request", params)
     }
 
     suspend fun replyQuestion(requestID: String, answers: List<List<String>>, directory: String? = null) {
         val body = mapOf("answers" to answers)
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/question/$requestID/reply", body, params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/question/request/$requestID/reply", body, params)
     }
 
     suspend fun rejectQuestion(requestID: String, directory: String? = null) {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/question/$requestID/reject", emptyMap<String, String>(), params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/question/request/$requestID/reject", emptyMap<String, String>(), params)
     }
 
     suspend fun getSessionStatuses(directory: String? = null): Map<String, SessionStatusDto> {
-        val params = directory?.let { mapOf("directory" to it) } ?: emptyMap()
-        return get("/session/status", params)
+        val params = directory?.let { mapOf("location[directory]" to it) } ?: emptyMap()
+        return getV2Data("/api/session/active", params)
     }
 
     suspend fun getTodos(sessionID: String, directory: String? = null): List<com.openmate.core.domain.model.TodoInfo> {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        val url = buildUrl("/session/$sessionID/todo", params)
+        directory?.let { params["location[directory]"] = it }
+        val url = buildUrl("/api/session/$sessionID/skill", params)
         val request = Request.Builder().url(url).get().build()
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: return emptyList()
         if (!response.isSuccessful) {
             throw ServerUnavailableException("HTTP ${response.code}: $body")
         }
-        return json.decodeFromString(body)
+        val root = Json.parseToJsonElement(body).jsonObject
+        return Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), root["data"] ?: JsonArray(emptyList())))
     }
 
     suspend fun healthCheck(): HealthDto {
-        return get("/global/health")
+        return getV2Data("/api/health")
     }
 
     suspend fun getPath(): PathInfo {
-        return get("/path")
+        return getV2Data("/api/location")
     }
 
     suspend fun listFiles(path: String): List<FileNodeDto> {
-        return getList("/file", mapOf("path" to path))
+        return getV2List("/api/fs/list", mapOf("path" to path))
     }
 
     suspend fun searchFiles(query: String, limit: Int = 20): List<String> {
-        return getList("/find/file", mapOf("query" to query, "limit" to limit.toString(), "type" to "file"))
+        return getV2List("/api/fs/find", mapOf("query" to query, "limit" to limit.toString(), "type" to "file"))
     }
 
     suspend fun getProviders(): ProviderListDto {
-        return get("/provider")
+        return getV2Data("/api/provider")
     }
 
     suspend fun getAgents(): List<AgentDto> {
-        return getList("/agent")
+        return getV2List("/api/agent")
     }
 
     suspend fun getSkills(): List<SkillInfoDto> {
-        return getList("/skill")
+        return getV2List("/api/skill")
     }
 
     suspend fun getMcpStatus(directory: String? = null): List<McpServerEntry> = withContext(Dispatchers.IO) {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        val request = requestBuilder("GET", "/mcp", params).get().build()
+        directory?.let { params["location[directory]"] = it }
+        val request = requestBuilder("GET", "/api/mcp", params).get().build()
         val route = currentRoute()
         try {
             val response = client.newCall(request).execute()
@@ -293,13 +301,14 @@ class OpencodeApiClient(
             if (!response.isSuccessful) {
                 throw ServerUnavailableException("HTTP ${response.code}: $body")
             }
-            val obj = json.parseToJsonElement(body).jsonObject
-            obj.entries.map { (name, element) ->
-                val statusObj = element.jsonObject
+            val root = Json.parseToJsonElement(body).jsonObject
+            val dataArr = root["data"] ?: JsonArray(emptyList())
+            dataArr.jsonArray.mapNotNull { element ->
+                val obj = element.jsonObject
                 McpServerEntry(
-                    name = name,
-                    status = statusObj["status"]?.jsonPrimitive?.content ?: "unknown",
-                    error = statusObj["error"]?.jsonPrimitive?.content,
+                    name = obj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null,
+                    status = obj["status"]?.jsonPrimitive?.content ?: "unknown",
+                    error = obj["error"]?.jsonPrimitive?.content,
                 )
             }
         } catch (e: Exception) {
@@ -310,14 +319,14 @@ class OpencodeApiClient(
 
     suspend fun connectMcp(name: String, directory: String? = null) {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/mcp/$name/connect", emptyMap<String, String>(), params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/mcp/$name/connect", emptyMap<String, String>(), params)
     }
 
     suspend fun disconnectMcp(name: String, directory: String? = null) {
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/mcp/$name/disconnect", emptyMap<String, String>(), params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/mcp/$name/disconnect", emptyMap<String, String>(), params)
     }
 
     suspend fun summarizeSession(sessionID: String, providerID: String, modelID: String, directory: String? = null) {
@@ -326,8 +335,8 @@ class OpencodeApiClient(
             "modelID" to modelID,
         )
         val params = mutableMapOf<String, String>()
-        directory?.let { params["directory"] = it }
-        postUnit("/session/$sessionID/summarize", body, params)
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/session/$sessionID/summarize", body, params)
     }
 
     suspend fun initSession(sessionID: String, providerID: String, modelID: String, messageID: String, directory: String? = null) {
@@ -723,6 +732,65 @@ class OpencodeApiClient(
         } catch (e: Exception) {
             route?.let { routeEvidenceReporter?.reportNetworkFailure(it, e.message) }
             throw e
+        }
+    }
+
+    private suspend inline fun <reified T> getV2Data(path: String, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
+        val request = requestBuilder("GET", path, params).get().build()
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+        if (!response.isSuccessful) throw ServerUnavailableException("HTTP ${response.code}: $body")
+        val root = Json.parseToJsonElement(body).jsonObject
+        val dataElement = root["data"] ?: throw ServerUnavailableException("Missing data field")
+        Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), dataElement))
+    }
+
+    private suspend inline fun <reified T> getV2List(path: String, params: Map<String, String> = emptyMap()): List<T> = withContext(Dispatchers.IO) {
+        val request = requestBuilder("GET", path, params).get().build()
+        val response = client.newCall(request).execute()
+        val body = response.body?.string() ?: return@withContext emptyList()
+        if (!response.isSuccessful) throw ServerUnavailableException("HTTP ${response.code}: $body")
+        val root = Json.parseToJsonElement(body).jsonObject
+        val dataElement = root["data"] ?: return@withContext emptyList()
+        Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), dataElement))
+    }
+
+    private suspend inline fun <reified T> postV2Data(path: String, body: Any, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
+        val jsonStr = when (body) {
+            is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
+            else -> json.encodeToString(JsonElement.serializer(), mapToJson(body as Map<*, *>))
+        }
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val request = requestBuilder("POST", path, params).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        val respBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
+        if (!response.isSuccessful) throw ServerUnavailableException("HTTP ${response.code}: $respBody")
+        val root = Json.parseToJsonElement(respBody).jsonObject
+        val dataElement = root["data"] ?: throw ServerUnavailableException("Missing data field")
+        Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), dataElement))
+    }
+
+    private suspend fun postV2Unit(path: String, body: Any, params: Map<String, String> = emptyMap()) = withContext(Dispatchers.IO) {
+        val jsonStr = when (body) {
+            is JsonElement -> json.encodeToString(JsonElement.serializer(), body)
+            is Map<*, *> -> json.encodeToString(JsonElement.serializer(), mapToJson(body))
+            else -> json.encodeToString(JsonElement.serializer(), JsonPrimitive(body.toString()))
+        }
+        val requestBody = jsonStr.toRequestBody(jsonMediaType)
+        val request = requestBuilder("POST", path, params).post(requestBody).build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            val respBody = response.body?.string()?.take(500) ?: ""
+            throw ServerUnavailableException("HTTP ${response.code}: $respBody")
+        }
+    }
+
+    private suspend fun deleteV2(path: String, params: Map<String, String> = emptyMap()) = withContext(Dispatchers.IO) {
+        val request = requestBuilder("DELETE", path, params).delete().build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            val respBody = response.body?.string()?.take(500) ?: ""
+            throw ServerUnavailableException("HTTP ${response.code}: $respBody")
         }
     }
 

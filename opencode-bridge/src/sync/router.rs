@@ -21,6 +21,14 @@ pub struct EventsQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessagesQuery {
+    pub since: i64,
+    pub limit: Option<i64>,
+    pub known_ids: Option<String>,
+}
+
 pub async fn init(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -70,6 +78,44 @@ pub async fn events(
 
     Ok(Json(json!({
         "events": truncated,
+        "maxSeq": max_seq,
+    })))
+}
+
+pub async fn messages(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Query(query): Query<MessagesQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    let limit = query.limit.unwrap_or(100);
+    let (messages, has_more, max_seq) = state.sync_db
+        .get_messages_since(&session_id, query.since, limit)
+        .map_err(|e| AppError::DatabaseError(e))?;
+
+    let truncated: Vec<Value> = messages.into_iter().map(|mut msg| {
+        if let Some(data_str) = msg["data"].as_str() {
+            if let Ok(data_val) = serde_json::from_str::<Value>(data_str) {
+                let msg_type = msg["type"].as_str().unwrap_or("");
+                let truncated_data = super::truncate::truncate_message(msg_type, &data_val);
+                msg["data"] = truncated_data;
+            }
+        }
+        msg
+    }).collect();
+
+    let deleted_ids: Vec<String> = if let Some(known_ids_str) = query.known_ids {
+        let known_ids: Vec<String> = known_ids_str.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
+        state.sync_db
+            .get_deleted_message_ids(&session_id, query.since, &known_ids)
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    Ok(Json(json!({
+        "messages": truncated,
+        "deletedIds": deleted_ids,
+        "hasMore": has_more,
         "maxSeq": max_seq,
     })))
 }

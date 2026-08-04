@@ -1,3 +1,4 @@
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -28,6 +29,7 @@ pub struct OpencodeConfig {
     pub auto_restart: bool,
     pub db_path: String,
     pub run_as_user: String,
+    pub password: String,
 }
 
 #[derive(Debug, Clone)]
@@ -44,8 +46,22 @@ pub struct GatewayConfig {
 
 pub fn default_db_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
-    let path = home.join(".local").join("share").join("opencode").join("opencode.db");
+    let path = home.join(".local").join("share").join("opencode").join("opencode-next.db");
     path.to_string_lossy().to_string()
+}
+
+pub fn default_password_path() -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    let path = home.join(".local").join("state").join("opencode").join("password");
+    path.to_string_lossy().to_string()
+}
+
+pub fn read_opencode_password() -> String {
+    let path = default_password_path();
+    std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        tracing::warn!("Failed to read opencode password from {}: {}", path, e);
+        String::new()
+    })
 }
 
 pub fn is_port_available(port: u16) -> bool {
@@ -87,6 +103,7 @@ impl Default for Config {
                 auto_restart: true,
                 db_path: default_db_path(),
                 run_as_user: String::new(),
+                password: String::new(),
             },
             fs: FsConfig::default(),
             gateway: GatewayConfig::default(),
@@ -192,6 +209,16 @@ impl Config {
         format!("http://{}:{}", self.opencode.hostname, self.opencode.port)
     }
 
+    pub fn opencode_auth_header(&self) -> Option<String> {
+        if self.opencode.password.is_empty() {
+            None
+        } else {
+            let credentials = format!("opencode:{}", self.opencode.password);
+            let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
+            Some(format!("Basic {}", encoded))
+        }
+    }
+
     pub fn db_path(&self) -> std::path::PathBuf {
         std::path::PathBuf::from(&self.opencode.db_path)
     }
@@ -247,6 +274,10 @@ impl Config {
                 auto_restart: get_bool("opencode.auto_restart", true),
                 db_path: get("opencode.db_path", &default_db_path()),
                 run_as_user: get("opencode.run_as_user", ""),
+                password: {
+                    let configured = get("opencode.password", "");
+                    if configured.is_empty() { read_opencode_password() } else { configured }
+                },
             },
             fs: FsConfig {
                 allowed_paths,

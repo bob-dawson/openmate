@@ -68,6 +68,74 @@ impl SyncDb {
         Ok((fallback, seq))
     }
 
+    pub fn get_messages_since(&self, session_id: &str, since: i64, limit: i64) -> Result<(Vec<Value>, bool, Option<i64>), String> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, session_id, type, time_created, time_updated, data
+             FROM session_message
+             WHERE session_id = ? AND time_updated > ?
+             ORDER BY time_updated ASC
+             LIMIT ?"
+        ).map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let mut messages: Vec<Value> = stmt.query_map(params![session_id, since, limit + 1], |row| {
+            let id: String = row.get(0)?;
+            let sid: String = row.get(1)?;
+            let msg_type: String = row.get(2)?;
+            let time_created: i64 = row.get(3)?;
+            let time_updated: i64 = row.get(4)?;
+            let data_str: String = row.get(5)?;
+            let data_val: Value = serde_json::from_str(&data_str).unwrap_or(Value::String(data_str.clone()));
+            Ok(json!({
+                "id": id,
+                "sessionId": sid,
+                "type": msg_type,
+                "timeCreated": time_created,
+                "timeUpdated": time_updated,
+                "data": data_val,
+            }))
+        }).map_err(|e| format!("Query failed: {}", e))?
+          .filter_map(|r| r.ok())
+          .collect();
+
+        let has_more = messages.len() > limit as usize;
+        if has_more {
+            messages.truncate(limit as usize);
+        }
+
+        let max_seq: Option<i64> = conn.query_row(
+            "SELECT seq FROM event_sequence WHERE aggregate_id = ?",
+            params![session_id],
+            |row| row.get(0),
+        ).ok();
+
+        Ok((messages, has_more, max_seq))
+    }
+
+    pub fn get_deleted_message_ids(&self, session_id: &str, after_time: i64, known_ids: &[String]) -> Result<Vec<String>, String> {
+        if known_ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let conn = self.conn()?;
+        let placeholders: Vec<String> = known_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 2)).collect();
+        let sql = format!(
+            "SELECT id FROM session_message WHERE session_id = ?1 AND time_created >= ?2 AND id IN ({})",
+            placeholders.join(",")
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("Prepare failed: {}", e))?;
+        let mut params_vec: Vec<&dyn rusqlite::ToSql> = vec![&session_id, &after_time];
+        for id in known_ids {
+            params_vec.push(id);
+        }
+        let existing_ids: std::collections::HashSet<String> = stmt
+            .query_map(params_vec.as_slice(), |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Query failed: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(known_ids.iter().filter(|id| !existing_ids.contains(*id)).cloned().collect())
+    }
+
     fn query_max_seq(&self, aggregate_id: &str) -> Option<i64> {
         let conn = self.conn().ok()?;
         conn.query_row(
