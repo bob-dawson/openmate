@@ -15,6 +15,10 @@ data class ProviderInfoDto(
     val id: String,
     val name: String,
     val source: String = "",
+    @kotlinx.serialization.SerialName("integrationID")
+    val integrationID: String = "",
+    val `package`: String = "",
+    val settings: JsonObject = JsonObject(emptyMap()),
     val models: Map<String, ModelInfoDto> = emptyMap(),
 )
 
