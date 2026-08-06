@@ -756,6 +756,23 @@ fun SessionDetailScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.secondaryContainer)
+                                .clickable {
+                                    viewModel.loadProviders(forceRefresh = true)
+                                    showModelPicker = true
+                                }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.select_model),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
                     }
                     if (availableVariants.isNotEmpty()) {
                         Box(

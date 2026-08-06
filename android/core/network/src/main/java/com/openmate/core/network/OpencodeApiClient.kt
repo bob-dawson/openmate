@@ -134,8 +134,8 @@ class OpencodeApiClient(
         if (!response.isSuccessful) {
             throw ServerUnavailableException("HTTP ${response.code}: $body")
         }
-        val root = Json.parseToJsonElement(body).jsonObject
-        val items: List<MessageHeaderDto> = Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), root["data"] ?: JsonArray(emptyList())))
+        val root = json.parseToJsonElement(body).jsonObject
+        val items: List<MessageHeaderDto> = json.decodeFromString(json.encodeToString(JsonElement.serializer(), root["data"] ?: JsonArray(emptyList())))
         val nextCursor = root["cursor"]?.jsonObject?.get("next")?.jsonPrimitive?.contentOrNull
         return MessageHeadersPage(items, nextCursor)
     }
@@ -253,15 +253,13 @@ class OpencodeApiClient(
     suspend fun getTodos(sessionID: String, directory: String? = null): List<com.openmate.core.domain.model.TodoInfo> {
         val params = mutableMapOf<String, String>()
         directory?.let { params["location[directory]"] = it }
-        val url = buildUrl("/api/session/$sessionID/skill", params)
+        val url = buildUrl("/api/session/$sessionID/todo", params)
         val request = Request.Builder().url(url).get().build()
         val response = client.newCall(request).execute()
+        if (!response.isSuccessful) return emptyList()
         val body = response.body?.string() ?: return emptyList()
-        if (!response.isSuccessful) {
-            throw ServerUnavailableException("HTTP ${response.code}: $body")
-        }
-        val root = Json.parseToJsonElement(body).jsonObject
-        return Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), root["data"] ?: JsonArray(emptyList())))
+        val root = json.parseToJsonElement(body).jsonObject
+        return json.decodeFromString(json.encodeToString(JsonElement.serializer(), root["data"] ?: JsonArray(emptyList())))
     }
 
     suspend fun healthCheck(): HealthDto {
@@ -757,9 +755,9 @@ class OpencodeApiClient(
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: throw ServerUnavailableException("Empty response")
         if (!response.isSuccessful) throw ServerUnavailableException("HTTP ${response.code}: $body")
-        val root = Json.parseToJsonElement(body).jsonObject
+        val root = json.parseToJsonElement(body).jsonObject
         val dataElement = root["data"] ?: throw ServerUnavailableException("Missing data field")
-        Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), dataElement))
+        json.decodeFromString(json.encodeToString(JsonElement.serializer(), dataElement))
     }
 
     private suspend inline fun <reified T> getV2List(path: String, params: Map<String, String> = emptyMap()): List<T> = withContext(Dispatchers.IO) {
@@ -767,9 +765,9 @@ class OpencodeApiClient(
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: return@withContext emptyList()
         if (!response.isSuccessful) throw ServerUnavailableException("HTTP ${response.code}: $body")
-        val root = Json.parseToJsonElement(body).jsonObject
+        val root = json.parseToJsonElement(body).jsonObject
         val dataElement = root["data"] ?: return@withContext emptyList()
-        Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), dataElement))
+        json.decodeFromString(json.encodeToString(JsonElement.serializer(), dataElement))
     }
 
     private suspend inline fun <reified T> postV2Data(path: String, body: Any, params: Map<String, String> = emptyMap()): T = withContext(Dispatchers.IO) {
@@ -782,9 +780,9 @@ class OpencodeApiClient(
         val response = client.newCall(request).execute()
         val respBody = response.body?.string() ?: throw ServerUnavailableException("Empty response")
         if (!response.isSuccessful) throw ServerUnavailableException("HTTP ${response.code}: $respBody")
-        val root = Json.parseToJsonElement(respBody).jsonObject
+        val root = json.parseToJsonElement(respBody).jsonObject
         val dataElement = root["data"] ?: throw ServerUnavailableException("Missing data field")
-        Json.decodeFromString(Json.encodeToString(JsonElement.serializer(), dataElement))
+        json.decodeFromString(json.encodeToString(JsonElement.serializer(), dataElement))
     }
 
     private suspend fun postV2Unit(path: String, body: Any, params: Map<String, String> = emptyMap()) = withContext(Dispatchers.IO) {
