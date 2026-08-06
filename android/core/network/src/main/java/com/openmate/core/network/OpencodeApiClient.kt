@@ -152,37 +152,30 @@ class OpencodeApiClient(
         directory: String? = null,
         variant: String? = null,
     ) {
-        val textParts = listOf(
-            mapOf("type" to "text", "text" to content)
-        )
-        val fileParts = files.map { f ->
-            mapOf(
-                "type" to "file",
-                "mime" to f.mime,
-                "url" to "file://${f.path}",
-                "filename" to f.filename,
-                "source" to mapOf(
-                    "type" to "file",
-                    "path" to f.path,
-                    "text" to mapOf("value" to "", "start" to 0, "end" to 0),
-                ),
-            )
-        }
-        val parts = mapOf("parts" to textParts + fileParts)
-        val extraFields = mutableMapOf<String, Any>()
         if (providerID != null && modelID != null) {
-            extraFields["model"] = JsonObject(mapOf(
+            val modelFields = mutableMapOf(
+                "id" to JsonPrimitive(modelID),
                 "providerID" to JsonPrimitive(providerID),
-                "modelID" to JsonPrimitive(modelID),
-            ))
+            )
+            if (variant != null) modelFields["variant"] = JsonPrimitive(variant)
+            val modelBody = JsonObject(mapOf("model" to JsonObject(modelFields)))
+            val modelParams = mutableMapOf<String, String>()
+            directory?.let { modelParams["location[directory]"] = it }
+            try { postV2Unit("/api/session/$sessionID/model", modelBody, modelParams) } catch (_: Exception) {}
         }
         if (agent != null) {
-            extraFields["agent"] = agent
+            val agentParams = mutableMapOf<String, String>()
+            directory?.let { agentParams["location[directory]"] = it }
+            try { postV2Unit("/api/session/$sessionID/agent", JsonObject(mapOf("agent" to JsonPrimitive(agent))), agentParams) } catch (_: Exception) {}
         }
-        if (variant != null) {
-            extraFields["variant"] = variant
+        val extraFields = mutableMapOf<String, Any>()
+        if (files.isNotEmpty()) {
+            extraFields["files"] = files.map { f ->
+                mapOf("uri" to "file://${f.path}", "name" to f.filename)
+            }
         }
-        val bodyMap = parts + extraFields
+        val bodyMap = mutableMapOf<String, Any>("text" to content)
+        bodyMap.putAll(extraFields)
         val body = mapToJson(bodyMap)
         val params = mutableMapOf<String, String>()
         directory?.let { params["location[directory]"] = it }
