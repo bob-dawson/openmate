@@ -15,8 +15,10 @@ RUN chmod +x /usr/local/bin/openmate
 COPY docker/entrypoint-v2.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-RUN mkdir -p /root/workspace \
+RUN mkdir -p /root/workspace /root/.config/opencode \
     && echo "# OpenMate V2 Test Workspace" > /root/workspace/README.md
+
+COPY docker/v2-opencode-config.json /root/.config/opencode/opencode.json
 
 WORKDIR /root/workspace
 EXPOSE 4097

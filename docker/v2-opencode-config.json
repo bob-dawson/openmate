@@ -1,0 +1,25 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "xunfei": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "xunfei",
+      "options": {
+        "baseURL": "https://maas-coding-api.cn-huabei-1.xf-yun.com/v2",
+        "apiKey": "e1c588dbec3c971c3d05ada2aac7a4ca:OWM0NTAwYzQyM2EyNjQzZGMxNzcyMjc2"
+      },
+      "models": {
+        "xopdeepseekv4flash": {
+          "name": "DeepSeek V4 Flash",
+          "options": { "thinking": { "type": "enabled", "budgetTokens": 8192 } },
+          "limit": { "context": 1000000, "output": 131072 }
+        },
+        "xopglm52": {
+          "name": "GLM 5.2",
+          "options": { "thinking": { "type": "enabled", "budgetTokens": 8192 } },
+          "limit": { "context": 500000, "output": 131072 }
+        }
+      }
+    }
+  }
+}

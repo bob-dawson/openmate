@@ -56,7 +56,30 @@ pub fn default_password_path() -> String {
     path.to_string_lossy().to_string()
 }
 
+pub fn default_service_json_path() -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+    let path = home.join(".local").join("state").join("opencode").join("service.json");
+    path.to_string_lossy().to_string()
+}
+
+pub fn read_service_password() -> String {
+    let path = default_service_json_path();
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(json) => json.get("password").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                Err(_) => String::new(),
+            }
+        }
+        Err(_) => String::new(),
+    }
+}
+
 pub fn read_opencode_password() -> String {
+    let pw = read_service_password();
+    if !pw.is_empty() {
+        return pw;
+    }
     let path = default_password_path();
     std::fs::read_to_string(&path).unwrap_or_else(|e| {
         tracing::warn!("Failed to read opencode password from {}: {}", path, e);
@@ -210,10 +233,15 @@ impl Config {
     }
 
     pub fn opencode_auth_header(&self) -> Option<String> {
-        if self.opencode.password.is_empty() {
+        let pw = if self.opencode.password.is_empty() {
+            read_service_password()
+        } else {
+            self.opencode.password.clone()
+        };
+        if pw.is_empty() {
             None
         } else {
-            let credentials = format!("opencode:{}", self.opencode.password);
+            let credentials = format!("opencode:{}", pw);
             let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
             Some(format!("Basic {}", encoded))
         }
