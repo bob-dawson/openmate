@@ -22,7 +22,7 @@ open class QuestionEventHandler @Inject constructor() {
     val questions: SharedFlow<QuestionRequest> = _questions
 
     open suspend fun handle(type: String, event: SseData) {
-        if (type != "question.asked") return
+        if (type != "question.v2.asked" && type != "question.asked") return
         val props = event.properties
         val id = props["id"]?.jsonPrimitive?.contentOrNull ?: return
         val sessionID = props["sessionID"]?.jsonPrimitive?.contentOrNull ?: ""

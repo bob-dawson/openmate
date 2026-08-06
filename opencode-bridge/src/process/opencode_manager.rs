@@ -545,7 +545,6 @@ fn spawn_opencode(
         tokio::process::Command::new("cmd")
             .args(["/C", &cmd])
             .current_dir(&work_dir)
-            .env("OPENCODE_EXPERIMENTAL", "true")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .creation_flags(0x00000200)
@@ -562,7 +561,6 @@ fn spawn_opencode(
             let mut cmd = std::process::Command::new("sudo");
             cmd.args(["-u", run_as_user, binary, "serve", "--hostname", hostname, "--port", &port_str])
                 .current_dir(&work_dir)
-                .env("OPENCODE_EXPERIMENTAL", "true")
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped());
 
@@ -579,7 +577,6 @@ fn spawn_opencode(
             let mut cmd = std::process::Command::new(binary);
             cmd.args(["serve", "--hostname", hostname, "--port", &port_str])
                 .current_dir(&work_dir)
-                .env("OPENCODE_EXPERIMENTAL", "true")
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped());
 

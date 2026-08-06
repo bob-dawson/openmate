@@ -11,15 +11,16 @@ import kotlinx.serialization.json.JsonObject
 data class PermissionDto(
     val id: String,
     @SerialName("sessionID") val sessionID: String = "",
-    val permission: String = "",
-    val patterns: List<String> = emptyList(),
+    val action: String = "",
+    val resources: List<String> = emptyList(),
     val metadata: JsonObject = JsonObject(emptyMap()),
-    val always: List<String> = emptyList(),
-    val tool: PermissionToolDto? = null,
+    val save: List<String> = emptyList(),
+    val source: PermissionSourceDto? = null,
 )
 
 @Serializable
-data class PermissionToolDto(
+data class PermissionSourceDto(
+    val type: String = "",
     @SerialName("messageID") val messageID: String = "",
     @SerialName("callID") val callID: String = "",
 )
@@ -28,10 +29,10 @@ fun PermissionDto.toDomain(): PermissionRequest {
     return PermissionRequest(
         id = id,
         sessionID = sessionID,
-        permission = permission,
-        patterns = patterns,
+        permission = action,
+        patterns = resources,
         metadata = metadata,
-        always = always,
-        tool = tool?.let { ToolRef(it.messageID, it.callID) },
+        always = save,
+        tool = source?.let { ToolRef(it.messageID, it.callID) },
     )
 }

@@ -29,12 +29,15 @@ import com.openmate.core.network.dto.LoginConfirmRequest
 import com.openmate.core.network.dto.ScanPairConfirmRequest
 import com.openmate.core.network.dto.ScanPairConfirmResponse
 import com.openmate.core.network.dto.PermissionDto
+import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.network.dto.QuestionDto
 import com.openmate.core.network.dto.SessionDto
 import com.openmate.core.network.dto.PathInfo
 import com.openmate.core.network.dto.SessionStatusDto
 import com.openmate.core.network.dto.SkillInfoDto
+import com.openmate.core.network.dto.V2ModelInfoDto
+import com.openmate.core.network.dto.toModelInfoDto
 import com.openmate.core.domain.model.ConnectionRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -278,7 +281,21 @@ class OpencodeApiClient(
     }
 
     suspend fun getProviders(): ProviderListDto {
-        return getV2Data("/api/provider")
+        val providers: List<ProviderInfoDto> = getV2List("/api/provider")
+        val models: List<V2ModelInfoDto> = try {
+            getV2List("/api/model")
+        } catch (e: Exception) {
+            emptyList()
+        }
+        val modelsByProvider = models.filter { it.enabled }.groupBy { it.providerID }
+        val all = providers.map { p ->
+            p.copy(models = modelsByProvider[p.id]?.associate { it.id to it.toModelInfoDto() } ?: emptyMap())
+        }
+        val connected = providers.map { it.id }
+        val default = models.filter { it.enabled }.groupBy { it.providerID }
+            .mapValues { (_, list) -> list.firstOrNull()?.id ?: "" }
+            .filterValues { it.isNotBlank() }
+        return ProviderListDto(all = all, default = default, connected = connected)
     }
 
     suspend fun getAgents(): List<AgentDto> {
