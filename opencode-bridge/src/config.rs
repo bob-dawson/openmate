@@ -247,6 +247,17 @@ impl Config {
         }
     }
 
+    pub fn quick_auth_header() -> Option<String> {
+        let pw = read_service_password();
+        if pw.is_empty() {
+            None
+        } else {
+            let credentials = format!("opencode:{}", pw);
+            let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
+            Some(format!("Basic {}", encoded))
+        }
+    }
+
     pub fn db_path(&self) -> std::path::PathBuf {
         std::path::PathBuf::from(&self.opencode.db_path)
     }

@@ -83,13 +83,18 @@ impl OpencodeManager {
     }
 
     pub async fn check_health(&self) -> bool {
-        let url = format!("{}/global/health", self.opencode_url);
+        let url = format!("{}/api/health", self.opencode_url);
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(2))
             .connect_timeout(std::time::Duration::from_secs(1))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        match client.get(&url).send().await {
+        let auth = crate::config::Config::quick_auth_header();
+        let mut req = client.get(&url);
+        if let Some(a) = auth {
+            req = req.header("Authorization", a);
+        }
+        match req.send().await {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(body) = resp.json::<serde_json::Value>().await {
                     if let Some(version) = body.get("version").and_then(|v| v.as_str()) {
@@ -433,12 +438,17 @@ async fn run_service_cmd(binary: &str, args: &[&str]) -> Result<String, String> 
 }
 
 async fn check_health_url(opencode_url: &str) -> bool {
-    let url = format!("{}/global/health", opencode_url);
+    let url = format!("{}/api/health", opencode_url);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-    match client.get(&url).send().await {
+    let auth = crate::config::Config::quick_auth_header();
+    let mut req = client.get(&url);
+    if let Some(a) = auth {
+        req = req.header("Authorization", a);
+    }
+    match req.send().await {
         Ok(resp) if resp.status().is_success() => true,
         _ => false,
     }
