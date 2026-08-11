@@ -47,15 +47,14 @@ python D:\openmate\scripts\update-bridge.ps1 -SkipBuild
 ## 运行
 
 ```powershell
-# 前台运行（使用全部默认值）
+# 前台运行（配置从 ~/.openmate/bridge.db 自动加载）
 openmate.exe
-
-# 指定配置
-openmate.exe -c bridge.toml
 
 # 环境变量控制日志级别
 RUST_LOG=debug openmate.exe
 ```
+
+> ⚠️ **注意**：Bridge **没有** `-c` 参数，配置全部存储在 SQLite 数据库 `~/.openmate/bridge.db` 的 `config` 表中，**不使用任何 toml 文件**。`~/.opencode/bridge.toml` 仅为历史遗留，不生效。
 
 ## 服务管理
 
@@ -84,27 +83,37 @@ Linux 生成 systemd unit 到 `/etc/systemd/system/openmate.service`，install �
 | `openmate approve <pin>` | 批准配对 PIN |
 | `openmate reset-token` | 重置密钥（所有 token 失效） |
 
-## 配置文件 (bridge.toml)
+## 配置文件（~/.openmate/bridge.db）
 
-搜索顺序：`当前目录/bridge.toml` → `exe所在目录/bridge.toml` → `~/.opencode/bridge.toml`
+配置存储在 SQLite 数据库 `~/.openmate/bridge.db` 的 `config` 表中（key-value 对），由 `Config::load_from_db()` 读取。修改配置可直接用 sqlite3 或 Bridge 的 `/api/bridge/config` API。
 
-```toml
-[bridge]
-port = 4097          # Bridge 监听端口
-hostname = "0.0.0.0" # 监听地址
-auth_enabled = true  # 是否启用认证
+```powershell
+# 查看全部配置
+wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db 'SELECT key, value FROM config;'"
 
-[opencode]
-binary = "opencode"    # opencode 可执行文件名 (PATH 中或全路径)
-hostname = "127.0.0.1" # opencode serve 监听地址
-port = 4098            # opencode serve 监听端口
-directory = ""         # 工作目录，空=exe所在目录
-auto_start = true      # Bridge 启动时自动拉起 opencode
-auto_restart = true    # opencode 崩溃后自动重启
-
-[fs]
-allowed_paths = []     # 空=允许所有路径
+# 修改配置（示例）
+wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db \"UPDATE config SET value='4098' WHERE key='opencode.port';\""
 ```
+
+关键配置项：
+
+| key | 默认值 | 说明 |
+|-----|--------|------|
+| `bridge.port` | `4097` | Bridge 监听端口 |
+| `bridge.hostname` | `0.0.0.0` | Bridge 监听地址 |
+| `opencode.binary` | `opencode` | opencode 可执行文件名（PATH 中或全路径） |
+| `opencode.hostname` | `127.0.0.1` | opencode serve 监听地址 |
+| `opencode.port` | `4096` | opencode serve 监听端口 |
+| `opencode.directory` | `` | 工作目录，空=exe所在目录 |
+| `opencode.db_path` | `~/.local/share/opencode/opencode.db` | opencode SQLite 数据库路径（Bridge 直接读此库提供 sync API） |
+| `opencode.auto_start` | `true` | Bridge 启动时自动拉起 opencode |
+| `opencode.auto_restart` | `true` | opencode 崩溃后自动重启 |
+| `opencode.password` | `` | opencode 密码；**为空时自动从 `~/.local/state/opencode/service.json` 读取**（V2 service 模式），再 fallback 到 `~/.local/state/opencode/password` |
+| `fs.allowed_paths` | `` | 逗号分隔白名单，空=允许所有路径 |
+| `gateway.url` | `` | 网关地址 |
+| `gateway.auto_connect` | `true` | 是否自动连接网关 |
+| `auth.secret_key` | 自动生成 | HMAC 密钥，首次启动生成并保存 |
+| `auth.instance_id` | 自动生成 | Bridge 实例 ID |
 
 ## API 路由
 
@@ -136,40 +145,45 @@ allowed_paths = []     # 空=允许所有路径
 
 ### 代理转发 (fallback)
 
-所有未匹配的路由直接转发给 opencode，Android 端无需改动：
+所有未匹配的路由直接转发给 opencode（V2 API），Android 端无需改动：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/global/health` | → opencode 健康检查 |
-| GET | `/global/event` | → opencode SSE 事件流 |
-| GET | `/experimental/session` | → 会话列表 |
+| GET | `/api/health` | → opencode 健康检查（V2） |
+| GET | `/api/event` | → opencode SSE 事件流（V2） |
+| GET | `/api/session` | → 会话列表（V2） |
 | * | `/{*path}` | → 其他所有 opencode API |
+
+> ⚠️ V1 的 `/global/health`、`/global/event`、`/experimental/session` 已废弃，V2 不再提供。
 
 ## 认证
 
 - `auth_enabled = true` 时，所有非公开路径需要 Bearer token
 - 公开路径：`/api/bridge/status`、`/api/bridge/pair/request`、`/api/bridge/pair/confirm`
 - 仅 localhost 路径：`/api/bridge/pair/approve`
-- Token: HMAC-SHA256 签名，128 字符 hex，存储在 `~/.opencode/bridge_secret_key`
+- Token: HMAC-SHA256 签名，128 字符 hex，密钥存储在 `~/.openmate/bridge.db` 的 `auth.secret_key` 配置项
 - 代理转发到 opencode 时自动剥离 Authorization 头
 
-## 进程管理
+## 进程管理（V2: opencode2 service 命令）
 
-### 崩溃检测（双重机制）
+**V2 模式**（`opencode.binary` 指向 `opencode2`）下，Bridge 通过 `opencode2 service` 子命令管理后台 daemon，而不是直接 spawn 子进程：
 
-1. **进程退出监控**：`child.wait().await` — opencode 进程退出时立即标记 Crashed
-2. **转发失败检测**：`do_proxy()` 中 reqwest 连接被拒时立即标记 Crashed（比等进程退出更快）
+1. 启动前先 `service set port <port>` + `service set hostname <hostname>`
+2. 用 `service start` 启动后台服务
+3. **健康检查轮询**替代 `child.wait()`：定期 `GET /api/health`（带 Basic Auth `opencode:<password>`），3 次连续失败则自动重启
 
-### 自动重启
+```rust
+// src/process/opencode_manager.rs
+run_service_cmd(&binary, &["service", "set", "port", &port.to_string()]).await;
+run_service_cmd(&binary, &["service", "set", "hostname", &hostname]).await;
+run_service_cmd(&binary, &["service", "start"]).await;      // start/stop/restart
+check_health_url(&url).await;                                // GET /api/health + Basic Auth
+restart_service_loop(&binary, &url, &status).await;         // 3 次失败自动重启
+```
 
-`auto_restart = true` 时，检测到 Crashed 后等 3 秒自动重启，循环重试直到成功。
-`auto_restart = false` 时，仅标记状态，不自动重启。
+**V1 模式**（binary 为 `opencode`）走传统进程管理：`child.wait()` + 转发失败检测双重崩溃检测，`auto_restart` 等 3 秒自动重启。
 
-### Windows 特殊处理
-
-- 启动：`cmd /C opencode serve ...`（支持 .cmd/.ps1 包装脚本）
-- 停止：`taskkill /F /IM opencode.exe`
-- 非 Windows：直接执行 binary / `pkill -f opencode serve`
+> ⚠️ opencode2 的密码在 `~/.local/state/opencode/service.json`，health check 用 `Authorization: Basic base64(opencode:<password>)`（用户名固定 `opencode`）。
 
 ## 源码结构
 
@@ -178,7 +192,7 @@ src/
 ├── main.rs              # CLI 入口 (install/uninstall/service/approve/reset-token)
 ├── server.rs            # axum server 启动 + graceful shutdown
 ├── lib.rs               # 库入口（导出所有模块）
-├── config.rs            # TOML 配置加载 + 默认值
+├── config.rs            # 配置加载（读 ~/.openmate/bridge.db 的 config 表）+ 默认值 + 密码读取
 ├── error.rs             # AppError 枚举 + HTTP 状态码映射
 ├── state.rs             # AppState、OpencodeStatus
 ├── service_windows.rs   # Windows 服务 (windows-service crate)

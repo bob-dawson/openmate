@@ -2,7 +2,7 @@ use rusqlite::params;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +19,7 @@ pub struct PairedDevice {
 #[derive(Clone)]
 pub struct BridgeDb {
     pool: Arc<Pool<SqliteConnectionManager>>,
+    db_path: PathBuf,
 }
 
 impl BridgeDb {
@@ -43,9 +44,14 @@ impl BridgeDb {
 
         let db = Self {
             pool: Arc::new(pool),
+            db_path: db_path.clone(),
         };
         db.migrate()?;
         Ok(db)
+    }
+
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
     }
 
     fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, String> {
@@ -79,7 +85,16 @@ impl BridgeDb {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 updated_at INTEGER NOT NULL
-            );"
+            );
+            CREATE TABLE IF NOT EXISTS revert_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                message_id TEXT,
+                timestamp INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_revert_log_session_ts
+                ON revert_log(session_id, timestamp);"
         ).map_err(|e| format!("Migration failed: {}", e))?;
         Ok(())
     }
@@ -325,6 +340,41 @@ impl BridgeDb {
         }
         Ok(())
     }
+
+    pub fn get_reverts_since(&self, session_id: &str, since: i64) -> Result<Vec<RevertLogEntry>, String> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT event_type, message_id, timestamp FROM revert_log
+             WHERE session_id = ?1 AND timestamp > ?2
+             ORDER BY timestamp ASC"
+        ).map_err(|e| format!("Prepare failed: {}", e))?;
+        let rows = stmt.query_map(params![session_id, since], |row| {
+            Ok(RevertLogEntry {
+                event_type: row.get(0)?,
+                message_id: row.get(1).ok(),
+                timestamp: row.get(2)?,
+            })
+        }).map_err(|e| format!("Query failed: {}", e))?;
+        let result: Vec<RevertLogEntry> = rows.filter_map(|r| r.ok()).collect();
+        Ok(result)
+    }
+
+    pub fn cleanup_old_reverts(&self, before_timestamp: i64) -> Result<usize, String> {
+        let conn = self.conn()?;
+        let count = conn.execute(
+            "DELETE FROM revert_log WHERE timestamp < ?1",
+            params![before_timestamp],
+        ).map_err(|e| format!("Delete failed: {}", e))?;
+        Ok(count)
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevertLogEntry {
+    pub event_type: String,
+    pub message_id: Option<String>,
+    pub timestamp: i64,
 }
 
 #[cfg(test)]

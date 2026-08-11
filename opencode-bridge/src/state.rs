@@ -88,6 +88,8 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
     let bridge_db = external_db.unwrap_or_else(|| BridgeDb::open().expect("Failed to open bridge database"));
     bridge_db.init_default_configs().expect("Failed to initialize default configs");
 
+    unsafe { std::env::set_var("OPENMATE_BRIDGE_DB", bridge_db.db_path()); }
+
     let config = Config::load_from_db(&bridge_db).expect("Failed to load config from DB");
 
     let key_hex = bridge_db.get_config("auth.secret_key")

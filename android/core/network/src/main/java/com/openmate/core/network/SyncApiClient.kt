@@ -45,6 +45,28 @@ class SyncApiClient @Inject constructor(
             )
         }
 
+    suspend fun messages(
+        sessionId: String,
+        since: Long,
+        limit: Int = 100,
+    ): MessagesResponseDto =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/messages?since=$since&limit=$limit"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            json.decodeFromString<MessagesResponseDto>(body)
+        }
+
+    suspend fun reverts(sessionId: String, since: Long, limit: Int = 100): RevertsResponseDto =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/reverts?since=$since&limit=$limit"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            json.decodeFromString<RevertsResponseDto>(body)
+        }
+
     suspend fun sessions(): SessionsResponseDto =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api/bridge/sync/sessions"

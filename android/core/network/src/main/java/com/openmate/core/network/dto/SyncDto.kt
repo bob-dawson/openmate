@@ -26,6 +26,27 @@ data class EventsResponseDto(
     @SerialName("maxSeq") val maxSeq: Long? = null,
 )
 
+@Serializable
+data class MessagesResponseDto(
+    val messages: List<SyncMessageDto> = emptyList(),
+    @SerialName("hasMore") val hasMore: Boolean = false,
+    @SerialName("maxSeq") val maxSeq: Long? = null,
+)
+
+@Serializable
+data class RevertEventDto(
+    val eventType: String = "",
+    @SerialName("messageId") val messageId: String? = null,
+    val timestamp: Long = 0,
+)
+
+@Serializable
+data class RevertsResponseDto(
+    val reverts: List<RevertEventDto> = emptyList(),
+    @SerialName("hasMore") val hasMore: Boolean = false,
+    @SerialName("maxTimestamp") val maxTimestamp: Long = 0,
+)
+
 data class EventsPayloadDto(
     val response: EventsResponseDto,
     val rawBody: String,
