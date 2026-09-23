@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+Released: 2026-09-24
+
+### 新功能
+
+- **opencode V2 适配**：Bridge 与 Android 全面切换到 opencode v2 API；Bridge 改用 `opencode2 service` 管理后台服务，支持从 `service.json` 自动读取密码
+- **V2 增量同步**：增量同步改用 Bridge `/messages` 端点，新增基于区间计数的轻量删除检测，可准确同步回滚（revert）导致的消息删除；移除旧的 `revert_log` / `/reverts` 机制
+- **消息回滚（Revert）**：支持长按用户消息「回滚至此」、回滚状态提示条与一键恢复（Unrevert），与 opencode v2 的 staged revert 语义一致；重开会话可恢复回滚状态
+
+### 问题修复
+
+- **SSE 重连不同步**：修复 SSE 重连后未保留当前会话与增量同步开关，导致重新连接后消息不更新的问题
+- **消息重复显示**：过滤 opencode 合成（synthetic）part，避免消息重复显示
+
 ## 0.1.25
 
 Released: 2026-06-17
