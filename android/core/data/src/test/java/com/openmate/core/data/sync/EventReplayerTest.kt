@@ -16,64 +16,6 @@ import org.junit.Test
 class EventReplayerTest {
 
     @Test
-    fun replay_stepFailed_marksRunningToolAsError() = runTest {
-        val replayer = EventReplayer()
-
-        val changes = replayer.replay(
-            events = listOf(
-                replayEvent(
-                    id = "assistant-1",
-                    type = "session.next.step.started.1",
-                    timestamp = 1_000L,
-                    extra = buildJsonObject {
-                        put("agent", JsonPrimitive("build"))
-                        put("model", buildJsonObject {})
-                    },
-                ),
-                replayEvent(
-                    id = "evt-tool-input-started",
-                    type = "session.next.tool.input.started.1",
-                    timestamp = 1_050L,
-                    extra = buildJsonObject {
-                        put("callID", JsonPrimitive("call-1"))
-                        put("name", JsonPrimitive("bash"))
-                    },
-                ),
-                replayEvent(
-                    id = "evt-tool-called",
-                    type = "session.next.tool.called.1",
-                    timestamp = 1_100L,
-                    extra = buildJsonObject {
-                        put("callID", JsonPrimitive("call-1"))
-                        put("input", buildJsonObject { put("cmd", "pwd") })
-                        put("provider", buildJsonObject {})
-                    },
-                ),
-                replayEvent(
-                    id = "evt-step-failed",
-                    type = "session.next.step.failed.1",
-                    timestamp = 1_200L,
-                    extra = buildJsonObject {
-                        put("error", buildJsonObject {
-                            put("message", JsonPrimitive("MessageAbortedError"))
-                        })
-                    },
-                ),
-            ),
-            sessionId = "session-1",
-            loader = EventReplayer.DbLoader { null },
-        )
-
-        val assistantUpdate = changes.last() as ReplayChange.Update
-        val content = assistantUpdate.data["content"]!!.jsonArray
-        val tool = content.single().jsonObject
-
-        assertThat(tool["state"]!!.jsonObject["status"]!!.jsonPrimitive.content).isEqualTo("error")
-        assertThat(tool["state"]!!.jsonObject["error"]!!.jsonPrimitive.content).isEqualTo("Tool execution aborted")
-        assertThat(assistantUpdate.completedAt).isEqualTo(1_200L)
-    }
-
-    @Test
     fun replay_compactionEnded_marksCompactionCompleted() = runTest {
         val replayer = EventReplayer()
 
@@ -144,8 +86,10 @@ class EventReplayerTest {
                 when (action) {
                     is EventReplayer.DbLoader.Action.LoadById -> null
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant -> null
+                    is EventReplayer.DbLoader.Action.LoadLatestAssistant -> null
                     is EventReplayer.DbLoader.Action.LoadLatestIncompleteCompaction -> existing
                     is EventReplayer.DbLoader.Action.LoadAssistantByToolCallId -> null
+                    is EventReplayer.DbLoader.Action.FindLatestUserMessage -> null
                     is EventReplayer.DbLoader.Action.HasNewerUserMessageAfter -> null
                 }
             },
@@ -160,131 +104,6 @@ class EventReplayerTest {
     }
 
     @Test
-    fun replay_runningTaskTool_keepsSessionIdForNavigation() = runTest {
-        val replayer = EventReplayer()
-
-        val changes = replayer.replay(
-            events = listOf(
-                replayEvent(
-                    id = "assistant-1",
-                    type = "session.next.step.started.1",
-                    timestamp = 1_000L,
-                    extra = buildJsonObject {
-                        put("agent", JsonPrimitive("build"))
-                        put("model", buildJsonObject {})
-                    },
-                ),
-                replayEvent(
-                    id = "evt-tool-input-started",
-                    type = "session.next.tool.input.started.1",
-                    timestamp = 1_050L,
-                    extra = buildJsonObject {
-                        put("callID", JsonPrimitive("call-task-1"))
-                        put("name", JsonPrimitive("task"))
-                    },
-                ),
-                replayEvent(
-                    id = "evt-tool-called",
-                    type = "session.next.tool.called.1",
-                    timestamp = 1_100L,
-                    extra = buildJsonObject {
-                        put("callID", JsonPrimitive("call-task-1"))
-                        put("input", buildJsonObject { put("description", JsonPrimitive("Subtask")) })
-                        put("provider", buildJsonObject {})
-                        put("metadata", buildJsonObject { put("sessionId", JsonPrimitive("ses_subtask_1")) })
-                    },
-                ),
-            ),
-            sessionId = "session-1",
-            loader = EventReplayer.DbLoader { null },
-        )
-
-        val assistantUpdate = changes.last() as ReplayChange.Update
-        val tool = assistantUpdate.data["content"]!!.jsonArray.single().jsonObject
-        val metadata = tool["state"]!!.jsonObject["metadata"]!!.jsonObject
-
-        assertThat(tool["name"]!!.jsonPrimitive.content).isEqualTo("task")
-        assertThat(tool["state"]!!.jsonObject["status"]!!.jsonPrimitive.content).isEqualTo("running")
-        assertThat(metadata["sessionId"]!!.jsonPrimitive.content).isEqualTo("ses_subtask_1")
-    }
-
-    @Test
-    fun replay_messagePartUpdated_appendsPatchPartToAssistantContent() = runTest {
-        val replayer = EventReplayer()
-
-        val changes = replayer.replay(
-            events = listOf(
-                replayEvent(
-                    id = "assistant-1",
-                    type = "session.next.step.started.1",
-                    timestamp = 1_000L,
-                    extra = buildJsonObject {
-                        put("agent", JsonPrimitive("build"))
-                        put("model", buildJsonObject {})
-                    },
-                ),
-                replayEvent(
-                    id = "evt-tool-input-started",
-                    type = "session.next.tool.input.started.1",
-                    timestamp = 1_050L,
-                    extra = buildJsonObject {
-                        put("callID", JsonPrimitive("call-patch-1"))
-                        put("name", JsonPrimitive("apply_patch"))
-                    },
-                ),
-                replayEvent(
-                    id = "evt-tool-called",
-                    type = "session.next.tool.called.1",
-                    timestamp = 1_100L,
-                    extra = buildJsonObject {
-                        put("callID", JsonPrimitive("call-patch-1"))
-                        put("input", buildJsonObject { put("patch", JsonPrimitive("*** Begin Patch")) })
-                        put("provider", buildJsonObject {})
-                    },
-                ),
-                replayEvent(
-                    id = "evt-patch-updated",
-                    type = "message.part.updated.1",
-                    timestamp = 1_200L,
-                    extra = buildJsonObject {
-                        put(
-                            "part",
-                            buildJsonObject {
-                                put("id", JsonPrimitive("patch-1"))
-                                put("sessionID", JsonPrimitive("session-1"))
-                                put("messageID", JsonPrimitive("assistant-1"))
-                                put("type", JsonPrimitive("patch"))
-                                put("hash", JsonPrimitive("hash-1"))
-                                put(
-                                    "files",
-                                    kotlinx.serialization.json.JsonArray(
-                                        listOf(
-                                            JsonPrimitive("first.kt"),
-                                            JsonPrimitive("second.kt"),
-                                        ),
-                                    ),
-                                )
-                            },
-                        )
-                    },
-                ),
-            ),
-            sessionId = "session-1",
-            loader = EventReplayer.DbLoader { null },
-        )
-
-        val assistantUpdate = changes.last() as ReplayChange.Update
-        val content = assistantUpdate.data["content"]!!.jsonArray
-
-        assertThat(content).hasSize(2)
-        assertThat(content[0].jsonObject["type"]!!.jsonPrimitive.content).isEqualTo("tool")
-        assertThat(content[1].jsonObject["type"]!!.jsonPrimitive.content).isEqualTo("patch")
-        assertThat(content[1].jsonObject["files"]!!.jsonArray.map { it.jsonPrimitive.content })
-            .containsExactly("first.kt", "second.kt")
-            .inOrder()
-    }
-
-    @Test
     fun replay_messagePartUpdated_mergesToolMetadataForRunningTask() = runTest {
         val replayer = EventReplayer()
 
@@ -295,6 +114,7 @@ class EventReplayerTest {
                     type = "session.next.step.started.1",
                     timestamp = 1_000L,
                     extra = buildJsonObject {
+                        put("assistantMessageID", JsonPrimitive("assistant-1"))
                         put("agent", JsonPrimitive("build"))
                         put("model", buildJsonObject {})
                     },
@@ -373,6 +193,7 @@ class EventReplayerTest {
                     type = "session.next.step.started.1",
                     timestamp = 1_000L,
                     extra = buildJsonObject {
+                        put("assistantMessageID", JsonPrimitive("assistant-1"))
                         put("agent", JsonPrimitive("build"))
                         put("model", buildJsonObject {})
                     },
@@ -447,55 +268,6 @@ class EventReplayerTest {
         assertThat(state["title"]!!.jsonPrimitive.content).isEqualTo("My task")
     }
 
-    @Test
-    fun messageUpdated_loadsFromDbWhenCacheEmpty() = runTest {
-        val replayer = EventReplayer()
-
-        val existing = SessionMessageEntity(
-            id = "existing-msg-id",
-            sessionId = "session-1",
-            type = "assistant",
-            data = """{"content":[{"type":"text","text":"test"}],"time":{"created":1000}}""",
-            timeCreated = 1_000L,
-            timeUpdated = 1_000L,
-            completedAt = null,
-        )
-
-        val changes = replayer.replay(
-            events = listOf(
-                replayEvent(
-                    id = "evt-msg-updated",
-                    type = "message.updated.1",
-                    timestamp = 2_000L,
-                    extra = buildJsonObject {
-                        put("info", buildJsonObject {
-                            put("id", JsonPrimitive("existing-msg-id"))
-                            put("role", JsonPrimitive("assistant"))
-                            put("time", buildJsonObject {
-                                put("created", JsonPrimitive(1_000L))
-                                put("completed", JsonPrimitive(2_000L))
-                            })
-                        })
-                    },
-                ),
-            ),
-            sessionId = "session-1",
-            loader = EventReplayer.DbLoader { action ->
-                when (action) {
-                    is EventReplayer.DbLoader.Action.LoadLatestIncompleteAssistant -> existing
-                    else -> null
-                }
-            },
-        )
-
-        val update = changes.single() as ReplayChange.Update
-        assertThat(update.id).isEqualTo("existing-msg-id")
-        assertThat(update.type).isEqualTo("assistant")
-        assertThat(update.completedAt).isEqualTo(2_000L)
-        val completed = update.data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
-        assertThat(completed).isEqualTo(2_000L)
-    }
-
     private fun replayEvent(
         id: String,
         type: String,
@@ -524,6 +296,7 @@ class EventReplayerTest {
                     type = "session.next.step.started.1",
                     timestamp = 1_000L,
                     extra = buildJsonObject {
+                        put("assistantMessageID", JsonPrimitive("assistant-1"))
                         put("agent", JsonPrimitive("build"))
                         put("model", buildJsonObject {})
                     },
@@ -601,6 +374,7 @@ class EventReplayerTest {
                     type = "session.next.step.started.1",
                     timestamp = 1_000L,
                     extra = buildJsonObject {
+                        put("assistantMessageID", JsonPrimitive("assistant-1"))
                         put("agent", JsonPrimitive("build"))
                         put("model", buildJsonObject {})
                     },

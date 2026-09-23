@@ -135,7 +135,7 @@ async fn bridge_events_endpoint_streams_retained_drops_unretained_and_trims_mess
 }
 
 #[tokio::test]
-async fn bridge_events_endpoint_preserves_directory_and_session_next_rules() {
+async fn bridge_events_endpoint_preserves_directory_and_session_rules() {
     let source = Arc::new(SharedEventSource::new_inert());
     let db = temp_bridge_db();
     db.init_default_configs().unwrap();
@@ -167,7 +167,7 @@ async fn bridge_events_endpoint_preserves_directory_and_session_next_rules() {
             "payload": {
                 "type": "sync",
                 "syncEvent": {
-                    "type": "session.next.step.started.1",
+                    "type": "session.step.started.1",
                     "data": {
                         "sessionID": "ses_1",
                         "timestamp": 1,
@@ -182,7 +182,7 @@ async fn bridge_events_endpoint_preserves_directory_and_session_next_rules() {
             "payload": {
                 "type": "sync",
                 "syncEvent": {
-                    "type": "session.next.text.delta.1",
+                    "type": "session.text.delta.1",
                     "data": {
                         "sessionID": "ses_1",
                         "delta": "drop"
@@ -207,11 +207,11 @@ async fn bridge_events_endpoint_preserves_directory_and_session_next_rules() {
         .collect();
 
     assert!(events.iter().any(|event| {
-        event["type"] == "session.next.step.started"
+        event["type"] == "session.step.started"
             && event["properties"]["sessionID"] == "ses_1"
             && event["properties"]["directory"] == "D:/repo"
     }));
-    assert!(!events.iter().any(|event| event["type"] == "session.next.text.delta"));
+    assert!(!events.iter().any(|event| event["type"] == "session.text.delta"));
 }
 
 #[tokio::test]

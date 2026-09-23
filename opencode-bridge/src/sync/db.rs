@@ -1,4 +1,4 @@
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{OpenFlags, params};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde_json::{Value, json};
@@ -13,8 +13,10 @@ pub struct SyncDb {
 
 impl SyncDb {
     pub fn new(config: &Config) -> Self {
-        let db_path = config.db_path();
+        Self::from_path(config.db_path())
+    }
 
+    pub fn from_path(db_path: PathBuf) -> Self {
         if !db_path.exists() {
             tracing::info!("opencode.db not found, creating empty database at {}", db_path.display());
             if let Some(parent) = db_path.parent() {
@@ -110,6 +112,46 @@ impl SyncDb {
         ).ok();
 
         Ok((messages, has_more, max_seq))
+    }
+
+    pub fn count_alive_in_range(&self, session_id: &str, from_id: &str, to_id: &str) -> Result<i64, String> {
+        let conn = self.conn()?;
+        conn.query_row(
+            "SELECT COUNT(*) FROM session_message
+             WHERE session_id = ?1 AND id >= ?2 AND id <= ?3",
+            params![session_id, from_id, to_id],
+            |row| row.get::<_, i64>(0),
+        ).map_err(|e| format!("Query failed: {}", e))
+    }
+
+    pub fn alive_ids_in_range(&self, session_id: &str, from_id: &str, to_id: &str) -> Result<Vec<String>, String> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id FROM session_message
+             WHERE session_id = ?1 AND id >= ?2 AND id <= ?3
+             ORDER BY id ASC"
+        ).map_err(|e| format!("Prepare failed: {}", e))?;
+
+        let ids: Vec<String> = stmt
+            .query_map(params![session_id, from_id, to_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("Query failed: {}", e))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(ids)
+    }
+
+    pub fn count_alive_upto(&self, session_id: &str, base_id: &str, ids: &[String]) -> Result<Vec<i64>, String> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let top = ids.iter().max().cloned().unwrap_or_default();
+        let alive = self.alive_ids_in_range(session_id, base_id, &top)?;
+        let counts = ids
+            .iter()
+            .map(|id| alive.partition_point(|a| a.as_str() <= id.as_str()) as i64)
+            .collect();
+        Ok(counts)
     }
 
     pub fn get_deleted_message_ids(&self, session_id: &str, after_time: i64, known_ids: &[String]) -> Result<Vec<String>, String> {
@@ -571,5 +613,94 @@ impl SyncDb {
             }
             _ => json!({}),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+    use tempfile::tempdir;
+
+    fn setup(rows: &[(&str, &str, i64)]) -> (SyncDb, tempfile::TempDir) {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("opencode.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE session_message (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    time_created INTEGER NOT NULL,
+                    time_updated INTEGER NOT NULL,
+                    data TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+            for (id, session_id, time) in rows {
+                conn.execute(
+                    "INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
+                     VALUES (?1, ?2, 'assistant', 0, ?3, ?3, '{}')",
+                    params![id, session_id, time],
+                )
+                .unwrap();
+            }
+        }
+        (SyncDb::from_path(path), dir)
+    }
+
+    #[test]
+    fn counts_alive_within_range_only() {
+        let (db, _d) = setup(&[
+            ("msg_a", "ses_1", 1),
+            ("msg_b", "ses_1", 2),
+            ("msg_d", "ses_1", 4),
+            ("msg_x", "ses_2", 3),
+        ]);
+        assert_eq!(db.count_alive_in_range("ses_1", "msg_a", "msg_d").unwrap(), 3);
+        assert_eq!(db.count_alive_in_range("ses_1", "msg_a", "msg_c").unwrap(), 2);
+        assert_eq!(db.count_alive_in_range("ses_1", "msg_e", "msg_z").unwrap(), 0);
+    }
+
+    #[test]
+    fn alive_ids_are_ordered_and_bounded() {
+        let (db, _d) = setup(&[
+            ("msg_a", "ses_1", 1),
+            ("msg_b", "ses_1", 2),
+            ("msg_d", "ses_1", 4),
+        ]);
+        assert_eq!(
+            db.alive_ids_in_range("ses_1", "msg_a", "msg_z").unwrap(),
+            vec!["msg_a", "msg_b", "msg_d"]
+        );
+        assert_eq!(
+            db.alive_ids_in_range("ses_1", "msg_b", "msg_c").unwrap(),
+            vec!["msg_b"]
+        );
+    }
+
+    #[test]
+    fn probe_returns_prefix_counts() {
+        let (db, _d) = setup(&[
+            ("msg_a", "ses_1", 1),
+            ("msg_b", "ses_1", 2),
+            ("msg_d", "ses_1", 4),
+        ]);
+        let probes: Vec<String> = ["msg_a", "msg_c", "msg_d", "msg_z"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(
+            db.count_alive_upto("ses_1", "msg_a", &probes).unwrap(),
+            vec![1, 2, 3, 3]
+        );
+    }
+
+    #[test]
+    fn probe_empty_is_empty() {
+        let (db, _d) = setup(&[]);
+        assert!(db.count_alive_upto("ses_1", "msg_a", &[]).unwrap().is_empty());
     }
 }

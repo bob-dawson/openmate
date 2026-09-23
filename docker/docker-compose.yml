@@ -2,6 +2,7 @@ services:
   openmate:
     build:
       context: .
+      dockerfile: Dockerfile
     image: openmate-bridge:latest
     container_name: openmate-bridge
     ports:

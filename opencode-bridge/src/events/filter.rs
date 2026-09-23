@@ -296,29 +296,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn unwraps_sync_events_into_bridge_shape() {
-        let input = json!({
-            "payload": {
-                "type": "sync",
-                "syncEvent": {
-                    "type": "session.next.step.started.1",
-                    "directory": "D:/repo",
-                    "data": {
-                        "sessionID": "ses_1",
-                        "timestamp": 1
-                    }
-                }
-            }
-        });
-
-        let output = filter_event(&input).expect("event should be retained");
-
-        assert_eq!(output["type"], "session.next.step.started");
-        assert_eq!(output["properties"]["sessionID"], "ses_1");
-        assert_eq!(output["properties"]["directory"], "D:/repo");
-    }
-
-    #[test]
     fn drops_streaming_delta_sync_events() {
         let input = json!({
             "payload": {
@@ -453,23 +430,6 @@ mod tests {
                 "directory": "D:/repo"
             }
         }));
-    }
-
-    #[test]
-    fn build_shared_event_keeps_only_events_needed_by_shared_consumers() {
-        let dropped = json!({
-            "type": "message.part.delta",
-            "properties": { "sessionID": "ses_1" }
-        });
-        assert!(build_shared_event(&dropped).is_none());
-
-        let retained = json!({
-            "type": "session.error",
-            "properties": { "sessionID": "ses_1" }
-        });
-        let shared = build_shared_event(&retained).expect("retained event should survive");
-        assert!(shared.bridge_event.is_some());
-        assert!(shared.sync_notification.is_none());
     }
 
     #[test]

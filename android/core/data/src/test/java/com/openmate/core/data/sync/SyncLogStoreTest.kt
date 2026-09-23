@@ -9,10 +9,10 @@ import org.junit.Test
 class SyncLogStoreTest {
 
     @Test
-    fun append_keepsOnlyLatest200Entries_andFormatsFinalText() {
+    fun append_keepsOnlyLatest500Entries_andFormatsFinalText() {
         val store = SyncLogStore()
 
-        repeat(205) { index ->
+        repeat(505) { index ->
             store.append(
                 SyncLogEntry(
                     id = index.toLong(),
@@ -27,15 +27,16 @@ class SyncLogStoreTest {
 
         val entries = store.entries.value
 
-        assertThat(entries.size).isEqualTo(200)
+        assertThat(entries.size).isEqualTo(500)
         assertThat(entries.first().id).isEqualTo(5L)
-        assertThat(entries.last().renderedText).contains("INFO [Sync] 增量消息处理")
+        assertThat(entries.last().renderedText).contains("INFO [Sync]")
+        assertThat(entries.last().renderedText).contains("增量消息处理")
         assertThat(entries.last().message).contains("trace=inc-1")
         assertThat(entries.last().message).contains("bytes=")
     }
 
     @Test
-    fun append_fromMultipleThreads_keepsLatest200WithoutDroppingSize() {
+    fun append_fromMultipleThreads_keepsLatest500WithoutDroppingSize() {
         val store = SyncLogStore()
         val executor = Executors.newFixedThreadPool(8)
         val taskCount = 1000
@@ -66,7 +67,7 @@ class SyncLogStoreTest {
         done.await(5, TimeUnit.SECONDS)
         executor.shutdown()
 
-        assertThat(store.entries.value.size).isEqualTo(200)
-        assertThat(store.entries.value.map { it.id }.distinct().size).isEqualTo(200)
+        assertThat(store.entries.value.size).isEqualTo(500)
+        assertThat(store.entries.value.map { it.id }.distinct().size).isEqualTo(500)
     }
 }

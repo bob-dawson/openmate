@@ -17,10 +17,10 @@ import javax.inject.Singleton
 private val Context.routeCacheDataStore: DataStore<Preferences> by preferencesDataStore(name = "route_cache")
 
 @Singleton
-class RouteCache @Inject constructor(
+open class RouteCache @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    suspend fun get(profileId: String): CachedRoute? = withContext(Dispatchers.IO) {
+    open suspend fun get(profileId: String): CachedRoute? = withContext(Dispatchers.IO) {
         val key = stringPreferencesKey("route_$profileId")
         val value = context.routeCacheDataStore.data.map { it[key] }.first()
         when (value) {
@@ -30,18 +30,24 @@ class RouteCache @Inject constructor(
         }
     }
 
-    suspend fun setDirect(profileId: String) = withContext(Dispatchers.IO) {
-        val key = stringPreferencesKey("route_$profileId")
-        context.routeCacheDataStore.edit { it[key] = "direct" }
+    open suspend fun setDirect(profileId: String) {
+        withContext(Dispatchers.IO) {
+            val key = stringPreferencesKey("route_$profileId")
+            context.routeCacheDataStore.edit { it[key] = "direct" }
+        }
     }
 
-    suspend fun setGateway(profileId: String) = withContext(Dispatchers.IO) {
-        val key = stringPreferencesKey("route_$profileId")
-        context.routeCacheDataStore.edit { it[key] = "gateway" }
+    open suspend fun setGateway(profileId: String) {
+        withContext(Dispatchers.IO) {
+            val key = stringPreferencesKey("route_$profileId")
+            context.routeCacheDataStore.edit { it[key] = "gateway" }
+        }
     }
 
-    suspend fun clear(profileId: String) = withContext(Dispatchers.IO) {
-        val key = stringPreferencesKey("route_$profileId")
-        context.routeCacheDataStore.edit { it.remove(key) }
+    open suspend fun clear(profileId: String) {
+        withContext(Dispatchers.IO) {
+            val key = stringPreferencesKey("route_$profileId")
+            context.routeCacheDataStore.edit { it.remove(key) }
+        }
     }
 }

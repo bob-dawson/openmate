@@ -173,28 +173,53 @@ class SessionMessageRepositoryImpl @Inject constructor(
         val traceId = "inc-${System.nanoTime()}"
         Log.d(
             "SyncRepo",
-            ">> incrementalSync START: sessionId=$sessionId since=${syncState.lastTimeUpdated} revertSince=${syncState.lastRevertTimestamp}"
+            ">> incrementalSync START: sessionId=$sessionId since=${syncState.lastTimeUpdated}"
         )
         logStore.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Sync,
-            message = "增量同步开始 incremental sync begin since=${syncState.lastTimeUpdated} revertSince=${syncState.lastRevertTimestamp} seq=${syncState.lastSeq} trace=$traceId",
+            message = "增量同步开始 incremental sync begin since=${syncState.lastTimeUpdated} seq=${syncState.lastSeq} trace=$traceId",
             sessionId = sessionId,
         )
 
         try {
             var since = syncState.lastTimeUpdated
             var currentSeq = syncState.lastSeq
-            var revertSince = syncState.lastRevertTimestamp
+            val revertSince = 0L
             var totalMessages = 0
             var totalBytes = 0L
             var batchIndex = 0
 
+            // Pre-sync local range for the deletion gate. New messages always have ids > lastId,
+            // so a count over [firstId, lastId] can only shrink (deletions), never grow.
+            val gateFirstId = db.sessionMessageDao().getFirstId(sessionId)
+            val gateLastId = db.sessionMessageDao().getLastId(sessionId)
+            val gateCount = if (gateFirstId != null && gateLastId != null) {
+                db.sessionMessageDao().countBySession(sessionId).toLong()
+            } else {
+                0L
+            }
+            var serverCount: Long? = null
+
             while (true) {
                 batchIndex++
-                val response = syncApiClient.messages(sessionId, since)
-                val packageBytes = json.encodeToString(MessagesResponseDto.serializer(), response).toByteArray(Charsets.UTF_8).size
+                val payload = syncApiClient.messagesPayload(
+                    sessionId = sessionId,
+                    since = since,
+                    firstId = if (batchIndex == 1) gateFirstId else null,
+                    lastId = if (batchIndex == 1) gateLastId else null,
+                    count = if (batchIndex == 1) gateCount else null,
+                )
+                val response = payload.response
+                if (batchIndex == 1) serverCount = response.serverCount
+                val packageBytes = payload.rawBody.toByteArray(Charsets.UTF_8).size
                 totalBytes += packageBytes
+                logStore.log(
+                    level = SyncLogLevel.Info,
+                    category = SyncLogCategory.Sync,
+                    message = "增量包返回 session=$sessionId trace=$traceId bytes=$packageBytes",
+                    sessionId = sessionId,
+                )
 
                 if (response.messages.isEmpty()) {
                     val maxSeq = response.maxSeq ?: currentSeq
@@ -254,61 +279,31 @@ class SessionMessageRepositoryImpl @Inject constructor(
                 if (!response.hasMore) break
             }
 
-            val revertResponse = syncApiClient.reverts(sessionId, revertSince)
-            if (revertResponse.reverts.isNotEmpty()) {
-                Log.d("SyncRepo", "  reverts: ${revertResponse.reverts.size} events")
-                db.withTransaction {
-                    val batchChanges = mutableListOf<SessionMessageSyncChange>()
-
-                    for (revert in revertResponse.reverts) {
-                        when (revert.eventType) {
-                            "staged" -> {
-                                val msgId = revert.messageId ?: continue
-                                val storedTs = extractStoredTs(msgId)
-                                val fromId = db.sessionMessageDao().getFirstIdAfterTimeCreated(sessionId, storedTs)
-                                val toId = fromId?.let { db.sessionMessageDao().getMaxIdGte(sessionId, it) }
-                                db.sessionDao().updateRevertFields(sessionId, msgId, null, fromId, toId)
-                                logStore.log(SyncLogLevel.Info, SyncLogCategory.Sync, "revert staged msgId=${msgId.take(20)} from=$fromId to=$toId trace=$traceId", sessionId)
-                            }
-                            "cleared" -> {
-                                db.sessionDao().updateRevertFields(sessionId, null, null, null, null)
-                                logStore.log(SyncLogLevel.Info, SyncLogCategory.Sync, "revert cleared trace=$traceId", sessionId)
-                            }
-                            "committed" -> {
-                                val toMsgId = revert.messageId ?: continue
-                                val toTs = extractStoredTs(toMsgId)
-                                val toDelete = db.sessionMessageDao().getAllBySession(sessionId)
-                                    .filter { extractStoredTs(it.id) > toTs }
-                                for (msg in toDelete) {
-                                    db.sessionMessageDao().delete(msg.id)
-                                    batchChanges += SessionMessageSyncChange.Remove(msg.id)
-                                }
-                                db.sessionDao().updateRevertFields(sessionId, null, null, null, null)
-                                logStore.log(SyncLogLevel.Info, SyncLogCategory.Sync, "revert committed to=${toMsgId.take(20)} deleted=${toDelete.size} trace=$traceId", sessionId)
-                            }
-                        }
+            // Deletion gate: serverCount < gateCount means the server deleted messages in range.
+            if (gateFirstId != null && gateLastId != null && gateCount > 0 &&
+                serverCount != null && serverCount < gateCount
+            ) {
+                val deletedIds = reconcileDeletions(sessionId, gateFirstId, gateLastId, gateCount, serverCount)
+                if (deletedIds.isNotEmpty()) {
+                    db.withTransaction {
+                        for (id in deletedIds) db.sessionMessageDao().delete(id)
                     }
-
-                    revertSince = revertResponse.maxTimestamp
-                    db.syncStateDao().upsert(SyncStateEntity(sessionId, currentSeq, since, revertSince))
-
-                    if (batchChanges.isNotEmpty()) {
-                        syncEvents.tryEmit(
-                            SessionMessageSyncEvent(
-                                sessionId = sessionId,
-                                result = SessionMessageSyncResult(
-                                    lastSeq = currentSeq,
-                                    changes = batchChanges,
-                                    hasTodoEvent = hasTodoEvent,
-                                ),
-                            )
+                    syncEvents.tryEmit(
+                        SessionMessageSyncEvent(
+                            sessionId = sessionId,
+                            result = SessionMessageSyncResult(
+                                lastSeq = currentSeq,
+                                changes = deletedIds.map { SessionMessageSyncChange.Remove(it) },
+                                hasTodoEvent = hasTodoEvent,
+                            ),
                         )
-                    }
-                }
-            } else {
-                if (revertResponse.maxTimestamp > revertSince) {
-                    revertSince = revertResponse.maxTimestamp
-                    db.syncStateDao().upsert(SyncStateEntity(sessionId, currentSeq, since, revertSince))
+                    )
+                    logStore.log(
+                        SyncLogLevel.Info,
+                        SyncLogCategory.Sync,
+                        "删除同步 detected=${deletedIds.size} gateCount=$gateCount serverCount=$serverCount trace=$traceId",
+                        sessionId = sessionId,
+                    )
                 }
             }
 
@@ -331,6 +326,61 @@ class SessionMessageRepositoryImpl @Inject constructor(
         }
     }
 
+
+    private suspend fun reconcileDeletions(
+        sessionId: String,
+        firstId: String,
+        lastId: String,
+        localCount: Long,
+        serverCount: Long,
+    ): List<String> {
+        val dao = dbProvider.getActive().sessionMessageDao()
+        val local = dao.getInRange(sessionId, firstId, lastId)
+        if (local.isEmpty()) return emptyList()
+
+        if (localCount <= REPAIR_FULL_LIMIT) {
+            val serverIds = syncApiClient.ids(sessionId, firstId, lastId).ids.toHashSet()
+            return local.filter { it.id !in serverIds }.map { it.id }
+        }
+
+        val ids = local.map { it.id }
+        val n = ids.size
+        val k = ceilSqrt(n)
+        val positions = (0 until n step k).toMutableList().also {
+            if (it.last() != n - 1) it.add(n - 1)
+        }
+        val counts = syncApiClient.probe(sessionId, ids[0], positions.map { ids[it] }).counts
+        val d = localCount - serverCount
+
+        var firstMismatch = -1
+        for (i in positions.indices) {
+            val c = counts.getOrNull(i) ?: break
+            if (c != (positions[i] + 1).toLong()) {
+                firstMismatch = i
+                break
+            }
+        }
+        if (firstMismatch < 0) {
+            val serverIds = syncApiClient.ids(sessionId, firstId, lastId).ids.toHashSet()
+            return local.filter { it.id !in serverIds }.map { it.id }
+        }
+
+        val blockStart = if (firstMismatch == 0) 0 else positions[firstMismatch - 1]
+        var blockEnd = n - 1
+        for (i in firstMismatch until positions.size) {
+            val c = counts.getOrNull(i) ?: continue
+            if (c == (positions[i] + 1 - d)) {
+                blockEnd = positions[i]
+                break
+            }
+        }
+        val fromId = ids[blockStart]
+        val toId = ids[blockEnd]
+        val blockServerIds = syncApiClient.ids(sessionId, fromId, toId).ids.toHashSet()
+        return local
+            .filter { it.id >= fromId && it.id <= toId && it.id !in blockServerIds }
+            .map { it.id }
+    }
 
     override suspend fun incrementalSyncAndNotify(sessionId: String) {
         incrementalSync(sessionId)
@@ -450,11 +500,13 @@ class SessionMessageRepositoryImpl @Inject constructor(
     }
 }
 
-private const val MOD_2_36 = 68719476736L
+private const val REPAIR_FULL_LIMIT = 100L
 
-private fun extractStoredTs(messageId: String): Long {
-    val hex = messageId.split("_").getOrNull(1)?.take(12) ?: return 0L
-    return hex.toLong(16) / 4096L
+private fun ceilSqrt(n: Int): Int {
+    if (n <= 1) return 1
+    var r = 1
+    while (r * r < n) r++
+    return r
 }
 
 private fun SessionMessageEntity.toDomain() = SessionMessage(

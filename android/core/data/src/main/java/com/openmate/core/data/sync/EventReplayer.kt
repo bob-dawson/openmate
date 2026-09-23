@@ -51,6 +51,13 @@ class EventReplayer {
         }
     }
 
+    private fun stripEventVersion(type: String): String {
+        val idx = type.lastIndexOf('.')
+        if (idx <= 0) return type
+        val suffix = type.substring(idx + 1)
+        return if (suffix.isNotEmpty() && suffix.all { it.isDigit() }) type.substring(0, idx) else type
+    }
+
     suspend fun processEvent(
         event: ReplayEvent,
         sessionId: String,
@@ -78,7 +85,7 @@ class EventReplayer {
     ) : List<ReplayChange>  {
         val props = event.data
         val timestamp = parseTimestamp(props)
-        val eventType = event.type
+        val eventType = stripEventVersion(event.type)
 
         when (eventType) {
             "session.next.agent.switched" -> {

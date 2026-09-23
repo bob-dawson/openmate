@@ -63,6 +63,14 @@ pub fn default_service_json_path() -> String {
 }
 
 pub fn read_service_password() -> String {
+    for key in ["OPENCODE_SERVER_PASSWORD", "OPENCODE_PASSWORD"] {
+        if let Ok(pw) = std::env::var(key) {
+            if !pw.is_empty() {
+                return pw;
+            }
+        }
+    }
+
     let path = default_service_json_path();
     match std::fs::read_to_string(&path) {
         Ok(content) => {

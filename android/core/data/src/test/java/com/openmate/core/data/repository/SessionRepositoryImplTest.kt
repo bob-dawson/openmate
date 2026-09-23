@@ -1,12 +1,13 @@
 package com.openmate.core.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.openmate.core.data.mockOpencodeApiClient
 import com.openmate.core.data.sse.SessionRetryStateStore
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.DatabaseFactory
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
-import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.SyncApiClient
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -36,8 +37,10 @@ class SessionRepositoryImplTest {
         server.start()
         dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
+        val apiClient = mockOpencodeApiClient(server)
         repository = SessionRepositoryImpl(
-            api = OpencodeApiClient(OkHttpClient(), baseUrl = server.url("/").toString().removeSuffix("/")),
+            api = apiClient,
+            syncApiClient = SyncApiClient(OkHttpClient(), apiClient),
             dbProvider = dbProvider,
             retryStateStore = SessionRetryStateStore(),
         )
@@ -73,7 +76,7 @@ class SessionRepositoryImplTest {
     }
 
     @Test
-    fun syncSessionStatusFromRemote_marksBusyWhenLatestAssistantIncomplete() = runTest {
+    fun syncSessionStatusFromRemote_appliesRemoteBusyStatus() = runTest {
         dbProvider.getActive().sessionDao().upsert(
             com.openmate.core.database.entity.SessionEntity(
                 id = SESSION_ID,
@@ -90,19 +93,11 @@ class SessionRepositoryImplTest {
                 .setResponseCode(200)
                 .setBody(
                     """
-                    [
-                      {
-                        "info": {
-                          "id": "msg-1",
-                          "sessionID": "$SESSION_ID",
-                          "role": "assistant",
-                          "time": {
-                            "created": 1000,
-                            "completed": null
-                          }
-                        }
+                    {
+                      "data": {
+                        "$SESSION_ID": { "type": "busy" }
                       }
-                    ]
+                    }
                     """.trimIndent(),
                 ),
         )

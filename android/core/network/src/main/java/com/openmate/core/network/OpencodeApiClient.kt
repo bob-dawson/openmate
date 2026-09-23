@@ -67,9 +67,14 @@ class OpencodeApiClient(
     private val activeProfileProvider: ActiveProfileProvider = object : ActiveProfileProvider { override fun getActiveProfile() = null; override fun getActiveRoute() = null },
     private val gatewayInterceptor: GatewayInterceptor? = null,
     private val routeEvidenceReporter: RouteEvidenceReporter? = null,
+    private val explicitBaseUrl: String? = null,
 ) {
+    /** Convenience constructor for tests/standalone use with a fixed base URL. */
+    constructor(client: OkHttpClient, baseUrl: String) : this(client = client, explicitBaseUrl = baseUrl)
+
     val baseUrl: String
         get() {
+            if (!explicitBaseUrl.isNullOrEmpty()) return explicitBaseUrl
             val route = activeProfileProvider.getActiveRoute()
             val profile = activeProfileProvider.getActiveProfile() ?: return ""
             return when (route) {

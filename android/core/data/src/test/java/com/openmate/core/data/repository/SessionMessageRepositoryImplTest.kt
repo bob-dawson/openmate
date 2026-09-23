@@ -1,6 +1,7 @@
 package com.openmate.core.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.openmate.core.data.mockOpencodeApiClient
 import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.DatabaseFactory
@@ -34,7 +35,7 @@ class SessionMessageRepositoryImplTest {
 
         dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
-        val apiClient = OpencodeApiClient(OkHttpClient(), baseUrl = server.url("/").toString().removeSuffix("/"))
+        val apiClient = mockOpencodeApiClient(server)
         logStore = SyncLogStore()
         repository = SessionMessageRepositoryImpl(
             syncApiClient = SyncApiClient(OkHttpClient(), apiClient),
@@ -232,7 +233,7 @@ class SessionMessageRepositoryImplTest {
     }
 
     @Test
-    fun incrementalSync_deletesMessagesFromDeletedIds() = runTest {
+    fun incrementalSync_deletesMessagesWhenServerCountShrinks() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -271,15 +272,19 @@ class SessionMessageRepositoryImplTest {
 
         assertThat(dbProvider.getActive().sessionMessageDao().getById("m2")).isNotNull()
 
+        // Gate: server reports only 1 alive in range < local count 2.
         server.enqueue(
             MockResponse().setBody(
                 """
-                {
-                  "messages": [],
-                  "deletedIds": ["m2"],
-                  "hasMore": false,
-                  "maxSeq": 2
-                }
+                {"messages":[],"hasMore":false,"maxSeq":2,"serverCount":1}
+                """.trimIndent(),
+            ),
+        )
+        // Repair (n=2 <= 100): only m1 is alive on the server.
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {"ids":["m1"]}
                 """.trimIndent(),
             ),
         )
@@ -288,6 +293,50 @@ class SessionMessageRepositoryImplTest {
 
         assertThat(dbProvider.getActive().sessionMessageDao().getById("m2")).isNull()
         assertThat(dbProvider.getActive().sessionMessageDao().getById("m1")).isNotNull()
+    }
+
+    @Test
+    fun incrementalSync_usesProbeRepairForLargeSessions() = runTest {
+        val dao = dbProvider.getActive().sessionMessageDao()
+        dao.upsertAll(
+            (0..104).map { i ->
+                com.openmate.core.database.entity.SessionMessageEntity(
+                    id = "m%03d".format(i),
+                    sessionId = SESSION_ID,
+                    type = "user",
+                    data = "{\"text\":\"m$i\"}",
+                    timeCreated = i.toLong(),
+                    timeUpdated = i.toLong(),
+                )
+            },
+        )
+        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(SESSION_ID, 0L, 0L, 0L))
+
+        // Gate: 102 alive < 105 local -> a 3-message suffix was deleted.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"messages":[],"hasMore":false,"maxSeq":2,"serverCount":102}""",
+            ),
+        )
+        // Probe prefix counts at positions 0,11,...,99,104.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"counts":[1,12,23,34,45,56,67,78,89,100,102]}""",
+            ),
+        )
+        // Alive ids inside the bracketed block [m099, m104].
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ids":["m099","m100","m101"]}""",
+            ),
+        )
+
+        repository.incrementalSync(SESSION_ID)
+
+        assertThat(dao.getById("m101")).isNotNull()
+        assertThat(dao.getById("m102")).isNull()
+        assertThat(dao.getById("m103")).isNull()
+        assertThat(dao.getById("m104")).isNull()
     }
 
     @Test

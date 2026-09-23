@@ -1061,7 +1061,7 @@ class SessionDetailViewModel @Inject constructor(
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
-                _errorMessage.value = appContext.getString(R.string.compact_failed)
+                _errorMessage.value = e.message ?: appContext.getString(R.string.compact_failed)
             }
         }
     }

@@ -26,6 +26,9 @@ pub struct EventsQuery {
 pub struct MessagesQuery {
     pub since: i64,
     pub limit: Option<i64>,
+    pub first_id: Option<String>,
+    pub last_id: Option<String>,
+    pub count: Option<i64>,
 }
 
 pub async fn init(
@@ -102,38 +105,59 @@ pub async fn messages(
         msg
     }).collect();
 
+    let server_count = match (&query.first_id, &query.last_id, query.count) {
+        (Some(first_id), Some(last_id), Some(_)) => Some(
+            state.sync_db
+                .count_alive_in_range(&session_id, first_id, last_id)
+                .map_err(|e| AppError::DatabaseError(e))?,
+        ),
+        _ => None,
+    };
+
     Ok(Json(json!({
         "messages": truncated,
         "hasMore": has_more,
         "maxSeq": max_seq,
+        "serverCount": server_count,
     })))
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RevertsQuery {
-    pub since: i64,
-    pub limit: Option<i64>,
+pub struct IdsQuery {
+    pub from_id: String,
+    pub to_id: String,
 }
 
-pub async fn reverts(
+pub async fn ids(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-    Query(query): Query<RevertsQuery>,
+    Query(query): Query<IdsQuery>,
 ) -> Result<impl IntoResponse, AppError> {
-    let limit = query.limit.unwrap_or(100);
-    let reverts = state.bridge_db
-        .get_reverts_since(&session_id, query.since)
+    let ids = state.sync_db
+        .alive_ids_in_range(&session_id, &query.from_id, &query.to_id)
         .map_err(|e| AppError::DatabaseError(e))?;
 
-    let max_timestamp = reverts.iter().map(|r| r.timestamp).max().unwrap_or(query.since);
-    let has_more = false;
+    Ok(Json(json!({ "ids": ids })))
+}
 
-    Ok(Json(json!({
-        "reverts": reverts,
-        "hasMore": has_more,
-        "maxTimestamp": max_timestamp,
-    })))
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeRequest {
+    pub base_id: String,
+    pub ids: Vec<String>,
+}
+
+pub async fn probe(
+    State(state): State<AppState>,
+    Path(session_id): Path<String>,
+    Json(body): Json<ProbeRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    let counts = state.sync_db
+        .count_alive_upto(&session_id, &body.base_id, &body.ids)
+        .map_err(|e| AppError::DatabaseError(e))?;
+
+    Ok(Json(json!({ "counts": counts })))
 }
 
 pub async fn full(

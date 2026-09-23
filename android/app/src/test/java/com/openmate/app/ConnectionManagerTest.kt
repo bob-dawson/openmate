@@ -381,6 +381,19 @@ class ConnectionManagerTest {
             logStore = SyncLogStore(),
             permissionRepository = FakePermissionRepository(),
             questionRepository = FakeQuestionRepository(),
+            routeCache = object : com.openmate.core.data.RouteCache(RuntimeEnvironment.getApplication()) {
+                private val cache = mutableMapOf<String, com.openmate.core.data.CachedRoute>()
+                override suspend fun get(profileId: String): com.openmate.core.data.CachedRoute? = cache[profileId]
+                override suspend fun setDirect(profileId: String) {
+                    cache[profileId] = com.openmate.core.data.CachedRoute.DIRECT
+                }
+                override suspend fun setGateway(profileId: String) {
+                    cache[profileId] = com.openmate.core.data.CachedRoute.GATEWAY
+                }
+                override suspend fun clear(profileId: String) {
+                    cache.remove(profileId)
+                }
+            },
         )
         profileProviderDelegate.delegate = manager
         managers += manager
@@ -543,6 +556,13 @@ class ConnectionManagerTest {
         override suspend fun getOlderPageByUserTurns(sessionId: String, beforeTimeCreated: Long, beforeId: String, userTurns: Int): List<SessionMessage> = emptyList()
 
         override suspend fun findBusyStartTime(sessionId: String): Long? = null
+
+        override suspend fun fetchDiffFiles(
+            sessionId: String,
+            messageId: String,
+            toolName: String,
+            targetFilePath: String?,
+        ): List<com.openmate.core.domain.model.DiffFile> = emptyList()
 
         override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult {
             return SessionMessageSyncResult(lastSeq = 0L, changes = emptyList())

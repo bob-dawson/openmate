@@ -83,7 +83,7 @@ impl OpencodeManager {
     }
 
     pub async fn check_health(&self) -> bool {
-        let url = format!("{}/api/health", self.opencode_url);
+        let url = format!("{}/api/info", self.opencode_url);
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(2))
             .connect_timeout(std::time::Duration::from_secs(1))
@@ -438,7 +438,7 @@ async fn run_service_cmd(binary: &str, args: &[&str]) -> Result<String, String> 
 }
 
 async fn check_health_url(opencode_url: &str) -> bool {
-    let url = format!("{}/api/health", opencode_url);
+    let url = format!("{}/api/info", opencode_url);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(3))
         .build()
