@@ -28,7 +28,6 @@
 -keep class coil.** { *; }
 -dontwarn coil.**
 
--keep class com.mikepenz.markdown.** { *; }
 -keep class dev.forst.markdown.** { *; }
 -keep class org.commonmark.** { *; }
 -keep class dev.jeziellago.compose.markdowntext.** { *; }

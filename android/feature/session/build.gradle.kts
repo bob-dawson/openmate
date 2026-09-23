@@ -46,7 +46,6 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
     implementation(libs.compose.markdown)
-    implementation(libs.multiplatform.markdown.renderer.m3)
     implementation(libs.coil3)
     implementation(libs.coil3.network.okhttp)
     implementation(libs.coil3.gif)

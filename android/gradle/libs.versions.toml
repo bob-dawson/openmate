@@ -24,7 +24,6 @@ turbine = "1.2.1"
 robolectric = "4.15.1"
 coil3 = "3.0.4"
 compose-markdown = "0.7.2"
-multiplatform-markdown-renderer = "0.42.0"
 mlkit-barcode = "17.3.0"
 camerax = "1.4.2"
 kstatemachine = "0.36.0"
@@ -91,7 +90,6 @@ compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-mani
 
 # Markdown
 compose-markdown = { group = "com.github.jeziellago", name = "compose-markdown", version.ref = "compose-markdown" }
-multiplatform-markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "multiplatform-markdown-renderer" }
 
 # Coil 3 (required by compose-markdown)
 coil3 = { group = "io.coil-kt.coil3", name = "coil", version.ref = "coil3" }
