@@ -37,7 +37,7 @@ pub async fn run_server(
         config.bridge.hostname,
         config.bridge.port
     );
-    tracing::info!("OpenCode target: {}", config.opencode_url());
+    tracing::info!("OpenCode target: {}", config.effective_opencode_url());
     tracing::info!("Allowed paths: {:?}", config.effective_allowed_paths());
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 

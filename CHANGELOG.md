@@ -12,6 +12,7 @@ Released: 2026-09-24
 
 ### 问题修复
 
+- **opencode 状态误报未启动**：Bridge 改为读取 opencode v2 service 的实际监听地址（`service.json`），修复服务运行在非配置端口时管理页面显示「未启动」的问题
 - **SSE 重连不同步**：修复 SSE 重连后未保留当前会话与增量同步开关，导致重新连接后消息不更新的问题
 - **消息重复显示**：过滤 opencode 合成（synthetic）part，避免消息重复显示
 

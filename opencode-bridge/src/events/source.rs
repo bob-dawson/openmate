@@ -63,7 +63,7 @@ impl SharedEventSource {
         *started = true;
 
         let source = Arc::clone(self);
-        let opencode_url = state.config.opencode_url();
+        let opencode_url = state.config.effective_opencode_url();
         let auth_header = state.config.opencode_auth_header();
         let mut shutdown_rx = state.shutdown_tx.subscribe();
         tokio::spawn(async move {

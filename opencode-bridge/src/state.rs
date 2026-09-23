@@ -98,7 +98,7 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
     let key_bytes = auth::key::hex_to_bytes(&key_hex).expect("Invalid secret key hex");
     let secret_key = auth::key::SecretKey::from_bytes(key_bytes);
 
-    let opencode_url = config.opencode_url();
+    let opencode_url = config.effective_opencode_url();
     let binary = config.opencode.binary.clone();
     let hostname = config.opencode.hostname.clone();
     let port = config.opencode.port;

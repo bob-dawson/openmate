@@ -13,7 +13,7 @@ use crate::state::AppState;
 type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + 'static>>;
 
 pub async fn sse_proxy(State(state): State<AppState>) -> impl IntoResponse {
-    let opencode_url = state.config.opencode_url();
+    let opencode_url = state.config.effective_opencode_url();
     let auth_header = state.config.opencode_auth_header();
     let mut shutdown_rx = state.shutdown_tx.subscribe();
     let stream = create_sse_stream(opencode_url, auth_header, &mut shutdown_rx);

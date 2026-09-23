@@ -83,6 +83,20 @@ pub fn read_service_password() -> String {
     }
 }
 
+/// V2 `opencode service` 的实际监听地址（`service.json` 的 `url`）。
+/// 服务可能监听在非配置端口（如随机端口），Bridge 应以该地址为准。
+pub fn read_service_url() -> Option<String> {
+    let path = default_service_json_path();
+    let content = std::fs::read_to_string(&path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let url = json.get("url").and_then(|v| v.as_str())?.trim().to_string();
+    if url.is_empty() {
+        return None;
+    }
+    // 服务绑定 0.0.0.0，客户端连接改用 127.0.0.1
+    Some(url.replacen("//0.0.0.0", "//127.0.0.1", 1))
+}
+
 pub fn read_opencode_password() -> String {
     let pw = read_service_password();
     if !pw.is_empty() {
@@ -238,6 +252,11 @@ impl Config {
 
     pub fn opencode_url(&self) -> String {
         format!("http://{}:{}", self.opencode.hostname, self.opencode.port)
+    }
+
+    /// 优先使用 V2 `opencode service` 实际地址（`service.json`），否则回退配置的 host:port。
+    pub fn effective_opencode_url(&self) -> String {
+        read_service_url().unwrap_or_else(|| self.opencode_url())
     }
 
     pub fn opencode_auth_header(&self) -> Option<String> {

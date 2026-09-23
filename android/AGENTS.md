@@ -10,8 +10,8 @@ OpenMate: opencode 的原生 Android 客户端，连接 `opencode serve` 实例 
 - **同步日志调试法**: `D:\openmate\docs\sync-log-debugging.md`（替代 logcat 的设备端调试方法）
 
 ## Architecture
-Kotlin 2.2.0 / Jetpack Compose + Material 3 (dark theme) / MVVM + Hilt + Room + OkHttp
-AGP 8.11.0 / KSP 2.2.0-2.0.2 / Compose BOM 2025.07.00 / minSdk 26 / targetSdk 36
+Kotlin 2.3.21 / Jetpack Compose + Material 3 (dark theme) / MVVM + Hilt + Room + OkHttp
+AGP 9.1.0 / KSP 2.3.9 / Compose BOM 2025.12.01 / minSdk 26 / targetSdk 36 / Hilt 2.60 / Room 2.7.2 / OkHttp 5.1.0
 
 ```
 app/                    → OpenMateApp, MainActivity, NavHost, ConnectionManager

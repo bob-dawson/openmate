@@ -43,7 +43,7 @@ pub async fn status(State(state): State<AppState>) -> impl IntoResponse {
         "opencode": {
             "status": status_str,
             "version": state.opencode_manager.get_cached_version().await,
-            "url": state.config.opencode_url(),
+            "url": state.config.effective_opencode_url(),
             "directory": state.config.opencode.directory,
         }
     }))

@@ -10,7 +10,7 @@ pub async fn proxy_opencode_request(
     State(state): State<AppState>,
     req: Request,
 ) -> Result<Response, AppError> {
-    let opencode_url = state.config.opencode_url();
+    let opencode_url = state.config.effective_opencode_url();
 
     let path = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
     let stripped = path.strip_prefix("/api/opencode").unwrap_or(path);
@@ -23,7 +23,7 @@ pub async fn proxy_fallback(
     State(state): State<AppState>,
     req: Request,
 ) -> Result<Response, AppError> {
-    let opencode_url = state.config.opencode_url();
+    let opencode_url = state.config.effective_opencode_url();
 
     let path = req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
     tracing::info!("proxy_fallback v0.1.5: path={}", path);

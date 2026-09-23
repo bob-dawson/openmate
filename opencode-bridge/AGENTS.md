@@ -149,7 +149,7 @@ wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db \"UPDATE config
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/health` | → opencode 健康检查（V2） |
+| GET | `/api/info` | → opencode 信息（版本等，V2 健康检查用） |
 | GET | `/api/event` | → opencode SSE 事件流（V2） |
 | GET | `/api/session` | → 会话列表（V2） |
 | * | `/{*path}` | → 其他所有 opencode API |
@@ -166,24 +166,26 @@ wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db \"UPDATE config
 
 ## 进程管理（V2: opencode2 service 命令）
 
-**V2 模式**（`opencode.binary` 指向 `opencode2`）下，Bridge 通过 `opencode2 service` 子命令管理后台 daemon，而不是直接 spawn 子进程：
+**V2 模式**（二进制为 `opencode` v2）下，Bridge 通过 `opencode service` 子命令管理后台 daemon，而不是直接 spawn 子进程：
 
 1. 启动前先 `service set port <port>` + `service set hostname <hostname>`
 2. 用 `service start` 启动后台服务
-3. **健康检查轮询**替代 `child.wait()`：定期 `GET /api/health`（带 Basic Auth `opencode:<password>`），3 次连续失败则自动重启
+3. **健康检查轮询**替代 `child.wait()`：定期 `GET /api/info`（带 Basic Auth `opencode:<password>`），3 次连续失败则自动重启
+
+> **服务地址优先取 `service.json` 的 `url`**：`opencode service` 可能监听在非配置端口。Bridge 用 `Config::effective_opencode_url()` 解析实际地址（优先 `~/.local/state/opencode/service.json` 的 `url`，回退配置的 `host:port`），用于健康检查、SSE/REST 代理与状态展示。若服务已在运行且健康，Bridge 直接采纳，不重启。
 
 ```rust
 // src/process/opencode_manager.rs
 run_service_cmd(&binary, &["service", "set", "port", &port.to_string()]).await;
 run_service_cmd(&binary, &["service", "set", "hostname", &hostname]).await;
 run_service_cmd(&binary, &["service", "start"]).await;      // start/stop/restart
-check_health_url(&url).await;                                // GET /api/health + Basic Auth
+check_health_url(&url).await;                                // GET /api/info + Basic Auth（解析 service.json url）
 restart_service_loop(&binary, &url, &status).await;         // 3 次失败自动重启
 ```
 
-**V1 模式**（binary 为 `opencode`）走传统进程管理：`child.wait()` + 转发失败检测双重崩溃检测，`auto_restart` 等 3 秒自动重启。
+**V1 模式**（binary 为旧版 `opencode`）走传统进程管理：`child.wait()` + 转发失败检测双重崩溃检测，`auto_restart` 等 3 秒自动重启。
 
-> ⚠️ opencode2 的密码在 `~/.local/state/opencode/service.json`，health check 用 `Authorization: Basic base64(opencode:<password>)`（用户名固定 `opencode`）。
+> ⚠️ opencode 的密码在 `~/.local/state/opencode/service.json`，health check 用 `Authorization: Basic base64(opencode:<password>)`（用户名固定 `opencode`）。
 
 ## 源码结构
 
