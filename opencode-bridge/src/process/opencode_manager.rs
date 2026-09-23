@@ -9,8 +9,6 @@ pub struct OpencodeManager {
     opencode_url: String,
     status: Arc<RwLock<OpencodeStatus>>,
     binary: Arc<String>,
-    hostname: Arc<String>,
-    port: Arc<u16>,
     directory: Arc<String>,
     auto_restart: Arc<bool>,
     run_as_user: Arc<String>,
@@ -39,8 +37,6 @@ impl OpencodeManager {
             opencode_url,
             status: Arc::new(RwLock::new(OpencodeStatus::Stopped)),
             binary: Arc::new("opencode".to_string()),
-            hostname: Arc::new("127.0.0.1".to_string()),
-            port: Arc::new(4096),
             directory: Arc::new(String::new()),
             auto_restart: Arc::new(true),
             run_as_user: Arc::new(String::new()),
@@ -53,8 +49,6 @@ impl OpencodeManager {
     pub fn with_config(
         opencode_url: String,
         binary: String,
-        hostname: String,
-        port: u16,
         directory: String,
         auto_restart: bool,
         run_as_user: String,
@@ -63,8 +57,6 @@ impl OpencodeManager {
             opencode_url,
             status: Arc::new(RwLock::new(OpencodeStatus::Stopped)),
             binary: Arc::new(binary),
-            hostname: Arc::new(hostname),
-            port: Arc::new(port),
             directory: Arc::new(directory),
             auto_restart: Arc::new(auto_restart),
             run_as_user: Arc::new(run_as_user),
@@ -121,11 +113,7 @@ impl OpencodeManager {
         drop(status);
 
         let binary = self.binary.clone();
-        let port = *self.port;
-        let hostname = self.hostname.clone();
 
-        run_service_cmd(&binary, &["service", "set", "port", &port.to_string()]).await;
-        run_service_cmd(&binary, &["service", "set", "hostname", &hostname]).await;
         match run_service_cmd(&binary, &["service", "start"]).await {
             Ok(output) => tracing::info!("service start: {}", output.trim()),
             Err(e) => {

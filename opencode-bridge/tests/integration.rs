@@ -235,8 +235,6 @@ async fn test_opencode_start_stop_with_sigint() {
     let manager = OpencodeManager::with_config(
         url.clone(),
         "opencode".to_string(),
-        "127.0.0.1".to_string(),
-        port,
         dir.to_string_lossy().to_string(),
         false,
         String::new(),

@@ -102,8 +102,6 @@ wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db \"UPDATE config
 | `bridge.port` | `4097` | Bridge 监听端口 |
 | `bridge.hostname` | `0.0.0.0` | Bridge 监听地址 |
 | `opencode.binary` | `opencode` | opencode 可执行文件名（PATH 中或全路径） |
-| `opencode.hostname` | `127.0.0.1` | opencode serve 监听地址 |
-| `opencode.port` | `4096` | opencode serve 监听端口 |
 | `opencode.directory` | `` | 工作目录，空=exe所在目录 |
 | `opencode.db_path` | `~/.local/share/opencode/opencode.db` | opencode SQLite 数据库路径（Bridge 直接读此库提供 sync API） |
 | `opencode.auto_start` | `true` | Bridge 启动时自动拉起 opencode |
@@ -168,17 +166,14 @@ wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db \"UPDATE config
 
 **V2 模式**（二进制为 `opencode` v2）下，Bridge 通过 `opencode service` 子命令管理后台 daemon，而不是直接 spawn 子进程：
 
-1. 启动前先 `service set port <port>` + `service set hostname <hostname>`
-2. 用 `service start` 启动后台服务
-3. **健康检查轮询**替代 `child.wait()`：定期 `GET /api/info`（带 Basic Auth `opencode:<password>`），3 次连续失败则自动重启
+1. 直接用 `service start` 启动（**不再设置端口/主机名**；端口由 opencode service 自身配置或默认 `0xc0de`=49374 决定）
+2. **健康检查轮询**替代 `child.wait()`：定期 `GET /api/info`（带 Basic Auth `opencode:<password>`），3 次连续失败则自动重启
 
-> **服务地址优先取 `service.json` 的 `url`**：`opencode service` 可能监听在非配置端口。Bridge 用 `Config::effective_opencode_url()` 解析实际地址（优先 `~/.local/state/opencode/service.json` 的 `url`，回退配置的 `host:port`），用于健康检查、SSE/REST 代理与状态展示。若服务已在运行且健康，Bridge 直接采纳，不重启。
+> **服务地址优先取 `service.json` 的 `url`**：`opencode service` 可能监听在非默认端口。Bridge 用 `Config::effective_opencode_url()` 解析实际地址（优先 `~/.local/state/opencode/service.json` 的 `url`，回退 `opencode.hostname`/`opencode.port` 旧配置），用于健康检查、SSE/REST 代理与状态展示。管理页面不提供 opencode 端口配置项；若服务已在运行且健康，Bridge 直接采纳，不重启。
 
 ```rust
 // src/process/opencode_manager.rs
-run_service_cmd(&binary, &["service", "set", "port", &port.to_string()]).await;
-run_service_cmd(&binary, &["service", "set", "hostname", &hostname]).await;
-run_service_cmd(&binary, &["service", "start"]).await;      // start/stop/restart
+run_service_cmd(&binary, &["service", "start"]).await;      // start/stop/restart（不设置端口）
 check_health_url(&url).await;                                // GET /api/info + Basic Auth（解析 service.json url）
 restart_service_loop(&binary, &url, &status).await;         // 3 次失败自动重启
 ```

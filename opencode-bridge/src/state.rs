@@ -100,8 +100,6 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
 
     let opencode_url = config.effective_opencode_url();
     let binary = config.opencode.binary.clone();
-    let hostname = config.opencode.hostname.clone();
-    let port = config.opencode.port;
     let directory = config.opencode.directory.clone();
     let auto_restart = config.opencode.auto_restart;
     let run_as_user = config.opencode.run_as_user.clone();
@@ -134,8 +132,6 @@ pub fn create_app_state_with_db_event_source_and_actual_port(
         opencode_manager: OpencodeManager::with_config(
             opencode_url,
             binary,
-            hostname,
-            port,
             directory,
             auto_restart,
             run_as_user,

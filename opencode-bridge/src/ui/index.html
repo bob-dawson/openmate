@@ -473,7 +473,7 @@ async function loadOverview() {
     statusEl.className = 'value ' + color;
     dot.className = 'dot' + (color === 'green' ? '' : (color === 'red' ? ' off' : ''));
     if (color === 'red') dot.classList.add('off');
-    stxt.textContent = 'opencode: ' + label;
+    stxt.textContent = 'opencode: ' + label + (oc.url ? ' · ' + oc.url : '');
 
     const verEl = document.getElementById('oc-version');
     const verSub = document.getElementById('oc-version-sub');

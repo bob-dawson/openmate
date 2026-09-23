@@ -184,22 +184,6 @@ impl Config {
                 description: "Path to opencode executable".into(),
             },
             ConfigEntry {
-                key: "opencode.hostname".into(),
-                value: String::new(),
-                default: "127.0.0.1".into(),
-                r#type: "string".into(),
-                needs_restart: false,
-                description: "opencode serve hostname".into(),
-            },
-            ConfigEntry {
-                key: "opencode.port".into(),
-                value: String::new(),
-                default: "4096".into(),
-                r#type: "u16".into(),
-                needs_restart: false,
-                description: "opencode serve port".into(),
-            },
-            ConfigEntry {
                 key: "opencode.directory".into(),
                 value: String::new(),
                 default: String::new(),
