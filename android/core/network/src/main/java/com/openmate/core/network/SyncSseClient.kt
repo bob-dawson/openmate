@@ -64,6 +64,13 @@ class SyncSseClient @Inject constructor(
                     logger.logConnectStart(traceId = traceId, hasToken = token != null)
                     Log.d("SyncSseClient", "attempting SSE connection, token=${token != null}")
                     val urlBuilder = Request.Builder().url("$baseUrl/api/bridge/events").get()
+                    if (token != null) {
+                        urlBuilder.header("Authorization", "Bearer $token")
+                    }
+                    val iid = instanceId
+                    if (iid != null) {
+                        urlBuilder.header("X-Instance-Id", iid)
+                    }
                     val call = client.newCall(urlBuilder.build())
                     activeCall.set(call)
                     val response = call.execute()

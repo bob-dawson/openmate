@@ -6,6 +6,8 @@ import android.util.Log
 import com.openmate.app.connection.AppForegroundMonitor
 import com.openmate.app.connection.NetworkChangeEvent
 import com.openmate.app.connection.NetworkChangeMonitor
+import com.openmate.app.connection.RouteEvidence
+import com.openmate.app.connection.RouteEvidenceAggregator
 import com.openmate.app.connection.v2.ConnEffect
 import com.openmate.app.connection.v2.ConnEvent
 import com.openmate.app.connection.v2.ConnState
@@ -30,7 +32,9 @@ import com.openmate.core.domain.repository.ServerProfileRepository
 import com.openmate.core.domain.repository.SessionRepository
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.network.ActiveProfileProvider
+import com.openmate.core.network.ApiRouteResult
 import com.openmate.core.network.OpencodeApiClient
+import com.openmate.core.network.RouteEvidenceReporter
 import com.openmate.core.network.SyncSseSignal
 import com.openmate.core.network.SyncSseClient
 import com.openmate.core.network.TokenStore
@@ -43,7 +47,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
+import okhttp3.OkHttpClient
 
 @Singleton
 class ConnectionManager @Inject constructor(
@@ -62,6 +68,9 @@ class ConnectionManager @Inject constructor(
     private val permissionRepository: PermissionRepository,
     private val questionRepository: QuestionRepository,
     private val routeCache: RouteCache,
+    private val routeEvidenceAggregator: RouteEvidenceAggregator,
+    private val routeEvidenceReporter: RouteEvidenceReporter,
+    @Named("api") private val probeHttpClient: OkHttpClient,
 ) : ConnectionRepository, ActiveProfileProvider {
     companion object {
         private const val TAG = "ConnectionManager"
@@ -120,8 +129,10 @@ class ConnectionManager @Inject constructor(
         profileRepository = profileRepository,
         tokenStore = tokenStore,
         logStore = logStore,
-        connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager,
+        networkMonitor = networkChangeMonitor,
         routeCache = routeCache,
+        routeEvidenceAggregator = routeEvidenceAggregator,
+        probeClientBase = probeHttpClient,
     )
 
     private val actor = ConnectionActor { effect: ConnEffect ->
@@ -137,6 +148,9 @@ class ConnectionManager @Inject constructor(
     @Volatile
     private var runtimeMonitoringStarted = false
 
+    @Volatile
+    private var lastHandledRouteRevision = 0L
+
     init {
         scope.launch {
             actor.state.collect { state -> applyState(state) }
@@ -149,6 +163,31 @@ class ConnectionManager @Inject constructor(
         scope.launch {
             sseEventRepository.observeConnectionStatus().collect { status ->
                 logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "SSE状态变化 status=$status activeProfile=${_activeProfile.value?.id}")
+            }
+        }
+        scope.launch {
+            routeEvidenceReporter.events.collect { result ->
+                val now = System.currentTimeMillis()
+                when (result) {
+                    is ApiRouteResult.Success -> routeEvidenceAggregator.record(
+                        RouteEvidence.ApiSuccess(result.route, now)
+                    )
+                    is ApiRouteResult.NetworkFailure -> routeEvidenceAggregator.record(
+                        RouteEvidence.ApiNetworkFailure(result.route, now, result.message)
+                    )
+                }
+            }
+        }
+        scope.launch {
+            routeEvidenceAggregator.snapshot.collect { snapshot ->
+                if (snapshot.revision == lastHandledRouteRevision) return@collect
+                lastHandledRouteRevision = snapshot.revision
+                val profile = _activeProfile.value ?: return@collect
+                val state = actor.state.value
+                if (snapshot.direct.isUsable && state is ConnState.Connected && state.route is Route.Gateway) {
+                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "路由证据: 直连可用，从网关切回直连")
+                    sendEvent(ConnEvent.ProbeOk(Route.Direct(profile.address, profile.port)))
+                }
             }
         }
     }
@@ -338,9 +377,21 @@ class ConnectionManager @Inject constructor(
         when (signal) {
             is SyncSseSignal.ConnectStarted -> Unit
             is SyncSseSignal.Connected -> sendEvent(ConnEvent.SseConnected(route))
-            is SyncSseSignal.EventReceived -> Unit
-            is SyncSseSignal.StreamClosed -> sendEvent(ConnEvent.SseStreamClosed(route))
-            is SyncSseSignal.Failed -> sendEvent(ConnEvent.SseFailed(route, signal.message))
+            is SyncSseSignal.EventReceived -> routeEvidenceAggregator.record(
+                RouteEvidence.SsePositive(route.toConnectionRoute(), System.currentTimeMillis())
+            )
+            is SyncSseSignal.StreamClosed -> {
+                routeEvidenceAggregator.record(
+                    RouteEvidence.SseSuspicion(route.toConnectionRoute(), System.currentTimeMillis(), "stream closed")
+                )
+                sendEvent(ConnEvent.SseStreamClosed(route))
+            }
+            is SyncSseSignal.Failed -> {
+                routeEvidenceAggregator.record(
+                    RouteEvidence.SseSuspicion(route.toConnectionRoute(), System.currentTimeMillis(), signal.message)
+                )
+                sendEvent(ConnEvent.SseFailed(route, signal.message))
+            }
         }
     }
 
@@ -399,6 +450,7 @@ class ConnectionManager @Inject constructor(
         is ConnState.ConnectingCached -> route.toConnectionRoute()
         is ConnState.ConnectingFresh -> route.toConnectionRoute()
         is ConnState.Connected -> route.toConnectionRoute()
+        is ConnState.Recovering -> route.toConnectionRoute()
         else -> null
     }
 

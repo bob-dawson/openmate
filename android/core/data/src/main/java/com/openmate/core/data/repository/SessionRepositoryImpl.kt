@@ -5,6 +5,7 @@ import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.toDomain
 import com.openmate.core.database.entity.toEntity
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionRevert
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.Workspace
@@ -51,6 +52,10 @@ class SessionRepositoryImpl @Inject constructor(
                     modelProviderID = domain.modelProviderID ?: existing.modelProviderID,
                     modelID = domain.modelID ?: existing.modelID,
                     modelName = domain.modelName ?: existing.modelName,
+                    revertMessageID = domain.revert?.messageID,
+                    revertPartID = domain.revert?.partID,
+                    revertFrom = domain.revert?.from,
+                    revertTo = domain.revert?.to,
                 )
             } else {
                 domain.toEntity()
@@ -86,6 +91,10 @@ class SessionRepositoryImpl @Inject constructor(
                     modelProviderID = domain.modelProviderID ?: existing.modelProviderID,
                     modelID = domain.modelID ?: existing.modelID,
                     modelName = domain.modelName ?: existing.modelName,
+                    revertMessageID = domain.revert?.messageID,
+                    revertPartID = domain.revert?.partID,
+                    revertFrom = domain.revert?.from,
+                    revertTo = domain.revert?.to,
                 ))
             } else {
                 dao.upsert(domain.toEntity())
@@ -225,6 +234,16 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun unrevertSession(sessionID: String, directory: String?) {
         api.unrevertSession(sessionID, directory)
+    }
+
+    override suspend fun updateLocalRevert(sessionID: String, revert: SessionRevert?) {
+        dbProvider.getActive().sessionDao().updateRevertFields(
+            sessionID,
+            revert?.messageID,
+            revert?.partID,
+            revert?.from,
+            revert?.to,
+        )
     }
 
     override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? {

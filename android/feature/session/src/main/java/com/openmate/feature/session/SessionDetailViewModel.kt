@@ -136,6 +136,8 @@ class SessionDetailViewModel @Inject constructor(
     val sessionRetryStatus: StateFlow<SessionRetryStatus?> = _sessionRetryStatus.asStateFlow()
 
     private var wasBusy = false
+    @Volatile
+    private var abortSuppressed = false
     private var messageIdCounter = 0
     private val _sessionStatus = MutableStateFlow("")
     val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
@@ -568,6 +570,7 @@ class SessionDetailViewModel @Inject constructor(
         _hasOlderMessages.value = false
         _sessionRevert.value = null
         wasBusy = false
+        abortSuppressed = false
         isModelOverridden = false
         isAgentOverridden = false
         syncSseStarter.setActiveSession(sessionID)
@@ -604,12 +607,10 @@ class SessionDetailViewModel @Inject constructor(
                 if (session != null && session.title.isNotBlank()) {
                     _sessionTitle.value = session.title
                 }
-                val newRevert = session?.revert
-                if (newRevert != null) {
-                    _sessionRevert.value = newRevert
-                } else {
-                    _sessionRevert.value = null
-                }
+                // Adopt a server-reported staged revert. A null here can mean the V2 session
+                // payload omitted the field, so never clear a locally staged revert on null;
+                // clearing is handled explicitly by unrevert/commit paths.
+                session?.revert?.let { _sessionRevert.value = it }
                 session?.let {
                     _sessionTokens.value = it.tokens
                     _sessionCost.value = it.cost
@@ -836,6 +837,7 @@ class SessionDetailViewModel @Inject constructor(
             message = "发送消息 send message requested textLength=${text.length} attachments=${_attachedFiles.value.size}",
         )
         _isSending.value = true
+        abortSuppressed = false
         val model = _selectedModel.value
         val agent = _selectedAgent.value
         val variant = _selectedVariant.value
@@ -851,6 +853,12 @@ class SessionDetailViewModel @Inject constructor(
                 _attachedFiles.value = emptyList()
                 clearDraft(sessionID)
                 sessionMessageRepository.incrementalSync(sessionID)
+                if (_sessionRevert.value != null) {
+                    // opencode commits a staged revert as part of admitting this prompt.
+                    _sessionRevert.value = null
+                    _revertedPrompt.value = null
+                    sessionRepository.updateLocalRevert(sessionID, null)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = appContext.getString(R.string.send_failed)
@@ -866,6 +874,7 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun abort(sessionID: String) {
+        abortSuppressed = true
         _currentBusyStart.value = null
         _runningAnchors.value = emptyMap()
         wasBusy = false
@@ -1423,8 +1432,9 @@ class SessionDetailViewModel @Inject constructor(
         }
 
         val isReverting = _sessionRevert.value != null
-        val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting
-        _isStreaming.value = lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting)
+        val suppressed = abortSuppressed
+        val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting && !suppressed
+        _isStreaming.value = !suppressed && (lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting))
         _queuedMessageIds.value = buildQueuedMessageIds(list)
         _userModelMap.value = buildUserModelMap(list)
 
@@ -1701,21 +1711,15 @@ class SessionDetailViewModel @Inject constructor(
                     )
                     return@launch
                 }
-                val msgID = sessionRepository.resolveMessageID(sessionID, targetMsg.timeCreated)
-                if (msgID == null) {
-                    syncDebugController.log(
-                        level = SyncLogLevel.Error,
-                        category = SyncLogCategory.Manual,
-                        sessionId = sessionID,
-                        message = "revert失败 evtID=$messageID timeCreated=${targetMsg.timeCreated} resolve msg_ ID failed",
-                    )
-                    return@launch
-                }
+                // V2: the domain message id (msg_*) is already the server SessionMessage.ID
+                // used as the revert boundary. The legacy /resolve-message-id endpoint reads
+                // the empty V1 `message` table and would always fail.
+                val msgID = targetMsg.id
                 syncDebugController.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    message = "revert请求 evtID=$messageID → msgID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
+                    message = "revert请求 messageID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
                 )
                 if (busy) {
                     syncDebugController.log(
@@ -1733,6 +1737,7 @@ class SessionDetailViewModel @Inject constructor(
                 }.getOrNull()
                 sessionRepository.revertSession(sessionID, msgID, directory = currentDirectory.ifBlank { null })
                 _sessionRevert.value = SessionRevert(messageID = msgID, from = targetMsg.id)
+                sessionRepository.updateLocalRevert(sessionID, SessionRevert(messageID = msgID, from = targetMsg.id))
                 _revertedPrompt.value = promptText
                 if (!promptText.isNullOrBlank()) {
                     _inputText.value = promptText
@@ -1782,7 +1787,10 @@ class SessionDetailViewModel @Inject constructor(
                     message = "unrevert请求 dir=${currentDirectory.ifBlank { "null" }}",
                 )
                 sessionRepository.unrevertSession(sessionID, directory = currentDirectory.ifBlank { null })
+                sessionRepository.updateLocalRevert(sessionID, null)
                 sessionMessageRepository.incrementalSync(sessionID)
+                _sessionRevert.value = null
+                _revertedPrompt.value = null
             } catch (e: Exception) {
                 Log.e(TAG, "unrevert failed", e)
                 syncDebugController.log(

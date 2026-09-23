@@ -199,14 +199,16 @@ class OpencodeApiClient(
         partID?.let { body["partID"] = it }
         val params = mutableMapOf<String, String>()
         directory?.let { params["location[directory]"] = it }
+        // Stage only. opencode commits a staged revert automatically when the next prompt is
+        // sent, and the user can unrevert in the meantime. Committing here would delete the
+        // messages immediately and leave no staged state to show.
         postV2Unit("/api/session/$sessionID/revert/stage", body, params)
-        postV2Unit("/api/session/$sessionID/revert/commit", emptyMap<String, String>(), params)
     }
 
     suspend fun unrevertSession(sessionID: String, directory: String? = null) {
         val params = mutableMapOf<String, String>()
         directory?.let { params["location[directory]"] = it }
-        postV2Unit("/api/session/$sessionID/revert/clear", emptyMap<String, String>(), params)
+        deleteV2("/api/session/$sessionID/revert", params)
     }
 
     suspend fun listPermissions(directory: String? = null): List<PermissionDto> {

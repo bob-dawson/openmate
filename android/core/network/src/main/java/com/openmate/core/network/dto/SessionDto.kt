@@ -99,7 +99,7 @@ fun SessionDto.toDomain(): Session {
         updatedAt = time.updated,
         isCompacting = time.compacting != null,
         isArchived = time.archived != null,
-        revert = revert?.let { SessionRevert(messageID = it.messageID ?: "", partID = it.partID) },
+        revert = revert?.let { SessionRevert(messageID = it.messageID ?: "", partID = it.partID, from = it.messageID) },
         cost = cost,
         tokens = tokens?.let {
             SessionTokens(

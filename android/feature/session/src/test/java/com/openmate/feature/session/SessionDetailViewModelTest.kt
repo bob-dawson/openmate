@@ -1254,6 +1254,8 @@ class SessionDetailViewModelTest {
 
         override suspend fun unrevertSession(sessionID: String, directory: String?) = Unit
 
+        override suspend fun updateLocalRevert(sessionID: String, revert: com.openmate.core.domain.model.SessionRevert?) = Unit
+
         override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? = null
 
         override suspend fun resolveEvtID(sessionID: String, messageID: String): String? = null

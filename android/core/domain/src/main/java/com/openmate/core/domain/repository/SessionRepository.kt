@@ -1,6 +1,7 @@
 package com.openmate.core.domain.repository
 
 import com.openmate.core.domain.model.Session
+import com.openmate.core.domain.model.SessionRevert
 import com.openmate.core.domain.model.SessionRetryStatus
 import com.openmate.core.domain.model.Workspace
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +25,7 @@ interface SessionRepository {
     suspend fun getSessionRetryStatus(id: String): SessionRetryStatus?
     suspend fun revertSession(sessionID: String, messageID: String, partID: String? = null, directory: String? = null)
     suspend fun unrevertSession(sessionID: String, directory: String? = null)
+    suspend fun updateLocalRevert(sessionID: String, revert: SessionRevert?)
     suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String?
     suspend fun resolveEvtID(sessionID: String, messageID: String): String?
 }

@@ -1,13 +1,15 @@
 package com.openmate.app.connection.v2
 
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import com.openmate.app.connection.NetworkChangeMonitor
+import com.openmate.app.connection.RouteEvidence
+import com.openmate.app.connection.RouteEvidenceAggregator
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.data.CachedRoute
 import com.openmate.core.data.RouteCache
 import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.data.sync.SyncSseHandler
+import com.openmate.core.domain.model.ConnectionRoute
 import com.openmate.core.domain.model.ServerProfile
 import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.ServerProfileRepository
@@ -41,12 +43,14 @@ class EffectExecutor(
     private val profileRepository: ServerProfileRepository,
     private val tokenStore: TokenStore,
     private val logStore: SyncLogStore,
-    private val connectivityManager: ConnectivityManager,
+    private val networkMonitor: NetworkChangeMonitor,
     private val routeCache: RouteCache,
+    private val routeEvidenceAggregator: RouteEvidenceAggregator,
+    probeClientBase: OkHttpClient = OkHttpClient(),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val probeClient = OkHttpClient.Builder()
+    private val probeClient = probeClientBase.newBuilder()
         .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
         .build()
@@ -68,6 +72,7 @@ class EffectExecutor(
             is ConnEffect.RefreshSessions -> scope.launch { sessionRepository.refreshSessionStatuses() }
             is ConnEffect.UpdateLastConnectedAt -> scope.launch {
                 val profile = profileRepository.getById(effect.profileId)
+                    ?: activeProfile()?.takeIf { it.id == effect.profileId }
                 if (profile != null) {
                     profileRepository.save(profile.copy(lastConnectedAt = System.currentTimeMillis()))
                 }
@@ -84,9 +89,7 @@ class EffectExecutor(
     private fun checkNetwork() {
         val profile = activeProfile()
         scope.launch {
-            val activeNetwork = connectivityManager.activeNetwork
-            val caps = activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
-            val hasNetwork = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            val hasNetwork = networkMonitor.hasInternet()
             if (!hasNetwork) {
                 logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网络检测 hasNetwork=false")
                 sendEvent(ConnEvent.NetworkIsNone)
@@ -141,9 +144,15 @@ class EffectExecutor(
                         logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "更新instanceId old='${p.instanceId}' new='${status.bridge.instanceId}'")
                     }
                 }
+                routeEvidenceAggregator.record(
+                    RouteEvidence.ProbeSuccess(ConnectionRoute.Direct(address, port), System.currentTimeMillis())
+                )
                 sendEvent(ConnEvent.ProbeOk(Route.Direct(address, port)))
             } catch (e: Exception) {
                 logStore.log(SyncLogLevel.Warn, SyncLogCategory.Connection, "直连探测失败 address=$address:$port ${e.javaClass.simpleName}: ${e.message}")
+                routeEvidenceAggregator.record(
+                    RouteEvidence.ProbeFailure(ConnectionRoute.Direct(address, port), System.currentTimeMillis(), e.message)
+                )
                 sendEvent(ConnEvent.ProbeFail(Route.Direct(address, port)))
             }
         }
@@ -153,6 +162,9 @@ class EffectExecutor(
         val profile = activeProfile() ?: return
         if (!profile.gatewayEnabled) {
             logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "网关已禁用，跳过探测")
+            routeEvidenceAggregator.record(
+                RouteEvidence.ProbeFailure(ConnectionRoute.Gateway(profile.instanceId), System.currentTimeMillis(), "gateway disabled")
+            )
             sendEvent(ConnEvent.ProbeFail(Route.Gateway(profile.instanceId)))
             return
         }
@@ -160,8 +172,14 @@ class EffectExecutor(
         scope.launch(Dispatchers.IO) {
             val success = isGatewayOnline(instanceId)
             if (success) {
+                routeEvidenceAggregator.record(
+                    RouteEvidence.ProbeSuccess(ConnectionRoute.Gateway(instanceId), System.currentTimeMillis())
+                )
                 sendEvent(ConnEvent.ProbeOk(Route.Gateway(instanceId)))
             } else {
+                routeEvidenceAggregator.record(
+                    RouteEvidence.ProbeFailure(ConnectionRoute.Gateway(instanceId), System.currentTimeMillis(), "gateway offline")
+                )
                 sendEvent(ConnEvent.ProbeFail(Route.Gateway(instanceId)))
             }
         }
@@ -268,6 +286,9 @@ class EffectExecutor(
                 delay(DIRECT_CHECK_INTERVAL_MS)
                 if (isDirectReachable(address, port)) {
                     logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "直连恢复 切回直连")
+                    routeEvidenceAggregator.record(
+                        RouteEvidence.ProbeSuccess(ConnectionRoute.Direct(address, port), System.currentTimeMillis())
+                    )
                     sendEvent(ConnEvent.ProbeOk(Route.Direct(address, port)))
                     break
                 }

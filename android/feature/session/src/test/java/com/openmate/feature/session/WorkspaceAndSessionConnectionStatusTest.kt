@@ -138,6 +138,7 @@ class WorkspaceAndSessionConnectionStatusTest {
         override suspend fun getSessionRetryStatus(id: String): SessionRetryStatus? = null
         override suspend fun revertSession(sessionID: String, messageID: String, partID: String?, directory: String?) = Unit
         override suspend fun unrevertSession(sessionID: String, directory: String?) = Unit
+        override suspend fun updateLocalRevert(sessionID: String, revert: com.openmate.core.domain.model.SessionRevert?) = Unit
         override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? = null
         override suspend fun resolveEvtID(sessionID: String, messageID: String): String? = null
     }

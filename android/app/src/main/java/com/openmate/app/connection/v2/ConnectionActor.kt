@@ -55,6 +55,7 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
 
     data class Recovering(
         val profile: ServerProfile,
+        val route: Route,
         val attempt: Int = 0,
     ) : ConnState("Recovering")
 
@@ -85,7 +86,7 @@ sealed class ConnState(name: String? = null) : DefaultState(name) {
         is ConnectingCached -> "ConnectingCached(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is ConnectingFresh -> "ConnectingFresh(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is Connected -> "Connected(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
-        is Recovering -> "Recovering(profile=${profile.id}, attempt=$attempt)"
+        is Recovering -> "Recovering(profile=${profile.id}, route=${route.logText()}, attempt=$attempt)"
         is Failed -> "Failed(profile=${profile.id}, reason=$reason, attempt=$attempt)"
         is NeedsRepair -> "NeedsRepair(profile=${profile.id})"
     }
@@ -115,7 +116,7 @@ class ConnectionActor(
     private val connectingCached = ConnState.ConnectingCached(DUMMY_PROFILE, Route.Direct("", 0))
     private val connectingFresh = ConnState.ConnectingFresh(DUMMY_PROFILE, Route.Direct("", 0))
     private val connected = ConnState.Connected(DUMMY_PROFILE, Route.Direct("", 0))
-    private val recovering = ConnState.Recovering(DUMMY_PROFILE)
+    private val recovering = ConnState.Recovering(DUMMY_PROFILE, Route.Direct("", 0))
     private val failed = ConnState.Failed(DUMMY_PROFILE)
     private val needsRepair = ConnState.NeedsRepair(DUMMY_PROFILE)
 
@@ -280,6 +281,7 @@ class ConnectionActor(
             addState(connectingCached) {
                 onEntry {
                     val s = _state.value as ConnState.ConnectingCached
+                    onEffect(ConnEffect.UpdateLastConnectedAt(s.profile.id))
                     onEffect(ConnEffect.StartSse(s.route))
                 }
                 transition<ConnEvent.SseConnected> {
@@ -311,6 +313,7 @@ class ConnectionActor(
             addState(connectingFresh) {
                 onEntry {
                     val s = _state.value as ConnState.ConnectingFresh
+                    onEffect(ConnEffect.UpdateLastConnectedAt(s.profile.id))
                     onEffect(ConnEffect.StartSse(s.route))
                 }
                 transition<ConnEvent.SseConnected> {
@@ -325,7 +328,7 @@ class ConnectionActor(
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.ConnectingFresh
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ConnState.Recovering(s.profile, s.route, attempt = s.attempt + 1)
                     }
                 }
                 transition<ConnEvent.Disconnect> {
@@ -367,21 +370,21 @@ class ConnectionActor(
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.Connected
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ConnState.Recovering(s.profile, s.route, attempt = s.attempt + 1)
                     }
                 }
                 transition<ConnEvent.SseStreamClosed> {
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.Connected
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ConnState.Recovering(s.profile, s.route, attempt = s.attempt + 1)
                     }
                 }
                 transition<ConnEvent.NetworkLost> {
                     targetState = recovering
                     onTriggered {
                         val s = _state.value as ConnState.Connected
-                        _state.value = ConnState.Recovering(s.profile, attempt = s.attempt + 1)
+                        _state.value = ConnState.Recovering(s.profile, s.route, attempt = s.attempt + 1)
                     }
                 }
                 transition<ConnEvent.AppBackgrounded> {
