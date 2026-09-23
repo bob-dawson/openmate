@@ -4,8 +4,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class SkillInfoDto(
+    val id: String = "",
     val name: String,
     val description: String,
     val location: String = "",
     val content: String = "",
+    val slash: Boolean = false,
 )

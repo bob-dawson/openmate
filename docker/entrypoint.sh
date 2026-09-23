@@ -2,12 +2,74 @@
 set -e
 
 mkdir -p /root/.local/share/opencode
+mkdir -p /root/.local/state/opencode
 mkdir -p /root/.openmate
+mkdir -p /root/workspace
 
-echo "=== OpenMate Bridge Container ==="
-echo "opencode path: $(which opencode)"
-echo "opencode version: $(opencode --version 2>/dev/null || echo 'unknown')"
-echo "Workspace: $(pwd)"
-echo "================================"
+echo "=== OpenMate V2 Container ==="
+echo "opencode2: $(which opencode2) ($(opencode2 --version 2>/dev/null || echo unknown))"
+
+# Fixed password for the test container (override via env when needed).
+PASSWORD="${OPENCODE_SERVER_PASSWORD:-openmate-test-password}"
+export OPENCODE_SERVER_PASSWORD="$PASSWORD"
+
+opencode2 serve --port 4098 --hostname 127.0.0.1 > /tmp/oc2.log 2>&1 &
+OC_PID=$!
+
+echo "waiting for opencode2 health..."
+for _ in $(seq 1 60); do
+    if curl -fsS -u "opencode:${PASSWORD}" http://127.0.0.1:4098/api/info >/dev/null 2>&1; then
+        echo "opencode2 is healthy"
+        break
+    fi
+    if ! kill -0 "$OC_PID" 2>/dev/null; then
+        echo "ERROR: opencode2 exited during startup"
+        cat /tmp/oc2.log
+        exit 1
+    fi
+    sleep 1
+done
+
+if ! curl -fsS -u "opencode:${PASSWORD}" http://127.0.0.1:4098/api/info >/dev/null 2>&1; then
+    echo "ERROR: opencode2 did not become healthy"
+    cat /tmp/oc2.log
+    exit 1
+fi
+
+ESC_PASSWORD=$(printf '%s' "$PASSWORD" | sed "s/'/''/g")
+
+sqlite3 /root/.openmate/bridge.db "
+CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS paired_devices (
+    device_id TEXT PRIMARY KEY,
+    client_device_id TEXT NOT NULL DEFAULT '',
+    ip TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    user_agent TEXT NOT NULL DEFAULT '',
+    paired_at INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_paired_devices_client_device_id
+    ON paired_devices(client_device_id) WHERE client_device_id != '';
+CREATE TABLE IF NOT EXISTS bridge_config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('bridge.port', '4097', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('bridge.hostname', '0.0.0.0', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.binary', 'opencode2', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.hostname', '127.0.0.1', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.port', '4098', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.directory', '/root/workspace', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.auto_start', 'false', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.auto_restart', 'false', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.db_path', '/root/.local/share/opencode/opencode.db', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.run_as_user', '', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('opencode.password', '${ESC_PASSWORD}', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('fs.allowed_paths', '', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('gateway.url', '', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('gateway.auto_connect', 'false', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('auth.secret_key', 'd7d7a3d4e6f7a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6', strftime('%s','now'));
+INSERT OR REPLACE INTO config (key, value, updated_at) VALUES ('auth.instance_id', 'aabbccddeeff00112233445566778899', strftime('%s','now'));
+"
+echo "bridge.db configured"
 
 exec openmate

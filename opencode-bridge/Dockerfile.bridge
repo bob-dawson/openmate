@@ -1,0 +1,12 @@
+FROM --platform=linux/amd64 rust:bookworm AS builder
+
+WORKDIR /build
+COPY . .
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsqlite3-dev pkg-config \
+    && cargo build --release
+
+FROM debian:bookworm-slim
+COPY --from=builder /build/target/release/openmate /usr/local/bin/openmate
+RUN chmod +x /usr/local/bin/openmate

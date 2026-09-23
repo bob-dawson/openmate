@@ -1,4 +1,0 @@
-  File "<string>", line 4
-    r = db.execute(\
-                  ^
-SyntaxError: '(' was never closed

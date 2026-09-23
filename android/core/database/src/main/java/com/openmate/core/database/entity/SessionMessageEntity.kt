@@ -11,7 +11,6 @@ import androidx.room.PrimaryKey
         Index("sessionId", "type"),
         Index("timeCreated"),
         Index(value = ["sessionId", "timeCreated"]),
-        Index(value = ["sessionId", "timeUpdated"]),
     ],
 )
 data class SessionMessageEntity(

@@ -166,7 +166,7 @@ class SessionMessageRendererTest {
         )
 
         assertThat(summary.icon).isEqualTo("shell")
-        assertThat(summary.text).isEqualTo("echo hello")
+        assertThat(summary.text).isEqualTo("Runs hello")
     }
 
     @Test

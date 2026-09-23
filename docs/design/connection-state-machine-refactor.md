@@ -1,5 +1,8 @@
 # Connection State Machine 重构设计
 
+> 状态：重构已完成。**最终实现**的状态/事件/跃迁以 `docs/design/连接管理状态机.md` 为准；本文保留原始设计动机与迁移计划。
+> 注意：Phase 2/13 中「删除 RouteEvidence*」的结论**未采纳**——路由证据在重构中曾丢失，后已重新接入（见 `连接管理状态机.md` 的「路由证据」节）。
+
 ## 1. 动机
 
 当前 `ConnectionManager` + `ConnectionReducer` 实现存在以下问题：
@@ -114,8 +117,8 @@ sealed class ConnEffect {
 |------|---------|--------|
 | Idle | — | — |
 | Probing | ProbeGateway | — |
-| Connecting | SetApiClient + StartSse | — |
-| Connected | RefreshSessions + SaveProfile | — |
+| Connecting | UpdateLastConnectedAt + StartSse | — |
+| Connected | RefreshSessions + UpdateLastConnectedAt + WriteCache | — |
 | Recovering | StartBackoff(1s * 2^attempt, 上限30s) | StopBackoff |
 | Failed | — | — |
 | NeedsRepair | — | — |
@@ -252,7 +255,7 @@ scope.launch {
 ### Phase 2: 替换 ConnectionManager
 4. `ConnectionManager` 改为持有 `ConnectionActor`，删除旧的 `machineState`/`useGateway`/`evaluating` 等散落状态
 5. 删除 `ConnectionReducer`、`ConnectionAction`、`ConnectionMachineState` 等旧类型
-6. 删除 `RouteEvidenceAggregator`/`RouteEvidence`/`RouteHealthSnapshot`（探测结果直接通过事件回馈，不再需要证据聚合器）
+6. ~~删除 `RouteEvidenceAggregator`/`RouteEvidence`/`RouteHealthSnapshot`~~（**未采纳**：路由证据重新接入 `ConnectionManager`，见 `连接管理状态机.md`）
 
 ### Phase 3: 验证
 7. WiFi 断开 → 自动切网关
@@ -266,8 +269,8 @@ scope.launch {
 - `ConnectionAction.kt`
 - `ConnectionMachineState.kt`
 - `ConnectionEvent.kt`（替换为新的 `ConnEvent`）
-- `RouteEvidenceAggregator.kt`
-- `RouteEvidence.kt`
-- `RouteHealthSnapshot.kt`
-- `RouteEvidenceReporter.kt`
-- `ConnectionManager` 中的 `evaluateAndConnect()`/`evaluateAndConnectInternal()`/`startBackoff()`/`stopBackoff()`/`handleRouteHealthSnapshot()`/`handleTransportSignal()` 等方法
+- ~~`RouteEvidenceAggregator.kt`~~（**保留**）
+- ~~`RouteEvidence.kt`~~（**保留**）
+- ~~`RouteHealthSnapshot.kt`~~（**保留**）
+- ~~`RouteEvidenceReporter.kt`~~（**保留**）
+- `ConnectionManager` 中的 `evaluateAndConnect()`/`evaluateAndConnectInternal()`/`startBackoff()`/`stopBackoff()`/`handleRouteHealthSnapshot()` 等方法（`handleTransportSignal()` 保留，改为写入证据并转发事件）

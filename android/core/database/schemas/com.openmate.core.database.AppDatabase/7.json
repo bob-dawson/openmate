@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 7,
-    "identityHash": "7872d0fdb0b15717c24a6be2ec744df4",
+    "identityHash": "fc02430ffc277cd1b182b05462d22c1d",
     "entities": [
       {
         "tableName": "SessionEntity",
@@ -286,16 +286,6 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_session_message_sessionId_timeCreated` ON `${TABLE_NAME}` (`sessionId`, `timeCreated`)"
-          },
-          {
-            "name": "index_session_message_sessionId_timeUpdated",
-            "unique": false,
-            "columnNames": [
-              "sessionId",
-              "timeUpdated"
-            ],
-            "orders": [],
-            "createSql": "CREATE INDEX IF NOT EXISTS `index_session_message_sessionId_timeUpdated` ON `${TABLE_NAME}` (`sessionId`, `timeUpdated`)"
           }
         ]
       },
@@ -331,7 +321,7 @@
       },
       {
         "tableName": "sync_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `lastSeq` INTEGER NOT NULL, `lastTimeUpdated` INTEGER NOT NULL, PRIMARY KEY(`sessionId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`sessionId` TEXT NOT NULL, `lastSeq` INTEGER NOT NULL, `lastTimeUpdated` INTEGER NOT NULL, `lastRevertTimestamp` INTEGER NOT NULL, PRIMARY KEY(`sessionId`))",
         "fields": [
           {
             "fieldPath": "sessionId",
@@ -348,6 +338,12 @@
           {
             "fieldPath": "lastTimeUpdated",
             "columnName": "lastTimeUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastRevertTimestamp",
+            "columnName": "lastRevertTimestamp",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -386,7 +382,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7872d0fdb0b15717c24a6be2ec744df4')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'fc02430ffc277cd1b182b05462d22c1d')"
     ]
   }
 }

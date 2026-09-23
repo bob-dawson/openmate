@@ -40,7 +40,7 @@ class SubtaskDetailScreenRunningAnchorTest {
     @Test
     fun subtaskScreen_displaysRestoredRunningDuration() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        context.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
             .edit()
             .putString("recent_models", "provider::model::Model")
             .apply()

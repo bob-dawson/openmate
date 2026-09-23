@@ -34,7 +34,7 @@ class SyncDebugControllerTest {
         val controller = SyncDebugController(
             syncSseConnection = connection,
             syncSseStarter = starter,
-            apiClient = OpencodeApiClient(OkHttpClient(), baseUrl = "http://127.0.0.1:4097"),
+            apiClient = com.openmate.core.data.mockOpencodeApiClient("127.0.0.1", 4097),
             logStore = logStore,
             sessionMessageRepository = FakeSessionMessageRepository(),
             appDispatchers = AppDispatchers(io = StandardTestDispatcher(testScheduler)),
@@ -61,7 +61,7 @@ class SyncDebugControllerTest {
         val controller = SyncDebugController(
             syncSseConnection = connection,
             syncSseStarter = FakeSyncSseStarter(),
-            apiClient = OpencodeApiClient(OkHttpClient(), baseUrl = "http://127.0.0.1:4097"),
+            apiClient = com.openmate.core.data.mockOpencodeApiClient("127.0.0.1", 4097),
             logStore = SyncLogStore(),
             sessionMessageRepository = FakeSessionMessageRepository(),
             appDispatchers = AppDispatchers(io = StandardTestDispatcher(testScheduler)),
@@ -116,6 +116,15 @@ class SyncDebugControllerTest {
         override suspend fun getOlderPage(sessionId: String, beforeTimeCreated: Long, beforeId: String, limit: Int) =
             emptyList<SessionMessage>()
 
+        override suspend fun getOlderPageByUserTurns(
+            sessionId: String,
+            beforeTimeCreated: Long,
+            beforeId: String,
+            userTurns: Int,
+        ) = emptyList<SessionMessage>()
+
+        override suspend fun findBusyStartTime(sessionId: String): Long? = null
+
         override suspend fun initSync(sessionId: String, limit: Int) = SessionMessageSyncResult(0L, emptyList())
 
         override suspend fun incrementalSync(sessionId: String) {}
@@ -127,5 +136,9 @@ class SyncDebugControllerTest {
         override suspend fun fetchDiffFiles(sessionId: String, messageId: String, toolName: String, targetFilePath: String?): List<com.openmate.core.domain.model.DiffFile> = emptyList()
 
         override suspend fun getLastSeq(sessionId: String): Long? = null
+
+        override suspend fun rollbackSeq(sessionId: String, count: Long) {}
+
+        override suspend fun deleteMessage(sessionId: String, messageId: String) {}
     }
 }

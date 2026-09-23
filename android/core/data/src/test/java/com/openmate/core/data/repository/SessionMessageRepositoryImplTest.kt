@@ -1,6 +1,7 @@
 package com.openmate.core.data.repository
 
 import com.google.common.truth.Truth.assertThat
+import com.openmate.core.data.mockOpencodeApiClient
 import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.DatabaseFactory
@@ -34,7 +35,7 @@ class SessionMessageRepositoryImplTest {
 
         dbProvider = ActiveDatabaseProvider(RuntimeEnvironment.getApplication(), DatabaseFactory(RuntimeEnvironment.getApplication()))
         dbProvider.setActive(PROFILE_ID)
-        val apiClient = OpencodeApiClient(OkHttpClient(), baseUrl = server.url("/").toString().removeSuffix("/"))
+        val apiClient = mockOpencodeApiClient(server)
         logStore = SyncLogStore()
         repository = SessionMessageRepositoryImpl(
             syncApiClient = SyncApiClient(OkHttpClient(), apiClient),
@@ -51,7 +52,7 @@ class SessionMessageRepositoryImplTest {
     }
 
     @Test
-    fun incrementalSync_returnsInsertedAndUpdatedMessages() = runTest {
+    fun incrementalSync_insertsNewMessagesFromMessagesEndpoint() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -86,47 +87,39 @@ class SessionMessageRepositoryImplTest {
             ),
         )
         repository.initSync(SESSION_ID, limit = 30)
-        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 5L))
 
         server.enqueue(
             MockResponse().setBody(
                 """
                 {
-                  "events": [
+                  "messages": [
                     {
-                      "id": "evt-1",
-                      "aggregateId": "session-1",
-                      "seq": 6,
-                      "type": "session.next.text.started.event",
+                      "id": "m2",
+                      "sessionId": "session-1",
+                      "type": "user",
+                      "timeCreated": 2,
+                      "timeUpdated": 2,
                       "data": {
-                        "timestamp": 3
-                      }
-                    },
-                    {
-                      "id": "evt-2",
-                      "aggregateId": "session-1",
-                      "seq": 7,
-                      "type": "session.next.text.ended.event",
-                      "data": {
-                        "timestamp": 4,
-                        "text": "updated text"
+                        "text": "hello"
                       }
                     },
                     {
                       "id": "m3",
-                      "aggregateId": "session-1",
-                      "seq": 8,
-                      "type": "session.next.prompted.event",
+                      "sessionId": "session-1",
+                      "type": "assistant",
+                      "timeCreated": 3,
+                      "timeUpdated": 3,
                       "data": {
-                        "timestamp": 5,
-                        "prompt": {
-                          "text": "new prompt",
-                          "files": [],
-                          "agents": []
-                        }
+                        "agent": "openmate",
+                        "model": {},
+                        "content": [{"type":"text","text":"hi back"}],
+                        "time": {"created": 3, "completed": 3},
+                        "finish": "stop"
                       }
                     }
                   ],
+                  "deletedIds": [],
+                  "hasMore": false,
                   "maxSeq": 8
                 }
                 """.trimIndent(),
@@ -135,8 +128,9 @@ class SessionMessageRepositoryImplTest {
 
         repository.incrementalSync(SESSION_ID)
 
-        assertThat(dbProvider.getActive().sessionMessageDao().getById("m1")?.data).contains("updated text")
-        assertThat(dbProvider.getActive().sessionMessageDao().getById("m3")?.data).contains("new prompt")
+        assertThat(dbProvider.getActive().sessionMessageDao().getById("m1")?.id).isEqualTo("m1")
+        assertThat(dbProvider.getActive().sessionMessageDao().getById("m2")?.data).contains("hello")
+        assertThat(dbProvider.getActive().sessionMessageDao().getById("m3")?.data).contains("hi back")
     }
 
     @Test
@@ -167,7 +161,7 @@ class SessionMessageRepositoryImplTest {
     }
 
     @Test
-    fun incrementalSync_marksRunningToolAbortedWhenStepFails() = runTest {
+    fun incrementalSync_updatesExistingMessage() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -202,48 +196,30 @@ class SessionMessageRepositoryImplTest {
             ),
         )
         repository.initSync(SESSION_ID, limit = 30)
-        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 1L))
 
         server.enqueue(
             MockResponse().setBody(
                 """
                 {
-                  "events": [
+                  "messages": [
                     {
-                      "id": "evt-tool-input-started",
-                      "aggregateId": "session-1",
-                      "seq": 2,
-                      "type": "session.next.tool.input.started.event",
+                      "id": "assistant-1",
+                      "sessionId": "session-1",
+                      "type": "assistant",
+                      "timeCreated": 1,
+                      "timeUpdated": 2,
                       "data": {
-                        "timestamp": 2,
-                        "callID": "call-1",
-                        "name": "bash"
-                      }
-                    },
-                    {
-                      "id": "evt-tool-called",
-                      "aggregateId": "session-1",
-                      "seq": 3,
-                      "type": "session.next.tool.called.event",
-                      "data": {
-                        "timestamp": 3,
-                        "callID": "call-1",
-                        "input": {"cmd":"pwd"},
-                        "provider": {}
-                      }
-                    },
-                    {
-                      "id": "evt-step-failed",
-                      "aggregateId": "session-1",
-                      "seq": 4,
-                      "type": "session.next.step.failed.event",
-                      "data": {
-                        "timestamp": 4,
-                        "error": {"message":"MessageAbortedError"}
+                        "agent": "openmate",
+                        "model": {},
+                        "content": [{"type":"text","text":"updated text"}],
+                        "time": {"created": 1, "completed": 2},
+                        "finish": "stop"
                       }
                     }
                   ],
-                  "maxSeq": 4
+                  "deletedIds": [],
+                  "hasMore": false,
+                  "maxSeq": 2
                 }
                 """.trimIndent(),
             ),
@@ -252,13 +228,12 @@ class SessionMessageRepositoryImplTest {
         repository.incrementalSync(SESSION_ID)
 
         val stored = dbProvider.getActive().sessionMessageDao().getById("assistant-1")!!
-        assertThat(stored.completedAt).isEqualTo(4L)
-        assertThat(stored.data).contains("\"status\":\"error\"")
-        assertThat(stored.data).contains("Tool execution aborted")
+        assertThat(stored.data).contains("updated text")
+        assertThat(stored.completedAt).isEqualTo(2L)
     }
 
     @Test
-    fun incrementalSync_completesExistingCompactionWhenEndedArrivesLater() = runTest {
+    fun incrementalSync_deletesMessagesWhenServerCountShrinks() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -272,18 +247,20 @@ class SessionMessageRepositoryImplTest {
                 {
                   "messages": [
                     {
-                      "id": "compaction-1",
+                      "id": "m1",
                       "sessionId": "session-1",
-                      "type": "compaction",
+                      "type": "user",
                       "timeCreated": 1,
                       "timeUpdated": 1,
-                      "data": {
-                        "reason": "manual",
-                        "summary": "",
-                        "time": {
-                          "created": 1
-                        }
-                      }
+                      "data": {"text":"hello"}
+                    },
+                    {
+                      "id": "m2",
+                      "sessionId": "session-1",
+                      "type": "assistant",
+                      "timeCreated": 2,
+                      "timeUpdated": 2,
+                      "data": {"content":[],"time":{"created":2}}
                     }
                   ],
                   "maxSeq": 1
@@ -292,81 +269,97 @@ class SessionMessageRepositoryImplTest {
             ),
         )
         repository.initSync(SESSION_ID, limit = 30)
-        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 1L))
 
+        assertThat(dbProvider.getActive().sessionMessageDao().getById("m2")).isNotNull()
+
+        // Gate: server reports only 1 alive in range < local count 2.
         server.enqueue(
             MockResponse().setBody(
                 """
-                {
-                  "events": [
-                    {
-                      "id": "evt-ended",
-                      "aggregateId": "session-1",
-                      "seq": 2,
-                      "type": "session.next.compaction.ended.event",
-                      "data": {
-                        "timestamp": 4,
-                        "text": "condensed prior context"
-                      }
-                    }
-                  ],
-                  "maxSeq": 2
-                }
+                {"messages":[],"hasMore":false,"maxSeq":2,"serverCount":1}
+                """.trimIndent(),
+            ),
+        )
+        // Repair (n=2 <= 100): only m1 is alive on the server.
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {"ids":["m1"]}
                 """.trimIndent(),
             ),
         )
 
         repository.incrementalSync(SESSION_ID)
 
-        val stored = dbProvider.getActive().sessionMessageDao().getById("compaction-1")!!
-        assertThat(stored.completedAt).isEqualTo(4L)
-        assertThat(stored.data).contains("condensed prior context")
-        assertThat(stored.data).contains("\"completed\":4")
+        assertThat(dbProvider.getActive().sessionMessageDao().getById("m2")).isNull()
+        assertThat(dbProvider.getActive().sessionMessageDao().getById("m1")).isNotNull()
     }
 
     @Test
-    fun incrementalSync_logsPackageBytesAndPerEventBytes() = runTest {
+    fun incrementalSync_usesProbeRepairForLargeSessions() = runTest {
+        val dao = dbProvider.getActive().sessionMessageDao()
+        dao.upsertAll(
+            (0..104).map { i ->
+                com.openmate.core.database.entity.SessionMessageEntity(
+                    id = "m%03d".format(i),
+                    sessionId = SESSION_ID,
+                    type = "user",
+                    data = "{\"text\":\"m$i\"}",
+                    timeCreated = i.toLong(),
+                    timeUpdated = i.toLong(),
+                )
+            },
+        )
+        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(SESSION_ID, 0L, 0L, 0L))
+
+        // Gate: 102 alive < 105 local -> a 3-message suffix was deleted.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"messages":[],"hasMore":false,"maxSeq":2,"serverCount":102}""",
+            ),
+        )
+        // Probe prefix counts at positions 0,11,...,99,104.
+        server.enqueue(
+            MockResponse().setBody(
+                """{"counts":[1,12,23,34,45,56,67,78,89,100,102]}""",
+            ),
+        )
+        // Alive ids inside the bracketed block [m099, m104].
+        server.enqueue(
+            MockResponse().setBody(
+                """{"ids":["m099","m100","m101"]}""",
+            ),
+        )
+
+        repository.incrementalSync(SESSION_ID)
+
+        assertThat(dao.getById("m101")).isNotNull()
+        assertThat(dao.getById("m102")).isNull()
+        assertThat(dao.getById("m103")).isNull()
+        assertThat(dao.getById("m104")).isNull()
+    }
+
+    @Test
+    fun incrementalSync_logsPackageBytes() = runTest {
         val responseBody =
             """
             {
-              "events": [
+              "messages": [
                 {
-                  "id": "evt-11",
-                  "aggregateId": "session-1",
-                  "seq": 11,
-                  "type": "session.next.prompted.event",
-                  "data": {
-                    "timestamp": 5,
-                    "prompt": {
-                      "text": "new prompt",
-                      "files": [],
-                      "agents": []
-                    }
-                  }
+                  "id": "m5",
+                  "sessionId": "session-1",
+                  "type": "user",
+                  "timeCreated": 5,
+                  "timeUpdated": 5,
+                  "data": {"text":"new prompt"}
                 }
               ],
+              "deletedIds": [],
+              "hasMore": false,
               "maxSeq": 11
             }
             """.trimIndent()
-        val rawEventJson =
-            """
-            {
-                  "id": "evt-11",
-                  "aggregateId": "session-1",
-                  "seq": 11,
-                  "type": "session.next.prompted.event",
-                  "data": {
-                    "timestamp": 5,
-                    "prompt": {
-                      "text": "new prompt",
-                      "files": [],
-                      "agents": []
-                    }
-                  }
-                }
-            """.trimIndent()
         val expectedPackageBytes = responseBody.toByteArray(StandardCharsets.UTF_8).size
-        val expectedEventBytes = rawEventJson.toByteArray(StandardCharsets.UTF_8).size
 
         server.enqueue(
             MockResponse().setBody(
@@ -386,22 +379,18 @@ class SessionMessageRepositoryImplTest {
             ),
         )
         repository.initSync(SESSION_ID, limit = 30)
-        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 10L))
 
-        server.enqueue(
-            MockResponse().setBody(responseBody),
-        )
+        server.enqueue(MockResponse().setBody(responseBody))
 
         repository.incrementalSync(SESSION_ID)
 
         val rendered = logStore.entries.value.map { it.renderedText }
         assertThat(rendered.any { it.contains("增量包返回") && it.contains("bytes=$expectedPackageBytes") }).isTrue()
-        assertThat(rendered.any { it.contains("增量消息处理") && it.contains("seq=11") && it.contains("bytes=$expectedEventBytes") }).isTrue()
-        assertThat(rendered.any { it.contains("增量同步结束") && it.contains("totalBytes=$expectedPackageBytes") && it.contains("bytes=$expectedPackageBytes") }).isTrue()
+        assertThat(rendered.any { it.contains("增量同步结束") }).isTrue()
     }
 
     @Test
-    fun incrementalSync_logsFailureWhenEventsFetchFailsBeforeReplay() = runTest {
+    fun incrementalSync_logsFailureWhenMessagesFetchFails() = runTest {
         server.enqueue(
             MockResponse().setBody(
                 """
@@ -420,7 +409,6 @@ class SessionMessageRepositoryImplTest {
             ),
         )
         repository.initSync(SESSION_ID, limit = 30)
-        dbProvider.getActive().syncStateDao().upsert(SyncStateEntity(sessionId = SESSION_ID, lastSeq = 10L))
 
         server.enqueue(
             MockResponse()
@@ -435,7 +423,6 @@ class SessionMessageRepositoryImplTest {
         assertThat(result.exceptionOrNull()).isNotNull()
         val rendered = logStore.entries.value.map { it.renderedText }
         assertThat(rendered.any { it.contains("增量同步失败") }).isTrue()
-        assertThat(rendered.any { it.contains("afterSeq=10") }).isTrue()
     }
 
     private companion object {

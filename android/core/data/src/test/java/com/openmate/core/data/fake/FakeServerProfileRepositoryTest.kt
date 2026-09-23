@@ -16,22 +16,22 @@ class FakeServerProfileRepositoryTest {
 
     @Test
     fun save_andGetAll() = runTest {
-        val profile = ServerProfile("1", "Work", "1.1.1.1", 4096, null, 100L)
+        val profile = ServerProfile(id = "1", name = "Work", address = "1.1.1.1", port = 4096, password = null, createdAt = 100L)
         repo.save(profile)
         assertThat(repo.getAll()).containsExactly(profile)
     }
 
     @Test
     fun save_updatesExisting() = runTest {
-        repo.save(ServerProfile("1", "Old", "1.1.1.1", 4096, null, 100L))
-        repo.save(ServerProfile("1", "New", "2.2.2.2", 8080, null, 100L))
+        repo.save(ServerProfile(id = "1", name = "Old", address = "1.1.1.1", port = 4096, password = null, createdAt = 100L))
+        repo.save(ServerProfile(id = "1", name = "New", address = "2.2.2.2", port = 8080, password = null, createdAt = 100L))
         assertThat(repo.getAll()).hasSize(1)
         assertThat(repo.getById("1")!!.name).isEqualTo("New")
     }
 
     @Test
     fun delete() = runTest {
-        repo.save(ServerProfile("1", "A", "1.1.1.1", 4096, null, 100L))
+        repo.save(ServerProfile(id = "1", name = "A", address = "1.1.1.1", port = 4096, password = null, createdAt = 100L))
         repo.delete("1")
         assertThat(repo.getAll()).isEmpty()
     }

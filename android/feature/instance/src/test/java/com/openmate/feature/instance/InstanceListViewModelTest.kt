@@ -126,5 +126,7 @@ class InstanceListViewModelTest {
         override fun clearNeedsRepairing() = Unit
 
         override fun clearError() = Unit
+
+        override fun notifyProfileUpdated(profile: ServerProfile) = Unit
     }
 }

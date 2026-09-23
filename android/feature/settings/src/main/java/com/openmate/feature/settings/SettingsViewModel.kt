@@ -31,7 +31,6 @@ import javax.inject.Inject
 private const val PREFS_NAME = "settings"
 private const val KEY_SHOW_REASONING = "show_reasoning"
 private const val KEY_COMPACT_MODE = "compact_mode"
-private const val KEY_LIVE_MESSAGES = "live_messages"
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
@@ -60,9 +59,6 @@ class SettingsViewModel @Inject constructor(
 
     private val _compactMode = MutableStateFlow(prefs.getBoolean(KEY_COMPACT_MODE, false))
     val compactMode: StateFlow<Boolean> = _compactMode.asStateFlow()
-
-    private val _liveMessages = MutableStateFlow(prefs.getBoolean(KEY_LIVE_MESSAGES, false))
-    val liveMessages: StateFlow<Boolean> = _liveMessages.asStateFlow()
 
     private val _gatewayEnabled = MutableStateFlow(true)
     val gatewayEnabled: StateFlow<Boolean> = _gatewayEnabled.asStateFlow()
@@ -205,12 +201,6 @@ class SettingsViewModel @Inject constructor(
     fun setCompactMode(enabled: Boolean) {
         _compactMode.value = enabled
         prefs.edit().putBoolean(KEY_COMPACT_MODE, enabled).apply()
-    }
-
-    fun setLiveMessages(enabled: Boolean) {
-        _liveMessages.value = enabled
-        prefs.edit().putBoolean(KEY_LIVE_MESSAGES, enabled).apply()
-        connectionRepository.reconnect()
     }
 
     fun setGatewayEnabled(enabled: Boolean) {

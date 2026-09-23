@@ -34,8 +34,10 @@ data class SessionModelDto(
 data class SessionDto(
     val id: String,
     val slug: String = "",
-    val title: String = "",
+    val title: String? = null,
     val directory: String = "",
+    val location: SessionLocationDto? = null,
+    val subpath: String? = null,
     @SerialName("projectID") val projectID: String = "",
     @SerialName("workspaceID") val workspaceID: String? = null,
     @SerialName("parentID") val parentID: String? = null,
@@ -49,6 +51,11 @@ data class SessionDto(
     val tokens: SessionTokensDto? = null,
     val model: SessionModelDto? = null,
     val agent: String? = null,
+)
+
+@Serializable
+data class SessionLocationDto(
+    val directory: String = "",
 )
 
 @Serializable
@@ -80,10 +87,11 @@ data class SessionRevertDto(
 )
 
 fun SessionDto.toDomain(): Session {
+    val effectiveDirectory = directory.ifBlank { location?.directory ?: "" }
     return Session(
         id = id,
-        title = title,
-        directory = directory,
+        title = title ?: "",
+        directory = effectiveDirectory,
         projectID = projectID,
         workspaceID = workspaceID,
         parentID = parentID,
@@ -91,7 +99,7 @@ fun SessionDto.toDomain(): Session {
         updatedAt = time.updated,
         isCompacting = time.compacting != null,
         isArchived = time.archived != null,
-        revert = revert?.let { SessionRevert(messageID = it.messageID ?: "", partID = it.partID) },
+        revert = revert?.let { SessionRevert(messageID = it.messageID ?: "", partID = it.partID, from = it.messageID) },
         cost = cost,
         tokens = tokens?.let {
             SessionTokens(

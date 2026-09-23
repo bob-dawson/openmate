@@ -25,7 +25,7 @@ class SyncLogFilterLogicTest {
             previousVisibleLogs = matched.visibleLogs,
         )
         assertThat(invalid.visibleLogs).containsExactly(source[1])
-        assertThat(invalid.regexError).isEqualTo("正则无效")
+        assertThat(invalid.regexError).isEqualTo("Invalid regex")
     }
 
     @Test

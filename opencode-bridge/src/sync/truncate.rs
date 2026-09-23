@@ -505,18 +505,6 @@ fn build_state(
 ) -> Value {
     let mut result = Map::new();
 
-    if let Some(status) = state.get("status") {
-        result.insert(String::from("status"), status.clone());
-    }
-
-    if let Some(time) = state.get("time") {
-        result.insert(String::from("time"), time.clone());
-    }
-
-    if let Some(title) = state.get("title") {
-        result.insert(String::from("title"), title.clone());
-    }
-
     if let Some(input) = state.get("input") {
         result.insert(String::from("input"), keep_fields(input, input_keep));
     }
@@ -578,44 +566,12 @@ fn truncate_attachment(attachment: &Value) -> Value {
 }
 
 fn truncate_tool_bash(state: &Value) -> Value {
-    let mut result = Map::new();
-
-    if let Some(status) = state.get("status") {
-        result.insert(String::from("status"), status.clone());
-    }
-
-    if let Some(input) = state.get("input") {
-        result.insert(String::from("input"), keep_fields(input, &["command", "description"]));
-    }
-
-    if let Some(structured) = state.get("structured") {
-        let filtered = keep_fields(structured, &["exit", "truncated"]);
-        if !filtered.as_object().map_or(true, |m| m.is_empty()) {
-            result.insert(String::from("structured"), filtered);
-        }
-    }
-
-    if let Some(output) = state.get("output").and_then(|o| o.as_str()) {
-        result.insert(String::from("content"), json!([{"type": "text", "text": truncate_bash_output(output, 5, 5)}]));
-    } else if let Some(content) = state.get("content").and_then(|c| c.as_array()) {
-        let filtered: Vec<Value> = content
-            .iter()
-            .map(|item| match item.get("type").and_then(|t| t.as_str()) {
-                Some("text") => {
-                    let text = item.get("text").and_then(|t| t.as_str()).unwrap_or("");
-                    json!({"type": "text", "text": truncate_bash_output(text, 5, 5)})
-                }
-                _ => keep_file_metadata(item),
-            })
-            .collect();
-        result.insert(String::from("content"), Value::Array(filtered));
-    }
-
-    if let Some(time) = state.get("time") {
-        result.insert(String::from("time"), time.clone());
-    }
-
-    Value::Object(result)
+    build_state(
+        state,
+        &["command", "description"],
+        &["exit", "truncated"],
+        ContentMode::TruncateBashOutput,
+    )
 }
 
 fn truncate_tool_read(state: &Value) -> Value {
@@ -682,36 +638,12 @@ fn truncate_tool_grep(state: &Value) -> Value {
 }
 
 fn truncate_tool_task(state: &Value) -> Value {
-    let mut result = Map::new();
-
-    if let Some(status) = state.get("status") {
-        result.insert(String::from("status"), status.clone());
-    }
-
-    if let Some(time) = state.get("time") {
-        result.insert(String::from("time"), time.clone());
-    }
-
-    if let Some(title) = state.get("title") {
-        result.insert(String::from("title"), title.clone());
-    }
-
-    if let Some(input) = state.get("input") {
-        result.insert(String::from("input"), keep_fields(input, &["description", "subagent_type"]));
-    }
-
-    if let Some(structured) = state.get("structured") {
-        let filtered = keep_fields(structured, &["sessionId", "model"]);
-        if !filtered.as_object().map_or(true, |m| m.is_empty()) {
-            result.insert(String::from("structured"), filtered);
-        }
-    }
-
-    if let Some(metadata) = state.get("metadata") {
-        result.insert(String::from("metadata"), metadata.clone());
-    }
-
-    Value::Object(result)
+    build_state(
+        state,
+        &["description", "subagent_type"],
+        &["sessionId", "model"],
+        ContentMode::Skip,
+    )
 }
 
 fn truncate_tool_webfetch(state: &Value) -> Value {
@@ -746,14 +678,6 @@ fn truncate_tool_minimal(state: &Value) -> Value {
 
 fn truncate_tool_unknown(state: &Value) -> Value {
     let mut result = Map::new();
-
-    if let Some(status) = state.get("status") {
-        result.insert(String::from("status"), status.clone());
-    }
-
-    if let Some(time) = state.get("time") {
-        result.insert(String::from("time"), time.clone());
-    }
 
     if let Some(input) = state.get("input") {
         result.insert(String::from("input"), keep_fields(input, &["name"]));

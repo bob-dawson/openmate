@@ -176,7 +176,6 @@ fun SessionDetailScreen(
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
     val syncLogEntries by viewModel.syncLogEntries.collectAsState()
-    val liveParts by viewModel.liveParts.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
     val previewFileState by viewModel.previewFileState.collectAsState()
@@ -195,7 +194,6 @@ fun SessionDetailScreen(
     val prefs = remember { context.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
     val showReasoning by remember { mutableStateOf(prefs.getBoolean("show_reasoning", true)) }
     val compactMode by remember { mutableStateOf(prefs.getBoolean("compact_mode", false)) }
-    val showLiveMessages by remember { mutableStateOf(prefs.getBoolean("live_messages", false)) }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -262,7 +260,7 @@ fun SessionDetailScreen(
 
     val contentUpdateKey = remember(messages) {
         val last = messages.lastOrNull()
-        if (last == null) "" else listOf(last.id, last.completedAt).joinToString("|")
+        if (last == null) "" else listOf(last.id, last.timeUpdated, last.completedAt, last.data).joinToString("|")
     }
     LaunchedEffect(contentUpdateKey) {
         if (messages.isNotEmpty() && prevMessageCount.intValue == messages.size) {
@@ -569,10 +567,6 @@ fun SessionDetailScreen(
             }
         }
 
-        val livePartsByMessageId = remember(liveParts) {
-            liveParts.groupBy { it.messageId }
-        }
-
         val previousUserMessageIndex by remember(displayMessages) {
             derivedStateOf {
                 val idx = listState.firstVisibleItemIndex
@@ -649,16 +643,12 @@ fun SessionDetailScreen(
                 ) {
                     items(displayMessages, key = { it.id }) { entity ->
                         val userModelName = if (entity.type == "user") userModelMap[entity.id] else null
-                        val livePartsForMsg = livePartsByMessageId[entity.id]
-                        val hasActiveLiveParts = showLiveMessages && livePartsForMsg != null && entity.completedAt == null
                         SessionMessageRenderer(
                             entity = entity,
                             showReasoning = showReasoning && !compactMode,
                             compactMode = compactMode,
                             isQueued = entity.id in queuedMessageIds,
                             userModelName = userModelName,
-                            reasoningDefaultExpanded = showLiveMessages,
-                            liveParts = if (hasActiveLiveParts) livePartsForMsg else null,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
                             },
@@ -764,6 +754,23 @@ fun SessionDetailScreen(
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.secondaryContainer)
+                                .clickable {
+                                    viewModel.loadProviders(forceRefresh = true)
+                                    showModelPicker = true
+                                }
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.select_model),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
                         }
                     }
@@ -1043,87 +1050,63 @@ fun SessionDetailScreen(
     }
 
     if (showResyncDialog) {
-        val scope = rememberCoroutineScope()
-        var totalCount by remember { mutableStateOf(0L) }
-        var minTimeCreated by remember { mutableStateOf<Long?>(null) }
-        var selectedDate by remember { mutableStateOf("") }
-        var selectedTime by remember { mutableStateOf("") }
-        var messageCount by remember { mutableStateOf<Int?>(null) }
-        var isResyncing by remember { mutableStateOf(false) }
-        val resyncing by viewModel.isResyncing.collectAsState()
+        var selectedCount by remember { mutableStateOf(50) }
+        var customCount by remember { mutableStateOf("") }
+        var currentSeq by remember { mutableStateOf<Long?>(null) }
         LaunchedEffect(Unit) {
-            val (count, minTime) = viewModel.getSessionStats()
-            totalCount = count
-            minTimeCreated = minTime
+            currentSeq = viewModel.getCurrentSeq()
         }
-        LaunchedEffect(selectedDate, selectedTime) {
-            val ts = parseDateTimeToEpochMillis(selectedDate, selectedTime)
-            if (ts != null) {
-                messageCount = viewModel.countBySessionAfterTimeCreated(ts)
-            } else {
-                messageCount = null
-            }
-        }
-        isResyncing = resyncing
+        val effectiveCount = customCount.toIntOrNull() ?: selectedCount
         AlertDialog(
-            onDismissRequest = { if (!resyncing) showResyncDialog = false },
+            onDismissRequest = { showResyncDialog = false },
             title = { Text(stringResource(R.string.resync)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(stringResource(R.string.resync_desc, totalCount, formatEpochMillis(minTimeCreated)))
-                    OutlinedTextField(
-                        value = selectedDate,
-                        onValueChange = { selectedDate = it },
-                        label = { Text(stringResource(R.string.resync_date_label)) },
-                        placeholder = { Text("2026-07-01") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !resyncing,
-                    )
-                    OutlinedTextField(
-                        value = selectedTime,
-                        onValueChange = { selectedTime = it },
-                        label = { Text(stringResource(R.string.resync_time_label)) },
-                        placeholder = { Text("12:00") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !resyncing,
-                    )
-                    if (messageCount != null) {
-                        Text(
-                            stringResource(R.string.resync_message_count, messageCount!!),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (resyncing) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Text(stringResource(R.string.resyncing), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.resync_desc, currentSeq?.toString() ?: "-"))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(20, 50, 100).forEach { count ->
+                            FilterChip(
+                                selected = selectedCount == count && customCount.isBlank(),
+                                onClick = {
+                                    selectedCount = count
+                                    customCount = ""
+                                },
+                                label = { Text("$count") },
+                            )
                         }
+                        OutlinedTextField(
+                            value = customCount,
+                            onValueChange = { customCount = it },
+                            modifier = Modifier.width(80.dp),
+                            placeholder = { Text(stringResource(R.string.custom)) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Go,
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onGo = {
+                                    viewModel.resync(effectiveCount)
+                                    showResyncDialog = false
+                                },
+                            ),
+                        )
                     }
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        val ts = parseDateTimeToEpochMillis(selectedDate, selectedTime) ?: return@TextButton
-                        viewModel.resync(ts)
-                        showResyncDialog = false
-                    },
-                    enabled = !resyncing && messageCount != null,
-                ) {
+                TextButton(onClick = {
+                    viewModel.resync(effectiveCount)
+                    showResyncDialog = false
+                }) {
                     Text(stringResource(R.string.resync))
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { showResyncDialog = false },
-                    enabled = !resyncing,
-                ) {
+                TextButton(onClick = { showResyncDialog = false }) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -1385,26 +1368,3 @@ private fun extractMsgTimestamp(msgId: String): Long {
     val hex = msgId.split("_")[1].take(12)
     return hex.toLong(16) / 4096L
 }
-
-private fun parseDateTimeToEpochMillis(date: String, time: String): Long? {
-    if (date.isBlank()) return null
-    val dateParts = date.split("-")
-    if (dateParts.size != 3) return null
-    val year = dateParts[0].toIntOrNull() ?: return null
-    val month = dateParts[1].toIntOrNull() ?: return null
-    val day = dateParts[2].toIntOrNull() ?: return null
-    val timeParts = if (time.isNotBlank()) time.split(":") else listOf("0", "0")
-    val hour = timeParts.getOrNull(0)?.toIntOrNull() ?: 0
-    val minute = timeParts.getOrNull(1)?.toIntOrNull() ?: 0
-    val calendar = java.util.Calendar.getInstance()
-    calendar.set(year, month - 1, day, hour, minute, 0)
-    calendar.set(java.util.Calendar.MILLISECOND, 0)
-    return calendar.timeInMillis
-}
-
-private fun formatEpochMillis(ts: Long?): String {
-    if (ts == null || ts == 0L) return "-"
-    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
-    return sdf.format(java.util.Date(ts))
-}
-

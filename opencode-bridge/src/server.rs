@@ -41,24 +41,6 @@ pub async fn run_server(
     tracing::info!("Allowed paths: {:?}", config.effective_allowed_paths());
     tracing::info!("Auth enabled: {}", config.bridge.auth_enabled);
 
-    {
-        let state = app_state.clone();
-        tokio::spawn(async move {
-            loop {
-                match state.sync_db.ensure_indexes() {
-                    Ok(()) => {
-                        tracing::info!("Sync indexes created successfully");
-                        break;
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to create sync indexes (will retry in 5min): {}", e);
-                        tokio::time::sleep(Duration::from_secs(300)).await;
-                    }
-                }
-            }
-        });
-    }
-
     if app_state.opencode_manager.check_health().await {
         tracing::info!("opencode is already running, adopting");
         app_state.opencode_manager.set_status(crate::state::OpencodeStatus::Running).await;
@@ -95,12 +77,12 @@ pub async fn run_server(
         .route("/api/bridge/sync/sessions", get(sync::router::sessions))
         .route("/api/bridge/sync/session/{sessionID}/init", get(sync::router::init))
         .route("/api/bridge/sync/session/{sessionID}/messages", get(sync::router::messages))
-        .route("/api/bridge/sync/session/{sessionID}/stats", get(sync::router::session_stats))
+        .route("/api/bridge/sync/session/{sessionID}/ids", get(sync::router::ids))
+        .route("/api/bridge/sync/session/{sessionID}/probe", post(sync::router::probe))
         .route("/api/bridge/sync/session/{sessionID}/events", get(sync::router::events))
         .route("/api/bridge/sync/session/{sessionID}/message/{messageID}/full", get(sync::router::full))
         .route("/api/bridge/sync/session/{sessionID}/resolve-message-id", get(sync::router::resolve_message_id))
-        // resolve-evt-id temporarily disabled: message.id is now the canonical ID when reading from message+part tables
-        // .route("/api/bridge/sync/session/{sessionID}/resolve-evt-id", get(sync::router::resolve_evt_id))
+        .route("/api/bridge/sync/session/{sessionID}/resolve-evt-id", get(sync::router::resolve_evt_id))
         .route("/api/bridge/events", get(events::router::events_sse))
         .route("/api/bridge/sync/events", get(sync::sse::sync_sse))
         .route("/api/bridge/status", get(bridge::router::status))
@@ -315,5 +297,3 @@ pub async fn run_server(
     server.await.ok();
     Ok(())
 }
-
-

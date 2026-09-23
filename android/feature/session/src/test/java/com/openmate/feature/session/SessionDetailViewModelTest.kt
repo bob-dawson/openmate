@@ -92,7 +92,7 @@ class SessionDetailViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
-        appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
+        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
             .edit()
             .clear()
             .apply()
@@ -101,7 +101,7 @@ class SessionDetailViewModelTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
-        appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
+        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
             .edit()
             .clear()
             .apply()
@@ -567,7 +567,7 @@ class SessionDetailViewModelTest {
 
     @Test
     fun loadProviders_andVariantPreference_areScopedByProfileId_notDirectoryOrName() = runTest(dispatcher) {
-        val prefs = appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val prefs = appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
         val profileOneProviders = ProviderListDto(
             all = listOf(
                 ProviderInfoDto(
@@ -819,7 +819,7 @@ class SessionDetailViewModelTest {
         )
 
         viewModel.loadSession(SESSION_ID)
-        advanceUntilIdle()
+        waitUntil { viewModel.currentBusyStart.value == 500L }
 
         assertThat(viewModel.currentBusyStart.value).isEqualTo(500L)
         assertThat(viewModel.sessionStatus.value).isEqualTo(SessionStatus.BUSY.name)
@@ -931,11 +931,11 @@ class SessionDetailViewModelTest {
             appDispatchers = AppDispatchers(io = dispatcher, main = dispatcher, default = dispatcher),
         ),
         apiClient: OpencodeApiClient = FakeOpencodeApiClient().client,
-        dbProvider: ActiveDatabaseProvider = ActiveDatabaseProvider(DatabaseFactory(appContext())).apply {
+        dbProvider: ActiveDatabaseProvider = ActiveDatabaseProvider(appContext(), DatabaseFactory(appContext())).apply {
             setActive("profile-default")
         },
     ): SessionDetailViewModel {
-        appContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
+        appContext().getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
             .edit()
             .putString("recent_models", "provider::model::Model")
             .apply()
@@ -1053,15 +1053,16 @@ class SessionDetailViewModelTest {
 
         override suspend fun getLastSeq(sessionId: String): Long? = lastSeq
 
-        override suspend fun resyncFrom(sessionId: String, sinceTimeUpdated: Long) = Unit
-
-        override suspend fun getMinTimeCreated(sessionId: String): Long? = null
-
-        override suspend fun countBySessionAfterTimeCreated(sessionId: String, since: Long): Int = 0
-
-        override suspend fun countBySession(sessionId: String): Int = 0
+        override suspend fun rollbackSeq(sessionId: String, count: Long) = Unit
 
         override suspend fun deleteMessage(sessionId: String, messageId: String) = Unit
+
+        override suspend fun fetchDiffFiles(
+            sessionId: String,
+            messageId: String,
+            toolName: String,
+            targetFilePath: String?,
+        ): List<com.openmate.core.domain.model.DiffFile> = emptyList()
 
         fun emitSyncEvent(event: SessionMessageSyncEvent) {
             syncEvents.tryEmit(event)
@@ -1107,85 +1108,83 @@ class SessionDetailViewModelTest {
         val promptCalls = mutableListOf<PromptCall>()
         val readFileCalls = mutableListOf<String>()
 
+        private var lastVariant: String? = null
+
         val client: OpencodeApiClient = OpencodeApiClient(
             client = OkHttpClient.Builder()
                 .callTimeout(10, TimeUnit.MILLISECONDS)
                 .addInterceptor { chain ->
                     val request = chain.request()
-                    if (request.url.encodedPath == "/provider") {
-                        val providersJson = Json.encodeToString(
-                            ProviderListDto(
-                                all = listOf(
-                                    ProviderInfoDto(
-                                        id = "openai",
-                                        name = "OpenAI",
-                                        models = mapOf(
-                                            "gpt-5" to ModelInfoDto(
-                                                id = "gpt-5",
-                                                providerID = "openai",
-                                                name = "gpt-5",
-                                                variants = mapOf(
-                                                    "medium" to buildJsonObject { },
-                                                    "high" to buildJsonObject { },
-                                                ),
-                                            ),
-                                            "gpt-4o-mini" to ModelInfoDto(
-                                                id = "gpt-4o-mini",
-                                                providerID = "openai",
-                                                name = "gpt-4o-mini",
-                                                variants = null,
-                                            ),
-                                        ),
-                                    ),
-                                ),
-                                connected = listOf("openai"),
-                                default = mapOf("openai" to "gpt-5"),
-                            ),
-                        )
-                        return@addInterceptor Response.Builder()
-                            .request(request)
-                            .protocol(Protocol.HTTP_1_1)
-                            .code(200)
-                            .message("OK")
-                            .body(providersJson.toResponseBody())
-                            .build()
-                    }
-                    if (request.url.encodedPath.contains("/summarize")) {
-                        if (summarizeErrors.isNotEmpty()) {
-                            throw summarizeErrors.removeFirst()
+                    val path = request.url.encodedPath
+                    when {
+                        path == "/api/provider" -> {
+                            val body = """{"data":[{"id":"openai","name":"OpenAI"}]}"""
+                            return@addInterceptor Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(body.toResponseBody())
+                                .build()
                         }
-                        val sessionId = request.url.pathSegments.getOrNull(1).orEmpty()
-                        val bodyText = Buffer().also { buffer ->
-                            request.body?.writeTo(buffer)
-                        }.readUtf8()
-                        val body = Json.parseToJsonElement(bodyText).jsonObject
-                        summarizeCalls += SummarizeCall(
-                            sessionId = sessionId,
-                            providerId = body["providerID"]!!.jsonPrimitive.content,
-                            modelId = body["modelID"]!!.jsonPrimitive.content,
-                            directory = request.url.queryParameter("directory"),
-                        )
-                    } else if (request.url.encodedPath.contains("/prompt_async")) {
-                        val sessionId = request.url.pathSegments.getOrNull(1).orEmpty()
-                        val bodyText = Buffer().also { buffer ->
-                            request.body?.writeTo(buffer)
-                        }.readUtf8()
-                        val body = Json.parseToJsonElement(bodyText).jsonObject
-                        promptCalls += PromptCall(
-                            sessionId = sessionId,
-                            variant = body["variant"]?.jsonPrimitive?.contentOrNull,
-                        )
-                    } else if (request.url.encodedPath == "/api/bridge/fs/read") {
-                        val path = request.url.queryParameter("path").orEmpty()
-                        readFileCalls += path
-                        return@addInterceptor Response.Builder()
-                            .request(request)
-                            .protocol(Protocol.HTTP_1_1)
-                            .code(200)
-                            .message("OK")
-                            .header("content-type", "text/plain")
-                            .body("preview".toResponseBody())
-                            .build()
+                        path == "/api/model" -> {
+                            val body = """
+                                {"data":[
+                                  {"id":"gpt-5","modelID":"gpt-5","providerID":"openai","name":"gpt-5","enabled":true,
+                                   "variants":[{"id":"medium","settings":{}},{"id":"high","settings":{}}]},
+                                  {"id":"gpt-4o-mini","modelID":"gpt-4o-mini","providerID":"openai","name":"gpt-4o-mini","enabled":true}
+                                ]}
+                            """.trimIndent()
+                            return@addInterceptor Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(body.toResponseBody())
+                                .build()
+                        }
+                        path.endsWith("/summarize") -> {
+                            if (summarizeErrors.isNotEmpty()) {
+                                throw summarizeErrors.removeFirst()
+                            }
+                            val sessionId = request.url.pathSegments.getOrNull(2).orEmpty()
+                            val bodyText = Buffer().also { buffer ->
+                                request.body?.writeTo(buffer)
+                            }.readUtf8()
+                            val body = Json.parseToJsonElement(bodyText).jsonObject
+                            summarizeCalls += SummarizeCall(
+                                sessionId = sessionId,
+                                providerId = body["providerID"]!!.jsonPrimitive.content,
+                                modelId = body["modelID"]!!.jsonPrimitive.content,
+                                directory = request.url.queryParameter("location[directory]"),
+                            )
+                        }
+                        path.contains("/api/session/") && path.endsWith("/model") -> {
+                            val bodyText = Buffer().also { buffer ->
+                                request.body?.writeTo(buffer)
+                            }.readUtf8()
+                            val body = Json.parseToJsonElement(bodyText).jsonObject
+                            lastVariant = body["model"]?.jsonObject?.get("variant")?.jsonPrimitive?.contentOrNull
+                        }
+                        path.contains("/api/session/") && path.endsWith("/prompt") -> {
+                            val sessionId = request.url.pathSegments.getOrNull(2).orEmpty()
+                            promptCalls += PromptCall(
+                                sessionId = sessionId,
+                                variant = lastVariant,
+                            )
+                        }
+                        path == "/api/bridge/fs/read" -> {
+                            val path2 = request.url.queryParameter("path").orEmpty()
+                            readFileCalls += path2
+                            return@addInterceptor Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .header("content-type", "text/plain")
+                                .body("preview".toResponseBody())
+                                .build()
+                        }
                     }
 
                     Response.Builder()
@@ -1255,6 +1254,8 @@ class SessionDetailViewModelTest {
 
         override suspend fun unrevertSession(sessionID: String, directory: String?) = Unit
 
+        override suspend fun updateLocalRevert(sessionID: String, revert: com.openmate.core.domain.model.SessionRevert?) = Unit
+
         override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? = null
 
         override suspend fun resolveEvtID(sessionID: String, messageID: String): String? = null
@@ -1278,6 +1279,8 @@ class SessionDetailViewModelTest {
         override suspend fun reject(requestID: String, directory: String?) = Unit
 
         override fun observePending(): Flow<List<QuestionRequest>> = flowOf(emptyList())
+
+        override fun clearPending() = Unit
     }
 
     private class FakePermissionRepository : PermissionRepository {
@@ -1286,6 +1289,8 @@ class SessionDetailViewModelTest {
         override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) = Unit
 
         override fun observePending(): Flow<List<PermissionRequest>> = flowOf(emptyList())
+
+        override fun clearPending() = Unit
     }
 
     private class FakeSseEventRepository(
@@ -1317,6 +1322,8 @@ class SessionDetailViewModelTest {
         override fun confirmRepairing(profileId: String, token: String) = Unit
         override fun clearNeedsRepairing() = Unit
         override fun clearError() = Unit
+
+        override fun notifyProfileUpdated(profile: ServerProfile) = Unit
     }
 
     private fun message(id: String, timeCreated: Long, data: String = "{}") =

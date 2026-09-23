@@ -20,6 +20,9 @@ sealed interface NetworkChangeEvent {
 
 interface NetworkChangeMonitor {
     val events: Flow<NetworkChangeEvent>
+
+    /** Whether a network with INTERNET capability is currently available. */
+    fun hasInternet(): Boolean
 }
 
 @Singleton
@@ -27,6 +30,12 @@ class DefaultNetworkChangeMonitor @Inject constructor(
     @ApplicationContext context: Context,
 ) : NetworkChangeMonitor {
     private val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+    override fun hasInternet(): Boolean {
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
 
     override val events: Flow<NetworkChangeEvent> = callbackFlow {
         val callback = object : ConnectivityManager.NetworkCallback() {

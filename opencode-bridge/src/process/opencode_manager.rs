@@ -83,13 +83,18 @@ impl OpencodeManager {
     }
 
     pub async fn check_health(&self) -> bool {
-        let url = format!("{}/global/health", self.opencode_url);
+        let url = format!("{}/api/info", self.opencode_url);
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(2))
             .connect_timeout(std::time::Duration::from_secs(1))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        match client.get(&url).send().await {
+        let auth = crate::config::Config::quick_auth_header();
+        let mut req = client.get(&url);
+        if let Some(a) = auth {
+            req = req.header("Authorization", a);
+        }
+        match req.send().await {
             Ok(resp) if resp.status().is_success() => {
                 if let Ok(body) = resp.json::<serde_json::Value>().await {
                     if let Some(version) = body.get("version").and_then(|v| v.as_str()) {
@@ -115,25 +120,25 @@ impl OpencodeManager {
         drop(status);
 
         let binary = self.binary.clone();
-        let hostname = self.hostname.clone();
         let port = *self.port;
-        let directory = self.directory.clone();
-        let run_as_user = self.run_as_user.clone();
+        let hostname = self.hostname.clone();
 
-        let mut child = spawn_opencode(&binary, &hostname, port, &directory, &run_as_user)?;
-
-        let child_pid = child.id();
-        tracing::info!("opencode process spawned (pid: {:?})", child_pid);
-
-        {
-            let mut p = self.pid.write().await;
-            *p = child_pid;
+        run_service_cmd(&binary, &["service", "set", "port", &port.to_string()]).await;
+        run_service_cmd(&binary, &["service", "set", "hostname", &hostname]).await;
+        match run_service_cmd(&binary, &["service", "start"]).await {
+            Ok(output) => tracing::info!("service start: {}", output.trim()),
+            Err(e) => {
+                let mut s = self.status.write().await;
+                *s = OpencodeStatus::Crashed;
+                return Err(format!("Failed to start opencode service: {}", e));
+            }
         }
 
         let url = self.opencode_url.clone();
         let status_arc = self.status.clone();
         let auto_restart = *self.auto_restart;
         let version_arc = self.opencode_version.clone();
+        let binary_r = binary.clone();
 
         tokio::spawn(async move {
             let mut retry_count = 0u32;
@@ -142,80 +147,60 @@ impl OpencodeManager {
             while retry_count < max_retries {
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-                let client = reqwest::Client::new();
-                if let Ok(resp) = client.get(format!("{}/global/health", url)).send().await {
-                    if resp.status().is_success() {
-                        if let Ok(body) = resp.json::<serde_json::Value>().await {
-                            if let Some(v) = body.get("version").and_then(|v| v.as_str()) {
-                                let mut cached = version_arc.write().await;
-                                *cached = Some(v.to_string());
-                            }
-                        }
-                        let mut s = status_arc.write().await;
-                        *s = OpencodeStatus::Running;
-                        tracing::info!("opencode is ready");
-                        break;
-                    }
+                if check_health_url(&url).await {
+                    let mut s = status_arc.write().await;
+                    *s = OpencodeStatus::Running;
+                    tracing::info!("opencode service is ready");
+                    break;
                 }
                 retry_count += 1;
-                tracing::debug!("Waiting for opencode to be ready... ({}/{})", retry_count, max_retries);
+                tracing::debug!("Waiting for opencode service... ({}/{})", retry_count, max_retries);
             }
 
             let current = *status_arc.read().await;
             if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
-                tracing::info!("opencode was intentionally stopped during startup, not marking as crashed");
                 return;
             }
             if current != OpencodeStatus::Running {
                 let mut s = status_arc.write().await;
                 *s = OpencodeStatus::Crashed;
-                tracing::error!("opencode failed to start within timeout");
+                tracing::error!("opencode service failed to start within timeout");
                 return;
             }
 
-            match child.wait().await {
-                Ok(exit_status) => {
-                    tracing::warn!("opencode process exited: {}", exit_status);
+            // Monitor health periodically — service daemon won't give us child exit
+            let mut health_failures = 0u32;
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
+                let cur = *status_arc.read().await;
+                if cur == OpencodeStatus::Stopping || cur == OpencodeStatus::Stopped {
+                    return;
                 }
-                Err(e) => {
-                    tracing::error!("opencode process wait error: {}", e);
+
+                if check_health_url(&url).await {
+                    health_failures = 0;
+                } else {
+                    health_failures += 1;
+                    tracing::warn!("opencode health check failed ({}/3)", health_failures);
+                    if health_failures >= 3 {
+                        let mut s = status_arc.write().await;
+                        *s = OpencodeStatus::Crashed;
+                        drop(s);
+
+                        if auto_restart {
+                            tracing::info!("Auto-restarting opencode service...");
+                            let status_arc_r = status_arc.clone();
+                            let url_r = url.clone();
+                            let binary_rr = binary_r.clone();
+                            tokio::spawn(async move {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                                restart_service_loop(&binary_rr, &url_r, &status_arc_r).await;
+                            });
+                        }
+                        return;
+                    }
                 }
-            }
-
-            let current = *status_arc.read().await;
-            if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
-                tracing::info!("opencode was intentionally stopped, not marking as crashed");
-                return;
-            }
-
-            let mut s = status_arc.write().await;
-            *s = OpencodeStatus::Crashed;
-            drop(s);
-
-            if auto_restart {
-                tracing::info!("Auto-restarting opencode after crash...");
-                let binary_r = binary.clone();
-                let hostname_r = hostname.clone();
-                let port_r = port;
-                let directory_r = directory.clone();
-                let status_arc_r = status_arc.clone();
-                let url_r = url.clone();
-                let auto_restart_r = auto_restart;
-                let run_as_user_r = run_as_user.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-                    restart_loop(
-                        &binary_r,
-                        &hostname_r,
-                        port_r,
-                        &directory_r,
-                        &run_as_user_r,
-                        &status_arc_r,
-                        &url_r,
-                        auto_restart_r,
-                    )
-                    .await;
-                });
             }
         });
 
@@ -232,42 +217,14 @@ impl OpencodeManager {
         *status = OpencodeStatus::Stopping;
         drop(status);
 
-        let stored_pid = { self.pid.read().await.clone() };
-        let port_pid = self.find_pid_by_port().await;
-        let signal_pid = stored_pid.or(port_pid);
-
-        if let Some(pid) = signal_pid {
-            send_sigint(pid).await;
-
-            let health_client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_millis(500))
-                .build()
-                .unwrap_or_else(|_| reqwest::Client::new());
-            let health_url = format!("{}/global/health", self.opencode_url);
-
-            let mut exited = false;
-            for _ in 0..30 {
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                if health_client.get(&health_url).send().await.is_err() {
-                    tracing::info!("opencode exited after SIGINT");
-                    exited = true;
-                    break;
-                }
-            }
-
-            if !exited {
-                tracing::warn!("opencode did not exit after SIGINT, force killing");
-                force_kill(pid).await;
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            }
+        let binary = self.binary.clone();
+        match run_service_cmd(&binary, &["service", "stop"]).await {
+            Ok(output) => tracing::info!("service stop: {}", output.trim()),
+            Err(e) => tracing::warn!("service stop failed: {}", e),
         }
 
-        {
-            let mut p = self.pid.write().await;
-            *p = None;
-        }
-        let mut status = self.status.write().await;
-        *status = OpencodeStatus::Stopped;
+        let mut s = self.status.write().await;
+        *s = OpencodeStatus::Stopped;
         tracing::info!("opencode stopped");
         Ok(())
     }
@@ -277,67 +234,6 @@ impl OpencodeManager {
             self.stop().await?;
         }
         self.start().await
-    }
-
-    #[cfg(windows)]
-    async fn find_pid_by_port(&self) -> Option<u32> {
-        let port = *self.port;
-        let output = tokio::process::Command::new("netstat")
-            .args(["-ano"])
-            .creation_flags(0x08000000)
-            .output()
-            .await
-            .ok()?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let pattern = format!(":{}", port);
-        for line in stdout.lines() {
-            if line.contains("LISTENING") && line.contains(&pattern) {
-                let pid: u32 = line.trim().split_whitespace().last()?.parse().ok()?;
-                tracing::info!("Found opencode pid {} by port {}", pid, port);
-                return Some(pid);
-            }
-        }
-        None
-    }
-
-    #[cfg(target_os = "linux")]
-    async fn find_pid_by_port(&self) -> Option<u32> {
-        let port = *self.port;
-        let output = tokio::process::Command::new("ss")
-            .args(["-tlnp"])
-            .output()
-            .await
-            .ok()?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let pattern = format!(":{}", port);
-        for line in stdout.lines() {
-            if line.contains(&pattern) {
-                if let Some(pid_str) = line.split("pid=").nth(1).and_then(|s| s.split(',').next()).and_then(|s| s.split(')').next()) {
-                    if let Ok(pid) = pid_str.parse::<u32>() {
-                        tracing::info!("Found opencode pid {} by port {}", pid, port);
-                        return Some(pid);
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    #[cfg(target_os = "macos")]
-    async fn find_pid_by_port(&self) -> Option<u32> {
-        let port = *self.port;
-        let output = tokio::process::Command::new("lsof")
-            .args(["-ti", &format!(":{}", port)])
-            .output()
-            .await
-            .ok()?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let pid: u32 = stdout.lines().next()?.trim().parse().ok()?;
-        tracing::info!("Found opencode pid {} by port {}", pid, port);
-        Some(pid)
     }
 
     pub async fn set_status(&self, new_status: OpencodeStatus) {
@@ -516,94 +412,52 @@ impl OpencodeManager {
     }
 }
 
-fn spawn_opencode(
-    binary: &str,
-    hostname: &str,
-    port: u16,
-    directory: &str,
-    run_as_user: &str,
-) -> Result<tokio::process::Child, String> {
-    let port_str = port.to_string();
-    let work_dir = if directory.is_empty() {
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()))
-    } else {
-        std::path::PathBuf::from(directory)
-    };
 
-    #[cfg(windows)]
-    let _ = run_as_user;
-
-    #[cfg(windows)]
-    let child = {
-        let cmd = format!(
-            "{} serve --hostname {} --port {}",
-            binary, hostname, port_str
-        );
-        tokio::process::Command::new("cmd")
-            .args(["/C", &cmd])
-            .current_dir(&work_dir)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .creation_flags(0x00000200)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn opencode: {}", e))?
-    };
-
-    #[cfg(not(windows))]
-    let child = {
-        let is_root = std::env::var("USER").unwrap_or_default() == "root";
-        let needs_sudo = is_root && !run_as_user.is_empty() && run_as_user != "root";
-
-        if needs_sudo {
-            let mut cmd = std::process::Command::new("sudo");
-            cmd.args(["-u", run_as_user, binary, "serve", "--hostname", hostname, "--port", &port_str])
-                .current_dir(&work_dir)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped());
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                cmd.process_group(0);
+async fn run_service_cmd(binary: &str, args: &[&str]) -> Result<String, String> {
+    let full_args: Vec<&str> = std::iter::once(binary).chain(args.iter().copied()).collect();
+    let cmd_str = full_args.join(" ");
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        tokio::process::Command::new(binary)
+            .args(args)
+            .output(),
+    )
+    .await;
+    match result {
+        Ok(Ok(output)) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if !output.status.success() {
+                tracing::warn!("Command '{}' failed: {}", cmd_str, stderr.trim());
             }
-
-            tokio::process::Command::from(cmd)
-                .spawn()
-                .map_err(|e| format!("Failed to spawn opencode via sudo: {}", e))?
-        } else {
-            let mut cmd = std::process::Command::new(binary);
-            cmd.args(["serve", "--hostname", hostname, "--port", &port_str])
-                .current_dir(&work_dir)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped());
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::process::CommandExt;
-                cmd.process_group(0);
-            }
-
-            tokio::process::Command::from(cmd)
-                .spawn()
-                .map_err(|e| format!("Failed to spawn opencode: {}", e))?
+            Ok(stdout)
         }
-    };
-
-    Ok(child)
+        Ok(Err(e)) => Err(format!("Failed to run '{}': {}", cmd_str, e)),
+        Err(_) => Err(format!("Command '{}' timed out (30s)", cmd_str)),
+    }
 }
 
-async fn restart_loop(
+async fn check_health_url(opencode_url: &str) -> bool {
+    let url = format!("{}/api/info", opencode_url);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let auth = crate::config::Config::quick_auth_header();
+    let mut req = client.get(&url);
+    if let Some(a) = auth {
+        req = req.header("Authorization", a);
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => true,
+        _ => false,
+    }
+}
+
+async fn restart_service_loop(
     binary: &str,
-    hostname: &str,
-    port: u16,
-    directory: &str,
-    run_as_user: &str,
-    status_arc: &Arc<RwLock<OpencodeStatus>>,
     opencode_url: &str,
-    auto_restart: bool,
+    status_arc: &Arc<RwLock<OpencodeStatus>>,
 ) {
     let mut attempt = 0u32;
     loop {
@@ -613,11 +467,6 @@ async fn restart_loop(
         {
             let current = *status_arc.read().await;
             if current == OpencodeStatus::Running || current == OpencodeStatus::Starting {
-                tracing::info!("opencode is already {} , skip restart", match current {
-                    OpencodeStatus::Running => "running",
-                    OpencodeStatus::Starting => "starting",
-                    _ => "",
-                });
                 return;
             }
             if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
@@ -626,16 +475,11 @@ async fn restart_loop(
             }
         }
 
-        {
-            let client = reqwest::Client::new();
-            if let Ok(resp) = client.get(format!("{}/global/health", opencode_url)).send().await {
-                if resp.status().is_success() {
-                    tracing::info!("opencode health check passed, marking as Running");
-                    let mut s = status_arc.write().await;
-                    *s = OpencodeStatus::Running;
-                    return;
-                }
-            }
+        if check_health_url(opencode_url).await {
+            tracing::info!("opencode health check passed, marking as Running");
+            let mut s = status_arc.write().await;
+            *s = OpencodeStatus::Running;
+            return;
         }
 
         {
@@ -643,166 +487,39 @@ async fn restart_loop(
             *s = OpencodeStatus::Starting;
         }
 
-        match spawn_opencode(binary, hostname, port, directory, run_as_user) {
-            Ok(mut child) => {
-                tracing::info!("opencode re-spawned (pid: {:?})", child.id());
-
-                let mut retry_count = 0u32;
-                let max_retries = 30u32;
-                let mut became_ready = false;
-
-                while retry_count < max_retries {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    let client = reqwest::Client::new();
-                    if let Ok(resp) = client.get(format!("{}/global/health", opencode_url)).send().await {
-                        if resp.status().is_success() {
-                            let mut s = status_arc.write().await;
-                            *s = OpencodeStatus::Running;
-                            tracing::info!("opencode is ready after auto-restart");
-                            became_ready = true;
-                            break;
-                        }
-                    }
-                    retry_count += 1;
-                }
-
-                if !became_ready {
-                    let mut s = status_arc.write().await;
-                    *s = OpencodeStatus::Crashed;
-                    tracing::error!("opencode auto-restart failed to become ready");
-                    if !auto_restart {
-                        return;
-                    }
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                    continue;
-                }
-
-                match child.wait().await {
-                    Ok(es) => tracing::warn!("opencode process exited again: {}", es),
-                    Err(e) => tracing::error!("opencode process wait error: {}", e),
-                }
-
-                {
-                    let current = *status_arc.read().await;
-                    if current == OpencodeStatus::Stopping || current == OpencodeStatus::Stopped {
-                        tracing::info!("opencode was stopped, not restarting");
-                        return;
-                    }
-                    let mut s = status_arc.write().await;
-                    *s = OpencodeStatus::Crashed;
-                }
-
-                if !auto_restart {
-                    return;
-                }
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-            }
+        match run_service_cmd(binary, &["service", "restart"]).await {
+            Ok(output) => tracing::info!("service restart: {}", output.trim()),
             Err(e) => {
+                tracing::error!("Failed to restart opencode service: {}", e);
                 let mut s = status_arc.write().await;
                 *s = OpencodeStatus::Crashed;
-                tracing::error!("Failed to spawn opencode in restart loop: {}", e);
-                if !auto_restart {
-                    return;
-                }
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                continue;
             }
         }
-    }
-}
 
-async fn send_sigint(pid: u32) {
-    #[cfg(windows)]
-    {
-        use windows::Win32::System::Console::*;
-
-        let result = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) };
-        if result.is_ok() {
-            tracing::info!("CTRL_BREAK_EVENT sent to process group {}", pid);
-            return;
+        let mut retry_count = 0u32;
+        let mut became_ready = false;
+        while retry_count < 30 {
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            if check_health_url(opencode_url).await {
+                let mut s = status_arc.write().await;
+                *s = OpencodeStatus::Running;
+                tracing::info!("opencode is ready after auto-restart");
+                became_ready = true;
+                break;
+            }
+            retry_count += 1;
         }
 
-        tracing::info!("CTRL_BREAK_EVENT failed for pid {}, spawning helper to AttachConsole", pid);
-        let script = format!(
-            r#"$t = Add-Type -MemberDefinition @"
-[DllImport("kernel32")] public static extern bool FreeConsole();
-[DllImport("kernel32")] public static extern bool AttachConsole(int p);
-[DllImport("kernel32")] public static extern bool GenerateConsoleCtrlEvent(uint e, uint g);
-"@ -Name C -Namespace K -PassThru; $t::FreeConsole()|Out-Null; if($t::AttachConsole({pid})){{ $t::GenerateConsoleCtrlEvent(1,0)|Out-Null; Start-Sleep -Milliseconds 500 }} "#,
-            pid = pid
-        );
-        let output = tokio::process::Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-            .creation_flags(0x08000000)
-            .output()
-            .await;
-        match output {
-            Ok(out) if out.status.success() => {
-                tracing::info!("CTRL_BREAK_EVENT sent via helper to pid {}", pid);
-            }
-            Ok(out) => {
-                tracing::warn!(
-                    "AttachConsole helper exited {}: {}",
-                    out.status,
-                    String::from_utf8_lossy(&out.stderr).trim()
-                );
-            }
-            Err(e) => {
-                tracing::warn!("Failed to spawn AttachConsole helper: {}", e);
-            }
+        if !became_ready {
+            let mut s = status_arc.write().await;
+            *s = OpencodeStatus::Crashed;
+            tracing::error!("opencode auto-restart failed to become ready");
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            continue;
         }
-    }
 
-    #[cfg(not(windows))]
-    {
-        let pid_str = pid.to_string();
-        let output = tokio::process::Command::new("kill")
-            .args(["-INT", &pid_str])
-            .output()
-            .await;
-        match output {
-            Ok(out) => {
-                if out.status.success() {
-                    tracing::info!("SIGINT sent to pid {}", pid);
-                } else {
-                    tracing::warn!("kill -INT failed: {}", String::from_utf8_lossy(&out.stderr));
-                }
-            }
-            Err(e) => tracing::warn!("Failed to send SIGINT: {}", e),
-        }
-    }
-}
-
-async fn force_kill(pid: u32) {
-    #[cfg(windows)]
-    {
-        let pid_str = pid.to_string();
-        let output = tokio::process::Command::new("taskkill")
-            .args(["/F", "/PID", &pid_str, "/T"])
-            .creation_flags(0x08000000)
-            .output()
-            .await;
-        match output {
-            Ok(out) => tracing::info!("Force kill output: {}", String::from_utf8_lossy(&out.stdout)),
-            Err(e) => tracing::warn!("Failed to force kill: {}", e),
-        }
-    }
-
-    #[cfg(not(windows))]
-    {
-        let pid_str = pid.to_string();
-        let output = tokio::process::Command::new("kill")
-            .args(["-9", &pid_str])
-            .output()
-            .await;
-        match output {
-            Ok(out) => {
-                if out.status.success() {
-                    tracing::info!("Force killed pid {}", pid);
-                } else {
-                    tracing::warn!("kill -9 failed: {}", String::from_utf8_lossy(&out.stderr));
-                }
-            }
-            Err(e) => tracing::warn!("Failed to force kill: {}", e),
-        }
+        return;
     }
 }

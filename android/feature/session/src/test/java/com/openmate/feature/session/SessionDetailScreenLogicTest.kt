@@ -28,9 +28,7 @@ class SessionDetailScreenLogicTest {
     }
 
     @Test
-    fun syncLogMenuAndRegexFilterBehaviors() {
-        assertThat(sessionDetailMenuItems()).contains("同步日志")
-
+    fun regexFilterBehaviors() {
         val visible = filterRenderedLogs(
             renderedLogs = listOf(
                 "12:00:00.000 INFO [Sse] SSE连接成功 trace=sse-1 message=connected",

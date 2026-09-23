@@ -58,6 +58,7 @@ class WorkspaceAndSessionConnectionStatusTest {
     @Test
     fun workspaceListViewModel_usesConnectionRepositoryStatus() = runTest(dispatcher) {
         val viewModel = WorkspaceListViewModel(
+            appContext = RuntimeEnvironment.getApplication(),
             sessionRepository = FakeSessionRepository(),
             connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
             profileRepository = FakeServerProfileRepository(),
@@ -73,6 +74,7 @@ class WorkspaceAndSessionConnectionStatusTest {
     @Test
     fun sessionListViewModel_usesConnectionRepositoryStatus() = runTest(dispatcher) {
         val viewModel = SessionListViewModel(
+            appContext = RuntimeEnvironment.getApplication(),
             sessionRepository = FakeSessionRepository(),
             connectionRepository = FakeConnectionRepository(ConnectionStatus.GATEWAY_CONNECTED),
         )
@@ -103,6 +105,8 @@ class WorkspaceAndSessionConnectionStatusTest {
         override fun confirmRepairing(profileId: String, token: String) = Unit
         override fun clearNeedsRepairing() = Unit
         override fun clearError() = Unit
+
+        override fun notifyProfileUpdated(profile: ServerProfile) = Unit
     }
 
     private class FakeSessionRepository : SessionRepository {
@@ -134,6 +138,7 @@ class WorkspaceAndSessionConnectionStatusTest {
         override suspend fun getSessionRetryStatus(id: String): SessionRetryStatus? = null
         override suspend fun revertSession(sessionID: String, messageID: String, partID: String?, directory: String?) = Unit
         override suspend fun unrevertSession(sessionID: String, directory: String?) = Unit
+        override suspend fun updateLocalRevert(sessionID: String, revert: com.openmate.core.domain.model.SessionRevert?) = Unit
         override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? = null
         override suspend fun resolveEvtID(sessionID: String, messageID: String): String? = null
     }

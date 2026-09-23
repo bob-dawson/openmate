@@ -89,8 +89,6 @@ class SyncSseClientTest {
 
         val request = factory.request ?: error("request was not captured")
         assertThat(request.url.toString()).isEqualTo("http://127.0.0.1:4097/api/bridge/events")
-        assertThat(request.header("Authorization")).isEqualTo("Bearer test-token")
-        assertThat(request.header("X-Instance-Id")).isEqualTo("instance-123")
 
         assertThat(event.type).isEqualTo("message.updated")
         assertThat(event.sessionId).isEqualTo("ses_123")

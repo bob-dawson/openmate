@@ -14,24 +14,26 @@ type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + 'static>>;
 
 pub async fn sse_proxy(State(state): State<AppState>) -> impl IntoResponse {
     let opencode_url = state.config.opencode_url();
+    let auth_header = state.config.opencode_auth_header();
     let mut shutdown_rx = state.shutdown_tx.subscribe();
-    let stream = create_sse_stream(opencode_url, &mut shutdown_rx);
+    let stream = create_sse_stream(opencode_url, auth_header, &mut shutdown_rx);
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 fn create_sse_stream(
     opencode_url: String,
+    auth_header: Option<String>,
     shutdown_rx: &mut tokio::sync::watch::Receiver<bool>,
 ) -> BoxStream<Result<Event, Infallible>> {
     let (tx, rx) = mpsc::channel(32);
     let mut shutdown_rx = shutdown_rx.clone();
 
     tokio::spawn(async move {
-        let sse_url = format!("{}/global/event", opencode_url);
+        let sse_url = format!("{}/api/event", opencode_url);
         tracing::info!("Starting SSE proxy stream to {}", sse_url);
 
         loop {
-            match forward_sse_events(&sse_url, &tx).await {
+            match forward_sse_events(&sse_url, &auth_header, &tx).await {
                 Ok(()) => {
                     tracing::warn!("opencode SSE stream ended, reconnecting in 3s...");
                     tokio::select! {
@@ -67,11 +69,19 @@ fn create_sse_stream(
 
 async fn forward_sse_events(
     sse_url: &str,
+    auth_header: &Option<String>,
     tx: &mpsc::Sender<Result<Event, Infallible>>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
-    let resp = client
+    let mut req_builder = client
         .get(sse_url)
+        .header("accept", "text/event-stream");
+
+    if let Some(auth) = auth_header {
+        req_builder = req_builder.header("authorization", auth);
+    }
+
+    let resp = req_builder
         .send()
         .await
         .map_err(|e| format!("Connect failed: {}", e))?;

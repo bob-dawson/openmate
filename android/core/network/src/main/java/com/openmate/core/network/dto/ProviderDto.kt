@@ -13,8 +13,12 @@ data class ProviderListDto(
 @Serializable
 data class ProviderInfoDto(
     val id: String,
-    val name: String,
+    val name: String = "",
     val source: String = "",
+    @kotlinx.serialization.SerialName("integrationID")
+    val integrationID: String = "",
+    val `package`: String = "",
+    val settings: JsonObject = JsonObject(emptyMap()),
     val models: Map<String, ModelInfoDto> = emptyMap(),
 )
 
@@ -35,3 +39,35 @@ data class ModelInfoDto(
     val limit: ModelLimitDto? = null,
     val variants: Map<String, JsonObject>? = null,
 )
+
+@Serializable
+data class V2ModelInfoDto(
+    val id: String,
+    val modelID: String = "",
+    val providerID: String = "",
+    val name: String = "",
+    val family: String? = null,
+    val status: String = "active",
+    val enabled: Boolean = true,
+    val limit: ModelLimitDto? = null,
+    val variants: List<V2ModelVariantDto>? = null,
+)
+
+@Serializable
+data class V2ModelVariantDto(
+    val id: String = "",
+    val settings: JsonObject = JsonObject(emptyMap()),
+)
+
+fun V2ModelInfoDto.toModelInfoDto(): ModelInfoDto {
+    val variantsMap = variants?.associate { it.id to it.settings } ?: emptyMap()
+    return ModelInfoDto(
+        id = id,
+        providerID = providerID,
+        name = name,
+        family = family,
+        status = status,
+        limit = limit,
+        variants = variantsMap.ifEmpty { null },
+    )
+}

@@ -1,5 +1,7 @@
 # Connection Recovery: Design vs Implementation Gap Analysis
 
+> ⚠️ **历史文档（已过时）**：本文针对 KStateMachine 重构**之前**的 `ConnectionReducer` 实现（`Evaluating`/`FailedRetryable`/空操作 `StartBackoff` 等）。这些缺口已由 KStateMachine 状态机重构解决，最终实现见 `docs/design/连接管理状态机.md`。仅作历史记录保留。
+
 > 对照 `docs/superpowers/specs/2026-05-21-connection-recovery-state-machine-design.md`，逐项检查当前实现偏差。
 
 ## Gap 1: `StartBackoff` 是空操作，Recovering 无出路

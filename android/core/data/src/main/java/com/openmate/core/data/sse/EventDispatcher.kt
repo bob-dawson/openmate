@@ -4,22 +4,9 @@ import android.util.Log
 import com.openmate.core.network.SseData
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
-
-data class LivePartEvent(
-    val sessionId: String,
-    val messageId: String,
-    val partId: String,
-    val eventType: String,
-    val partType: String?,
-    val text: String?,
-    val isComplete: Boolean,
-    val properties: JsonObject,
-)
 
 class EventDispatcher @Inject constructor(
     private val sessionHandler: SessionEventHandler,
@@ -32,9 +19,6 @@ class EventDispatcher @Inject constructor(
 
     private val _sessionErrors = MutableSharedFlow<Pair<String, String>>(extraBufferCapacity = 16)
     val sessionErrors: SharedFlow<Pair<String, String>> = _sessionErrors
-
-    private val _livePartEvents = MutableSharedFlow<LivePartEvent>(extraBufferCapacity = 64)
-    val livePartEvents: SharedFlow<LivePartEvent> = _livePartEvents
 
     var activeDirectory: String = ""
         set(value) {
@@ -56,6 +40,15 @@ class EventDispatcher @Inject constructor(
         val isMessageScoped =
             type.startsWith("message.") ||
                 type.startsWith("todo.") ||
+                type.startsWith("session.text.") ||
+                type.startsWith("session.reasoning.") ||
+                type.startsWith("session.tool.") ||
+                type.startsWith("session.step.") ||
+                type.startsWith("session.compaction.") ||
+                type.startsWith("session.shell.") ||
+                type.startsWith("session.revert.") ||
+                type.startsWith("session.input.") ||
+                type.startsWith("session.execution.") ||
                 type.startsWith("session.next.")
 
         if (isMessageScoped) {
@@ -74,52 +67,18 @@ class EventDispatcher @Inject constructor(
         }
 
         when {
-            type.startsWith("session.") -> {
+            type.startsWith("session.created") ||
+            type.startsWith("session.updated") ||
+            type.startsWith("session.deleted") ||
+            type.startsWith("session.status") ||
+            type.startsWith("session.error") ||
+            type.startsWith("session.renamed") -> {
                 val result = sessionHandler.handle(type, event)
                 if (result != null) {
                     _sessionErrors.tryEmit(result)
                 }
             }
-            type.startsWith("message.") -> {
-                if (type.startsWith("message.part.")) {
-                    val sessionId = event.properties["sessionID"]?.jsonPrimitive?.content ?: return
-                    val messageId: String
-                    val partId: String
-                    val partType: String?
-                    val text: String?
-                    val isComplete: Boolean
-                    val liveType = when {
-                        type.endsWith(".delta") -> {
-                            messageId = event.properties["messageID"]?.jsonPrimitive?.content ?: return
-                            partId = event.properties["partID"]?.jsonPrimitive?.content ?: return
-                            partType = null
-                            text = event.properties["delta"]?.jsonPrimitive?.contentOrNull
-                            isComplete = false
-                            "delta"
-                        }
-                        type.endsWith(".updated") -> {
-                            val part = event.properties["part"]?.jsonObject ?: return
-                            messageId = part["messageID"]?.jsonPrimitive?.content ?: return
-                            partId = part["id"]?.jsonPrimitive?.content ?: return
-                            partType = part["type"]?.jsonPrimitive?.contentOrNull
-                            text = part["text"]?.jsonPrimitive?.contentOrNull
-                            val timeObj = part["time"]?.jsonObject
-                            isComplete = timeObj?.containsKey("end") == true
-                            "updated"
-                        }
-                        type.endsWith(".removed") -> {
-                            messageId = event.properties["messageID"]?.jsonPrimitive?.content ?: return
-                            partId = event.properties["partID"]?.jsonPrimitive?.content ?: return
-                            partType = null
-                            text = null
-                            isComplete = true
-                            "removed"
-                        }
-                        else -> return
-                    }
-                    _livePartEvents.tryEmit(LivePartEvent(sessionId, messageId, partId, liveType, partType, text, isComplete, event.properties))
-                }
-            }
+            type.startsWith("message.") -> {}
             type.startsWith("permission.") -> permissionHandler.handle(type, event)
             type.startsWith("question.") -> questionHandler.handle(type, event)
             type.startsWith("todo.") -> todoHandler.handle(type, event)

@@ -3,9 +3,12 @@ package com.openmate.core.network
 import com.openmate.core.network.dto.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import javax.inject.Inject
 import javax.inject.Named
 
@@ -45,6 +48,65 @@ class SyncApiClient @Inject constructor(
             )
         }
 
+    suspend fun messages(
+        sessionId: String,
+        since: Long,
+        limit: Int = 100,
+        firstId: String? = null,
+        lastId: String? = null,
+        count: Long? = null,
+    ): MessagesResponseDto = messagesPayload(sessionId, since, limit, firstId, lastId, count).response
+
+    suspend fun messagesPayload(
+        sessionId: String,
+        since: Long,
+        limit: Int = 100,
+        firstId: String? = null,
+        lastId: String? = null,
+        count: Long? = null,
+    ): MessagesPayloadDto =
+        withContext(Dispatchers.IO) {
+            val query = buildString {
+                append("since=$since&limit=$limit")
+                if (firstId != null && lastId != null && count != null) {
+                    append("&firstId=$firstId&lastId=$lastId&count=$count")
+                }
+            }
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/messages?$query"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            MessagesPayloadDto(
+                response = json.decodeFromString<MessagesResponseDto>(body),
+                rawBody = body,
+            )
+        }
+
+    suspend fun ids(sessionId: String, fromId: String, toId: String): IdsResponseDto =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/ids?fromId=$fromId&toId=$toId"
+            val request = Request.Builder().url(url).get().build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            json.decodeFromString<IdsResponseDto>(body)
+        }
+
+    suspend fun probe(sessionId: String, baseId: String, ids: List<String>): ProbeResponseDto =
+        withContext(Dispatchers.IO) {
+            val url = "$baseUrl/api/bridge/sync/session/$sessionId/probe"
+            val payload = json.encodeToString(
+                ProbeRequestDto.serializer(),
+                ProbeRequestDto(baseId = baseId, ids = ids),
+            )
+            val request = Request.Builder()
+                .url(url)
+                .post(payload.toRequestBody("application/json".toMediaType()))
+                .build()
+            val response = client.newCall(request).execute()
+            val body = response.body?.string() ?: throw Exception("Empty response")
+            json.decodeFromString<ProbeResponseDto>(body)
+        }
+
     suspend fun sessions(): SessionsResponseDto =
         withContext(Dispatchers.IO) {
             val url = "$baseUrl/api/bridge/sync/sessions"
@@ -80,24 +142,6 @@ class SyncApiClient @Inject constructor(
             val body = response.body?.string() ?: throw Exception("Empty response")
             val parsed = json.decodeFromString<ResolveEvtIDResponseDto>(body)
             parsed.evtID
-        }
-
-    suspend fun messages(sessionId: String, since: Long, limit: Int = 100): MessagesResponseDto =
-        withContext(Dispatchers.IO) {
-            val url = "$baseUrl/api/bridge/sync/session/$sessionId/messages?since=$since&limit=$limit"
-            val request = Request.Builder().url(url).get().build()
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: throw Exception("Empty response")
-            json.decodeFromString<MessagesResponseDto>(body)
-        }
-
-    suspend fun sessionStats(sessionId: String): SessionStatsDto =
-        withContext(Dispatchers.IO) {
-            val url = "$baseUrl/api/bridge/sync/session/$sessionId/stats"
-            val request = Request.Builder().url(url).get().build()
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: throw Exception("Empty response")
-            json.decodeFromString<SessionStatsDto>(body)
         }
 }
 

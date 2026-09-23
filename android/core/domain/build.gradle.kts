@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.openmate.core.domain"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

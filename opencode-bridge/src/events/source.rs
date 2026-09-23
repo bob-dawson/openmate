@@ -64,13 +64,14 @@ impl SharedEventSource {
 
         let source = Arc::clone(self);
         let opencode_url = state.config.opencode_url();
+        let auth_header = state.config.opencode_auth_header();
         let mut shutdown_rx = state.shutdown_tx.subscribe();
         tokio::spawn(async move {
-            let sse_url = format!("{}/global/event", opencode_url);
+            let sse_url = format!("{}/api/event", opencode_url);
             tracing::info!("Starting shared bridge event source to {}", sse_url);
 
             loop {
-                match forward_upstream_events(&sse_url, &source.sender).await {
+                match forward_upstream_events(&sse_url, &auth_header, &source.sender).await {
                     Ok(()) => {
                         tracing::warn!("shared bridge event source ended, reconnecting in 3s...");
                         tokio::select! {
@@ -99,11 +100,19 @@ impl SharedEventSource {
 
 async fn forward_upstream_events(
     sse_url: &str,
+    auth_header: &Option<String>,
     sender: &broadcast::Sender<SharedEvent>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
-    let resp = client
+    let mut req_builder = client
         .get(sse_url)
+        .header("accept", "text/event-stream");
+
+    if let Some(auth) = auth_header {
+        req_builder = req_builder.header("authorization", auth);
+    }
+
+    let resp = req_builder
         .send()
         .await
         .map_err(|e| format!("Connect failed: {}", e))?;
@@ -179,24 +188,17 @@ mod tests {
         );
 
         let frames = parse_upstream_frames(chunk);
-        let bridge_events: Vec<Value> = frames
+        let retained: Vec<Value> = frames
             .iter()
             .filter_map(|event| event.bridge_event.clone())
             .collect();
-        let live_events: Vec<Value> = frames
-            .iter()
-            .filter_map(|event| event.live_event.clone())
-            .collect();
 
-        assert_eq!(bridge_events, vec![json!({
+        assert_eq!(frames.len(), 1);
+        assert_eq!(retained, vec![json!({
             "type": "session.error",
             "properties": {
                 "sessionID": "ses_1"
             }
-        })]);
-        assert_eq!(live_events, vec![json!({
-            "type": "message.part.delta",
-            "properties": { "sessionID": "ses_1" }
         })]);
     }
 }

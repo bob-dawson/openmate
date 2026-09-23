@@ -8,4 +8,5 @@ data class SyncStateEntity(
     @PrimaryKey val sessionId: String,
     val lastSeq: Long,
     val lastTimeUpdated: Long = 0,
+    val lastRevertTimestamp: Long = 0,
 )

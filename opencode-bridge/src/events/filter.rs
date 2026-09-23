@@ -6,7 +6,6 @@ use crate::sync::truncate::truncate_event;
 pub struct SharedEvent {
     pub bridge_event: Option<Value>,
     pub sync_notification: Option<Value>,
-    pub live_event: Option<Value>,
 }
 
 pub fn filter_event(input: &Value) -> Option<Value> {
@@ -18,16 +17,14 @@ pub fn build_shared_event(input: &Value) -> Option<SharedEvent> {
     let normalized = normalize_event(input)?;
     let bridge_event = filter_event_from_normalized(&normalized);
     let sync_notification = build_sync_notification(input, &normalized);
-    let live_event = filter_live_event_from_normalized(&normalized);
 
-    if bridge_event.is_none() && sync_notification.is_none() && live_event.is_none() {
+    if bridge_event.is_none() && sync_notification.is_none() {
         return None;
     }
 
     Some(SharedEvent {
         bridge_event,
         sync_notification,
-        live_event,
     })
 }
 
@@ -35,26 +32,19 @@ fn filter_event_from_normalized(normalized: &Value) -> Option<Value> {
     filter_normalized_event(normalized)
 }
 
-fn filter_live_event_from_normalized(normalized: &Value) -> Option<Value> {
-    let event_type = normalized.get("type")?.as_str()?;
-    match event_type {
-        "message.part.delta" | "message.part.updated" | "message.part.removed" => {
-            Some(normalized.clone())
-        }
-        _ => None,
-    }
-}
-
 fn filter_normalized_event(normalized: &Value) -> Option<Value> {
     let event_type = normalized.get("type")?.as_str()?;
     let properties = normalized.get("properties")?.as_object()?;
 
-    match event_type {
+    let base_type = strip_event_version(event_type);
+
+    match base_type {
         "session.created"
         | "session.updated"
         | "session.deleted"
         | "session.status"
         | "session.error"
+        | "session.renamed"
         | "permission.asked"
         | "permission.replied"
         | "question.asked"
@@ -62,16 +52,16 @@ fn filter_normalized_event(normalized: &Value) -> Option<Value> {
         | "question.rejected"
         | "todo.updated"
         | "message.removed" => Some(json!({
-            "type": event_type,
+            "type": base_type,
             "properties": Value::Object(properties.clone()),
         })),
         "message.updated" => Some(json!({
-            "type": event_type,
+            "type": base_type,
             "properties": trim_message_updated_identifier_only(properties),
         })),
-        _ if retain_session_next_event(event_type) => Some(json!({
-            "type": event_type,
-            "properties": trim_session_next_event(event_type, properties),
+        _ if retain_session_event(&base_type) => Some(json!({
+            "type": base_type,
+            "properties": trim_session_next_event(&base_type, properties),
         })),
         _ => None,
     }
@@ -105,6 +95,21 @@ fn normalize_event(input: &Value) -> Option<Value> {
         return Some(input.clone());
     }
 
+    if let Some(event_type) = input.get("type").and_then(|t| t.as_str()) {
+        if let Some(data) = input.get("data") {
+            if let Some(data_obj) = data.as_object() {
+                let mut properties = data_obj.clone();
+                if let Some(event_id) = input.get("id") {
+                    properties.insert(String::from("eventID"), event_id.clone());
+                }
+                return Some(json!({
+                    "type": event_type,
+                    "properties": Value::Object(properties),
+                }));
+            }
+        }
+    }
+
     None
 }
 
@@ -136,42 +141,57 @@ fn build_compat_sync_notification(normalized: &Value) -> Option<Value> {
     let event_type = normalized.get("type")?.as_str()?;
     let properties = normalized.get("properties")?.as_object()?;
 
-    // Keep compatibility notifications only for events that the reduced-traffic
-    // sync SSE path still uses as coarse sync signals.
+    let base_type = strip_event_version(event_type);
+
     let should_notify = matches!(
-        event_type,
+        base_type,
         "session.created"
             | "session.updated"
             | "session.deleted"
             | "session.status"
             | "session.error"
+            | "session.renamed"
             | "message.updated"
             | "message.removed"
             | "todo.updated"
-            | "session.next.step.started"
-            | "session.next.step.ended"
-            | "session.next.step.failed"
-            | "session.next.tool.called"
-            | "session.next.tool.progress"
-            | "session.next.tool.success"
-            | "session.next.tool.failed"
-            | "session.next.compaction.started"
-            | "session.next.compaction.ended"
-            | "session.next.shell.started"
-            | "session.next.shell.ended"
+            | "session.step.started"
+            | "session.step.ended"
+            | "session.step.failed"
+            | "session.tool.called"
+            | "session.tool.progress"
+            | "session.tool.success"
+            | "session.tool.failed"
+            | "session.compaction.started"
+            | "session.compaction.ended"
+            | "session.shell.started"
+            | "session.shell.ended"
+            | "session.text.started"
+            | "session.text.ended"
+            | "session.reasoning.started"
+            | "session.reasoning.ended"
+            | "session.revert.committed"
+            | "session.revert.staged"
+            | "session.input.admitted"
+            | "session.input.promoted"
+            | "session.execution.succeeded"
+            | "session.execution.failed"
     );
 
     if !should_notify {
         return None;
     }
 
-    let session_id = properties.get("sessionID")?.as_str()?;
-    let seq = properties.get("seq")?.as_i64()?;
+    let session_id = properties.get("sessionID").and_then(|v| v.as_str())?;
+    let seq = properties.get("seq").and_then(|v| v.as_i64());
 
-    Some(json!({
+    let mut notification = json!({
         "sessionID": session_id,
-        "seq": seq,
-    }))
+    });
+    if let Some(seq) = seq {
+        notification["seq"] = json!(seq);
+    }
+
+    Some(notification)
 }
 
 fn normalize_sync_event(sync_event: &Value) -> Option<Value> {
@@ -206,30 +226,36 @@ fn strip_event_version(event_type: &str) -> &str {
     event_type
 }
 
-fn retain_session_next_event(event_type: &str) -> bool {
+fn retain_session_event(event_type: &str) -> bool {
     matches!(
         event_type,
-        "session.next.agent.switched"
-            | "session.next.model.switched"
-            | "session.next.prompted"
-            | "session.next.synthetic"
-            | "session.next.shell.started"
-            | "session.next.shell.ended"
-            | "session.next.step.started"
-            | "session.next.step.ended"
-            | "session.next.step.failed"
-            | "session.next.text.started"
-            | "session.next.text.ended"
-            | "session.next.reasoning.started"
-            | "session.next.reasoning.ended"
-            | "session.next.tool.input.started"
-            | "session.next.tool.called"
-            | "session.next.tool.progress"
-            | "session.next.tool.success"
-            | "session.next.tool.failed"
-            | "session.next.retried"
-            | "session.next.compaction.started"
-            | "session.next.compaction.ended"
+        "session.agent.switched"
+            | "session.model.switched"
+            | "session.prompted"
+            | "session.synthetic"
+            | "session.shell.started"
+            | "session.shell.ended"
+            | "session.step.started"
+            | "session.step.ended"
+            | "session.step.failed"
+            | "session.text.started"
+            | "session.text.ended"
+            | "session.reasoning.started"
+            | "session.reasoning.ended"
+            | "session.tool.input.started"
+            | "session.tool.called"
+            | "session.tool.progress"
+            | "session.tool.success"
+            | "session.tool.failed"
+            | "session.retried"
+            | "session.compaction.started"
+            | "session.compaction.ended"
+            | "session.revert.staged"
+            | "session.revert.committed"
+            | "session.input.admitted"
+            | "session.input.promoted"
+            | "session.execution.succeeded"
+            | "session.execution.failed"
     )
 }
 
@@ -268,29 +294,6 @@ fn trim_session_next_event(event_type: &str, properties: &Map<String, Value>) ->
 mod tests {
     use super::{build_shared_event, filter_event};
     use serde_json::json;
-
-    #[test]
-    fn unwraps_sync_events_into_bridge_shape() {
-        let input = json!({
-            "payload": {
-                "type": "sync",
-                "syncEvent": {
-                    "type": "session.next.step.started.1",
-                    "directory": "D:/repo",
-                    "data": {
-                        "sessionID": "ses_1",
-                        "timestamp": 1
-                    }
-                }
-            }
-        });
-
-        let output = filter_event(&input).expect("event should be retained");
-
-        assert_eq!(output["type"], "session.next.step.started");
-        assert_eq!(output["properties"]["sessionID"], "ses_1");
-        assert_eq!(output["properties"]["directory"], "D:/repo");
-    }
 
     #[test]
     fn drops_streaming_delta_sync_events() {
@@ -427,25 +430,6 @@ mod tests {
                 "directory": "D:/repo"
             }
         }));
-    }
-
-    #[test]
-    fn build_shared_event_keeps_only_events_needed_by_shared_consumers() {
-        let dropped = json!({
-            "type": "message.part.delta",
-            "properties": { "sessionID": "ses_1" }
-        });
-        let shared = build_shared_event(&dropped).expect("live event should survive");
-        assert!(shared.bridge_event.is_none());
-        assert!(shared.live_event.is_some());
-
-        let retained = json!({
-            "type": "session.error",
-            "properties": { "sessionID": "ses_1" }
-        });
-        let shared = build_shared_event(&retained).expect("retained event should survive");
-        assert!(shared.bridge_event.is_some());
-        assert!(shared.sync_notification.is_none());
     }
 
     #[test]

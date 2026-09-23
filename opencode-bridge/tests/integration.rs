@@ -215,6 +215,17 @@ async fn test_opencode_start_stop_with_sigint() {
     use openmate::process::opencode_manager::OpencodeManager;
     use openmate::state::OpencodeStatus;
 
+    // Requires the legacy v1 `opencode` binary on PATH. Skip when absent.
+    let opencode_available = std::process::Command::new("opencode")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+    if !opencode_available {
+        eprintln!("skipping test_opencode_start_stop_with_sigint: v1 `opencode` binary not found");
+        return;
+    }
+
     let port: u16 = 5696;
     let url = format!("http://127.0.0.1:{}", port);
     let dir = std::env::temp_dir().join("bridge_int_sigint_test");

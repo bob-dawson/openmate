@@ -13,7 +13,4 @@ interface SyncStateDao {
 
     @Query("DELETE FROM sync_state WHERE sessionId = :sessionId")
     suspend fun delete(sessionId: String)
-
-    @Query("UPDATE sync_state SET lastTimeUpdated = :lastTimeUpdated WHERE sessionId = :sessionId")
-    suspend fun updateLastTimeUpdated(sessionId: String, lastTimeUpdated: Long)
 }

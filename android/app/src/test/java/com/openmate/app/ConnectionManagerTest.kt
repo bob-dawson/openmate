@@ -313,8 +313,7 @@ class ConnectionManagerTest {
         val profileProviderDelegate = MutableActiveProfileProviderDelegate()
         val gatewayInterceptor = GatewayInterceptor(profileProviderDelegate)
         val routeEvidenceReporter = RouteEvidenceReporter()
-        val apiClient = OpencodeApiClient(
-            OkHttpClient.Builder()
+        val probeHttpClient = OkHttpClient.Builder()
                 .addInterceptor(gatewayInterceptor)
                 .addInterceptor { chain ->
                     val request = chain.request()
@@ -328,7 +327,7 @@ class ConnectionManagerTest {
                                 "bridge": {
                                   "version": "1.0.0",
                                   "port": 4097,
-                                  "auth_enabled": true,
+                                  "auth_enabled": false,
                                   "instance_id": "$directBridgeInstanceId"
                                 },
                               "opencode": {
@@ -347,9 +346,21 @@ class ConnectionManagerTest {
                             .body(body.toResponseBody())
                             .build()
                     }
+                    if (request.url.encodedPath == "/api/gateway/status") {
+                        return@addInterceptor Response.Builder()
+                            .request(request)
+                            .protocol(Protocol.HTTP_1_1)
+                            .code(200)
+                            .message("OK")
+                            .body("{\"online\":true}".toResponseBody())
+                            .build()
+                    }
                     chain.proceed(request)
                 }
-                .build(),
+                .build()
+
+        val apiClient = OpencodeApiClient(
+            client = probeHttpClient,
             activeProfileProvider = profileProviderDelegate,
             gatewayInterceptor = gatewayInterceptor,
             routeEvidenceReporter = routeEvidenceReporter,
@@ -381,6 +392,22 @@ class ConnectionManagerTest {
             logStore = SyncLogStore(),
             permissionRepository = FakePermissionRepository(),
             questionRepository = FakeQuestionRepository(),
+            probeHttpClient = probeHttpClient,
+            routeEvidenceAggregator = routeEvidenceAggregator,
+            routeEvidenceReporter = routeEvidenceReporter,
+            routeCache = object : com.openmate.core.data.RouteCache(RuntimeEnvironment.getApplication()) {
+                private val cache = mutableMapOf<String, com.openmate.core.data.CachedRoute>()
+                override suspend fun get(profileId: String): com.openmate.core.data.CachedRoute? = cache[profileId]
+                override suspend fun setDirect(profileId: String) {
+                    cache[profileId] = com.openmate.core.data.CachedRoute.DIRECT
+                }
+                override suspend fun setGateway(profileId: String) {
+                    cache[profileId] = com.openmate.core.data.CachedRoute.GATEWAY
+                }
+                override suspend fun clear(profileId: String) {
+                    cache.remove(profileId)
+                }
+            },
         )
         profileProviderDelegate.delegate = manager
         managers += manager
@@ -526,6 +553,8 @@ class ConnectionManagerTest {
 
         override suspend fun unrevertSession(sessionID: String, directory: String?) = Unit
 
+        override suspend fun updateLocalRevert(sessionID: String, revert: com.openmate.core.domain.model.SessionRevert?) = Unit
+
         override suspend fun resolveMessageID(sessionID: String, timeCreated: Long): String? = null
 
         override suspend fun resolveEvtID(sessionID: String, messageID: String): String? = null
@@ -544,6 +573,13 @@ class ConnectionManagerTest {
 
         override suspend fun findBusyStartTime(sessionId: String): Long? = null
 
+        override suspend fun fetchDiffFiles(
+            sessionId: String,
+            messageId: String,
+            toolName: String,
+            targetFilePath: String?,
+        ): List<com.openmate.core.domain.model.DiffFile> = emptyList()
+
         override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult {
             return SessionMessageSyncResult(lastSeq = 0L, changes = emptyList())
         }
@@ -556,13 +592,7 @@ class ConnectionManagerTest {
 
         override suspend fun getLastSeq(sessionId: String): Long? = null
 
-        override suspend fun resyncFrom(sessionId: String, sinceTimeUpdated: Long) = Unit
-
-        override suspend fun getMinTimeCreated(sessionId: String): Long? = null
-
-        override suspend fun countBySessionAfterTimeCreated(sessionId: String, since: Long): Int = 0
-
-        override suspend fun countBySession(sessionId: String): Int = 0
+        override suspend fun rollbackSeq(sessionId: String, count: Long) = Unit
 
         override suspend fun deleteMessage(sessionId: String, messageId: String) = Unit
     }
@@ -573,6 +603,7 @@ class ConnectionManagerTest {
 
     private class FakeNetworkChangeMonitor : NetworkChangeMonitor {
         override val events = emptyFlow<com.openmate.app.connection.NetworkChangeEvent>()
+        override fun hasInternet(): Boolean = true
     }
 
     private class FakePermissionRepository : PermissionRepository {

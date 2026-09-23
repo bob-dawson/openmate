@@ -6,4 +6,5 @@ import kotlinx.serialization.Serializable
 data class HealthDto(
     val healthy: Boolean = false,
     val version: String = "",
+    val pid: Long = 0,
 )

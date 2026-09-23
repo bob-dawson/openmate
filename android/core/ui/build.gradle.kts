@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.openmate.core.ui"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
@@ -36,7 +36,6 @@ dependencies {
     implementation(libs.compose.runtime)
 
     implementation(libs.compose.markdown)
-    implementation(libs.multiplatform.markdown.renderer.m3)
     implementation(libs.coil3)
     implementation(libs.coil3.network.okhttp)
     implementation(libs.coil3.gif)

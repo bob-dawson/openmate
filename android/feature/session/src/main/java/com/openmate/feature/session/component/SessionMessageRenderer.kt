@@ -1,7 +1,6 @@
 package com.openmate.feature.session.component
 
 import android.os.SystemClock
-import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,14 +30,7 @@ import com.openmate.core.ui.component.MessageBubble
 import com.openmate.feature.session.R
 import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
-import com.openmate.feature.session.SessionDetailViewModel
-import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.markdownColor
-import com.mikepenz.markdown.m3.markdownTypography
-import com.mikepenz.markdown.model.rememberMarkdownState
-import com.mikepenz.markdown.model.rememberStreamingMarkdownState
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import dev.jeziellago.compose.markdowntext.MarkdownText
 import kotlinx.coroutines.delay
 import com.openmate.core.domain.model.ToolCallState
 import kotlinx.serialization.json.*
@@ -158,8 +150,6 @@ fun SessionMessageRenderer(
     compactMode: Boolean = false,
     isQueued: Boolean = false,
     userModelName: String? = null,
-    reasoningDefaultExpanded: Boolean = false,
-    liveParts: List<SessionDetailViewModel.LivePart>? = null,
     onFullContentRequest: (messageId: String) -> Unit,
     onNavigateToSubtask: (subtaskSessionID: String, title: String) -> Unit = { _, _ -> },
     pendingQuestions: List<QuestionRequest> = emptyList(),
@@ -200,119 +190,63 @@ fun SessionMessageRenderer(
         "assistant" -> {
             val content = dataJson["content"]?.jsonArray
             val errorMessage = extractAssistantErrorMessage(dataJson)
+            val hasVisible = content?.any { item ->
+                val obj = item.jsonObject
+                val type = obj["type"]?.jsonPrimitive?.contentOrNull
+                when (type) {
+                    "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                    "tool" -> !compactMode
+                    "reasoning" -> !compactMode && obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
+                    "file" -> true
+                    "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> !compactMode
+                    else -> false
+                }
+            } == true || errorMessage != null
+            if (!hasVisible) return
             val modelObj = dataJson["model"]?.jsonObject
             val modelName = modelObj?.get("name")?.jsonPrimitive?.contentOrNull
                 ?: modelObj?.get("id")?.jsonPrimitive?.contentOrNull
             val finish = dataJson["finish"]?.jsonPrimitive?.contentOrNull
             val isStepRunning = entity.completedAt == null && finish == null
             val toolCount = if (compactMode) 0 else content?.count { it.jsonObject["type"]?.jsonPrimitive?.contentOrNull == "tool" } ?: 0
-
-            val hasSyncedContent = content?.any { item ->
-                val obj = item.jsonObject
-                val type = obj["type"]?.jsonPrimitive?.contentOrNull
-                when (type) {
-                    "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
-                    "tool" -> true
-                    "reasoning" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
-                    "file" -> true
-                    else -> false
-                }
-            } == true || errorMessage != null
-
-            val showLive = liveParts != null && liveParts.isNotEmpty() && (!hasSyncedContent || entity.completedAt == null)
-            if (showLive) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    liveParts.forEach { part ->
-                        LivePartItem(part, reasoningDefaultExpanded = reasoningDefaultExpanded)
-                    }
-                    MessageMetadata(
-                        messageId = entity.id,
-                        timeCreated = entity.timeCreated,
-                        completedAt = entity.completedAt,
-                        modelName = modelName,
-                        isQueued = false,
-                        isStepRunning = isStepRunning,
-                        toolCount = toolCount,
-                        finish = finish,
-                        runningAnchors = runningAnchors,
-                    )
-                }
-            } else {
-                val hasVisible = content?.any { item ->
-                    val obj = item.jsonObject
-                    val type = obj["type"]?.jsonPrimitive?.contentOrNull
-                    when (type) {
-                        "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
-                        "tool" -> !compactMode
-                        "reasoning" -> !compactMode && obj["text"]?.jsonPrimitive?.contentOrNull?.isNotBlank() == true
-                        "file" -> true
-                        "step-start", "step-finish", "agent", "subtask", "compaction", "retry" -> !compactMode
-                        else -> false
-                    }
-                } == true || errorMessage != null
-                if (hasVisible) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        AssistantMessageItem(
-                            data = dataJson,
-                            sessionId = entity.sessionId,
-                            messageId = entity.id,
-                            showReasoning = showReasoning,
-                            compactMode = compactMode,
-                            reasoningDefaultExpanded = reasoningDefaultExpanded,
-                            onNavigateToSubtask = onNavigateToSubtask,
-                            pendingQuestions = pendingQuestions,
-                            pendingPermissions = pendingPermissions,
-                            onReplyQuestion = onReplyQuestion,
-                            onRejectQuestion = onRejectQuestion,
-                            onReplyPermission = onReplyPermission,
-                            onViewFile = onViewFile,
-                            onViewDiff = onViewDiff,
-                        )
-                        if (errorMessage != null) {
-                            AssistantErrorCard(errorMessage)
-                        }
-                        MessageMetadata(
-                            messageId = entity.id,
-                            timeCreated = entity.timeCreated,
-                            completedAt = entity.completedAt,
-                            modelName = modelName,
-                            isQueued = false,
-                            isStepRunning = isStepRunning,
-                            toolCount = toolCount,
-                            finish = finish,
-                            runningAnchors = runningAnchors,
-                        )
-                    }
-                }
-            }
-        }
-        "compaction" -> {
-            val summary = dataJson["summary"]?.jsonPrimitive?.contentOrNull
-            val hasSyncedContent = !summary.isNullOrBlank()
-            if (liveParts != null && liveParts.isNotEmpty() && (!hasSyncedContent || entity.completedAt == null)) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    liveParts.forEach { part ->
-                        LivePartItem(part)
-                    }
-                    MessageMetadata(
-                        messageId = entity.id,
-                        timeCreated = entity.timeCreated,
-                        completedAt = entity.completedAt,
-                        modelName = null,
-                        isQueued = false,
-                        isStepRunning = true,
-                        toolCount = 0,
-                        finish = null,
-                        runningAnchors = runningAnchors,
-                    )
-                }
-            } else {
-                CompactionMessageItem(
-                    entity = entity,
+            Column(modifier = Modifier.fillMaxWidth()) {
+                AssistantMessageItem(
                     data = dataJson,
+                    sessionId = entity.sessionId,
+                    messageId = entity.id,
+                    showReasoning = showReasoning,
+                    compactMode = compactMode,
+                    onNavigateToSubtask = onNavigateToSubtask,
+                    pendingQuestions = pendingQuestions,
+                    pendingPermissions = pendingPermissions,
+                    onReplyQuestion = onReplyQuestion,
+                    onRejectQuestion = onRejectQuestion,
+                    onReplyPermission = onReplyPermission,
+                    onViewFile = onViewFile,
+                    onViewDiff = onViewDiff,
+                )
+                if (errorMessage != null) {
+                    AssistantErrorCard(errorMessage)
+                }
+                MessageMetadata(
+                    messageId = entity.id,
+                    timeCreated = entity.timeCreated,
+                    completedAt = entity.completedAt,
+                    modelName = modelName,
+                    isQueued = false,
+                    isStepRunning = isStepRunning,
+                    toolCount = toolCount,
+                    finish = finish,
                     runningAnchors = runningAnchors,
                 )
             }
+        }
+        "compaction" -> {
+            CompactionMessageItem(
+                entity = entity,
+                data = dataJson,
+                runningAnchors = runningAnchors,
+            )
         }
         else -> { }
     }
@@ -352,113 +286,19 @@ private fun CompactionMessageItem(
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 4.dp),
             ) {
-                Markdown(
-                    markdownState = rememberMarkdownState(summary),
+                MarkdownText(
+                    markdown = summary,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
-                    colors = markdownColor(),
-                    typography = markdownTypography(),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    syntaxHighlightColor = CompactionCodeBlockBackground,
+                    syntaxHighlightTextColor = CompactionCodeBlockText,
+                    isTextSelectable = true,
                 )
             }
-        }
-    }
-}
-
-@Composable
-internal fun LivePartItem(part: SessionDetailViewModel.LivePart, reasoningDefaultExpanded: Boolean = true) {
-    if (part.text.isBlank()) return
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
-        when (part.partType) {
-            "reasoning" -> {
-                ReasoningBlock(text = part.text, defaultExpanded = reasoningDefaultExpanded, showProgress = !part.isComplete, filterRedacted = false)
-            }
-            else -> {
-                val streamingState = rememberStreamingMarkdownState()
-                val prevTextLen = remember { mutableIntStateOf(0) }
-                LaunchedEffect(part.text) {
-                    val currentLen = part.text.length
-                    if (currentLen > prevTextLen.intValue && prevTextLen.intValue >= 0) {
-                        val chunk = part.text.substring(prevTextLen.intValue)
-                        streamingState.append(chunk)
-                    } else if (prevTextLen.intValue == 0 && currentLen > 0) {
-                        streamingState.append(part.text)
-                    }
-                    prevTextLen.intValue = currentLen
-                }
-                val snapshot by streamingState.snapshot.collectAsState()
-                val hasContent = snapshot.stableAst.isNotEmpty() || snapshot.unstableAstTail.isNotEmpty()
-                if (hasContent) {
-                    Markdown(
-                        streamingMarkdownState = streamingState,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = markdownColor(),
-                        typography = markdownTypography(),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReasoningBlock(
-    text: String,
-    defaultExpanded: Boolean = false,
-    showProgress: Boolean = false,
-    filterRedacted: Boolean = true,
-) {
-    if (text.isBlank()) return
-    val expanded = remember { mutableStateOf(defaultExpanded) }
-    val displayText = remember(text, filterRedacted) {
-        if (filterRedacted) text.replace(Regex("\\[REDACTED\\][\\s\\S]*?\\[REDACTED\\]"), "[REDACTED]")
-        else text
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 8.dp, top = 4.dp)
-            .clickable { expanded.value = !expanded.value },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .height(16.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(
-            text = if (expanded.value) "▼ Thinking" else "▶ Thinking",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-        )
-        if (showProgress) {
-            Spacer(modifier = Modifier.width(4.dp))
-            CircularProgressIndicator(
-                modifier = Modifier.size(10.dp),
-                strokeWidth = 1.5.dp,
-            )
-        }
-    }
-    AnimatedVisibility(visible = expanded.value) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(2.dp)
-                    .fillMaxWidth()
-                    .padding(start = 8.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = displayText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.weight(1f).padding(end = 8.dp),
-            )
         }
     }
 }
@@ -645,7 +485,6 @@ fun AssistantMessageItem(
     messageId: String = "",
     showReasoning: Boolean = true,
     compactMode: Boolean = false,
-    reasoningDefaultExpanded: Boolean = false,
     onNavigateToSubtask: (String, String) -> Unit = { _, _ -> },
     pendingQuestions: List<QuestionRequest> = emptyList(),
     pendingPermissions: List<PermissionRequest> = emptyList(),
@@ -656,6 +495,7 @@ fun AssistantMessageItem(
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
 ) {
     val content = data["content"]?.jsonArray ?: return
+    val reasoningExpanded = remember { mutableStateOf(false) }
     val toolItems = remember(data) { extractToolItems(data, sessionId, messageId) }
     var toolIndex = 0
 
@@ -793,7 +633,47 @@ fun AssistantMessageItem(
                 "reasoning" -> {
                     val text = obj["text"]?.jsonPrimitive?.contentOrNull ?: ""
                     if (text.isNotBlank() && showReasoning) {
-                        ReasoningBlock(text = text, defaultExpanded = reasoningDefaultExpanded)
+                        val filtered = text.replace(Regex("\\[REDACTED\\][\\s\\S]*?\\[REDACTED\\]"), "[REDACTED]")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 8.dp, top = 4.dp)
+                                .clickable { reasoningExpanded.value = !reasoningExpanded.value },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .height(16.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (reasoningExpanded.value) "▼ Thinking" else "▶ Thinking",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
+                        AnimatedVisibility(visible = reasoningExpanded.value) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .width(2.dp)
+                                        .fillMaxWidth()
+                                        .padding(start = 8.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = filtered,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                )
+                            }
+                        }
                     }
                 }
                 "step-start" -> {}

@@ -2,7 +2,7 @@ use rusqlite::params;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +19,7 @@ pub struct PairedDevice {
 #[derive(Clone)]
 pub struct BridgeDb {
     pool: Arc<Pool<SqliteConnectionManager>>,
+    db_path: PathBuf,
 }
 
 impl BridgeDb {
@@ -43,9 +44,14 @@ impl BridgeDb {
 
         let db = Self {
             pool: Arc::new(pool),
+            db_path: db_path.clone(),
         };
         db.migrate()?;
         Ok(db)
+    }
+
+    pub fn db_path(&self) -> &Path {
+        &self.db_path
     }
 
     fn conn(&self) -> Result<r2d2::PooledConnection<SqliteConnectionManager>, String> {
@@ -325,6 +331,7 @@ impl BridgeDb {
         }
         Ok(())
     }
+
 }
 
 #[cfg(test)]

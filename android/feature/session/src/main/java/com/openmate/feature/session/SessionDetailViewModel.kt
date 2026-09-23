@@ -22,7 +22,6 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.PermissionReply
-import com.openmate.core.domain.model.LivePartEvent
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
@@ -33,7 +32,6 @@ import com.openmate.core.domain.repository.SseEventRepository
 import com.openmate.core.domain.repository.TodoRepository
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.network.OpencodeApiClient
-import com.openmate.core.network.SyncApiClient
 import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.ModelInfoDto
 import com.openmate.core.network.dto.ProviderInfoDto
@@ -84,40 +82,15 @@ class SessionDetailViewModel @Inject constructor(
     private val syncDebugController: SyncDebugController,
     private val syncSseStarter: SyncSseStarter,
     internal val apiClient: OpencodeApiClient,
-    private val syncApiClient: SyncApiClient,
     private val bridgeFileOpener: BridgeFileOpener,
 ) : ViewModel() {
-    private val prefs: SharedPreferences = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
 
     private val _sessionRevert = MutableStateFlow<SessionRevert?>(null)
     val sessionRevert: StateFlow<SessionRevert?> = _sessionRevert.asStateFlow()
 
     private val _messages = MutableStateFlow<List<SessionMessage>>(emptyList())
     val messages: StateFlow<List<SessionMessage>> = _messages.asStateFlow()
-
-    private fun updateMessages(newList: List<SessionMessage>) {
-        val cur = _messages.value
-        if (newList === cur) return
-        val newlyCompleted = if (cur.size == newList.size) {
-            val ids = mutableSetOf<String>()
-            for (i in cur.indices) {
-                if (cur[i].completedAt == null && newList[i].completedAt != null && cur[i].id == newList[i].id) {
-                    ids.add(cur[i].id)
-                }
-            }
-            ids
-        } else {
-            val curCompleted = cur.mapNotNull { if (it.completedAt != null) it.id else null }.toSet()
-            newList.mapNotNull { if (it.completedAt != null && it.id !in curCompleted) it.id else null }.toSet()
-        }
-        val lastChanged = cur.isEmpty() || cur.last().id != newList.last().id || cur.last().completedAt != newList.last().completedAt
-        if (newlyCompleted.isEmpty() && cur.size == newList.size && !lastChanged) return
-        _messages.value = newList
-        if (newlyCompleted.isNotEmpty()) {
-            Log.d("LiveMsg", "updateMessages newlyCompleted=${newlyCompleted.size} ids=$newlyCompleted")
-            cleanupLivePartsByMsgIds(newlyCompleted)
-        }
-    }
 
     private var messageWindowState = SessionMessageWindowManager.State(
         messages = emptyList(),
@@ -163,6 +136,8 @@ class SessionDetailViewModel @Inject constructor(
     val sessionRetryStatus: StateFlow<SessionRetryStatus?> = _sessionRetryStatus.asStateFlow()
 
     private var wasBusy = false
+    @Volatile
+    private var abortSuppressed = false
     private var messageIdCounter = 0
     private val _sessionStatus = MutableStateFlow("")
     val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
@@ -230,17 +205,6 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _revertedPrompt = MutableStateFlow<String?>(null)
     val revertedPrompt: StateFlow<String?> = _revertedPrompt.asStateFlow()
-
-    data class LivePart(
-        val partId: String,
-        val messageId: String,
-        val partType: String,
-        val text: String,
-        val isComplete: Boolean,
-    )
-
-    private val _liveParts = MutableStateFlow<List<LivePart>>(emptyList())
-    val liveParts: StateFlow<List<LivePart>> = _liveParts.asStateFlow()
 
     data class ModelRef(val providerID: String, val modelID: String, val modelName: String)
 
@@ -330,7 +294,6 @@ class SessionDetailViewModel @Inject constructor(
     private var observeSessionErrorJob: Job? = null
     private var observeRetryStatusJob: Job? = null
     private var observeSyncLogsJob: Job? = null
-    private var observeLivePartJob: Job? = null
 
     init {
         observeSyncLogs()
@@ -579,7 +542,6 @@ class SessionDetailViewModel @Inject constructor(
         observeMessageSyncJob?.cancel()
         observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
-        observeLivePartJob?.cancel()
         pollJob?.cancel()
         _selectedModel.value = null
         val profileKey = activeProfileKey()
@@ -596,7 +558,7 @@ class SessionDetailViewModel @Inject constructor(
             loadedCount = MESSAGE_WINDOW_PAGE_SIZE,
             hasOlderMessages = false,
         )
-        updateMessages(emptyList())
+        _messages.value = emptyList()
         _sessionTotalDuration.value = null
         _currentBusyStart.value = null
         _sessionRetryStatus.value = null
@@ -607,8 +569,8 @@ class SessionDetailViewModel @Inject constructor(
         _isLoadingOlder.value = false
         _hasOlderMessages.value = false
         _sessionRevert.value = null
-        _liveParts.value = emptyList()
         wasBusy = false
+        abortSuppressed = false
         isModelOverridden = false
         isAgentOverridden = false
         syncSseStarter.setActiveSession(sessionID)
@@ -645,12 +607,10 @@ class SessionDetailViewModel @Inject constructor(
                 if (session != null && session.title.isNotBlank()) {
                     _sessionTitle.value = session.title
                 }
-                val newRevert = session?.revert
-                if (newRevert != null) {
-                    _sessionRevert.value = newRevert
-                } else {
-                    _sessionRevert.value = null
-                }
+                // Adopt a server-reported staged revert. A null here can mean the V2 session
+                // payload omitted the field, so never clear a locally staged revert on null;
+                // clearing is handled explicitly by unrevert/commit paths.
+                session?.revert?.let { _sessionRevert.value = it }
                 session?.let {
                     _sessionTokens.value = it.tokens
                     _sessionCost.value = it.cost
@@ -682,7 +642,6 @@ class SessionDetailViewModel @Inject constructor(
         observePermissions()
         observeSyncEvents(sessionID)
         observeRetryStatus(sessionID)
-        observeLiveParts(sessionID)
         startPolling(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -695,18 +654,9 @@ class SessionDetailViewModel @Inject constructor(
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
                 val hasLocalMessages = messageWindowState.messages.isNotEmpty()
                 if (lastSeq != null && lastSeq > 0 && hasLocalMessages) {
-                    try {
-                        sessionMessageRepository.incrementalSync(sessionID)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "incrementalSync failed", e)
-                    }
-                    rebuildInitialWindow(sessionID)
+                    sessionMessageRepository.incrementalSync(sessionID)
                 } else {
-                    try {
-                        applySyncResult(sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE))
-                    } catch (e: Exception) {
-                        Log.e(TAG, "initSync failed", e)
-                    }
+                    applySyncResult(sessionMessageRepository.initSync(sessionID, MESSAGE_WINDOW_PAGE_SIZE))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "sync failed", e)
@@ -751,43 +701,32 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    fun resync(sinceTimeUpdated: Long) {
+    fun resync(eventCount: Int) {
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                _isResyncing.value = true
-                sessionMessageRepository.resyncFrom(sid, sinceTimeUpdated)
-                rebuildInitialWindow(sid)
+                sessionMessageRepository.rollbackSeq(sid, eventCount.toLong())
+                _messages.value = emptyList()
+                _hasOlderMessages.value = false
+                _isStreaming.value = false
+                messageWindowState = SessionMessageWindowManager.State(
+                    messages = emptyList(),
+                    loadedCount = 0,
+                    hasOlderMessages = false,
+                )
+                sessionMessageRepository.incrementalSync(sid)
                 refreshRetryStatus(sid)
                 todoRepository.refreshTodos(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "resync failed", e)
                 _errorMessage.value = appContext.getString(R.string.resync_failed)
-            } finally {
-                _isResyncing.value = false
             }
         }
     }
 
-    private val _isResyncing = MutableStateFlow(false)
-    val isResyncing: StateFlow<Boolean> = _isResyncing.asStateFlow()
-
-    suspend fun getSessionStats(): Pair<Long, Long?> {
-        val sid = currentSessionID ?: return Pair(0, null)
-        return try {
-            val stats = syncApiClient.sessionStats(sid)
-            Pair(stats.totalCount, stats.minTimeCreated)
-        } catch (e: Exception) {
-            Log.w(TAG, "getSessionStats failed", e)
-            val localCount = sessionMessageRepository.countBySession(sid).toLong()
-            val localMin = sessionMessageRepository.getMinTimeCreated(sid)
-            Pair(localCount, localMin)
-        }
-    }
-
-    suspend fun countBySessionAfterTimeCreated(since: Long): Int {
-        val sid = currentSessionID ?: return 0
-        return sessionMessageRepository.countBySessionAfterTimeCreated(sid, since)
+    suspend fun getCurrentSeq(): Long? {
+        val sid = currentSessionID ?: return null
+        return sessionMessageRepository.getLastSeq(sid)
     }
 
     private val _isUploadingDb = MutableStateFlow(false)
@@ -874,9 +813,7 @@ class SessionDetailViewModel @Inject constructor(
         observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
         observeSyncLogsJob?.cancel()
-        observeLivePartJob?.cancel()
         pollJob?.cancel()
-        _liveParts.value = emptyList()
         sseEventRepository.setActiveSessionScope(null, enabled = false)
         syncSseStarter.setActiveSession(null)
         val sid = currentSessionID
@@ -900,13 +837,13 @@ class SessionDetailViewModel @Inject constructor(
             message = "发送消息 send message requested textLength=${text.length} attachments=${_attachedFiles.value.size}",
         )
         _isSending.value = true
+        abortSuppressed = false
         val model = _selectedModel.value
         val agent = _selectedAgent.value
         val variant = _selectedVariant.value
         val files = _attachedFiles.value
-        val hasHistoryAssistant = _messages.value.any { it.type == "assistant" }
-        val sendModelPID = if (isModelOverridden || !hasHistoryAssistant) model?.providerID else null
-        val sendModelMID = if (isModelOverridden || !hasHistoryAssistant) model?.modelID else null
+        val sendModelPID = if (isModelOverridden) model?.providerID else null
+        val sendModelMID = if (isModelOverridden) model?.modelID else null
         val sendAgent = if (isAgentOverridden) agent else null
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -916,6 +853,12 @@ class SessionDetailViewModel @Inject constructor(
                 _attachedFiles.value = emptyList()
                 clearDraft(sessionID)
                 sessionMessageRepository.incrementalSync(sessionID)
+                if (_sessionRevert.value != null) {
+                    // opencode commits a staged revert as part of admitting this prompt.
+                    _sessionRevert.value = null
+                    _revertedPrompt.value = null
+                    sessionRepository.updateLocalRevert(sessionID, null)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = appContext.getString(R.string.send_failed)
@@ -931,6 +874,7 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun abort(sessionID: String) {
+        abortSuppressed = true
         _currentBusyStart.value = null
         _runningAnchors.value = emptyMap()
         wasBusy = false
@@ -1126,7 +1070,7 @@ class SessionDetailViewModel @Inject constructor(
                 apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
-                _errorMessage.value = appContext.getString(R.string.compact_failed)
+                _errorMessage.value = e.message ?: appContext.getString(R.string.compact_failed)
             }
         }
     }
@@ -1280,7 +1224,7 @@ class SessionDetailViewModel @Inject constructor(
                     olderPage = older,
                     hasOlderMessages = older.size == MESSAGE_WINDOW_PAGE_SIZE,
                 )
-                updateMessages(messageWindowState.messages)
+                _messages.value = messageWindowState.messages
                 _hasOlderMessages.value = messageWindowState.hasOlderMessages
                 recalculateMessageDerivedState(messageWindowState.messages)
             } catch (e: Exception) {
@@ -1312,7 +1256,7 @@ class SessionDetailViewModel @Inject constructor(
                         olderPage = older,
                         hasOlderMessages = true,
                     )
-                    updateMessages(messageWindowState.messages)
+                    _messages.value = messageWindowState.messages
                     _hasOlderMessages.value = messageWindowState.hasOlderMessages
                     recalculateMessageDerivedState(messageWindowState.messages)
                 } else {
@@ -1334,7 +1278,7 @@ class SessionDetailViewModel @Inject constructor(
             loadedCount = recent.size,
             hasOlderMessages = recent.size == MESSAGE_WINDOW_PAGE_SIZE,
         )
-        updateMessages(recent)
+        _messages.value = recent
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
         logMessageWindowState(
             sessionId = sessionId,
@@ -1342,7 +1286,6 @@ class SessionDetailViewModel @Inject constructor(
             messages = recent,
         )
         recalculateMessageDerivedState(recent)
-        cleanupSyncedLiveParts()
     }
 
     private fun applySyncResult(result: SessionMessageSyncResult) {
@@ -1351,7 +1294,7 @@ class SessionDetailViewModel @Inject constructor(
         if (hadNoMessages && result.changes.size >= MESSAGE_WINDOW_PAGE_SIZE) {
             messageWindowState = messageWindowState.copy(hasOlderMessages = true)
         }
-        updateMessages(messageWindowState.messages)
+        _messages.value = messageWindowState.messages
         _hasOlderMessages.value = messageWindowState.hasOlderMessages
         currentSessionID?.let { sessionId ->
             logMessageWindowState(
@@ -1363,7 +1306,6 @@ class SessionDetailViewModel @Inject constructor(
         if (result.changes.isNotEmpty()) {
             recalculateMessageDerivedState(messageWindowState.messages)
         }
-        cleanupSyncedLiveParts()
         if (result.hasTodoEvent) {
             val sid = currentSessionID ?: return
             viewModelScope.launch(Dispatchers.IO) {
@@ -1490,12 +1432,11 @@ class SessionDetailViewModel @Inject constructor(
         }
 
         val isReverting = _sessionRevert.value != null
-        val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting
-        _isStreaming.value = lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting)
-        val newQueued = buildQueuedMessageIds(list)
-        if (_queuedMessageIds.value != newQueued) _queuedMessageIds.value = newQueued
-        val newUserModelMap = buildUserModelMap(list)
-        if (_userModelMap.value != newUserModelMap) _userModelMap.value = newUserModelMap
+        val suppressed = abortSuppressed
+        val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting && !suppressed
+        _isStreaming.value = !suppressed && (lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting))
+        _queuedMessageIds.value = buildQueuedMessageIds(list)
+        _userModelMap.value = buildUserModelMap(list)
 
         val localBusy = _isStreaming.value
         if (localBusy) {
@@ -1563,7 +1504,7 @@ class SessionDetailViewModel @Inject constructor(
             }
         }
         anchors.keys.retainAll { id -> list.any { it.id == id && it.completedAt == null } }
-        if (_runningAnchors.value != anchors) _runningAnchors.value = anchors
+        _runningAnchors.value = anchors
     }
 
     private suspend fun refreshRetryStatus(sessionId: String) {
@@ -1603,7 +1544,6 @@ class SessionDetailViewModel @Inject constructor(
 
     private fun buildUserModelMap(list: List<SessionMessage>): Map<String, String> {
         val map = mutableMapOf<String, String>()
-        val unmappedUserIds = mutableListOf<String>()
         var currentModel: String? = null
         for (msg in list) {
             when (msg.type) {
@@ -1620,17 +1560,10 @@ class SessionDetailViewModel @Inject constructor(
                     val provider = model?.get("providerID")?.jsonPrimitive?.contentOrNull ?: ""
                     val modelId = model?.get("id")?.jsonPrimitive?.contentOrNull ?: ""
                     val m = if (provider.isNotBlank()) "$provider/$modelId" else modelId.ifBlank { null }
-                    if (m != null) {
-                        currentModel = m
-                        for (uid in unmappedUserIds) {
-                            map[uid] = m
-                        }
-                        unmappedUserIds.clear()
-                    }
+                    if (m != null) currentModel = m
                 }
                 "user" -> {
                     if (currentModel != null) map[msg.id] = currentModel
-                    else unmappedUserIds.add(msg.id)
                 }
             }
         }
@@ -1658,7 +1591,7 @@ class SessionDetailViewModel @Inject constructor(
         observeQuestionJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 questionRepository.observePending().collect { list ->
-                    if (_pendingQuestions.value != list) _pendingQuestions.value = list
+                    _pendingQuestions.value = list
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observeQuestions failed", e)
@@ -1670,8 +1603,7 @@ class SessionDetailViewModel @Inject constructor(
         observePermissionJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 permissionRepository.observePending().collect { list ->
-                    val taken = list.take(1)
-                    if (_pendingPermissions.value != taken) _pendingPermissions.value = taken
+                    _pendingPermissions.value = list.take(1)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "observePermissions failed", e)
@@ -1684,11 +1616,7 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 sessionMessageRepository.observeSyncEvents().collect { event ->
                     if (event.sessionId == sessionId) {
-                        try {
-                            applySyncResult(event.result)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "applySyncResult failed in collect", e)
-                        }
+                        applySyncResult(event.result)
                     }
                 }
             } catch (e: Exception) {
@@ -1728,154 +1656,6 @@ class SessionDetailViewModel @Inject constructor(
             } catch (e: Exception) {
                 Log.e(TAG, "observeSessionErrors failed", e)
             }
-        }
-    }
-
-    private fun observeLiveParts(sessionId: String) {
-        observeLivePartJob?.cancel()
-        if (!prefs.getBoolean("live_messages", false)) return
-        observeLivePartJob = viewModelScope.launch(Dispatchers.IO) {
-            _liveParts.value = emptyList()
-
-            val pendingParts = java.util.concurrent.atomic.AtomicReference<List<LivePart>>(_liveParts.value)
-            var dirty = false
-            var deltaCount = 0
-            var flushCount = 0
-            val flushJob = launch {
-                while (isActive) {
-                    delay(100)
-                    if (dirty) {
-                        flushCount++
-                        val parts = pendingParts.get()
-                        val syncedMsgIds = _messages.value.associate { it.id to it.type }
-                        val filtered = parts.filter { syncedMsgIds[it.messageId] == null || syncedMsgIds[it.messageId] == "assistant" }
-                        if (filtered.size != parts.size) {
-                            Log.d("LiveMsg", "flush filtered out ${parts.size - filtered.size} non-assistant parts")
-                            pendingParts.set(filtered)
-                        }
-                        Log.d("LiveMsg", "flush #$flushCount parts=${filtered.size} deltaSinceLastFlush=$deltaCount")
-                        _liveParts.value = filtered
-                        dirty = false
-                        deltaCount = 0
-                    }
-                }
-            }
-
-            try {
-                sseEventRepository.observeLivePartEvents()
-                    .collect { event ->
-                        if (event.sessionId != sessionId) return@collect
-                        val msgType = _messages.value.find { it.id == event.messageId }?.type
-                        if (msgType != null && msgType != "assistant") return@collect
-                        val partType = event.partType
-                        val skipPart = partType == "step-start" || partType == "step-finish" || partType == "tool"
-                        when (event.eventType) {
-                            "delta" -> {
-                                if (skipPart) return@collect
-                                deltaCount++
-                                val text = event.text ?: ""
-                                val current = pendingParts.get().toMutableList()
-                                val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
-                                if (existingIdx >= 0) {
-                                    current[existingIdx] = current[existingIdx].copy(
-                                        text = current[existingIdx].text + text,
-                                    )
-                                } else {
-                                    Log.d("LiveMsg", "delta NEW part partId=${event.partId} msgId=${event.messageId} type=$partType textLen=${text.length}")
-                                    current.add(LivePart(
-                                        partId = event.partId,
-                                        messageId = event.messageId,
-                                        partType = partType ?: "text",
-                                        text = text,
-                                        isComplete = false,
-                                    ))
-                                }
-                                pendingParts.set(current.toList())
-                                dirty = true
-                            }
-                            "updated" -> {
-                                if (skipPart) {
-                                    if (event.isComplete) {
-                                        Log.d("LiveMsg", "updated SKIP part complete partId=${event.partId} msgId=${event.messageId} type=$partType")
-                                        try {
-                                            sessionMessageRepository.incrementalSync(sessionId)
-                                        } catch (_: Exception) {}
-                                    }
-                                    return@collect
-                                }
-                                val current = pendingParts.get().toMutableList()
-                                val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
-                                if (event.isComplete) {
-                                    Log.d("LiveMsg", "updated part complete partId=${event.partId} msgId=${event.messageId} type=$partType")
-                                    if (existingIdx >= 0) {
-                                        current[existingIdx] = current[existingIdx].copy(isComplete = true)
-                                    }
-                                    try {
-                                        sessionMessageRepository.incrementalSync(sessionId)
-                                    } catch (_: Exception) {}
-                                } else {
-                                    val text = event.text ?: ""
-                                    if (existingIdx >= 0) {
-                                        current[existingIdx] = current[existingIdx].copy(text = text)
-                                    } else {
-                                        Log.d("LiveMsg", "updated NEW part partId=${event.partId} msgId=${event.messageId} type=$partType textLen=${text.length}")
-                                        current.add(LivePart(
-                                            partId = event.partId,
-                                            messageId = event.messageId,
-                                            partType = partType ?: "text",
-                                            text = text,
-                                            isComplete = false,
-                                        ))
-                                    }
-                                }
-                                pendingParts.set(current.toList())
-                                dirty = true
-                            }
-                            "removed" -> {
-                                val current = pendingParts.get().toMutableList()
-                                val existingIdx = current.indexOfFirst { it.partId == event.partId && it.messageId == event.messageId }
-                                if (existingIdx >= 0) {
-                                    current.removeAt(existingIdx)
-                                    pendingParts.set(current.toList())
-                                    dirty = true
-                                }
-                            }
-                        }
-                    }
-            } finally {
-                flushJob.cancel()
-                if (dirty) _liveParts.value = pendingParts.get()
-            }
-        }
-    }
-
-    private fun cleanupSyncedLiveParts() {
-        if (_liveParts.value.isEmpty()) return
-        val syncedMsgIds = _messages.value.map { it.id }.toSet()
-        val filtered = _liveParts.value.filter { it.messageId !in syncedMsgIds }
-        if (filtered.size != _liveParts.value.size) {
-            val removed = _liveParts.value.filter { it.messageId in syncedMsgIds }
-            Log.d("LiveMsg", "cleanupSyncedLiveParts removed=${removed.size} remaining=${filtered.size} syncedMsgIds=${syncedMsgIds.size} livePartMsgIds=${_liveParts.value.map { it.messageId }.distinct()}")
-            _liveParts.value = filtered
-        }
-    }
-
-    private fun cleanupLivePartsByMsgIds(completedMsgIds: Set<String>) {
-        if (_liveParts.value.isEmpty() || completedMsgIds.isEmpty()) return
-        val messagesWithData = _messages.value.filter { it.id in completedMsgIds && it.data.isNotBlank() }.map { it.id }.toSet()
-        if (messagesWithData.isEmpty()) return
-        val filtered = _liveParts.value.filter { it.messageId !in messagesWithData }
-        if (filtered.size != _liveParts.value.size) {
-            val removed = _liveParts.value.filter { it.messageId in messagesWithData }
-            Log.d("LiveMsg", "cleanupLivePartsByMsgIds removed=${removed.size} remaining=${filtered.size} msgIds=$messagesWithData")
-            if (filtered.isNotEmpty()) {
-                filtered.forEach { p ->
-                    Log.w("LiveMsg", "  remaining part: partId=${p.partId} msgId=${p.messageId} type=${p.partType} textLen=${p.text.length} isComplete=${p.isComplete}")
-                }
-                val allMsgIds = _messages.value.map { it.id to it.data.isNotBlank() }.toMap()
-                Log.w("LiveMsg", "  _messages: ${allMsgIds.entries.joinToString { "${it.key}=${it.value}" }}")
-            }
-            _liveParts.value = filtered
         }
     }
 
@@ -1931,21 +1711,15 @@ class SessionDetailViewModel @Inject constructor(
                     )
                     return@launch
                 }
-                val msgID = sessionRepository.resolveMessageID(sessionID, targetMsg.timeCreated)
-                if (msgID == null) {
-                    syncDebugController.log(
-                        level = SyncLogLevel.Error,
-                        category = SyncLogCategory.Manual,
-                        sessionId = sessionID,
-                        message = "revert失败 evtID=$messageID timeCreated=${targetMsg.timeCreated} resolve msg_ ID failed",
-                    )
-                    return@launch
-                }
+                // V2: the domain message id (msg_*) is already the server SessionMessage.ID
+                // used as the revert boundary. The legacy /resolve-message-id endpoint reads
+                // the empty V1 `message` table and would always fail.
+                val msgID = targetMsg.id
                 syncDebugController.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    message = "revert请求 evtID=$messageID → msgID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
+                    message = "revert请求 messageID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
                 )
                 if (busy) {
                     syncDebugController.log(
@@ -1963,6 +1737,7 @@ class SessionDetailViewModel @Inject constructor(
                 }.getOrNull()
                 sessionRepository.revertSession(sessionID, msgID, directory = currentDirectory.ifBlank { null })
                 _sessionRevert.value = SessionRevert(messageID = msgID, from = targetMsg.id)
+                sessionRepository.updateLocalRevert(sessionID, SessionRevert(messageID = msgID, from = targetMsg.id))
                 _revertedPrompt.value = promptText
                 if (!promptText.isNullOrBlank()) {
                     _inputText.value = promptText
@@ -2012,7 +1787,10 @@ class SessionDetailViewModel @Inject constructor(
                     message = "unrevert请求 dir=${currentDirectory.ifBlank { "null" }}",
                 )
                 sessionRepository.unrevertSession(sessionID, directory = currentDirectory.ifBlank { null })
+                sessionRepository.updateLocalRevert(sessionID, null)
                 sessionMessageRepository.incrementalSync(sessionID)
+                _sessionRevert.value = null
+                _revertedPrompt.value = null
             } catch (e: Exception) {
                 Log.e(TAG, "unrevert failed", e)
                 syncDebugController.log(
