@@ -158,23 +158,43 @@ class SessionMessageRendererTest {
     }
 
     @Test
-    fun toolSummary_usesShellLabelForBashTool() {
+    fun toolSummary_readsV2ShellCommand() {
         val summary = toolSummary(
-            toolName = "bash",
-            args = """{"command":"echo hello","description":"Runs hello"}""",
+            toolName = "shell",
+            args = """{"command":"echo hello"}""",
             result = null,
         )
 
         assertThat(summary.icon).isEqualTo("shell")
-        assertThat(summary.text).isEqualTo("Runs hello")
+        assertThat(summary.text).isEqualTo("echo hello")
+        assertThat(summary.background).isFalse()
     }
 
     @Test
-    fun shouldExpandRunningTool_expandsBashWhenCommandAvailable() {
+    fun toolSummary_marksBackgroundShell() {
+        val summary = toolSummary(
+            toolName = "shell",
+            args = """{"command":"npm run dev","background":true}""",
+            result = null,
+        )
+
+        assertThat(summary.background).isTrue()
+        assertThat(summary.text).isEqualTo("npm run dev")
+    }
+
+    @Test
+    fun toolSummary_readsV2PathForReadWriteEdit() {
+        assertThat(toolSummary("read", """{"path":"a/b.kt"}""", null).filePath).isEqualTo("a/b.kt")
+        assertThat(toolSummary("write", """{"path":"a/b.kt","content":"x"}""", null).filePath).isEqualTo("a/b.kt")
+        assertThat(toolSummary("edit", """{"path":"a/b.kt"}""", null).filePath).isEqualTo("a/b.kt")
+    }
+
+    @Test
+    fun shouldExpandRunningTool_expandsShellWhenCommandAvailable() {
         val item = DisplayItem.ToolItem(
-            toolName = "bash",
+            toolName = "shell",
             state = ToolCallState.RUNNING,
-            args = """{"command":"npm install","description":"Install deps"}""",
+            args = """{"command":"npm install"}""",
             result = null,
             files = emptyList(),
             hash = null,

@@ -113,7 +113,7 @@ internal fun extractToolItems(data: JsonObject, sessionId: String = "", messageI
                     DisplayItem.ToolItem(
                         toolName = name,
                         state = when (status) {
-                            "pending" -> ToolCallState.PENDING
+                            "streaming" -> ToolCallState.RUNNING
                             "running" -> ToolCallState.RUNNING
                             "completed" -> ToolCallState.COMPLETED
                             "error" -> ToolCallState.ERROR
@@ -564,7 +564,7 @@ fun AssistantMessageItem(
                                     request = matchedPerm,
                                     onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
                                 )
-                            } else if (name == "task") {
+                            } else if (name == "subagent") {
                                 val summary = toolSummary(name, input, resultText)
                                 val subtaskSessionID = remember(metadata, structuredResult, resultText) {
                                     extractSubtaskSessionId(
@@ -601,7 +601,7 @@ fun AssistantMessageItem(
                                 }
                             }
                         }
-                    } else if (name == "task") {
+                    } else if (name == "subagent") {
                         val summary = toolSummary(name, input, resultText)
                         TaskToolLine(
                             item = displayItem,

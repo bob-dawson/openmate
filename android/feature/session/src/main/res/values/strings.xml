@@ -80,6 +80,7 @@
     <string name="tool_waiting">waiting…</string>
     <string name="subtask_label">task</string>
     <string name="tool_cwd">cwd: %1$s</string>
+    <string name="tool_shell_background">background</string>
 
     <string name="cache">Local Files</string>
     <string name="manage">Manage</string>

@@ -53,7 +53,6 @@ import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionInfo
 import com.openmate.core.domain.model.QuestionOption
 import com.openmate.core.domain.model.QuestionRequest
-import com.openmate.core.domain.model.TodoInfo
 import com.openmate.core.domain.model.ToolCallState
 import com.openmate.feature.session.R
 import kotlinx.serialization.json.Json
@@ -94,6 +93,7 @@ internal data class ToolSummary(
     val text: String,
     val isBlock: Boolean,
     val filePath: String? = null,
+    val background: Boolean = false,
 )
 
 private val ApplyPatchFileLineRegex = Regex("""(?m)^(?:[AMDCRTU?!]{1,2}|M)\s+(.+)$""")
@@ -163,74 +163,64 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
     val jsonArgs = try {
         if (args != null) questionJson.parseToJsonElement(args).jsonObject else null
     } catch (_: Exception) { null }
+    val hasOutput = result != null && result.isNotBlank()
 
-    when (toolName) {
-        "bash" -> {
-            val command = jsonArgs.str("command") ?: args?.take(80) ?: ""
-            val desc = jsonArgs.str("description") ?: ""
-            val hasOutput = result != null && result.isNotBlank()
-            val displayText = desc.ifBlank { command }.ifBlank { "shell" }
-            return ToolSummary("shell", displayText, hasOutput)
+    return when (toolName) {
+        // V2 shell: { command, workdir?, timeout?, background? }
+        "shell" -> {
+            val command = jsonArgs.str("command") ?: ""
+            val background = jsonArgs?.bool("background") == true
+            ToolSummary("shell", command.ifBlank { "shell" }, hasOutput, background = background)
+        }
+        "read" -> {
+            val path = jsonArgs.str("path") ?: ""
+            ToolSummary("read", path.ifBlank { "read" }, false, path.ifBlank { null })
+        }
+        "write" -> {
+            val path = jsonArgs.str("path") ?: ""
+            ToolSummary("write", path.ifBlank { "write" }, path.isNotBlank(), path.ifBlank { null })
+        }
+        "edit" -> {
+            val path = jsonArgs.str("path") ?: ""
+            ToolSummary("edit", path.ifBlank { "edit" }, true, path.ifBlank { null })
+        }
+        "patch" -> {
+            ToolSummary("patch", "", result != null)
         }
         "glob" -> {
             val pattern = jsonArgs.str("pattern") ?: ""
             val path = jsonArgs.str("path")
             val suffix = if (path != null) " in $path" else ""
-            return ToolSummary("glob", "$pattern$suffix".ifBlank { "glob" }, false)
-        }
-        "read" -> {
-            val fp = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            return ToolSummary("read", fp.ifBlank { "read" }, false, fp.ifBlank { null })
+            ToolSummary("glob", "$pattern$suffix".ifBlank { "glob" }, false)
         }
         "grep" -> {
             val pattern = jsonArgs.str("pattern") ?: ""
             val path = jsonArgs.str("path")
             val suffix = if (path != null) " in $path" else ""
-            return ToolSummary("grep", "$pattern$suffix".ifBlank { "grep" }, false)
+            ToolSummary("grep", "$pattern$suffix".ifBlank { "grep" }, false)
         }
         "webfetch" -> {
             val url = jsonArgs.str("url") ?: ""
-            return ToolSummary("webfetch", url.ifBlank { "webfetch" }, false)
+            ToolSummary("webfetch", url.ifBlank { "webfetch" }, false)
         }
         "websearch" -> {
             val query = jsonArgs.str("query") ?: ""
-            return ToolSummary("websearch", query.ifBlank { "websearch" }, false)
+            ToolSummary("websearch", query.ifBlank { "websearch" }, false)
         }
-        "codesearch" -> {
-            val query = jsonArgs.str("query") ?: ""
-            return ToolSummary("codesearch", query.ifBlank { "codesearch" }, false)
-        }
-        "write" -> {
-            val fp = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            return ToolSummary("write", fp.ifBlank { "write" }, fp.isNotBlank(), fp.ifBlank { null })
-        }
-        "edit" -> {
-            val fp = jsonArgs.str("filePath") ?: jsonArgs.str("file_path") ?: ""
-            return ToolSummary("edit", fp.ifBlank { "edit" }, true, fp.ifBlank { null })
-        }
-        "task" -> {
+        "subagent" -> {
             val desc = jsonArgs.str("description") ?: ""
             val agent = jsonArgs.str("agent") ?: toolName
-            return ToolSummary("task", "$agent: $desc", false)
-        }
-        "apply_patch" -> {
-            val hasFiles = result != null
-            return ToolSummary("apply_patch", "", hasFiles)
-        }
-        "todowrite" -> {
-            return ToolSummary("todowrite", "", true)
+            ToolSummary("subagent", "$agent: $desc", false)
         }
         "question" -> {
-            return ToolSummary("question", "", true)
+            ToolSummary("question", "", true)
         }
         "skill" -> {
             val name = jsonArgs.str("name") ?: ""
-            return ToolSummary("skill", name, false)
+            ToolSummary("skill", name, false)
         }
         else -> {
-            val hasOutput = result != null && result.isNotBlank()
-            val paramSnippet = args?.take(60) ?: ""
-            return ToolSummary(toolName, paramSnippet, hasOutput)
+            ToolSummary(toolName, args?.take(60) ?: "", hasOutput)
         }
     }
 }
@@ -289,7 +279,7 @@ internal fun isDismissedQuestionError(error: String?): Boolean {
 }
 
 internal fun shouldExpandRunningTool(item: DisplayItem.ToolItem): Boolean {
-    return item.toolName == "bash" && !toolSummary(item.toolName, item.args, item.result).text.isBlank()
+    return item.toolName == "shell" && !toolSummary(item.toolName, item.args, item.result).text.isBlank()
 }
 
 private fun formatQuestionAnswers(answers: List<String>): String {
@@ -340,24 +330,6 @@ private fun updateQuestionCustomAnswer(
     return next
 }
 
-private fun parseTodoArgs(args: String?): List<TodoInfo>? {
-    if (args == null) return null
-    try {
-        val root = questionJson.parseToJsonElement(args).jsonObject
-        val todosArr = root["todos"]?.jsonArray ?: return null
-        return todosArr.map { elem ->
-            val obj = elem.jsonObject
-            TodoInfo(
-                content = obj.str("content") ?: "",
-                status = obj.str("status") ?: "pending",
-                priority = obj.str("priority") ?: "medium",
-            )
-        }
-    } catch (_: Exception) {
-        return null
-    }
-}
-
 @Composable
 internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
     val summary = toolSummary(item.toolName, item.args, item.result)
@@ -371,6 +343,14 @@ internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: 
             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.primary,
         )
+        if (summary.background) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = stringResource(R.string.tool_shell_background),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
             if (clickablePath != null) {
@@ -412,6 +392,14 @@ internal fun RunningToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath:
             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.primary,
         )
+        if (summary.background) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = stringResource(R.string.tool_shell_background),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+        }
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
             if (clickablePath != null) {
@@ -649,9 +637,9 @@ internal fun BlockToolLine(
     onViewFile: ((filePath: String) -> Unit)? = null,
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
 ) {
-    val isDiffTool = item.toolName == "edit" || item.toolName == "apply_patch"
+    val isDiffTool = item.toolName == "edit" || item.toolName == "write" || item.toolName == "patch"
     val expanded = remember { mutableStateOf(false) }
-    val files = if (item.toolName == "apply_patch" && item.files.isEmpty()) {
+    val files = if (item.toolName == "patch" && item.files.isEmpty()) {
         extractApplyPatchResultFiles(item.result)
     } else {
         item.files
@@ -672,6 +660,14 @@ internal fun BlockToolLine(
                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.primary,
             )
+            if (summary.background) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = stringResource(R.string.tool_shell_background),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
             if (summary.text.isNotBlank()) {
                 Spacer(modifier = Modifier.width(4.dp))
                 if (summary.filePath != null) {
@@ -712,12 +708,19 @@ internal fun BlockToolLine(
                     .padding(8.dp),
             ) {
                 Column {
-                    if (item.toolName == "bash") {
+                    if (item.toolName == "shell") {
                         val jsonArgs = try {
                             if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
                         } catch (_: Exception) { null }
                         val command = jsonArgs?.str("command") ?: ""
                         val workdir = jsonArgs?.str("workdir")
+                        if (summary.background) {
+                            Text(
+                                text = stringResource(R.string.tool_shell_background),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiary,
+                            )
+                        }
                         if (command.isNotBlank()) {
                             Text(
                                 text = "$ $command",
@@ -749,7 +752,7 @@ internal fun BlockToolLine(
                         val jsonArgs = try {
                             if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
                         } catch (_: Exception) { null }
-                        val filePath = jsonArgs?.str("filePath") ?: jsonArgs?.str("file_path") ?: ""
+                        val filePath = jsonArgs?.str("path") ?: ""
                         if (filePath.isNotBlank()) {
                             val canDiff = onViewDiff != null && item.sessionId.isNotEmpty() && item.messageId.isNotEmpty()
                             Text(
@@ -798,7 +801,7 @@ internal fun BlockToolLine(
                         val jsonArgs = try {
                             if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
                         } catch (_: Exception) { null }
-                        val filePath = jsonArgs?.str("filePath") ?: jsonArgs?.str("file_path") ?: ""
+                        val filePath = jsonArgs?.str("path") ?: ""
                         if (filePath.isNotBlank()) {
                             Text(
                                 text = filePath,
@@ -826,44 +829,6 @@ internal fun BlockToolLine(
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 10,
                                     overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    } else if (item.toolName == "todowrite") {
-                        val todos = parseTodoArgs(item.args)
-                        if (todos != null) {
-                            todos.forEach { todo ->
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = when (todo.status) {
-                                            "completed" -> "✓"
-                                            "in_progress" -> "●"
-                                            "cancelled" -> "✗"
-                                            else -> "○"
-                                        },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = when (todo.status) {
-                                            "completed" -> Color(0xFF7FD88F)
-                                            "in_progress" -> Color(0xFF56B6C2)
-                                            else -> Color(0xFF808080)
-                                        },
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = todo.content,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (todo.status == "completed" || todo.status == "cancelled") Color(0xFF808080) else MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        } else {
-                            item.result?.let { output ->
-                                Text(
-                                    text = output.take(500),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                         }
