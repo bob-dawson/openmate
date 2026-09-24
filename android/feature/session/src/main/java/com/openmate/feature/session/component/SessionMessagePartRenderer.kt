@@ -160,7 +160,7 @@ private fun FontFamily.toTypeface(): Typeface {
     }
 }
 
-internal fun toolSummary(toolName: String, args: String?, result: String?): ToolSummary {
+internal fun toolSummary(toolName: String, args: String?, result: String?, metadata: JsonObject? = null): ToolSummary {
     val jsonArgs = try {
         if (args != null) questionJson.parseToJsonElement(args).jsonObject else null
     } catch (_: Exception) { null }
@@ -217,7 +217,7 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
             ToolSummary("question", "", true)
         }
         "skill" -> {
-            val name = jsonArgs.str("name") ?: ""
+            val name = metadata.str("name") ?: jsonArgs.str("id") ?: jsonArgs.str("name") ?: ""
             ToolSummary("skill", name, false)
         }
         // V2 CodeMode: { code } —— 模型用它运行代码来调用其它（命名空间）工具
@@ -286,7 +286,7 @@ internal fun isDismissedQuestionError(error: String?): Boolean {
 }
 
 internal fun shouldExpandRunningTool(item: DisplayItem.ToolItem): Boolean {
-    return item.toolName == "shell" && !toolSummary(item.toolName, item.args, item.result).text.isBlank()
+    return item.toolName == "shell" && !toolSummary(item.toolName, item.args, item.result, item.metadata).text.isBlank()
 }
 
 private fun formatQuestionAnswers(answers: List<String>): String {
@@ -359,7 +359,7 @@ internal fun ToolTag(
 
 @Composable
 internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
-    val summary = toolSummary(item.toolName, item.args, item.result)
+    val summary = toolSummary(item.toolName, item.args, item.result, item.metadata)
     val clickablePath = summary.filePath
     Row(
         modifier = Modifier.padding(vertical = 1.dp),
@@ -399,7 +399,7 @@ internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: 
 
 @Composable
 internal fun RunningToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
-    val summary = toolSummary(item.toolName, item.args, item.result)
+    val summary = toolSummary(item.toolName, item.args, item.result, item.metadata)
     val clickablePath = summary.filePath
     Row(
         modifier = Modifier.padding(vertical = 2.dp),
@@ -444,7 +444,7 @@ internal fun RunningToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath:
 
 @Composable
 internal fun PendingToolLine(item: DisplayItem.ToolItem) {
-    val summary = toolSummary(item.toolName, item.args, item.result)
+    val summary = toolSummary(item.toolName, item.args, item.result, item.metadata)
     Row(
         modifier = Modifier.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -467,7 +467,7 @@ internal fun PendingToolLine(item: DisplayItem.ToolItem) {
 
 @Composable
 internal fun ErrorToolLine(item: DisplayItem.ToolItem) {
-    val summary = toolSummary(item.toolName, item.args, item.result)
+    val summary = toolSummary(item.toolName, item.args, item.result, item.metadata)
     val expanded = remember { mutableStateOf(false) }
     val textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None
     Column {

@@ -692,7 +692,7 @@ fun AssistantMessageItem(
                                     onReply = { reply, msg -> onReplyPermission(matchedPerm.id, reply, msg) },
                                 )
                             } else if (name == "subagent") {
-                                val summary = toolSummary(name, input, resultText)
+                                val summary = toolSummary(name, input, resultText, metadata)
                                 val subtaskSessionID = remember(metadata, structuredResult, resultText) {
                                     extractSubtaskSessionId(
                                         metadata = metadata,
@@ -720,7 +720,7 @@ fun AssistantMessageItem(
                             } else if (status == "pending") {
                                 PendingToolLine(displayItem)
                             } else {
-                                val summary = toolSummary(name, input, resultText)
+                                val summary = toolSummary(name, input, resultText, metadata)
                                 if (name == "execute") {
                                     ExecuteToolLine(displayItem, onViewFile)
                                 } else if (shouldExpandRunningTool(displayItem)) {
@@ -731,7 +731,7 @@ fun AssistantMessageItem(
                             }
                         }
                     } else if (name == "subagent") {
-                        val summary = toolSummary(name, input, resultText)
+                        val summary = toolSummary(name, input, resultText, metadata)
                         TaskToolLine(
                             item = displayItem,
                             summary = summary,
@@ -744,7 +744,7 @@ fun AssistantMessageItem(
                             ErrorToolLine(displayItem)
                         }
                     } else {
-                        val summary = toolSummary(name, input, resultText)
+                        val summary = toolSummary(name, input, resultText, metadata)
                         val questionAnswers = if (name == "question") extractQuestionAnswers(metadata) else null
                         val parsedQuestions = if (name == "question") parseQuestionArgs(input) else null
                         if (name == "question" && parsedQuestions != null && questionAnswers != null) {
