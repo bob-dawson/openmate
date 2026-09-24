@@ -1,0 +1,1 @@
+Maintenance release: adds F-Droid/IzzyOnDroid store metadata (icon, screenshots, descriptions). No functional changes.

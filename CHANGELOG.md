@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+Released: 2026-09-24
+
+### 其他
+
+- 新增 F-Droid / IzzyOnDroid 应用元数据（Fastlane：图标、截图、中英文说明），便于第三方开源应用商店收录；本版本无功能变更
+
 ## 0.3.2
 
 Released: 2026-09-24
