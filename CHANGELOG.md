@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.1
+
+Released: 2026-09-24
+
+### 新功能
+
+- **V2 工具与消息展示适配**：适配 opencode v2 的工具与消息类型，统一 shell / read / write / edit / patch / glob / grep / websearch / webfetch / subagent 等工具的展示样式
+- **CodeMode `execute`**：折叠时显示代码调用的工具（如 `search(query=…)`），展开可查看完整代码与运行输出
+- **后台任务与技能展示**：新增后台 shell 完成通知、独立 shell 生命周期记录、skill 技能名展示
+
+### 问题修复
+
+- **滚动行为**：回退会话消息滚动到原有可靠逻辑，修复部分场景下新消息未自动滚动到底部的问题
+- **工具点击行为**：`write` / `read` 恢复为打开文件，`edit` / `patch` 查看差异
+- **中断竞态**：修复中止（abort）与消息发送之间的竞态，避免中止后界面仍显示忙碌状态
+- **状态标签样式**：后台 shell 的 `background` 与完成态改为与模型标签一致的胶囊样式，更易辨识
+
 ## 0.3.0
 
 Released: 2026-09-24
