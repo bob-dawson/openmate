@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2
+
+Released: 2026-09-24
+
+### 问题修复
+
+- **Windows 下 opencode 升级/启动/停止/重启无效**：修复 Windows 上 npm 全局安装的 opencode（入口为 `opencode.cmd` 批处理脚本）无法被 Bridge 调用、报 `program not found` 的问题；现经命令解释器解析启动并补齐子进程 PATH。该问题仅存在于 Windows，Linux/macOS 不受影响
+- **opencode 升级失败无提示**：升级状态接口现在返回成功/失败与错误信息，App 在升级失败时直接显示原因，不再表现为“点击无反应”
+
 ## 0.3.1
 
 Released: 2026-09-24
