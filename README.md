@@ -93,7 +93,9 @@ The Bridge auto-starts opencode and begins listening — it also auto-connects t
 
 ### 2. Install Android App
 
-Download `OpenMate-{version}.apk` from [Releases](../../releases) and install on your phone.
+**Direct APK:** download `OpenMate-{version}.apk` from [Releases](../../releases) and install on your phone.
+
+**Auto-updates (Obtainium):** install [Obtainium](https://github.com/ImranR98/Obtainium) and add `https://github.com/bob-dawson/openmate` as a source. Obtainium watches GitHub Releases, so every new version shows up as a one-tap update.
 
 ### 3. Pair Your Phone
 
