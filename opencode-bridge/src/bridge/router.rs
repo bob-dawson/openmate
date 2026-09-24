@@ -123,8 +123,14 @@ pub async fn opencode_latest_version(State(state): State<AppState>) -> impl Into
 }
 
 pub async fn opencode_upgrade_status(State(state): State<AppState>) -> impl IntoResponse {
+    let upgrading = state.opencode_manager.is_upgrade_in_progress();
+    let last = state.opencode_manager.last_upgrade_result().await;
     Json(json!({
-        "upgrading": state.opencode_manager.is_upgrade_in_progress()
+        "upgrading": upgrading,
+        "success": last.as_ref().map(|r| r.success),
+        "error": last.as_ref().and_then(|r| r.error.clone()),
+        "previousVersion": last.as_ref().and_then(|r| r.previous_version.clone()),
+        "newVersion": last.as_ref().and_then(|r| r.new_version.clone()),
     }))
 }
 

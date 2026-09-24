@@ -14,10 +14,11 @@ pub struct OpencodeManager {
     run_as_user: Arc<String>,
     opencode_version: Arc<RwLock<Option<String>>>,
     upgrade_in_progress: Arc<AtomicBool>,
+    last_upgrade: Arc<RwLock<Option<UpgradeResult>>>,
     pid: Arc<RwLock<Option<u32>>>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct UpgradeResult {
     pub success: bool,
     #[serde(rename = "previousVersion")]
@@ -42,6 +43,7 @@ impl OpencodeManager {
             run_as_user: Arc::new(String::new()),
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
+            last_upgrade: Arc::new(RwLock::new(None)),
             pid: Arc::new(RwLock::new(None)),
         }
     }
@@ -62,6 +64,7 @@ impl OpencodeManager {
             run_as_user: Arc::new(run_as_user),
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
+            last_upgrade: Arc::new(RwLock::new(None)),
             pid: Arc::new(RwLock::new(None)),
         }
     }
@@ -324,11 +327,19 @@ impl OpencodeManager {
         self.upgrade_in_progress.load(Ordering::Relaxed)
     }
 
+    pub async fn last_upgrade_result(&self) -> Option<UpgradeResult> {
+        self.last_upgrade.read().await.clone()
+    }
+
     pub async fn upgrade(&self) -> Result<UpgradeResult, String> {
         if self.upgrade_in_progress.swap(true, Ordering::Relaxed) {
             return Err("Upgrade already in progress".to_string());
         }
+        *self.last_upgrade.write().await = None;
         let result = self.do_upgrade_internal().await;
+        if let Ok(ref r) = result {
+            *self.last_upgrade.write().await = Some(r.clone());
+        }
         self.upgrade_in_progress.store(false, Ordering::Relaxed);
         result
     }
@@ -415,12 +426,74 @@ impl OpencodeManager {
 }
 
 
+/// 构造启动 opencode CLI 的命令。
+///
+/// Windows 上 npm/pnpm/yarn 安装的可执行入口是 `.cmd`/`.bat` shim，`CreateProcess`
+/// 无法直接执行（只会补 `.exe`），会报 `program not found`；因此非 `.exe` 时统一经由
+/// `cmd /C` 交给命令解释器按 PATHEXT 解析，并把可执行文件所在目录前置到子进程 `PATH`
+/// （保证 opencode 内部再调用 `npm` 等仍可解析）。其他平台无此问题，保持直接 spawn。
+#[cfg(windows)]
+async fn opencode_cmd(binary: &str) -> tokio::process::Command {
+    let mut cmd = if binary.to_lowercase().ends_with(".exe") {
+        tokio::process::Command::new(binary)
+    } else {
+        let mut c = tokio::process::Command::new("cmd");
+        c.arg("/C").arg(binary);
+        c
+    };
+
+    if let Some(dir) = resolved_binary_dir(binary).await {
+        prepend_child_path(&mut cmd, &dir);
+    }
+    if let Some(home) = dirs::home_dir() {
+        let extras = [
+            home.join("AppData").join("Roaming").join("npm"),
+            home.join(".opencode").join("bin"),
+        ];
+        for dir in extras {
+            if dir.exists() {
+                prepend_child_path(&mut cmd, &dir.to_string_lossy());
+            }
+        }
+    }
+    cmd
+}
+
+#[cfg(not(windows))]
+async fn opencode_cmd(binary: &str) -> tokio::process::Command {
+    tokio::process::Command::new(binary)
+}
+
+/// 把目录前置到子进程 `PATH`，确保 opencode 及其包管理器（npm 等）能被找到。
+#[cfg(windows)]
+fn prepend_child_path(cmd: &mut tokio::process::Command, dir: &str) {
+    if dir.is_empty() {
+        return;
+    }
+    let current = std::env::var("PATH").unwrap_or_default();
+    let value = if current.is_empty() {
+        dir.to_string()
+    } else {
+        format!("{dir};{current}")
+    };
+    cmd.env("PATH", value);
+}
+
+#[cfg(windows)]
+async fn resolved_binary_dir(binary: &str) -> Option<String> {
+    let resolved = resolve_binary_path(binary).await?;
+    std::path::Path::new(&resolved)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// 运行 `opencode upgrade [--method <m>]`，最长 300s。
 async fn exec_opencode_upgrade(
     binary: &str,
     method: Option<&str>,
 ) -> Result<std::process::Output, String> {
-    let mut cmd = tokio::process::Command::new(binary);
+    let mut cmd = opencode_cmd(binary).await;
     cmd.arg("upgrade");
     if let Some(m) = method {
         cmd.args(["--method", m]);
@@ -446,11 +519,20 @@ async fn resolve_binary_path(binary: &str) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    String::from_utf8_lossy(&out.stdout)
+    let lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
         .lines()
-        .next()
         .map(|l| l.trim().to_string())
         .filter(|l| !l.is_empty())
+        .collect();
+    // Windows 上 `where` 可能先返回无扩展名的 shell 脚本，优先选择可直接执行的扩展名
+    #[cfg(windows)]
+    {
+        let preferred = |ext: &str| lines.iter().find(|l| l.to_lowercase().ends_with(ext)).cloned();
+        if let Some(path) = preferred(".exe").or_else(|| preferred(".cmd")).or_else(|| preferred(".bat")) {
+            return Some(path);
+        }
+    }
+    lines.into_iter().next()
 }
 
 /// 探测 opencode 安装方式：brew > curl > npm（默认）。
@@ -477,11 +559,11 @@ async fn detect_upgrade_method(binary: &str) -> String {
 async fn run_service_cmd(binary: &str, args: &[&str]) -> Result<String, String> {
     let full_args: Vec<&str> = std::iter::once(binary).chain(args.iter().copied()).collect();
     let cmd_str = full_args.join(" ");
+    let mut cmd = opencode_cmd(binary).await;
+    cmd.args(args);
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(30),
-        tokio::process::Command::new(binary)
-            .args(args)
-            .output(),
+        cmd.output(),
     )
     .await;
     match result {

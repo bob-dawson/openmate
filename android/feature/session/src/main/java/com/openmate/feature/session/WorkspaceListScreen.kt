@@ -639,6 +639,7 @@ private fun SettingsContent(
             val isUpgrading by viewModel.isUpgrading.collectAsState()
             val isRestarting by viewModel.isRestarting.collectAsState()
             val isCheckingVersion by viewModel.isCheckingVersion.collectAsState()
+            val upgradeError by viewModel.upgradeError.collectAsState()
 
             var showUpgradeDialog by remember { mutableStateOf(false) }
             var showRestartDialog by remember { mutableStateOf(false) }
@@ -757,6 +758,21 @@ private fun SettingsContent(
                         }
                     },
                 )
+                if (upgradeError != null && !isUpgrading) {
+                    SettingsRow(
+                        title = stringResource(R.string.opencode_upgrade_failed),
+                        subtitle = upgradeError,
+                        showDivider = false,
+                        modifier = Modifier.clickable { viewModel.clearUpgradeError() },
+                        trailing = {
+                            Text(
+                                text = stringResource(R.string.check_for_updates),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                }
             }
         }
 

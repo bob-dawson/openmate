@@ -242,7 +242,11 @@ class SettingsViewModel @Inject constructor(
                         val status = apiClient.bridgeOpencodeUpgradeStatus()
                         if (!status.upgrading) {
                             _opencodeVersion.value = apiClient.bridgeOpencodeVersion()
-                            _upgradeError.value = null
+                            _upgradeError.value = if (status.success == false) {
+                                status.error?.takeIf { it.isNotBlank() } ?: "Upgrade failed"
+                            } else {
+                                null
+                            }
                             _isUpgrading.value = false
                             return@launch
                         }
@@ -254,6 +258,10 @@ class SettingsViewModel @Inject constructor(
             }
             _isUpgrading.value = false
         }
+    }
+
+    fun clearUpgradeError() {
+        _upgradeError.value = null
     }
 
     fun restartOpencode() {
