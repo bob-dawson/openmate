@@ -1,0 +1,11 @@
+OpenMate is a native Android client for a self-hosted opencode server. It lets you follow and drive your coding agent from your phone instead of staying at your desk.
+
+Features:
+
+* Browse workspaces and sessions, and read or reply to messages.
+* Incremental, sequence-based sync from opencode's own database into a local copy on your device, so you can read and reply to sessions offline.
+* Connect over your local network, or automatically through a cloud relay so you can reach your agent from anywhere.
+* Review file diffs, browse files, and answer permission and question prompts.
+* Works with opencode v2.
+
+OpenMate is not a hosted service and does not require any account. It talks only to the opencode server (and optional relay) that you configure. A small companion Bridge agent, available for Windows, Linux and macOS, runs next to opencode and provides the sync, pairing and relay features.
