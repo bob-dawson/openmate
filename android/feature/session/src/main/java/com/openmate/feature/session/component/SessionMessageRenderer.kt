@@ -360,10 +360,14 @@ private fun ShellLifecycleMessageItem(data: JsonObject) {
 
 @Composable
 private fun ShellNoticeRow(command: String, state: String?, exit: String?) {
-    val suffix = buildString {
-        if (!state.isNullOrBlank()) append(" · ").append(state)
-        if (exit != null && exit != "0" && exit != "null") append(" (exit ").append(exit).append(")")
+    val stateLabel = when {
+        state.isNullOrBlank() -> null
+        state.startsWith("complete") -> "complete"
+        state.startsWith("run") -> "running"
+        state == "error" || state == "failed" -> "failed"
+        else -> state
     }
+    val exitLabel = exit?.takeIf { it.isNotBlank() && it != "0" && it != "null" }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -375,6 +379,10 @@ private fun ShellNoticeRow(command: String, state: String?, exit: String?) {
             style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.tertiary,
         )
+        if (stateLabel != null) {
+            Spacer(modifier = Modifier.width(6.dp))
+            ToolTag(stateLabel)
+        }
         if (command.isNotBlank()) {
             Spacer(modifier = Modifier.width(6.dp))
             Text(
@@ -385,12 +393,12 @@ private fun ShellNoticeRow(command: String, state: String?, exit: String?) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (suffix.isNotBlank()) {
+        if (exitLabel != null) {
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = suffix,
+                text = "exit $exitLabel",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.error,
             )
         }
     }

@@ -338,6 +338,26 @@ private fun updateQuestionCustomAnswer(
 }
 
 @Composable
+internal fun ToolTag(
+    text: String,
+    container: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.secondaryContainer,
+    onContainer: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onSecondaryContainer,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(container)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = onContainer,
+        )
+    }
+}
+
+@Composable
 internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: String) -> Unit)? = null) {
     val summary = toolSummary(item.toolName, item.args, item.result)
     val clickablePath = summary.filePath
@@ -352,11 +372,7 @@ internal fun InlineToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath: 
         )
         if (summary.background) {
             Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = stringResource(R.string.tool_shell_background),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-            )
+            ToolTag(stringResource(R.string.tool_shell_background))
         }
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
@@ -401,11 +417,7 @@ internal fun RunningToolLine(item: DisplayItem.ToolItem, onViewFile: ((filePath:
         )
         if (summary.background) {
             Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = stringResource(R.string.tool_shell_background),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.tertiary,
-            )
+            ToolTag(stringResource(R.string.tool_shell_background))
         }
         if (summary.text.isNotBlank()) {
             Spacer(modifier = Modifier.width(4.dp))
@@ -669,11 +681,7 @@ internal fun BlockToolLine(
             )
             if (summary.background) {
                 Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = stringResource(R.string.tool_shell_background),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary,
-                )
+                ToolTag(stringResource(R.string.tool_shell_background))
             }
             if (summary.text.isNotBlank()) {
                 Spacer(modifier = Modifier.width(4.dp))
