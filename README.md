@@ -8,27 +8,34 @@
   <img src="logo/logo.png" width="120" />
 </p>
 
-**Control your AI coding agent from anywhere — monitor sessions, approve decisions, and browse code changes, all from your phone.**
+**The mobile client for [opencode](https://github.com/sst/opencode).** Chat with your coding agent, approve its decisions, and browse your workspaces from your phone — with incremental sync and a local copy of your sessions, so you can **read everything offline**.
 
-## Why OpenMate?
+> **opencode v2 only.** OpenMate targets the opencode v2 architecture (it removed the v1 `message`/`part` APIs); earlier versions are not supported.
 
-AI coding agents run on your desktop, but you're not always at your desk. OpenMate lets you keep working with your agent from your phone — approve a permission, check on progress, or review a diff without being tied to your computer.
+## Sync & Offline
 
-If you already use [opencode](https://github.com/sst/opencode), OpenMate connects to it directly — no extra setup.
+OpenMate is built to be usable anywhere, not only while you're connected.
+
+- **Incremental sync** — the Bridge reads opencode's own database and serves only what changed (`seq`-based). New messages, in-place edits, and the deletions caused by a revert are applied exactly.
+- **Not tied to SSE** — real-time events refresh the UI instantly, but correctness comes from sync, not from the connection. A dropped stream never loses data.
+- **Offline viewing** — every session you've opened is cached on-device. Scroll through history, check TODOs, and review diffs with no network at all.
+- **Self-healing** — after a reconnect, polling plus incremental catch-up bring the local copy back in sync automatically.
 
 ## Features
 
-- **Real-time Chat** — Send messages and receive streaming responses with full Markdown rendering
-- **Permission & Question Responses** — Approve tool permissions and answer questions instantly from your phone
-- **Workspace & Session Browsing** — Browse workspaces, sessions, and full conversation history
-- **File Browser** — Browse workspace directories, view files, and download them
-- **TODO Tracking** — Monitor task progress (pending, in-progress, completed)
-- **Session Operations** — Abort, compact, or fork sessions on the fly
-- **Model & Skill Selection** — Switch AI models and select skills
-- **Cloud Relay** — The Bridge auto-connects to the cloud relay on launch, so you stay connected even away from your LAN — no extra configuration
-- **Simple & Secure Pairing** — Scan a QR code to pair in seconds; HMAC-SHA256 token auth keeps it safe
+- **Chat** — send prompts and read responses, with full Markdown rendering
+- **Permissions & questions** — approve tool permissions and answer questions from your phone
+- **Workspaces & sessions** — browse workspaces, sessions, and complete conversation history
+- **File browser** — browse, view, and download workspace files
+- **Diff viewer** — review code changes
+- **Revert** — roll back to an earlier message, with unrevert
+- **TODO tracking** — follow task progress (pending / in-progress / done)
+- **Session operations** — abort, compact, or fork sessions
+- **Model & skill selection** — switch models and pick skills
+- **Cloud relay** — the Bridge connects to the cloud relay on launch, so you stay reachable off your LAN with no extra configuration
+- **Simple & secure pairing** — scan a QR code to pair in seconds; HMAC-SHA256 token auth keeps it safe
 
-## System Overview
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -52,8 +59,8 @@ flowchart LR
 
 OpenMate has three components:
 
-- **Bridge Agent** — Lightweight Rust program on your PC alongside opencode. Handles auth, process management, and proxies requests. Connects to the relay automatically on launch.
-- **Android App** — Native Kotlin/Jetpack Compose app. Connects to Bridge directly over LAN, or via Relay when you're on a different network.
+- **Bridge Agent** — Lightweight Rust program on your PC alongside opencode. Reads opencode's database to serve incremental sync, handles auth and process management, and proxies requests. Connects to the relay automatically on launch.
+- **Android App** — Native Kotlin/Jetpack Compose app with a local database. Keeps sessions in sync and lets you read them offline. Connects to Bridge directly over LAN, or via Relay when you're on a different network.
 - **Relay Server** — Cloud gateway that bridges your phone and PC over the internet using WebSocket tunnels, so you stay connected anywhere.
 
 ## Supported Platforms
@@ -68,7 +75,7 @@ Linux binaries are statically linked (musl) and run on any distribution regardle
 
 ## Get Started in 5 Minutes
 
-> **Prerequisites:** [opencode](https://github.com/sst/opencode) installed on your PC · Android 8.0+ (API 26+) · PC & phone on the same network, or internet access for the cloud relay
+> **Prerequisites:** [opencode](https://github.com/sst/opencode) **v2** installed on your PC · Android 8.0+ (API 26+) · PC & phone on the same network, or internet access for the cloud relay
 
 ### 1. Install Bridge
 
