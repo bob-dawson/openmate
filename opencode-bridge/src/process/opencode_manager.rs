@@ -338,13 +338,26 @@ impl OpencodeManager {
         let prev_ver_clone = previous_version.clone();
         let binary = self.binary.clone();
 
-        // opencode v2 通过自身 CLI 升级：`opencode upgrade` 会探测安装方式
-        // （npm/pnpm/bun/yarn/vp/curl/brew）并执行对应安装。V2 服务端已无 /global/upgrade。
-        let run = tokio::time::timeout(
-            std::time::Duration::from_secs(300),
-            tokio::process::Command::new(binary.as_str()).arg("upgrade").output(),
-        )
-        .await;
+        // opencode v2 通过自身 CLI 升级（V2 服务端已无 /global/upgrade）。
+        // 先让 opencode 自动探测安装方式；若在 Windows 上探测失败
+        // （"Could not detect the installation method"），再由 Bridge 探测后显式传入 --method。
+        let mut run = exec_opencode_upgrade(binary.as_str(), None).await;
+        let needs_method = match &run {
+            Ok(output) if !output.status.success() => {
+                let text = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                text.contains("Could not detect the installation method")
+            }
+            _ => false,
+        };
+        if needs_method {
+            let method = detect_upgrade_method(binary.as_str()).await;
+            tracing::info!("opencode 自动探测安装方式失败，改用 --method {}", method);
+            run = exec_opencode_upgrade(binary.as_str(), Some(method.as_str())).await;
+        }
 
         let failure = |error: String, prev: Option<String>, cur: Option<String>| UpgradeResult {
             success: false,
@@ -356,7 +369,7 @@ impl OpencodeManager {
         };
 
         match run {
-            Ok(Ok(output)) => {
+            Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 if !output.status.success() {
@@ -393,20 +406,73 @@ impl OpencodeManager {
                     current_version,
                 })
             }
-            Ok(Err(e)) => {
-                let error = format!("Failed to run '{} upgrade': {}", binary, e);
-                tracing::error!("{}", error);
-                Ok(failure(error, previous_version, prev_ver_clone))
-            }
-            Err(_) => {
-                let error = "Upgrade timed out (300s)".to_string();
-                tracing::error!("{}", error);
-                Ok(failure(error, previous_version, prev_ver_clone))
+            Err(e) => {
+                tracing::error!("opencode upgrade failed: {}", e);
+                Ok(failure(e, previous_version, prev_ver_clone))
             }
         }
     }
 }
 
+
+/// 运行 `opencode upgrade [--method <m>]`，最长 300s。
+async fn exec_opencode_upgrade(
+    binary: &str,
+    method: Option<&str>,
+) -> Result<std::process::Output, String> {
+    let mut cmd = tokio::process::Command::new(binary);
+    cmd.arg("upgrade");
+    if let Some(m) = method {
+        cmd.args(["--method", m]);
+    }
+    match tokio::time::timeout(std::time::Duration::from_secs(300), cmd.output()).await {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(e)) => Err(format!("Failed to run '{} upgrade': {}", binary, e)),
+        Err(_) => Err("Upgrade timed out (300s)".to_string()),
+    }
+}
+
+/// 解析可执行文件在 PATH 中的实际路径（`where` / `which`）。
+async fn resolve_binary_path(binary: &str) -> Option<String> {
+    if std::path::Path::new(binary).is_absolute() {
+        return Some(binary.to_string());
+    }
+    let finder = if cfg!(windows) { "where" } else { "which" };
+    let out = tokio::process::Command::new(finder)
+        .arg(binary)
+        .output()
+        .await
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+}
+
+/// 探测 opencode 安装方式：brew > curl > npm（默认）。
+async fn detect_upgrade_method(binary: &str) -> String {
+    let resolved = resolve_binary_path(binary)
+        .await
+        .unwrap_or_else(|| binary.to_string());
+    let lower = resolved.to_lowercase().replace('\\', "/");
+    if lower.contains("/cellar/opencode") || lower.contains("/homebrew/") {
+        return "brew".to_string();
+    }
+    if lower.contains("/.opencode/bin/") {
+        return "curl".to_string();
+    }
+    if let Some(home) = dirs::home_dir() {
+        let name = if cfg!(windows) { "opencode.exe" } else { "opencode" };
+        if home.join(".opencode").join("bin").join(name).exists() {
+            return "curl".to_string();
+        }
+    }
+    "npm".to_string()
+}
 
 async fn run_service_cmd(binary: &str, args: &[&str]) -> Result<String, String> {
     let full_args: Vec<&str> = std::iter::once(binary).chain(args.iter().copied()).collect();
