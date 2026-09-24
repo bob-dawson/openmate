@@ -12,6 +12,8 @@ Released: 2026-09-24
 
 ### 问题修复
 
+- **Android 升级安装被拒**：修正 `versionCode`（恢复递增，高于已发布的 v0.2.3=19），修复从旧版本升级时因“降级安装”被系统拒绝的问题
+- **opencode 升级（V2）**：升级改为调用 opencode 自身 CLI（`opencode upgrade`，自动探测 npm/curl 等安装方式），版本查询改用官方更新接口并采用新包名 `@opencode/cli`，修复 V2 下升级失效的问题
 - **opencode 状态误报未启动**：Bridge 改为读取 opencode v2 service 的实际监听地址（`service.json`），修复服务运行在非配置端口时管理页面显示「未启动」的问题；管理页面不再提供 opencode 端口配置，Bridge 统一使用检测到的服务地址
 - **SSE 重连不同步**：修复 SSE 重连后未保留当前会话与增量同步开关，导致重新连接后消息不更新的问题
 - **消息重复显示**：过滤 opencode 合成（synthetic）part，避免消息重复显示

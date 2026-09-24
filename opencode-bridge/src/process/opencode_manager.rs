@@ -126,7 +126,6 @@ impl OpencodeManager {
         let url = self.opencode_url.clone();
         let status_arc = self.status.clone();
         let auto_restart = *self.auto_restart;
-        let version_arc = self.opencode_version.clone();
         let binary_r = binary.clone();
 
         tokio::spawn(async move {
@@ -235,17 +234,47 @@ impl OpencodeManager {
     }
 
     pub async fn get_latest_version(&self) -> Result<String, String> {
-        match self.npm_view_version().await {
+        match self.update_api_version().await {
             Ok(v) => Ok(v),
-            Err(_) => self.registry_fetch_version().await,
+            Err(e1) => match self.npm_view_version().await {
+                Ok(v) => Ok(v),
+                Err(e2) => self
+                    .registry_fetch_version()
+                    .await
+                    .map_err(|e3| format!("{}; {}; {}", e1, e2, e3)),
+            },
         }
+    }
+
+    /// 官方更新接口：`https://opencode.ai/update/api/{channel}/{artifact}/{distribution}`
+    async fn update_api_version(&self) -> Result<String, String> {
+        let current = self.get_cached_version().await.unwrap_or_default();
+        let url = format!(
+            "https://opencode.ai/update/api/latest/cli/npm?current={}",
+            current
+        );
+        let resp = tokio::time::timeout(std::time::Duration::from_secs(15), reqwest::get(&url))
+            .await
+            .map_err(|_| "update api timed out (15s)".to_string())?
+            .map_err(|e| format!("update api failed: {}", e))?;
+        if !resp.status().is_success() {
+            return Err(format!("update api returned status {}", resp.status()));
+        }
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("update api parse error: {}", e))?;
+        body.get("version")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| "update api response missing version field".to_string())
     }
 
     async fn npm_view_version(&self) -> Result<String, String> {
         let output = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             tokio::process::Command::new("npm")
-                .args(["view", "opencode-ai", "version"])
+                .args(["view", "@opencode/cli", "version"])
                 .output(),
         )
         .await
@@ -267,7 +296,7 @@ impl OpencodeManager {
     }
 
     async fn registry_fetch_version(&self) -> Result<String, String> {
-        let url = "https://registry.npmjs.org/opencode-ai/latest";
+        let url = "https://registry.npmjs.org/@opencode%2Fcli/latest";
         let resp = tokio::time::timeout(
             std::time::Duration::from_secs(15),
             reqwest::get(url),
@@ -307,95 +336,72 @@ impl OpencodeManager {
     async fn do_upgrade_internal(&self) -> Result<UpgradeResult, String> {
         let previous_version = self.get_cached_version().await;
         let prev_ver_clone = previous_version.clone();
+        let binary = self.binary.clone();
 
-        let upgrade_url = format!("{}/global/upgrade", self.opencode_url);
-        let client = reqwest::Client::new();
-
-        let timeout_result = tokio::time::timeout(
+        // opencode v2 通过自身 CLI 升级：`opencode upgrade` 会探测安装方式
+        // （npm/pnpm/bun/yarn/vp/curl/brew）并执行对应安装。V2 服务端已无 /global/upgrade。
+        let run = tokio::time::timeout(
             std::time::Duration::from_secs(300),
-            client.post(&upgrade_url).json(&serde_json::json!({})).send(),
+            tokio::process::Command::new(binary.as_str()).arg("upgrade").output(),
         )
         .await;
 
-        match timeout_result {
-            Ok(Ok(resp)) => {
-                if !resp.status().is_success() {
-                    let error = format!("Upgrade HTTP {}", resp.status());
+        let failure = |error: String, prev: Option<String>, cur: Option<String>| UpgradeResult {
+            success: false,
+            previous_version: prev,
+            new_version: None,
+            error: Some(error),
+            recovered: Some(true),
+            current_version: cur,
+        };
+
+        match run {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                if !output.status.success() {
+                    let error = if stderr.trim().is_empty() {
+                        format!("opencode upgrade exited with {}", output.status)
+                    } else {
+                        stderr.trim().to_string()
+                    };
+                    tracing::error!("opencode upgrade failed: {}", error);
+                    return Ok(failure(error, previous_version, prev_ver_clone));
+                }
+                tracing::info!("opencode upgrade output: {}", stdout.trim());
+
+                if let Err(e) = self.restart().await {
+                    let error = format!("Upgrade succeeded but restart failed: {}", e);
                     tracing::error!("{}", error);
-                    return Ok(UpgradeResult {
-                        success: false,
-                        previous_version,
-                        new_version: None,
-                        error: Some(error),
-                        recovered: Some(true),
-                        current_version: prev_ver_clone,
-                    });
+                    return Ok(failure(error, previous_version, prev_ver_clone));
                 }
 
-                let body: serde_json::Value = resp.json().await.map_err(|e| {
-                    format!("Failed to parse upgrade response: {}", e)
-                })?;
-
-                let upgrade_success = body.get("success").and_then(|s| s.as_bool()).unwrap_or(false);
-                if !upgrade_success {
-                    let error = body.get("error")
-                        .and_then(|e| e.as_str())
-                        .unwrap_or("opencode upgrade returned failure")
-                        .to_string();
-                    tracing::error!("opencode upgrade API failed: {}", error);
-                    return Ok(UpgradeResult {
-                        success: false,
-                        previous_version,
-                        new_version: None,
-                        error: Some(error),
-                        recovered: Some(true),
-                        current_version: prev_ver_clone,
-                    });
+                // 等待服务恢复并刷新缓存版本
+                for _ in 0..15 {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    if self.check_health().await {
+                        break;
+                    }
                 }
-
-                let target_version = body.get("version").and_then(|v| v.as_str()).map(|s| s.to_string());
-
-                tracing::info!("opencode binary upgraded to {:?}, restarting...", target_version);
-
-                self.restart().await.map_err(|e| {
-                    format!("Upgrade succeeded but restart failed: {}", e)
-                })?;
-
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 let current_version = self.get_cached_version().await;
-
                 Ok(UpgradeResult {
                     success: true,
                     previous_version,
-                    new_version: current_version.clone().or(target_version),
+                    new_version: current_version.clone(),
                     error: None,
                     recovered: None,
                     current_version,
                 })
             }
             Ok(Err(e)) => {
-                let error = format!("Upgrade request failed: {}", e);
+                let error = format!("Failed to run '{} upgrade': {}", binary, e);
                 tracing::error!("{}", error);
-                Ok(UpgradeResult {
-                    success: false,
-                    previous_version,
-                    new_version: None,
-                    error: Some(error),
-                    recovered: Some(true),
-                    current_version: prev_ver_clone,
-                })
+                Ok(failure(error, previous_version, prev_ver_clone))
             }
             Err(_) => {
                 let error = "Upgrade timed out (300s)".to_string();
                 tracing::error!("{}", error);
-                Ok(UpgradeResult {
-                    success: false,
-                    previous_version,
-                    new_version: None,
-                    error: Some(error),
-                    recovered: Some(true),
-                    current_version: prev_ver_clone,
-                })
+                Ok(failure(error, previous_version, prev_ver_clone))
             }
         }
     }
