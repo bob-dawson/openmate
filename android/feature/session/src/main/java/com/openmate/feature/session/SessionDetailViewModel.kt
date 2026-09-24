@@ -1439,7 +1439,7 @@ class SessionDetailViewModel @Inject constructor(
         _userModelMap.value = buildUserModelMap(list)
 
         val localBusy = _isStreaming.value
-        if (localBusy) {
+        if (localBusy && !abortSuppressed) {
             if (_currentBusyStart.value == null) {
                 val fromWindow = SessionBusyTimerCalculator.findBusyStart(list)
                 if (fromWindow != null) {
@@ -1449,7 +1449,7 @@ class SessionDetailViewModel @Inject constructor(
                     if (sid != null) {
                         viewModelScope.launch(Dispatchers.IO) {
                             val dbStart = sessionMessageRepository.findBusyStartTime(sid)
-                            if (dbStart != null && _currentBusyStart.value == null && _isStreaming.value) {
+                            if (dbStart != null && _currentBusyStart.value == null && _isStreaming.value && !abortSuppressed) {
                                 _currentBusyStart.value = dbStart
                             }
                         }
