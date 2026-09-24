@@ -62,6 +62,7 @@ import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 private val WarningColor = Color(0xFFFFA500)
 private val AgentColor = Color(0xFF9D7CD8)
@@ -218,6 +219,12 @@ internal fun toolSummary(toolName: String, args: String?, result: String?): Tool
         "skill" -> {
             val name = jsonArgs.str("name") ?: ""
             ToolSummary("skill", name, false)
+        }
+        // V2 CodeMode: { code } —— 模型用它运行代码来调用其它（命名空间）工具
+        "execute" -> {
+            val code = jsonArgs.str("code") ?: ""
+            val firstLine = code.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: ""
+            ToolSummary("execute", firstLine.ifBlank { "execute" }, true)
         }
         else -> {
             ToolSummary(toolName, args?.take(60) ?: "", hasOutput)
@@ -832,6 +839,31 @@ internal fun BlockToolLine(
                                 )
                             }
                         }
+                    } else if (item.toolName == "execute") {
+                        val jsonArgs = try {
+                            if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
+                        } catch (_: Exception) { null }
+                        val code = jsonArgs?.str("code") ?: ""
+                        if (code.isNotBlank()) {
+                            Text(
+                                text = code.take(2000),
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        item.result?.let { output ->
+                            val cleaned = stripAnsi(output)
+                            if (cleaned.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = cleaned.take(800),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 12,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
                     } else {
                         item.result?.let { output ->
                             Text(
@@ -856,6 +888,107 @@ internal fun BlockToolLine(
                                 modifier = if (canDiff) Modifier.clickable { onViewDiff!!.invoke(item.sessionId, item.messageId, item.toolName, file) }
                                     else if (onViewFile != null) Modifier.clickable { onViewFile.invoke(file) }
                                     else Modifier,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ExecuteToolLine(
+    item: DisplayItem.ToolItem,
+    onViewFile: ((filePath: String) -> Unit)? = null,
+) {
+    val expanded = remember { mutableStateOf(false) }
+    val jsonArgs = try {
+        if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
+    } catch (_: Exception) { null }
+    val code = jsonArgs?.str("code") ?: ""
+    val calls = item.metadata?.get("toolCalls")?.jsonArray
+
+    val summary = remember(item.args, item.metadata) {
+        if (calls != null && calls.isNotEmpty()) {
+            calls.joinToString(", ") { c ->
+                val o = runCatching { c.jsonObject }.getOrNull()
+                val tool = o?.get("tool")?.jsonPrimitive?.contentOrNull ?: "?"
+                val input = o?.get("input")?.jsonObject
+                val kv = input?.entries?.firstOrNull()?.let { (k, v) ->
+                    val raw = v.jsonPrimitive.contentOrNull ?: v.toString()
+                    val short = if (raw.length > 40) raw.take(40) + "…" else raw
+                    "$k=$short"
+                }
+                if (kv != null) "$tool($kv)" else tool
+            }
+        } else {
+            code.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        }.ifBlank { "execute" }
+    }
+
+    val hasBody = code.isNotBlank() || !item.result.isNullOrBlank()
+
+    Column(modifier = Modifier.padding(vertical = 1.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = hasBody) { expanded.value = !expanded.value }
+                .padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "execute",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.primary,
+            )
+            if (summary.isNotBlank()) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (hasBody) {
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (expanded.value) "▲" else "▼",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        AnimatedVisibility(visible = expanded.value) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(8.dp),
+            ) {
+                Column {
+                    if (code.isNotBlank()) {
+                        Text(
+                            text = code.take(2000),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                    item.result?.let { output ->
+                        val cleaned = stripAnsi(output)
+                        if (cleaned.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = cleaned.take(800),
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 12,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }

@@ -22,6 +22,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
@@ -248,6 +250,15 @@ fun SessionMessageRenderer(
                 runningAnchors = runningAnchors,
             )
         }
+        "synthetic" -> {
+            SyntheticMessageItem(data = dataJson)
+        }
+        "skill" -> {
+            SkillMessageItem(data = dataJson)
+        }
+        "shell" -> {
+            ShellLifecycleMessageItem(data = dataJson)
+        }
         else -> { }
     }
 }
@@ -300,6 +311,114 @@ private fun CompactionMessageItem(
                 )
             }
         }
+    }
+}
+
+private val SHELL_TEXT_COMMAND = Regex("""command="([^"]*)"""")
+
+/**
+ * V2 `synthetic` 消息：目前用于后台 shell 完成通知（metadata.source = "shell"），
+ * 文本形如 `<shell id="sh_..." state="completed" command="sleep 60">`。
+ */
+@Composable
+private fun SyntheticMessageItem(data: JsonObject) {
+    val metadata = data["metadata"]?.jsonObject
+    val source = metadata?.get("source")?.jsonPrimitive?.contentOrNull
+    val text = data["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val description = data["description"]?.jsonPrimitive?.contentOrNull
+
+    if (source == "shell") {
+        val command = SHELL_TEXT_COMMAND.find(text)?.groupValues?.getOrNull(1).orEmpty()
+        ShellNoticeRow(
+            command = command.ifBlank { description.orEmpty() },
+            state = metadata?.get("state")?.jsonPrimitive?.contentOrNull,
+            exit = metadata?.get("exit")?.jsonPrimitive?.contentOrNull,
+        )
+    } else {
+        val label = description?.takeIf { it.isNotBlank() }
+            ?: text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+        if (label.isNotBlank()) SystemNoticeRow(label = label)
+    }
+}
+
+/** V2 `skill` 消息：只显示技能名称。 */
+@Composable
+private fun SkillMessageItem(data: JsonObject) {
+    val name = data["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    SystemNoticeRow(prefix = "skill", label = name.ifBlank { "skill" })
+}
+
+/** V2 `shell` 消息（独立 shell 生命周期记录）。 */
+@Composable
+private fun ShellLifecycleMessageItem(data: JsonObject) {
+    ShellNoticeRow(
+        command = data["command"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+        state = data["status"]?.jsonPrimitive?.contentOrNull,
+        exit = data["exit"]?.jsonPrimitive?.contentOrNull,
+    )
+}
+
+@Composable
+private fun ShellNoticeRow(command: String, state: String?, exit: String?) {
+    val suffix = buildString {
+        if (!state.isNullOrBlank()) append(" · ").append(state)
+        if (exit != null && exit != "0" && exit != "null") append(" (exit ").append(exit).append(")")
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "shell",
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+        if (command.isNotBlank()) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = command,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (suffix.isNotBlank()) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = suffix,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SystemNoticeRow(label: String, prefix: String? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (prefix != null) {
+            Text(
+                text = prefix,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -594,7 +713,9 @@ fun AssistantMessageItem(
                                 PendingToolLine(displayItem)
                             } else {
                                 val summary = toolSummary(name, input, resultText)
-                                if (shouldExpandRunningTool(displayItem)) {
+                                if (name == "execute") {
+                                    ExecuteToolLine(displayItem, onViewFile)
+                                } else if (shouldExpandRunningTool(displayItem)) {
                                     BlockToolLine(displayItem, summary, onViewFile, onViewDiff)
                                 } else {
                                     RunningToolLine(displayItem, onViewFile)
@@ -623,6 +744,8 @@ fun AssistantMessageItem(
                                 questions = parsedQuestions,
                                 answers = questionAnswers,
                             )
+                        } else if (name == "execute") {
+                            ExecuteToolLine(displayItem, onViewFile)
                         } else if (summary.isBlock) {
                             BlockToolLine(displayItem, summary, onViewFile, onViewDiff)
                         } else {
