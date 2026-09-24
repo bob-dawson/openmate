@@ -288,7 +288,7 @@ fun SessionDetailScreen(
             canScrollForward = { listState.canScrollForward },
             onStarted = autoFollowTracker::onAutoScrollStarted,
             onEnded = autoFollowTracker::onAutoScrollEnded,
-            scroll = { index -> listState.animateScrollToItem((index - 1).coerceAtLeast(0)) },
+            scroll = { index -> listState.animateScrollToItem(index) },
         )
     }
 
@@ -298,12 +298,16 @@ fun SessionDetailScreen(
         }
     }
 
-    LaunchedEffect(contentUpdateKey, messages.size) {
-        if (
-            messages.isNotEmpty() &&
-            autoFollowTracker.shouldFollow &&
-            !listState.isScrollInProgress
-        ) {
+    val needFollowScroll by remember {
+        derivedStateOf {
+            autoFollowTracker.shouldAutoFollow(
+                canScrollForward = listState.canScrollForward,
+                isScrollInProgress = listState.isScrollInProgress,
+            )
+        }
+    }
+    LaunchedEffect(needFollowScroll) {
+        if (needFollowScroll && !autoFollowTracker.consumeShouldScrollToBottom()) {
             scrollToBottom()
         }
     }
@@ -346,7 +350,7 @@ fun SessionDetailScreen(
     }
 
     val showScrollToBottom by remember {
-        derivedStateOf { listState.canScrollForward }
+        derivedStateOf { !autoFollowTracker.shouldFollow && listState.canScrollForward }
     }
 
     LaunchedEffect(sessionID) {

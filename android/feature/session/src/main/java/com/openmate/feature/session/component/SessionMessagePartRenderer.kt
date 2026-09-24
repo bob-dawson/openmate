@@ -637,7 +637,7 @@ internal fun BlockToolLine(
     onViewFile: ((filePath: String) -> Unit)? = null,
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
 ) {
-    val isDiffTool = item.toolName == "edit" || item.toolName == "write" || item.toolName == "patch"
+    val isDiffTool = item.toolName == "edit" || item.toolName == "patch"
     val expanded = remember { mutableStateOf(false) }
     val files = if (item.toolName == "patch" && item.files.isEmpty()) {
         extractApplyPatchResultFiles(item.result)

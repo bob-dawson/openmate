@@ -1438,8 +1438,8 @@ class SessionDetailViewModel @Inject constructor(
         _queuedMessageIds.value = buildQueuedMessageIds(list)
         _userModelMap.value = buildUserModelMap(list)
 
-        val localBusy = _isStreaming.value
-        if (localBusy && !abortSuppressed) {
+        val localBusy = _isStreaming.value && !abortSuppressed
+        if (localBusy) {
             if (_currentBusyStart.value == null) {
                 val fromWindow = SessionBusyTimerCalculator.findBusyStart(list)
                 if (fromWindow != null) {
