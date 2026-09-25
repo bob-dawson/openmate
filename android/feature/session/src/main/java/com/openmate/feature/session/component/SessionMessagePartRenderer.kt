@@ -659,7 +659,11 @@ internal fun BlockToolLine(
     val isDiffTool = item.toolName == "edit" || item.toolName == "patch"
     val expanded = remember { mutableStateOf(false) }
     val files = if (item.toolName == "patch" && item.files.isEmpty()) {
-        extractApplyPatchResultFiles(item.result)
+        val metaFiles = item.metadata?.get("files")?.jsonArray?.mapNotNull { entry ->
+            val obj = entry as? JsonObject ?: return@mapNotNull null
+            (obj["file"] ?: obj["filePath"])?.jsonPrimitive?.contentOrNull
+        }.orEmpty()
+        metaFiles.ifEmpty { extractApplyPatchResultFiles(item.result) }
     } else {
         item.files
     }

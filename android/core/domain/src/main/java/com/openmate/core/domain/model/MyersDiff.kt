@@ -55,25 +55,16 @@ object MyersDiff {
 
     private fun backtrack(trace: List<IntArray>, n: Int, m: Int): List<Edit> {
         val max = n + m
-        val size = 2 * max + 1
         val edits = mutableListOf<Edit>()
         var x = n
         var y = m
 
-        for (d in trace.lastIndex downTo 1) {
+        for (d in trace.lastIndex downTo 0) {
             val v = trace[d]
-            val prevV = trace[d - 1]
             val k = x - y
-            val idx = k + max
-
-            val prevK: Int
-            if (k == -d || (k != d && prevV[idx - 1] < prevV[idx + 1])) {
-                prevK = k + 1
-            } else {
-                prevK = k - 1
-            }
-
-            val prevX = prevV[prevK + max]
+            val prevK =
+                if (k == -d || (k != d && v[k - 1 + max] < v[k + 1 + max])) k + 1 else k - 1
+            val prevX = v[prevK + max]
             val prevY = prevX - prevK
 
             while (x > prevX && y > prevY) {
@@ -105,15 +96,18 @@ object MyersDiff {
         for (edit in edits) {
             when (edit) {
                 Edit.CONTEXT -> {
+                    if (ai >= a.size || bi >= b.size) continue
                     result.add(DiffLine(DiffLineType.CONTEXT, a[ai], ai + 1, bi + 1))
                     ai++
                     bi++
                 }
                 Edit.DELETE -> {
+                    if (ai >= a.size) continue
                     result.add(DiffLine(DiffLineType.REMOVE, a[ai], ai + 1, null))
                     ai++
                 }
                 Edit.INSERT -> {
+                    if (bi >= b.size) continue
                     result.add(DiffLine(DiffLineType.ADD, b[bi], null, bi + 1))
                     bi++
                 }

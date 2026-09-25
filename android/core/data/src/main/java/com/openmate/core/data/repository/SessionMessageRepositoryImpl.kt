@@ -6,6 +6,7 @@ import com.openmate.core.data.sync.SessionMessageMapper
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.data.sync.SyncLogStore
+import com.openmate.core.data.sync.extractDiffFiles
 import com.openmate.core.database.ActiveDatabaseProvider
 import com.openmate.core.database.entity.SessionMessageEntity
 import com.openmate.core.database.entity.SessionMessageFullContentEntity
@@ -403,83 +404,11 @@ class SessionMessageRepositoryImpl @Inject constructor(
         val response = syncApiClient.full(sessionId, messageId)
         val data = response.data
         logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "fetchDiffFiles RESP id=${response.id} type=${response.type} dataKeys=${data.keys.joinToString(",")}")
-        val contentArray = data["content"]?.jsonArray
-        if (contentArray == null) {
-            logStore.log(SyncLogLevel.Error, SyncLogCategory.Connection, "fetchDiffFiles: content NOT array, raw=${data["content"].toString().take(200)}")
-            return emptyList()
+        val files = extractDiffFiles(data, toolName, targetFilePath)
+        if (files.isEmpty()) {
+            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "fetchDiffFiles: no diff found (tool=$toolName)")
         }
-        for (item in contentArray) {
-            val partData = item.jsonObject
-            val type = partData["type"]?.jsonPrimitive?.contentOrNull ?: continue
-            if (type != "tool") continue
-            val state = partData["state"]?.jsonObject ?: continue
-            val tool = state["tool"]?.jsonPrimitive?.contentOrNull
-                ?: partData["name"]?.jsonPrimitive?.contentOrNull
-                ?: continue
-            logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "fetchDiffFiles: tool=$tool want=$toolName stateKeys=${state.keys.joinToString(",")}")
-            if (tool != toolName) continue
-
-            val structured = state["structured"]?.jsonObject
-
-            if (toolName == "apply_patch") {
-                val structuredFiles = structured?.get("files")?.jsonArray
-                if (structuredFiles != null) {
-                    for (sf in structuredFiles) {
-                        val sfObj = sf.jsonObject
-                        val fp = sfObj["filePath"]?.jsonPrimitive?.contentOrNull ?: continue
-                        if (targetFilePath != null && !fp.replace('\\', '/').endsWith("/${targetFilePath.replace('\\', '/')}") && fp != targetFilePath) continue
-                        val patchText = sfObj["patch"]?.jsonPrimitive?.contentOrNull ?: continue
-                        val parsed = DiffBuilder.fromUnifiedDiff(patchText)
-                        if (parsed.isNotEmpty()) return parsed
-                    }
-                }
-                val diffText = structured?.get("diff")?.jsonPrimitive?.contentOrNull
-                if (!diffText.isNullOrBlank()) {
-                    val parsed = DiffBuilder.fromUnifiedDiff(diffText)
-                    return if (targetFilePath != null) parsed.filter {
-                        it.filePath.replace('\\', '/').endsWith("/${targetFilePath.replace('\\', '/')}") || it.filePath == targetFilePath
-                    } else parsed
-                }
-                val input = state["input"]?.jsonObject ?: return emptyList()
-                val patchText = input["patchText"]?.jsonPrimitive?.contentOrNull
-                    ?: input["patch_text"]?.jsonPrimitive?.contentOrNull
-                    ?: return emptyList()
-                return DiffBuilder.fromApplyPatchFallback(patchText)
-            }
-
-            val diffText = structured?.get("diff")?.jsonPrimitive?.contentOrNull
-                ?: structured?.get("filediff")?.jsonObject?.get("patch")?.jsonPrimitive?.contentOrNull
-
-            val files = if (!diffText.isNullOrBlank()) {
-                DiffBuilder.fromUnifiedDiff(diffText)
-            } else {
-                val input = state["input"]?.jsonObject ?: return emptyList()
-                when (toolName) {
-                    "edit" -> {
-                        val filePath = input["filePath"]?.jsonPrimitive?.contentOrNull
-                            ?: input["file_path"]?.jsonPrimitive?.contentOrNull
-                            ?: return emptyList()
-                        val oldString = input["oldString"]?.jsonPrimitive?.contentOrNull
-                            ?: input["old_string"]?.jsonPrimitive?.contentOrNull
-                            ?: ""
-                        val newString = input["newString"]?.jsonPrimitive?.contentOrNull
-                            ?: input["new_string"]?.jsonPrimitive?.contentOrNull
-                            ?: ""
-                        val diffFile = DiffBuilder.fromEditFallback(filePath, oldString, newString) ?: return emptyList()
-                        listOf(diffFile)
-                    }
-                    "apply_patch" -> {
-                        val patchText = input["patchText"]?.jsonPrimitive?.contentOrNull
-                            ?: input["patch_text"]?.jsonPrimitive?.contentOrNull
-                            ?: return emptyList()
-                        DiffBuilder.fromApplyPatchFallback(patchText)
-                    }
-                    else -> emptyList()
-                }
-            }
-            return files
-        }
-        return emptyList()
+        return files
     }
 
     override suspend fun getLastSeq(sessionId: String): Long? {
