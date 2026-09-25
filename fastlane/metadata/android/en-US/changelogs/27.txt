@@ -1,0 +1,1 @@
+opencode v2 compatibility fixes: permission prompts are now answerable, questions use the v2 form mechanism (answerable instead of view-only), running sub-agents can be opened, deleted sessions no longer linger in the list, and own messages echo instantly. Session rename/compact/MCP actions work again, and the session list no longer polls every 15s.
