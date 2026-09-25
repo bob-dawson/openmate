@@ -36,10 +36,15 @@ if [ "$code" != "200" ] && [ "$code" != "201" ]; then
   echo "  $(head -c 300 /tmp/create.json)"
 fi
 
-# 4) Upload each asset.
+# 4) Upload each asset that is not already present (idempotent re-runs).
 mkdir -p /tmp/assets
+existing=$(curl -s "${auth[@]}" "$api/releases/${TAG}" | jq -r '.assets[]?.name' 2>/dev/null || true)
 mapfile -t assets < <(gh release view "$TAG" --json assets --jq '.assets[].name')
 for fname in "${assets[@]}"; do
+  if printf '%s\n' "$existing" | grep -Fxq "$fname"; then
+    echo "skip ${fname} (already on AtomGit)"
+    continue
+  fi
   gh release download "$TAG" -p "$fname" -D /tmp/assets --clobber
   encoded=$(jq -rn --arg x "$fname" '$x|@uri')
   upload_json=$(curl -s "${auth[@]}" "$api/releases/${TAG}/upload_url?access_token=${ATOMGIT_TOKEN}&file_name=${encoded}")
