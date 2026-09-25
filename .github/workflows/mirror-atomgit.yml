@@ -54,12 +54,14 @@ jobs:
           redact() { local s="$1"; s="${s//$TOKEN/***}"; s="${s//$ATOMGIT_USER/***}"; echo "$s"; }
 
           echo "== token check via API (PRIVATE-TOKEN) =="
-          info=$(curl -s -H "PRIVATE-TOKEN: ${TOKEN}" "https://${ATOMGIT_HOST}/api/v5/user" 2>/dev/null || true)
-          token_user=$(echo "$info" | grep -oE '"username"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
+          code=$(curl -sS -o /tmp/om_user.json -w "%{http_code}" -H "PRIVATE-TOKEN: ${TOKEN}" "https://${ATOMGIT_HOST}/api/v5/user" 2>/dev/null || echo "000")
+          echo "  HTTP ${code}"
+          echo "  body head: $(redact "$(head -c 200 /tmp/om_user.json 2>/dev/null)")"
+          token_user=$(grep -oE '"username"[[:space:]]*:[[:space:]]*"[^"]*"' /tmp/om_user.json 2>/dev/null | head -n1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/') || true
           if [ -n "$token_user" ]; then
             echo "  token valid; owner=${token_user}"
           else
-            echo "  token lookup failed; response head: $(redact "$(echo "$info" | head -c 300)")"
+            echo "  token lookup: no username in response"
           fi
           echo "  ATOMGIT_USER(secret)=${ATOMGIT_USER}"
 
@@ -71,7 +73,7 @@ jobs:
           hostpath="${plain#https://}"
           echo "Target repo: ${hostpath}"
 
-          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" >/dev/null 2>&1
+          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" >/dev/null 2>&1 || true
 
           echo "== auth format probe (git push --dry-run) =="
           candidates=(
