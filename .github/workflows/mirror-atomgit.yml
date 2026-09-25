@@ -1,0 +1,58 @@
+name: Mirror to AtomGit
+
+# Mirrors all branches and tags from GitHub to AtomGit.
+# Requires repository secrets ATOMGIT_USER and ATOMGIT_TOKEN.
+# If they are not set yet, the job skips (green) instead of failing.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-atomgit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.repository == 'bob-dawson/openmate'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check configuration
+        id: cfg
+        env:
+          ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
+        run: |
+          if [ -z "${ATOMGIT_TOKEN}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "ATOMGIT_TOKEN is not set; skipping AtomGit mirror."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.cfg.outputs.configured == 'true'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push branches and tags to AtomGit
+        if: steps.cfg.outputs.configured == 'true'
+        env:
+          ATOMGIT_HOST: atomgit.com
+          ATOMGIT_USER: ${{ secrets.ATOMGIT_USER }}
+          ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
+          ATOMGIT_REPO: ${{ vars.ATOMGIT_REPO || 'openmate' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ATOMGIT_USER}" ]; then
+            echo "ATOMGIT_USER is not set; skipping."
+            exit 0
+          fi
+          remote="https://${ATOMGIT_USER}:${ATOMGIT_TOKEN}@${ATOMGIT_HOST}/${ATOMGIT_USER}/${ATOMGIT_REPO}.git"
+          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+          git push --prune --force "$remote" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
