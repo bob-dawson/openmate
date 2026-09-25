@@ -12,6 +12,8 @@
 
 > **仅支持 opencode v2。** OpenMate 面向 opencode v2 架构（v1 的 `message`/`part` API 已被移除），不支持更早版本。
 
+> **非官方项目。** OpenMate 是独立的社区项目，与 OpenCode 官方团队无关，亦未获其背书。
+
 ## 同步与离线
 
 OpenMate 的目标是"随时随地都能看"，而不只是连上网络时才能用。

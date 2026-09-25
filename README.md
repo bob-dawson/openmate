@@ -12,6 +12,8 @@
 
 > **opencode v2 only.** OpenMate targets the opencode v2 architecture (it removed the v1 `message`/`part` APIs); earlier versions are not supported.
 
+> **Not affiliated with OpenCode.** OpenMate is an independent community project; it is not built by, endorsed by, or affiliated with the OpenCode team.
+
 ## Sync & Offline
 
 OpenMate is built to be usable anywhere, not only while you're connected.
