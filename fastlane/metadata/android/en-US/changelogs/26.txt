@@ -1,0 +1,1 @@
+Fix in-session real-time updates: the SSE handler and the active session were wired as different instances, so in-session notifications were skipped and updates fell back to a 15s poll. Tool calls now appear as soon as they start.
