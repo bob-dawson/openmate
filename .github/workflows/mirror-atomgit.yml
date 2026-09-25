@@ -50,33 +50,35 @@ jobs:
           ATOMGIT_BASE_URL: ${{ secrets.ATOMGIT_BASE_URL }}
         run: |
           set -uo pipefail
-          if [ -z "${ATOMGIT_USER}" ]; then
-            echo "ATOMGIT_USER is not set; skipping."; exit 0
-          fi
+          TOKEN="${ATOMGIT_TOKEN}"
+          redact() { local s="$1"; s="${s//$TOKEN/***}"; s="${s//$ATOMGIT_USER/***}"; echo "$s"; }
 
-          plain="${ATOMGIT_BASE_URL:-https://${ATOMGIT_HOST}/${ATOMGIT_USER}/${ATOMGIT_REPO}.git}"
+          echo "== token check via API (PRIVATE-TOKEN) =="
+          info=$(curl -s -H "PRIVATE-TOKEN: ${TOKEN}" "https://${ATOMGIT_HOST}/api/v5/user" 2>/dev/null || true)
+          token_user=$(echo "$info" | grep -oE '"username"[[:space:]]*:[[:space:]]*"[^"]*"' | head -n1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
+          if [ -n "$token_user" ]; then
+            echo "  token valid; owner=${token_user}"
+          else
+            echo "  token lookup failed; response head: $(redact "$(echo "$info" | head -c 300)")"
+          fi
+          echo "  ATOMGIT_USER(secret)=${ATOMGIT_USER}"
+
+          # Prefer the username the token actually belongs to (fixes a mis-typed ATOMGIT_USER)
+          owner="${token_user:-$ATOMGIT_USER}"
+          if [ -z "$owner" ]; then echo "::error::no username available"; exit 1; fi
+
+          plain="${ATOMGIT_BASE_URL:-https://${ATOMGIT_HOST}/${owner}/${ATOMGIT_REPO}.git}"
           hostpath="${plain#https://}"
           echo "Target repo: ${hostpath}"
-          redact() { local s="$1"; s="${s//$ATOMGIT_TOKEN/***}"; s="${s//$plain/<repo>}"; echo "$s"; }
-
-          echo "== API probe (token validity, HTTP status only) =="
-          for ep in \
-            "https://${ATOMGIT_HOST}/api/v1/user" \
-            "https://${ATOMGIT_HOST}/api/v4/user" \
-            "https://${ATOMGIT_HOST}/api/v5/user" ; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${ATOMGIT_TOKEN}" "$ep" 2>/dev/null || echo "err")
-            echo "  ${ep} -> HTTP ${code}"
-          done
 
           git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" >/dev/null 2>&1
 
           echo "== auth format probe (git push --dry-run) =="
           candidates=(
-            "user:token|https://${ATOMGIT_USER}:${ATOMGIT_TOKEN}@${hostpath}"
-            "oauth2:token|https://oauth2:${ATOMGIT_TOKEN}@${hostpath}"
-            "x-access-token:token|https://x-access-token:${ATOMGIT_TOKEN}@${hostpath}"
-            "token@|https://${ATOMGIT_TOKEN}@${hostpath}"
-            "token:token|https://${ATOMGIT_TOKEN}:${ATOMGIT_TOKEN}@${hostpath}"
+            "user:token|https://${owner}:${TOKEN}@${hostpath}"
+            "oauth2:token|https://oauth2:${TOKEN}@${hostpath}"
+            "user:token-encoded|https://${owner}:${TOKEN}@${hostpath}"
+            "token:token|https://${TOKEN}:${TOKEN}@${hostpath}"
           )
 
           working=""
@@ -90,9 +92,9 @@ jobs:
           done
 
           if [ -z "$working" ]; then
-            echo "::error::No working AtomGit auth format. Verify: repo exists, ATOMGIT_USER is your login handle, PAT created on atomgit.com with code read/write, not expired."
+            echo "::error::No working AtomGit auth format. Verify the PAT (scopes read_repository+write_repository) and that the repo exists."
             exit 1
           fi
 
-          echo "Pushing to AtomGit using auth=${working%%|*}"
+          echo "Pushing to AtomGit (repo=${hostpath})"
           git push --prune --force "$working" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
