@@ -47,12 +47,41 @@ jobs:
           ATOMGIT_USER: ${{ secrets.ATOMGIT_USER }}
           ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
           ATOMGIT_REPO: ${{ vars.ATOMGIT_REPO || 'openmate' }}
+          ATOMGIT_BASE_URL: ${{ secrets.ATOMGIT_BASE_URL }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if [ -z "${ATOMGIT_USER}" ]; then
-            echo "ATOMGIT_USER is not set; skipping."
-            exit 0
+            echo "ATOMGIT_USER is not set; skipping."; exit 0
           fi
-          remote="https://${ATOMGIT_USER}:${ATOMGIT_TOKEN}@${ATOMGIT_HOST}/${ATOMGIT_USER}/${ATOMGIT_REPO}.git"
+
+          plain="${ATOMGIT_BASE_URL:-https://${ATOMGIT_HOST}/${ATOMGIT_USER}/${ATOMGIT_REPO}.git}"
+          echo "Target repo: $(echo "$plain" | sed -E 's#https://##')"
+
+          redact() { local s="$1"; s="${s//$ATOMGIT_TOKEN/***}"; s="${s//$plain/<repo>}"; echo "$s"; }
+
+          hostpath="$(echo "$plain" | sed -E 's#^https://##')"
+          candidates=(
+            "user:token|https://${ATOMGIT_USER}:${ATOMGIT_TOKEN}@${hostpath}"
+            "oauth2:token|https://oauth2:${ATOMGIT_TOKEN}@${hostpath}"
+            "token@|https://${ATOMGIT_TOKEN}@${hostpath}"
+            "token:token|https://${ATOMGIT_TOKEN}:${ATOMGIT_TOKEN}@${hostpath}"
+          )
+
+          working=""
+          for entry in "${candidates[@]}"; do
+            name="${entry%%|*}"; url="${entry#*|}"
+            if out=$(GIT_TERMINAL_PROMPT=0 git ls-remote "$url" 2>&1); then
+              echo "OK   auth=${name} (refs: $(echo "$out" | wc -l))"
+              working="$url"; break
+            else
+              echo "FAIL auth=${name}: $(redact "$(echo "$out" | head -n1)")"
+            fi
+          done
+
+          if [ -z "$working" ]; then
+            echo "::error::No working AtomGit auth format. Verify the repo exists, ATOMGIT_USER is your login handle, and the PAT is created on atomgit.com with code read/write."
+            exit 1
+          fi
+
           git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
-          git push --prune --force "$remote" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
+          git push --prune --force "$working" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
