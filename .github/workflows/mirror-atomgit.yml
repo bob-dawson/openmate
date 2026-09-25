@@ -1,8 +1,13 @@
 name: Mirror to AtomGit
 
 # Mirrors all branches and tags from GitHub to AtomGit.
-# Requires repository secrets ATOMGIT_USER and ATOMGIT_TOKEN.
-# If they are not set yet, the job skips (green) instead of failing.
+# Requires repository secrets:
+#   ATOMGIT_USER  - your AtomGit login handle (the <user> in atomgit.com/<user>/<repo>)
+#   ATOMGIT_TOKEN - an AtomGit PAT with read_repository + write_repository scopes
+# Optional repository variable:
+#   ATOMGIT_REPO  - target repo name (defaults to "openmate")
+# Optional repository secret:
+#   ATOMGIT_BASE_URL - full https clone URL of the target repo (overrides host/user/repo)
 
 on:
   push:
@@ -50,53 +55,15 @@ jobs:
           ATOMGIT_BASE_URL: ${{ secrets.ATOMGIT_BASE_URL }}
         run: |
           set -uo pipefail
-          TOKEN="${ATOMGIT_TOKEN}"
-          redact() { local s="$1"; s="${s//$TOKEN/***}"; s="${s//$ATOMGIT_USER/***}"; echo "$s"; }
-
-          echo "== token check via API (PRIVATE-TOKEN) =="
-          code=$(curl -sS -o /tmp/om_user.json -w "%{http_code}" -H "PRIVATE-TOKEN: ${TOKEN}" "https://${ATOMGIT_HOST}/api/v5/user" 2>/dev/null || echo "000")
-          echo "  HTTP ${code}"
-          echo "  body head: $(redact "$(head -c 200 /tmp/om_user.json 2>/dev/null)")"
-          token_user=$(grep -oE '"username"[[:space:]]*:[[:space:]]*"[^"]*"' /tmp/om_user.json 2>/dev/null | head -n1 | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/') || true
-          if [ -n "$token_user" ]; then
-            echo "  token valid; owner=${token_user}"
-          else
-            echo "  token lookup: no username in response"
+          if [ -z "${ATOMGIT_USER}" ]; then
+            echo "ATOMGIT_USER is not set; skipping."
+            exit 0
           fi
-          echo "  ATOMGIT_USER(secret)=${ATOMGIT_USER}"
 
-          # Prefer the username the token actually belongs to (fixes a mis-typed ATOMGIT_USER)
-          owner="${token_user:-$ATOMGIT_USER}"
-          if [ -z "$owner" ]; then echo "::error::no username available"; exit 1; fi
-
-          plain="${ATOMGIT_BASE_URL:-https://${ATOMGIT_HOST}/${owner}/${ATOMGIT_REPO}.git}"
+          plain="${ATOMGIT_BASE_URL:-https://${ATOMGIT_HOST}/${ATOMGIT_USER}/${ATOMGIT_REPO}.git}"
           hostpath="${plain#https://}"
-          echo "Target repo: ${hostpath}"
+          remote="https://${ATOMGIT_USER}:${ATOMGIT_TOKEN}@${hostpath}"
 
-          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" >/dev/null 2>&1 || true
-
-          echo "== auth format probe (git push --dry-run) =="
-          candidates=(
-            "user:token|https://${owner}:${TOKEN}@${hostpath}"
-            "oauth2:token|https://oauth2:${TOKEN}@${hostpath}"
-            "user:token-encoded|https://${owner}:${TOKEN}@${hostpath}"
-            "token:token|https://${TOKEN}:${TOKEN}@${hostpath}"
-          )
-
-          working=""
-          for entry in "${candidates[@]}"; do
-            name="${entry%%|*}"; url="${entry#*|}"
-            if out=$(GIT_TERMINAL_PROMPT=0 git push --dry-run --force "$url" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*" 2>&1); then
-              echo "  OK   auth=${name}"; working="$url"; break
-            else
-              echo "  FAIL auth=${name}: $(redact "$(echo "$out" | grep -m1 -Ei 'denied|fatal|error|not found|forbidden|401|403|404' || echo "$out" | head -n1)")"
-            fi
-          done
-
-          if [ -z "$working" ]; then
-            echo "::error::No working AtomGit auth format. Verify the PAT (scopes read_repository+write_repository) and that the repo exists."
-            exit 1
-          fi
-
-          echo "Pushing to AtomGit (repo=${hostpath})"
-          git push --prune --force "$working" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
+          echo "Mirroring to ${hostpath}"
+          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+          git push --prune --force "$remote" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
