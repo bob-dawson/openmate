@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface PermissionRepository {
     suspend fun refresh(directory: String)
-    suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String? = null)
+    suspend fun reply(sessionID: String, requestID: String, reply: PermissionReply, message: String?, directory: String? = null)
     fun observePending(): Flow<List<PermissionRequest>>
     fun clearPending()
 }

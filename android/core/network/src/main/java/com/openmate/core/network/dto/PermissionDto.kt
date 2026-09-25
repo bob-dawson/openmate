@@ -21,6 +21,7 @@ data class PermissionDto(
 @Serializable
 data class PermissionSourceDto(
     val type: String = "",
+    val id: String = "",
     @SerialName("messageID") val messageID: String = "",
     @SerialName("callID") val callID: String = "",
 )
@@ -33,6 +34,6 @@ fun PermissionDto.toDomain(): PermissionRequest {
         patterns = resources,
         metadata = metadata,
         always = save,
-        tool = source?.let { ToolRef(it.messageID, it.callID) },
+        tool = source?.let { ToolRef(it.messageID, it.callID.ifEmpty { it.id }) },
     )
 }

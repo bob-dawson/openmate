@@ -516,6 +516,7 @@ class ConnectionManagerTest {
         override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> = emptyList()
 
         override suspend fun getSession(id: String): Session? = null
+        override suspend fun findChildSessionId(parentID: String, title: String, directory: String?): String? = null
 
         override suspend fun createSession(title: String?, directory: String?): Session {
             error("Unexpected createSession call")
@@ -523,7 +524,7 @@ class ConnectionManagerTest {
 
         override suspend fun deleteSession(id: String) = Unit
 
-        override suspend fun updateSession(id: String, title: String?) = Unit
+        override suspend fun updateSession(id: String, title: String?, directory: String?) = Unit
 
         override suspend fun abortSession(id: String, directory: String?) = Unit
 
@@ -589,6 +590,7 @@ class ConnectionManagerTest {
         override suspend fun incrementalSyncAndNotify(sessionId: String) = Unit
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
+        override suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long) = Unit
 
         override suspend fun getLastSeq(sessionId: String): Long? = null
 
@@ -608,15 +610,15 @@ class ConnectionManagerTest {
 
     private class FakePermissionRepository : PermissionRepository {
         override suspend fun refresh(directory: String) = Unit
-        override suspend fun reply(requestID: String, reply: com.openmate.core.domain.model.PermissionReply, message: String?, directory: String?) = Unit
+        override suspend fun reply(sessionID: String, requestID: String, reply: com.openmate.core.domain.model.PermissionReply, message: String?, directory: String?) = Unit
         override fun observePending(): Flow<List<com.openmate.core.domain.model.PermissionRequest>> = emptyFlow()
         override fun clearPending() = Unit
     }
 
     private class FakeQuestionRepository : QuestionRepository {
-        override suspend fun refresh(directory: String) = Unit
-        override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) = Unit
-        override suspend fun reject(requestID: String, directory: String?) = Unit
+        override suspend fun refresh(sessionID: String, directory: String) = Unit
+        override suspend fun reply(sessionID: String, formID: String, answers: List<List<String>>, directory: String?) = Unit
+        override suspend fun reject(sessionID: String, formID: String, directory: String?) = Unit
         override fun observePending(): Flow<List<com.openmate.core.domain.model.QuestionRequest>> = emptyFlow()
         override fun clearPending() = Unit
     }

@@ -11,6 +11,7 @@ import com.openmate.core.data.sync.SyncLogEntry
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.data.sync.SyncSseStarter
+import com.openmate.core.data.sync.SubtaskSessionTracker
 import com.openmate.core.network.SyncSseConnection
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
@@ -481,8 +482,6 @@ class SessionDetailViewModelTest {
         assertThat(apiClient.summarizeCalls).hasSize(1)
         val summarizeCall = apiClient.summarizeCalls.single()
         assertThat(summarizeCall.sessionId).isEqualTo(SESSION_ID)
-        assertThat(summarizeCall.providerId).isEqualTo("openai")
-        assertThat(summarizeCall.modelId).isEqualTo("gpt-5")
         assertThat(repository.incrementalSyncCalls).isEmpty()
         assertThat(repository.incrementalSyncAndNotifyCalls).isEmpty()
     }
@@ -957,6 +956,7 @@ class SessionDetailViewModelTest {
                 appContext = appContext(),
                 apiClient = apiClient,
             ),
+            subtaskSessionTracker = SubtaskSessionTracker(),
         )
     }
 
@@ -1050,6 +1050,7 @@ class SessionDetailViewModelTest {
         }
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
+        override suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long) = Unit
 
         override suspend fun getLastSeq(sessionId: String): Long? = lastSeq
 
@@ -1098,8 +1099,6 @@ class SessionDetailViewModelTest {
 
         data class SummarizeCall(
             val sessionId: String,
-            val providerId: String,
-            val modelId: String,
             val directory: String?,
         )
 
@@ -1143,19 +1142,13 @@ class SessionDetailViewModelTest {
                                 .body(body.toResponseBody())
                                 .build()
                         }
-                        path.endsWith("/summarize") -> {
+                        path.endsWith("/compact") -> {
                             if (summarizeErrors.isNotEmpty()) {
                                 throw summarizeErrors.removeFirst()
                             }
                             val sessionId = request.url.pathSegments.getOrNull(2).orEmpty()
-                            val bodyText = Buffer().also { buffer ->
-                                request.body?.writeTo(buffer)
-                            }.readUtf8()
-                            val body = Json.parseToJsonElement(bodyText).jsonObject
                             summarizeCalls += SummarizeCall(
                                 sessionId = sessionId,
-                                providerId = body["providerID"]!!.jsonPrimitive.content,
-                                modelId = body["modelID"]!!.jsonPrimitive.content,
                                 directory = request.url.queryParameter("location[directory]"),
                             )
                         }
@@ -1219,12 +1212,13 @@ class SessionDetailViewModelTest {
         override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> = listOf(session)
 
         override suspend fun getSession(id: String): Session? = session
+        override suspend fun findChildSessionId(parentID: String, title: String, directory: String?): String? = null
 
         override suspend fun createSession(title: String?, directory: String?): Session = session
 
         override suspend fun deleteSession(id: String) = Unit
 
-        override suspend fun updateSession(id: String, title: String?) = Unit
+        override suspend fun updateSession(id: String, title: String?, directory: String?) = Unit
 
         override suspend fun abortSession(id: String, directory: String?) {
             abortCalls += 1
@@ -1272,11 +1266,11 @@ class SessionDetailViewModelTest {
     }
 
     private class FakeQuestionRepository : QuestionRepository {
-        override suspend fun refresh(directory: String) = Unit
+        override suspend fun refresh(sessionID: String, directory: String) = Unit
 
-        override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) = Unit
+        override suspend fun reply(sessionID: String, formID: String, answers: List<List<String>>, directory: String?) = Unit
 
-        override suspend fun reject(requestID: String, directory: String?) = Unit
+        override suspend fun reject(sessionID: String, formID: String, directory: String?) = Unit
 
         override fun observePending(): Flow<List<QuestionRequest>> = flowOf(emptyList())
 
@@ -1286,7 +1280,7 @@ class SessionDetailViewModelTest {
     private class FakePermissionRepository : PermissionRepository {
         override suspend fun refresh(directory: String) = Unit
 
-        override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) = Unit
+        override suspend fun reply(sessionID: String, requestID: String, reply: PermissionReply, message: String?, directory: String?) = Unit
 
         override fun observePending(): Flow<List<PermissionRequest>> = flowOf(emptyList())
 

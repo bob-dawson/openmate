@@ -163,6 +163,8 @@ fun SessionMessageRenderer(
     onViewFile: ((filePath: String) -> Unit)? = null,
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
     onRevertToMessage: (String) -> Unit = {},
+    subtaskSessionIds: Map<String, String> = emptyMap(),
+    onResolveSubtask: (String, String) -> Unit = { _, _ -> },
 ) {
     val dataJson = remember(entity.data) {
         runCatching { Json.parseToJsonElement(entity.data).jsonObject }.getOrNull()
@@ -226,6 +228,8 @@ fun SessionMessageRenderer(
                     onReplyPermission = onReplyPermission,
                     onViewFile = onViewFile,
                     onViewDiff = onViewDiff,
+                    subtaskSessionIds = subtaskSessionIds,
+                    onResolveSubtask = onResolveSubtask,
                 )
                 if (errorMessage != null) {
                     AssistantErrorCard(errorMessage)
@@ -620,6 +624,8 @@ fun AssistantMessageItem(
     onReplyPermission: (String, PermissionReply, String?) -> Unit = { _, _, _ -> },
     onViewFile: ((filePath: String) -> Unit)? = null,
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
+    subtaskSessionIds: Map<String, String> = emptyMap(),
+    onResolveSubtask: (String, String) -> Unit = { _, _ -> },
 ) {
     val content = data["content"]?.jsonArray ?: return
     val reasoningExpanded = remember { mutableStateOf(false) }
@@ -693,12 +699,17 @@ fun AssistantMessageItem(
                                 )
                             } else if (name == "subagent") {
                                 val summary = toolSummary(name, input, resultText, metadata)
-                                val subtaskSessionID = remember(metadata, structuredResult, resultText) {
+                                val subtaskSessionID = remember(metadata, structuredResult, resultText, callID, subtaskSessionIds) {
                                     extractSubtaskSessionId(
                                         metadata = metadata,
                                         structured = structuredResult?.jsonObject,
                                         resultText = resultText,
-                                    )
+                                    ) ?: callID?.let { subtaskSessionIds[it] }
+                                }
+                                LaunchedEffect(callID, subtaskSessionID) {
+                                    if (subtaskSessionID == null && callID != null && summary.text.isNotBlank()) {
+                                        onResolveSubtask(callID, summary.text)
+                                    }
                                 }
                                 val subtaskPerms = subtaskSessionID?.let { sid ->
                                     pendingPermissions.filter { it.sessionID == sid }
@@ -735,6 +746,7 @@ fun AssistantMessageItem(
                         TaskToolLine(
                             item = displayItem,
                             summary = summary,
+                            subtaskSessionID = displayItem.callID?.let { subtaskSessionIds[it] },
                             onNavigate = onNavigateToSubtask,
                         )
                     } else if (status == "error") {

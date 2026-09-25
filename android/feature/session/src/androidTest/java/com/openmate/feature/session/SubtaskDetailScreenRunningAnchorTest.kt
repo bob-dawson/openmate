@@ -122,6 +122,7 @@ class SubtaskDetailScreenRunningAnchorTest {
         override suspend fun incrementalSyncAndNotify(sessionId: String) {}
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
+        override suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long) = Unit
 
         override suspend fun getLastSeq(sessionId: String): Long? = null
     }
@@ -142,9 +143,10 @@ class SubtaskDetailScreenRunningAnchorTest {
 
         override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> = listOf(session)
         override suspend fun getSession(id: String): Session? = session
+        override suspend fun findChildSessionId(parentID: String, title: String, directory: String?): String? = null
         override suspend fun createSession(title: String?, directory: String?): Session = session
         override suspend fun deleteSession(id: String) = Unit
-        override suspend fun updateSession(id: String, title: String?) = Unit
+        override suspend fun updateSession(id: String, title: String?, directory: String?) = Unit
         override suspend fun abortSession(id: String, directory: String?) = Unit
         override suspend fun refreshSessionStatuses() = Unit
         override suspend fun syncSessionStatusFromRemote(sessionID: String) = Unit
@@ -164,15 +166,15 @@ class SubtaskDetailScreenRunningAnchorTest {
     }
 
     private class FakeQuestionRepository : QuestionRepository {
-        override suspend fun refresh(directory: String) = Unit
-        override suspend fun reply(requestID: String, answers: List<List<String>>, directory: String?) = Unit
-        override suspend fun reject(requestID: String, directory: String?) = Unit
+        override suspend fun refresh(sessionID: String, directory: String) = Unit
+        override suspend fun reply(sessionID: String, formID: String, answers: List<List<String>>, directory: String?) = Unit
+        override suspend fun reject(sessionID: String, formID: String, directory: String?) = Unit
         override fun observePending(): Flow<List<QuestionRequest>> = flowOf(emptyList())
     }
 
     private class FakePermissionRepository : PermissionRepository {
         override suspend fun refresh(directory: String) = Unit
-        override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) = Unit
+        override suspend fun reply(sessionID: String, requestID: String, reply: PermissionReply, message: String?, directory: String?) = Unit
         override fun observePending(): Flow<List<PermissionRequest>> = flowOf(emptyList())
     }
 

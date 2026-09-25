@@ -50,6 +50,9 @@ fn filter_normalized_event(normalized: &Value) -> Option<Value> {
         | "question.asked"
         | "question.replied"
         | "question.rejected"
+        | "form.created"
+        | "form.replied"
+        | "form.cancelled"
         | "todo.updated"
         | "message.removed" => Some(json!({
             "type": base_type,
@@ -430,6 +433,31 @@ mod tests {
                 "directory": "D:/repo"
             }
         }));
+    }
+
+    #[test]
+    fn forwards_form_created_event() {
+        let input = json!({
+            "type": "form.created",
+            "properties": {
+                "form": {
+                    "id": "frm_1",
+                    "sessionID": "ses_1",
+                    "title": "Questions",
+                    "metadata": {
+                        "kind": "question",
+                        "tool": { "messageID": "msg_1", "id": "call_1" }
+                    },
+                    "fields": [
+                        { "key": "q0", "type": "string", "title": "h", "description": "d", "options": [], "custom": true }
+                    ]
+                }
+            }
+        });
+
+        let output = filter_event(&input).expect("form.created should be retained");
+        assert_eq!(output["type"], json!("form.created"));
+        assert_eq!(output["properties"]["form"]["id"], json!("frm_1"));
     }
 
     #[test]

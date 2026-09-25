@@ -25,6 +25,15 @@ class SessionRepositoryImpl @Inject constructor(
     private val retryStateStore: SessionRetryStateStore,
 ) : SessionRepository {
 
+    override suspend fun findChildSessionId(parentID: String, title: String, directory: String?): String? {
+        return try {
+            val children = api.listSessions(directory, 50, null, parentID).map { it.toDomain() }
+            children.firstOrNull { it.title == title }?.id ?: children.singleOrNull()?.id
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> {
         val dtos = api.listSessions(directory, limit, start)
         val dao = dbProvider.getActive().sessionDao()
@@ -62,6 +71,20 @@ class SessionRepositoryImpl @Inject constructor(
             }
         }
         dao.upsertAll(entities)
+        if (limit == null && start == null && dtos.isNotEmpty()) {
+            val fetchedIds = dtos.map { it.id }.toSet()
+            val windowStart = entities.minOf { it.updatedAt }
+            val windowEnd = entities.maxOf { it.updatedAt }
+            val stale = dao.getAll().filter { existing ->
+                existing.id !in fetchedIds &&
+                    existing.updatedAt in windowStart..windowEnd &&
+                    (directory == null || existing.directory == directory)
+            }
+            for (s in stale) {
+                dao.delete(s.id)
+                runCatching { dbProvider.getActive().sessionMessageDao().deleteBySession(s.id) }
+            }
+        }
         return dao.getAll().map { it.toDomain() }
     }
 
@@ -114,12 +137,13 @@ class SessionRepositoryImpl @Inject constructor(
 
     override suspend fun deleteSession(id: String) {
         api.deleteSession(id)
-        val dao = dbProvider.getActive().sessionDao()
-        dao.delete(id)
+        val db = dbProvider.getActive()
+        db.sessionDao().delete(id)
+        runCatching { db.sessionMessageDao().deleteBySession(id) }
     }
 
-    override suspend fun updateSession(id: String, title: String?) {
-        api.updateSession(id, title)
+    override suspend fun updateSession(id: String, title: String?, directory: String?) {
+        api.updateSession(id, title, directory)
         if (title != null) {
             dbProvider.getActive().sessionDao().updateTitle(id, title)
         }

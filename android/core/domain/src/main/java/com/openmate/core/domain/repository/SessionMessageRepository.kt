@@ -17,6 +17,7 @@ interface SessionMessageRepository {
     suspend fun incrementalSync(sessionId: String)
     suspend fun incrementalSyncAndNotify(sessionId: String)
     suspend fun fetchFullMessage(sessionId: String, messageId: String)
+    suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long)
     suspend fun fetchDiffFiles(sessionId: String, messageId: String, toolName: String, targetFilePath: String?): List<DiffFile>
     suspend fun getLastSeq(sessionId: String): Long?
     suspend fun rollbackSeq(sessionId: String, count: Long)

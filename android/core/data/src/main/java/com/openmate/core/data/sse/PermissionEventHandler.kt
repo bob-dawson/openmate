@@ -38,7 +38,9 @@ open class PermissionEventHandler @Inject constructor() {
         val tool = sourceObj?.let {
             ToolRef(
                 messageID = it["messageID"]?.jsonPrimitive?.contentOrNull ?: "",
-                callID = it["callID"]?.jsonPrimitive?.contentOrNull ?: "",
+                callID = it["callID"]?.jsonPrimitive?.contentOrNull
+                    ?: it["id"]?.jsonPrimitive?.contentOrNull
+                    ?: "",
             )
         }
         _permissions.emit(

@@ -5,8 +5,12 @@ import com.openmate.core.domain.model.QuestionInfo
 import com.openmate.core.domain.model.QuestionOption
 import com.openmate.core.domain.model.ToolRef
 import com.openmate.core.network.SseData
+import com.openmate.core.network.dto.FormDto
+import com.openmate.core.network.dto.toDomain
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -18,11 +22,35 @@ import javax.inject.Singleton
 open class QuestionEventHandler @Inject constructor() {
     var activeDirectory: String = ""
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     private val _questions = MutableSharedFlow<QuestionRequest>(extraBufferCapacity = 16)
     val questions: SharedFlow<QuestionRequest> = _questions
 
+    private val _dismissed = MutableSharedFlow<String>(extraBufferCapacity = 16)
+    val dismissed: SharedFlow<String> = _dismissed
+
     open suspend fun handle(type: String, event: SseData) {
-        if (type != "question.v2.asked" && type != "question.asked") return
+        when (type) {
+            // V2: the question tool now creates a form; forms are also used by other interactive tools.
+            "form.created" -> {
+                val formElement = event.properties["form"] ?: return
+                val dto = runCatching {
+                    json.decodeFromJsonElement(FormDto.serializer(), formElement)
+                }.getOrNull() ?: return
+                if (dto.id.isBlank()) return
+                _questions.emit(dto.toDomain())
+            }
+            "form.replied", "form.cancelled" -> {
+                val id = event.properties["id"]?.jsonPrimitive?.contentOrNull
+                    ?: event.properties["form"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+                if (id != null) _dismissed.emit(id)
+            }
+            "question.v2.asked", "question.asked" -> handleLegacyQuestion(event)
+        }
+    }
+
+    private suspend fun handleLegacyQuestion(event: SseData) {
         val props = event.properties
         val id = props["id"]?.jsonPrimitive?.contentOrNull ?: return
         val sessionID = props["sessionID"]?.jsonPrimitive?.contentOrNull ?: ""

@@ -122,9 +122,10 @@ class WorkspaceAndSessionConnectionStatusTest {
 
         override suspend fun getSessions(directory: String?, limit: Int?, start: Long?): List<Session> = listOf(session)
         override suspend fun getSession(id: String): Session? = session
+        override suspend fun findChildSessionId(parentID: String, title: String, directory: String?): String? = null
         override suspend fun createSession(title: String?, directory: String?): Session = session
         override suspend fun deleteSession(id: String) = Unit
-        override suspend fun updateSession(id: String, title: String?) = Unit
+        override suspend fun updateSession(id: String, title: String?, directory: String?) = Unit
         override suspend fun abortSession(id: String, directory: String?) = Unit
         override suspend fun refreshSessionStatuses(directory: String?) = Unit
         override suspend fun syncSessionStatusFromRemote(sessionID: String) = Unit

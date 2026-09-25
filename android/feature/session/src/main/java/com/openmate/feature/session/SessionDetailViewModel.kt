@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.openmate.core.data.sync.SyncDebugController
+import com.openmate.core.data.sync.SubtaskSessionTracker
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncSseStarter
 import com.openmate.core.data.sync.SyncLogEntry
@@ -83,8 +84,11 @@ class SessionDetailViewModel @Inject constructor(
     private val syncSseStarter: SyncSseStarter,
     internal val apiClient: OpencodeApiClient,
     private val bridgeFileOpener: BridgeFileOpener,
+    private val subtaskSessionTracker: SubtaskSessionTracker,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+
+    val subtaskSessionIds: StateFlow<Map<String, String>> = subtaskSessionTracker.byCallId
 
     private val _sessionRevert = MutableStateFlow<SessionRevert?>(null)
     val sessionRevert: StateFlow<SessionRevert?> = _sessionRevert.asStateFlow()
@@ -138,7 +142,6 @@ class SessionDetailViewModel @Inject constructor(
     private var wasBusy = false
     @Volatile
     private var abortSuppressed = false
-    private var messageIdCounter = 0
     private val _sessionStatus = MutableStateFlow("")
     val sessionStatus: StateFlow<String> = _sessionStatus.asStateFlow()
 
@@ -667,7 +670,7 @@ class SessionDetailViewModel @Inject constructor(
                 Log.e(TAG, "refreshTodos failed", e)
             }
             try {
-                questionRepository.refresh(currentDirectory.ifBlank { "/" })
+                questionRepository.refresh(sessionID, currentDirectory.ifBlank { "/" })
             } catch (e: Exception) {
                 Log.e(TAG, "refreshQuestions failed", e)
             }
@@ -693,7 +696,7 @@ class SessionDetailViewModel @Inject constructor(
                 sessionMessageRepository.incrementalSync(sid)
                 refreshRetryStatus(sid)
                 todoRepository.refreshTodos(sid)
-                questionRepository.refresh(currentDirectory.ifBlank { "/" })
+                questionRepository.refresh(sid, currentDirectory.ifBlank { "/" })
                 permissionRepository.refresh(currentDirectory.ifBlank { "/" })
             } catch (e: Exception) {
                 Log.e(TAG, "manual refresh failed", e)
@@ -781,6 +784,12 @@ class SessionDetailViewModel @Inject constructor(
         pollJob = viewModelScope.launch(Dispatchers.IO) {
             while (isActive) {
                 delay(POLL_INTERVAL_MS)
+                syncDebugController.log(
+                    level = SyncLogLevel.Info,
+                    category = SyncLogCategory.Poll,
+                    sessionId = sessionId,
+                    message = "轮询触发增量同步（15s）",
+                )
                 try {
                     sessionMessageRepository.incrementalSync(sessionId)
                     refreshRetryStatus(sessionId)
@@ -788,7 +797,7 @@ class SessionDetailViewModel @Inject constructor(
                     Log.e(TAG, "poll sync failed", e)
                 }
                 try {
-                    questionRepository.refresh(currentDirectory.ifBlank { "/" })
+                    questionRepository.refresh(sessionId, currentDirectory.ifBlank { "/" })
                     permissionRepository.refresh(currentDirectory.ifBlank { "/" })
                 } catch (e: Exception) {
                     Log.e(TAG, "poll question/permission refresh failed", e)
@@ -849,6 +858,9 @@ class SessionDetailViewModel @Inject constructor(
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
                 apiClient.sendPrompt(sessionID, text, sendModelPID, sendModelMID, sendAgent, apiFiles, currentDirectory.ifBlank { null }, variant)
+                    ?.let { sent ->
+                        sessionMessageRepository.insertOptimisticUserMessage(sessionID, sent.id, sent.text, sent.created)
+                    }
                 _inputText.value = ""
                 _attachedFiles.value = emptyList()
                 clearDraft(sessionID)
@@ -892,7 +904,7 @@ class SessionDetailViewModel @Inject constructor(
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                sessionRepository.updateSession(sid, newTitle)
+                sessionRepository.updateSession(sid, newTitle, currentDirectory.ifBlank { null })
                 _sessionTitle.value = newTitle
             } catch (e: Exception) {
                 _errorMessage.value = appContext.getString(R.string.rename_session_failed)
@@ -1064,10 +1076,9 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun compact(sessionID: String) {
-        val model = _selectedModel.value ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                apiClient.summarizeSession(sessionID, model.providerID, model.modelID, currentDirectory.ifBlank { null })
+                apiClient.compactSession(sessionID, currentDirectory.ifBlank { null })
             } catch (e: Exception) {
                 Log.e(TAG, "compact failed", e)
                 _errorMessage.value = e.message ?: appContext.getString(R.string.compact_failed)
@@ -1075,25 +1086,25 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    fun initSession(sessionID: String) {
-        val model = _selectedModel.value ?: return
-        val messageID = generateMessageID()
+    private val resolvingSubtaskCalls = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    fun resolveSubtaskSession(callID: String, description: String) {
+        if (callID.isBlank() || description.isBlank()) return
+        if (subtaskSessionTracker.byCallId.value.containsKey(callID)) return
+        if (!resolvingSubtaskCalls.add(callID)) return
+        val sid = currentSessionID
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                apiClient.initSession(sessionID, model.providerID, model.modelID, messageID, currentDirectory.ifBlank { null })
+                if (sid != null) {
+                    val child = sessionRepository.findChildSessionId(sid, description, currentDirectory.ifBlank { null })
+                    if (child != null) subtaskSessionTracker.record(callID, child)
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "initSession request completed with: ${e.javaClass.simpleName}: ${e.message}")
+                Log.w(TAG, "resolveSubtaskSession failed: ${e.message}")
+            } finally {
+                resolvingSubtaskCalls.remove(callID)
             }
         }
-    }
-
-    private fun generateMessageID(): String {
-        val timestamp = System.currentTimeMillis()
-        val counter = ++messageIdCounter
-        val now = (timestamp.toLong() shl 12) + counter
-        val timeHex = String.format("%012x", now)
-        val random = (1..14).map { "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".random() }.joinToString("")
-        return "msg_$timeHex$random"
     }
 
     fun loadSkills() {
@@ -1663,7 +1674,7 @@ class SessionDetailViewModel @Inject constructor(
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                questionRepository.reply(requestID, answers, currentDirectory.ifBlank { null })
+                questionRepository.reply(sid, requestID, answers, currentDirectory.ifBlank { null })
                 sessionMessageRepository.incrementalSync(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "replyQuestion failed", e)
@@ -1675,7 +1686,7 @@ class SessionDetailViewModel @Inject constructor(
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                questionRepository.reject(requestID, currentDirectory.ifBlank { null })
+                questionRepository.reject(sid, requestID, currentDirectory.ifBlank { null })
                 sessionMessageRepository.incrementalSync(sid)
             } catch (e: Exception) {
                 Log.e(TAG, "rejectQuestion failed", e)
@@ -1687,7 +1698,7 @@ class SessionDetailViewModel @Inject constructor(
         val sid = currentSessionID ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                permissionRepository.reply(requestID, reply, message, currentDirectory.ifBlank { null })
+                permissionRepository.reply(sid, requestID, reply, message, currentDirectory.ifBlank { null })
                 permissionRepository.refresh(currentDirectory.ifBlank { "" })
                 sessionMessageRepository.incrementalSync(sid)
             } catch (e: Exception) {

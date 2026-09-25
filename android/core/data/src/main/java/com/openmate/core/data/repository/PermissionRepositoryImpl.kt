@@ -48,12 +48,12 @@ class PermissionRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun reply(requestID: String, reply: PermissionReply, message: String?, directory: String?) {
+    override suspend fun reply(sessionID: String, requestID: String, reply: PermissionReply, message: String?, directory: String?) {
         try {
-            api.replyPermission(requestID, reply.value, message, directory)
+            api.replyPermission(sessionID, requestID, reply.value, message, directory)
             pendingMap.remove(requestID)
         } catch (e: Exception) {
-            pendingMap.remove(requestID)
+            android.util.Log.w("PermissionRepo", "replyPermission failed: ${e.message}")
         } finally {
             _pending.value = pendingMap.values.toList()
         }

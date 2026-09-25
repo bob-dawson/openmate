@@ -20,6 +20,7 @@ import com.openmate.core.domain.model.SessionMessageSyncResult
 import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.network.SyncApiClient
 import com.openmate.core.network.dto.MessagesResponseDto
+import com.openmate.core.network.dto.SyncMessageDto
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -30,6 +31,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import androidx.room.withTransaction
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -385,6 +388,44 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
     override suspend fun incrementalSyncAndNotify(sessionId: String) {
         incrementalSync(sessionId)
+    }
+
+    override suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long) {
+        try {
+            val db = dbProvider.getActive()
+            if (db.sessionMessageDao().getById(messageId) != null) return
+            val data = buildJsonObject {
+                put("text", text)
+                put("time", buildJsonObject { put("created", created) })
+            }
+            val dto = SyncMessageDto(
+                id = messageId,
+                sessionId = sessionId,
+                type = "user",
+                timeCreated = created,
+                timeUpdated = created,
+                data = data,
+            )
+            val entity = SessionMessageMapper.dtoToEntity(dto)
+            db.sessionMessageDao().upsert(entity)
+            syncEvents.tryEmit(
+                SessionMessageSyncEvent(
+                    sessionId = sessionId,
+                    result = SessionMessageSyncResult(
+                        lastSeq = db.syncStateDao().get(sessionId)?.lastSeq ?: 0L,
+                        changes = listOf(SessionMessageSyncChange.Insert(entity.toDomain())),
+                    ),
+                )
+            )
+            logStore.log(
+                level = SyncLogLevel.Info,
+                category = SyncLogCategory.Manual,
+                message = "本地回显用户消息 optimistic user message id=$messageId",
+                sessionId = sessionId,
+            )
+        } catch (e: Exception) {
+            Log.w("SyncRepo", "insertOptimisticUserMessage failed: ${e.message}", e)
+        }
     }
 
     override suspend fun fetchFullMessage(sessionId: String, messageId: String) {

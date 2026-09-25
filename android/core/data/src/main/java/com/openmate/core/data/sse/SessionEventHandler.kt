@@ -106,6 +106,7 @@ open class SessionEventHandler @Inject constructor(
                 try {
                     val db = dbProvider.getActive()
                     db.sessionDao().delete(sessionID)
+                    runCatching { db.sessionMessageDao().deleteBySession(sessionID) }
                 } catch (e: Exception) {
                     Log.w("SessionEventHandler", "session.deleted failed", e)
                 }

@@ -175,6 +175,7 @@ fun SessionDetailScreen(
     val attachedFiles by viewModel.attachedFiles.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
+    val subtaskSessionIds by viewModel.subtaskSessionIds.collectAsState()
     val syncLogEntries by viewModel.syncLogEntries.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
@@ -489,16 +490,6 @@ fun SessionDetailScreen(
                             )
                             if (selectedModel != null) {
                                 DropdownMenuItem(
-                                    text = { Text(stringResource(R.string.init_session)) },
-                                    onClick = {
-                                        menuExpanded = false
-                                        viewModel.initSession(sessionID)
-                                    },
-                                    enabled = currentBusyStart == null,
-                                )
-                            }
-                            if (selectedModel != null) {
-                                DropdownMenuItem(
                                     text = { Text(compactActionLabel) },
                                     onClick = {
                                         menuExpanded = false
@@ -655,6 +646,8 @@ fun SessionDetailScreen(
                             onNavigateToSubtask = onNavigateToSubtask,
                             pendingQuestions = pendingQuestions,
                             pendingPermissions = pendingPermissions,
+                            subtaskSessionIds = subtaskSessionIds,
+                            onResolveSubtask = { callId, desc -> viewModel.resolveSubtaskSession(callId, desc) },
                             onReplyQuestion = { requestID, answers -> viewModel.replyQuestion(requestID, answers) },
                             onRejectQuestion = { requestID -> viewModel.rejectQuestion(requestID) },
                             onReplyPermission = { requestID, reply, msg -> viewModel.replyPermission(requestID, reply, msg) },

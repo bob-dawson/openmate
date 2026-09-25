@@ -108,6 +108,37 @@ class SessionRepositoryImplTest {
             .isEqualTo(SessionStatus.BUSY.name)
     }
 
+    @Test
+    fun getSessions_removesLocallyCachedSessionsDeletedOnServer() = runTest {
+        val dao = dbProvider.getActive().sessionDao()
+        fun entity(id: String, updatedAt: Long) = com.openmate.core.database.entity.SessionEntity(
+            id = id,
+            title = id,
+            directory = "/workspace",
+            projectID = "",
+            createdAt = 1L,
+            updatedAt = updatedAt,
+        )
+        dao.upsertAll(listOf(entity("s-old", 50L), entity("s-missing", 220L), entity("s-keep", 250L)))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {"data":[
+                      {"id":"s-keep","title":"s-keep","directory":"/workspace","time":{"created":1,"updated":250}},
+                      {"id":"s-other","title":"s-other","directory":"/workspace","time":{"created":1,"updated":200}}
+                    ]}
+                    """.trimIndent(),
+                ),
+        )
+
+        repository.getSessions(null, null, null)
+
+        val remaining = dao.getAll().map { it.id }
+        assertThat(remaining).containsExactly("s-keep", "s-other", "s-old")
+    }
+
     private companion object {
         const val PROFILE_ID = "profile-1"
         const val SESSION_ID = "session-1"

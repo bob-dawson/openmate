@@ -1,9 +1,11 @@
 package com.openmate.core.data.sse
 
 import android.util.Log
+import com.openmate.core.data.sync.SubtaskSessionTracker
 import com.openmate.core.network.SseData
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import javax.inject.Inject
@@ -13,6 +15,7 @@ class EventDispatcher @Inject constructor(
     private val permissionHandler: PermissionEventHandler,
     private val questionHandler: QuestionEventHandler,
     private val todoHandler: TodoEventHandler,
+    private val subtaskSessionTracker: SubtaskSessionTracker,
 ) {
     private val _messageSyncNeeded = MutableSharedFlow<String>(extraBufferCapacity = 16)
     val messageSyncNeeded: SharedFlow<String> = _messageSyncNeeded
@@ -35,6 +38,20 @@ class EventDispatcher @Inject constructor(
 
         if (type == "server.connected" || type == "server.heartbeat" || type == "global.disposed") {
             return
+        }
+
+        // V2 exposes a running subagent's child session id only through the ephemeral
+        // session.tool.progress metadata, so remember it by tool call id for navigation.
+        if (type == "session.tool.progress") {
+            val callId = event.properties["id"]?.jsonPrimitive?.contentOrNull
+                ?: event.properties["callID"]?.jsonPrimitive?.contentOrNull
+            val meta = event.properties["metadata"]?.jsonObject
+            val child = meta?.get("sessionID")?.jsonPrimitive?.contentOrNull
+                ?: meta?.get("sessionId")?.jsonPrimitive?.contentOrNull
+            if (callId != null && child != null) {
+                subtaskSessionTracker.record(callId, child)
+                Log.d("EventDispatcher", "subtask progress: call=$callId child=$child")
+            }
         }
 
         val isMessageScoped =
@@ -81,6 +98,7 @@ class EventDispatcher @Inject constructor(
             type.startsWith("message.") -> {}
             type.startsWith("permission.") -> permissionHandler.handle(type, event)
             type.startsWith("question.") -> questionHandler.handle(type, event)
+            type.startsWith("form.") -> questionHandler.handle(type, event)
             type.startsWith("todo.") -> todoHandler.handle(type, event)
         }
     }
