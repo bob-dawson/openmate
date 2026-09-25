@@ -1,0 +1,1 @@
+Upgrades now choose a download mirror by system region: AtomGit is preferred in mainland China, GitHub elsewhere, with automatic fallback to the other mirror.
