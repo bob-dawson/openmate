@@ -1,9 +1,8 @@
 name: Mirror release to AtomGit
 
-# Mirrors a GitHub Release (notes + assets) to AtomGit, so users in regions
-# with restricted access to GitHub can download the artifacts.
-# Requires the same secrets as the code mirror:
-#   ATOMGIT_USER, ATOMGIT_TOKEN (scopes must allow the Release API, e.g. "api")
+# Automatic mirroring also runs at the end of release.yml. Releases created by
+# the repository GITHUB_TOKEN do not fire the `release` event, so that hook only
+# covers releases created manually; keep this workflow for manual back-fills.
 
 on:
   release:
@@ -11,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to mirror (e.g. v0.3.3)"
+        description: "Release tag to mirror (e.g. v0.3.4)"
         required: true
 
 concurrency:
@@ -26,76 +25,18 @@ jobs:
     if: github.repository == 'bob-dawson/openmate'
     runs-on: ubuntu-latest
     env:
-      ATOMGIT_HOST: atomgit.com
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
-      - name: Check configuration
-        id: cfg
-        env:
-          ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
-        run: |
-          if [ -z "${ATOMGIT_TOKEN}" ]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "ATOMGIT_TOKEN is not set; skipping release mirror."
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Checkout
-        if: steps.cfg.outputs.configured == 'true'
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Mirror release and assets to AtomGit
-        if: steps.cfg.outputs.configured == 'true'
+      - name: Mirror release to AtomGit
         env:
           GH_TOKEN: ${{ github.token }}
           ATOMGIT_USER: ${{ secrets.ATOMGIT_USER }}
           ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
           ATOMGIT_REPO: ${{ vars.ATOMGIT_REPO || 'openmate' }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ATOMGIT_USER}" ]; then echo "ATOMGIT_USER not set; skipping."; exit 0; fi
-          api="https://${ATOMGIT_HOST}/api/v5/repos/${ATOMGIT_USER}/${ATOMGIT_REPO}"
-          auth=(-H "PRIVATE-TOKEN: ${ATOMGIT_TOKEN}")
-
-          # 1) ensure the tag exists on AtomGit
-          git fetch --tags origin >/dev/null 2>&1 || true
-          remote="https://${ATOMGIT_USER}:${ATOMGIT_TOKEN}@${ATOMGIT_HOST}/${ATOMGIT_USER}/${ATOMGIT_REPO}.git"
-          git push "$remote" "refs/tags/${TAG}:refs/tags/${TAG}" >/dev/null 2>&1 || true
-
-          # 2) read the GitHub release notes
-          gh release view "$TAG" --json body > /tmp/rel.json
-          jq -r '.body // ""' /tmp/rel.json > /tmp/body.txt
-
-          # 3) create (or ensure) the release on AtomGit
-          payload=$(jq -n --arg t "$TAG" --arg n "$TAG" --rawfile b /tmp/body.txt '{tag_name:$t,name:$n,body:$b,prerelease:false}')
-          code=$(curl -s -o /tmp/create.json -w "%{http_code}" -X POST "${auth[@]}" -H "Content-Type: application/json" \
-            "$api/releases?access_token=${ATOMGIT_TOKEN}" -d "$payload")
-          echo "create release ${TAG} -> HTTP ${code}"
-          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
-            echo "  $(head -c 300 /tmp/create.json)"
-          fi
-
-          # 4) upload each asset
-          mkdir -p /tmp/assets
-          mapfile -t assets < <(gh release view "$TAG" --json assets --jq '.assets[].name')
-          for fname in "${assets[@]}"; do
-            gh release download "$TAG" -p "$fname" -D /tmp/assets --clobber
-            q=$(jq -rn --arg x "$fname" '$x|@uri')
-            uj=$(curl -s "${auth[@]}" "$api/releases/${TAG}/upload_url?access_token=${ATOMGIT_TOKEN}&file_name=${q}")
-            url=$(echo "$uj" | jq -r '.url // empty')
-            if [ -z "$url" ]; then
-              echo "upload ${fname} -> no upload url: $(echo "$uj" | head -c 200)"
-              continue
-            fi
-            hdrs=()
-            while IFS=$'\t' read -r k v; do hdrs+=(-H "$k: $v"); done < <(echo "$uj" | jq -r '.headers // {} | to_entries[] | "\(.key)\t\(.value)"')
-            ucode=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${hdrs[@]}" --data-binary @"/tmp/assets/${fname}" "$url")
-            echo "upload ${fname} -> HTTP ${ucode}"
-          done
-
-          # 5) verify
-          echo "== AtomGit release assets =="
-          curl -s "${auth[@]}" "$api/releases/${TAG}" | jq -r '.assets[]?.name' 2>/dev/null || true
+          ATOMGIT_HOST: atomgit.com
+        run: bash .github/scripts/mirror-release-atomgit.sh
