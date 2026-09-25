@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.5
+
+Released: 2026-09-25
+
+### 问题修复
+
+- **会话同步缓慢**：修复 Bridge 同步接口在 opencode v2 下未执行消息裁剪的问题（`data` 字段为对象时判断失效），并适配 v2 字段（`metadata`/`path` 等）；同时剥离工具结果中的内联图片（base64）等大体积内容。含大量截图读取的会话，单次同步数据量从上百 MB 降至约 1–2 MB
+- **edit / patch 差异无法查看**：修复 Android 端差异解析只兼容旧结构的问题，现支持 opencode v2 的 `metadata.files[].patch` 与 `path` 字段；并修复差异回退算法（MyersDiff）的数组越界崩溃
+
 ## 0.3.4
 
 Released: 2026-09-25

@@ -1,0 +1,1 @@
+Fix very slow session sync (Bridge message truncation now applies on opencode v2 and inline image payloads are stripped) and fix viewing edit/patch diffs.
