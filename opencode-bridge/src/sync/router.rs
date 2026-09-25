@@ -31,6 +31,24 @@ pub struct MessagesQuery {
     pub count: Option<i64>,
 }
 
+fn truncate_messages(messages: Vec<Value>) -> Vec<Value> {
+    messages
+        .into_iter()
+        .map(|mut msg| {
+            let msg_type = msg["type"].as_str().unwrap_or("").to_string();
+            let data_val = match msg.get("data") {
+                Some(Value::String(s)) => {
+                    serde_json::from_str::<Value>(s).unwrap_or(Value::String(s.clone()))
+                }
+                Some(v) => v.clone(),
+                None => return msg,
+            };
+            msg["data"] = super::truncate::truncate_message(&msg_type, &data_val);
+            msg
+        })
+        .collect()
+}
+
 pub async fn init(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
@@ -41,16 +59,7 @@ pub async fn init(
         .get_init_snapshot(&session_id, limit)
         .map_err(|e| AppError::DatabaseError(e))?;
 
-    let truncated: Vec<Value> = messages.into_iter().map(|mut msg| {
-        if let Some(data_str) = msg["data"].as_str() {
-            if let Ok(data_val) = serde_json::from_str::<Value>(data_str) {
-                let msg_type = msg["type"].as_str().unwrap_or("");
-                let truncated_data = super::truncate::truncate_message(msg_type, &data_val);
-                msg["data"] = truncated_data;
-            }
-        }
-        msg
-    }).collect();
+    let truncated = truncate_messages(messages);
 
     Ok(Json(json!({
         "messages": truncated,
@@ -94,16 +103,7 @@ pub async fn messages(
         .get_messages_since(&session_id, query.since, limit)
         .map_err(|e| AppError::DatabaseError(e))?;
 
-    let truncated: Vec<Value> = messages.into_iter().map(|mut msg| {
-        if let Some(data_str) = msg["data"].as_str() {
-            if let Ok(data_val) = serde_json::from_str::<Value>(data_str) {
-                let msg_type = msg["type"].as_str().unwrap_or("");
-                let truncated_data = super::truncate::truncate_message(msg_type, &data_val);
-                msg["data"] = truncated_data;
-            }
-        }
-        msg
-    }).collect();
+    let truncated = truncate_messages(messages);
 
     let server_count = match (&query.first_id, &query.last_id, query.count) {
         (Some(first_id), Some(last_id), Some(_)) => Some(

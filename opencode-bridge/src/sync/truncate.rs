@@ -59,19 +59,21 @@ fn truncate_event_reasoning_ended(data: &Value) -> Value {
 
 fn truncate_tool_input(tool_name: &str, input: &Value) -> Value {
     match tool_name {
-        "bash" => keep_fields(input, &["command", "description"]),
-        "read" => keep_fields(input, &["filePath"]),
-        "write" => keep_fields(input, &["filePath"]),
-        "edit" => keep_fields(input, &["filePath"]),
+        "shell" | "bash" => keep_fields(input, &["command", "description", "background"]),
+        "read" => keep_fields(input, &["path", "filePath"]),
+        "write" => keep_fields(input, &["path", "filePath"]),
+        "edit" => keep_fields(input, &["path", "filePath"]),
+        "patch" | "apply_patch" => keep_fields(input, &[]),
         "glob" => keep_fields(input, &["pattern", "path"]),
         "grep" => keep_fields(input, &["pattern", "path", "include"]),
-        "task" => keep_fields(input, &["description", "subagent_type"]),
+        "subagent" | "task" => keep_fields(input, &["description", "agent", "subagent_type"]),
         "webfetch" => keep_fields(input, &["url", "format"]),
         "websearch" => keep_fields(input, &["query"]),
-        "skill" => keep_fields(input, &["name"]),
-        "lsp" => keep_fields(input, &["operation", "filePath", "line", "character", "query"]),
+        "skill" => keep_fields(input, &["id", "name"]),
+        "execute" => keep_fields(input, &["code"]),
+        "lsp" => keep_fields(input, &["operation", "path", "filePath", "line", "character", "query"]),
         "question" | "todowrite" => input.clone(),
-        _ => keep_fields(input, &["name"]),
+        _ => input.clone(),
     }
 }
 
@@ -116,11 +118,7 @@ fn truncate_event_tool_result(data: &Value) -> Value {
                     }
                 }
                 Some("file") | Some("image") => {
-                    if let Some(io) = item.as_object_mut() {
-                        io.remove("data");
-                        io.remove("content");
-                        io.remove("source");
-                    }
+                    *item = sanitize_file_item(item);
                 }
                 _ => {}
             }
@@ -211,63 +209,18 @@ fn truncate_event_part_updated(data: &Value) -> Value {
 
             match part_type.as_str() {
                 "tool" => {
-                    if let Some(state) = part.get_mut("state").and_then(|s| s.as_object_mut()) {
-                        let tool_name = state
-                            .get("name")
-                            .and_then(|n| n.as_str())
-                            .unwrap_or("");
-                        if let Some(input) = state.get("input").cloned() {
-                            state.insert(
-                                String::from("input"),
-                                truncate_tool_input(tool_name, &input),
-                            );
-                        }
-                        if let Some(structured) = state.get("structured") {
-                            if structured.to_string().len() > 500 {
-                                state.remove("structured");
-                            }
-                        }
-                        if let Some(content) =
-                            state.get_mut("content").and_then(|c| c.as_array_mut())
-                        {
-                            for item in content.iter_mut() {
-                                match item.get("type").and_then(|t| t.as_str()) {
-                                    Some("text") => {
-                                        if let Some(text) =
-                                            item.get("text").and_then(|t| t.as_str())
-                                        {
-                                            if text.len() > 500 {
-                                                let truncated =
-                                                    truncate_bash_output(text, 5, 5);
-                                                if let Some(io) = item.as_object_mut() {
-                                                    io.insert(
-                                                        String::from("text"),
-                                                        Value::String(truncated),
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                    Some("file") | Some("image") => {
-                                        if let Some(io) = item.as_object_mut() {
-                                            io.remove("data");
-                                            io.remove("content");
-                                            io.remove("source");
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        if let Some(attachments) =
-                            state.get_mut("attachments").and_then(|a| a.as_array_mut())
-                        {
-                            for att in attachments.iter_mut() {
-                                if let Some(ao) = att.as_object_mut() {
-                                    ao.remove("url");
-                                }
-                            }
-                        }
+                    let tool_name = part
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .or_else(|| {
+                            part.get("state")
+                                .and_then(|s| s.get("name"))
+                                .and_then(|n| n.as_str())
+                        })
+                        .unwrap_or("")
+                        .to_string();
+                    if let Some(state) = part.get("state").cloned() {
+                        part.insert(String::from("state"), truncate_tool(&tool_name, &state));
                     }
                 }
                 "patch" => {
@@ -304,12 +257,7 @@ fn truncate_user(data: &Value) -> Value {
 
     if let Some(files) = obj.get_mut("files").and_then(|f| f.as_array_mut()) {
         for file in files.iter_mut() {
-            if let Some(fo) = file.as_object_mut() {
-                if let Some(source) = fo.get_mut("source").and_then(|s| s.as_object_mut()) {
-                    source.remove("text");
-                }
-                fo.remove("description");
-            }
+            *file = sanitize_file_item(file);
         }
     }
 
@@ -364,6 +312,12 @@ fn truncate_assistant(data: &Value) -> Value {
                             io.insert(String::from("state"), truncated_state);
                         }
                     }
+                }
+                "file" | "image" => {
+                    *item = sanitize_file_item(item);
+                }
+                "patch" => {
+                    *item = sanitize_patch_item(item);
                 }
                 _ => {}
             }
@@ -472,27 +426,137 @@ fn keep_fields(obj: &Value, fields: &[&str]) -> Value {
     }
 }
 
-fn keep_file_metadata(item: &Value) -> Value {
-    keep_fields(item, &["type", "uri", "mime", "name"])
+/// Maximum inline (data:) payload we are willing to mirror to the phone.
+const MAX_INLINE_PAYLOAD: usize = 4096;
+/// Maximum size for a single kept string value (e.g. execute code).
+const MAX_KEPT_STRING: usize = 8000;
+
+/// Keep only file metadata and drop inline binary payloads (data: URIs).
+fn sanitize_file_item(item: &Value) -> Value {
+    let mut result = Map::new();
+    for key in ["type", "mime", "name", "filename"] {
+        if let Some(value) = item.get(key) {
+            result.insert(key.to_string(), value.clone());
+        }
+    }
+    for key in ["uri", "url"] {
+        if let Some(Value::String(value)) = item.get(key) {
+            if !value.starts_with("data:") && value.len() <= MAX_INLINE_PAYLOAD {
+                result.insert(key.to_string(), Value::String(value.clone()));
+            }
+        }
+    }
+    Value::Object(result)
+}
+
+/// Keep a patch content item: drop per-file patch text, keep paths and stats.
+fn sanitize_patch_item(item: &Value) -> Value {
+    let mut result = Map::new();
+    for key in ["type", "hash"] {
+        if let Some(value) = item.get(key) {
+            result.insert(key.to_string(), value.clone());
+        }
+    }
+    if let Some(files) = item.get("files").and_then(|f| f.as_array()) {
+        let kept: Vec<Value> = files
+            .iter()
+            .map(|file| match file {
+                Value::String(_) => file.clone(),
+                _ => keep_fields(file, &["filePath", "file", "type", "additions", "deletions"]),
+            })
+            .collect();
+        result.insert(String::from("files"), Value::Array(kept));
+    }
+    Value::Object(result)
+}
+
+/// Cap oversized string values (e.g. execute code) so they cannot slip through.
+fn cap_value(value: &Value) -> Value {
+    match value {
+        Value::String(s) if s.len() > MAX_KEPT_STRING => {
+            Value::String(truncate_bash_output(s, 40, 40))
+        }
+        Value::Array(items) => Value::Array(items.iter().map(cap_value).collect()),
+        Value::Object(map) => {
+            Value::Object(map.iter().map(|(k, v)| (k.clone(), cap_value(v))).collect())
+        }
+        other => other.clone(),
+    }
 }
 
 fn truncate_tool(tool_name: &str, state: &Value) -> Value {
     match tool_name {
-        "bash" => truncate_tool_bash(state),
-        "read" => truncate_tool_read(state),
-        "write" => truncate_tool_write(state),
-        "edit" => truncate_tool_edit(state),
-        "apply_patch" => truncate_tool_apply_patch(state),
-        "glob" => truncate_tool_glob(state),
-        "grep" => truncate_tool_grep(state),
-        "task" => truncate_tool_task(state),
+        "shell" | "bash" => build_state(
+            state,
+            &["command", "description", "background"],
+            &["exit", "truncated"],
+            ContentMode::Text,
+        ),
+        "read" => build_state(state, &["path", "filePath"], &["truncated"], ContentMode::Text),
+        "write" => build_state(
+            state,
+            &["path", "filePath"],
+            &["filepath", "exists", "truncated"],
+            ContentMode::Text,
+        ),
+        "edit" => build_state(
+            state,
+            &["path", "filePath"],
+            &["additions", "deletions"],
+            ContentMode::Text,
+        ),
+        "patch" | "apply_patch" => truncate_tool_patch(state),
+        "glob" => build_state(
+            state,
+            &["pattern", "path"],
+            &["count", "truncated"],
+            ContentMode::Text,
+        ),
+        "grep" => build_state(
+            state,
+            &["pattern", "path", "include"],
+            &["matches", "truncated"],
+            ContentMode::Text,
+        ),
+        "subagent" | "task" => build_state(
+            state,
+            &["description", "agent", "subagent_type"],
+            &["sessionId", "sessionID", "model"],
+            ContentMode::Text,
+        ),
+        "webfetch" => build_state(
+            state,
+            &["url", "format"],
+            &["contentType", "truncated"],
+            ContentMode::Text,
+        ),
+        "websearch" => build_state(
+            state,
+            &["query"],
+            &["summary", "truncated"],
+            ContentMode::Text,
+        ),
+        "skill" => build_state(
+            state,
+            &["id", "name"],
+            &["name", "directory", "dir"],
+            ContentMode::Skip,
+        ),
+        "execute" => build_state(
+            state,
+            &["code"],
+            &["toolCalls", "truncated"],
+            ContentMode::Skip,
+        ),
+        "question" => build_state(state, &["questions"], &["answers"], ContentMode::Text),
         "todowrite" => state.clone(),
-        "webfetch" => truncate_tool_webfetch(state),
-        "websearch" => truncate_tool_websearch(state),
-        "skill" => truncate_tool_skill(state),
-        "question" => state.clone(),
-        "lsp" => truncate_tool_lsp(state),
-        "plan_exit" | "invalid" => truncate_tool_minimal(state),
+        "lsp" => build_state(
+            state,
+            &["operation", "path", "filePath", "line", "character", "query"],
+            &[],
+            ContentMode::Text,
+        ),
+        "plan_exit" | "invalid" => build_state(state, &["tool", "error"], &[], ContentMode::Skip),
         _ => truncate_tool_unknown(state),
     }
 }
@@ -500,30 +564,40 @@ fn truncate_tool(tool_name: &str, state: &Value) -> Value {
 fn build_state(
     state: &Value,
     input_keep: &[&str],
-    structured_keep: &[&str],
+    metadata_keep: &[&str],
     content_mode: ContentMode,
 ) -> Value {
     let mut result = Map::new();
 
-    if let Some(input) = state.get("input") {
-        result.insert(String::from("input"), keep_fields(input, input_keep));
+    if let Some(status) = state.get("status") {
+        result.insert(String::from("status"), status.clone());
+    }
+    if let Some(error) = state.get("error") {
+        result.insert(String::from("error"), cap_value(error));
     }
 
-    if let Some(structured) = state.get("structured") {
-        let filtered = keep_fields(structured, structured_keep);
-        if !filtered.as_object().map_or(true, |m| m.is_empty()) {
-            result.insert(String::from("structured"), filtered);
+    if let Some(input) = state.get("input") {
+        result.insert(
+            String::from("input"),
+            cap_value(&keep_fields(input, input_keep)),
+        );
+    }
+
+    // V2 stores result metadata in `metadata`; V1 used `structured`.
+    for key in ["metadata", "structured"] {
+        if let Some(meta) = state.get(key) {
+            let filtered = keep_fields(meta, metadata_keep);
+            if !filtered.as_object().map_or(true, |m| m.is_empty()) {
+                result.insert(key.to_string(), cap_value(&filtered));
+            }
         }
     }
 
     if let Some(content) = state.get("content").and_then(|c| c.as_array()) {
         match content_mode {
             ContentMode::Skip => {}
-            ContentMode::Keep => {
-                result.insert(String::from("content"), Value::Array(content.clone()));
-            }
-            ContentMode::TruncateBashOutput => {
-                let filtered: Vec<Value> = content
+            ContentMode::Text => {
+                let items: Vec<Value> = content
                     .iter()
                     .map(|item| match item.get("type").and_then(|t| t.as_str()) {
                         Some("text") => {
@@ -531,15 +605,10 @@ fn build_state(
                                 item.get("text").and_then(|t| t.as_str()).unwrap_or("");
                             json!({"type": "text", "text": truncate_bash_output(text, 5, 5)})
                         }
-                        _ => keep_file_metadata(item),
+                        _ => sanitize_file_item(item),
                     })
                     .collect();
-                result.insert(String::from("content"), Value::Array(filtered));
-            }
-            ContentMode::KeepFileMetadata => {
-                let filtered: Vec<Value> =
-                    content.iter().map(|item| keep_file_metadata(item)).collect();
-                result.insert(String::from("content"), Value::Array(filtered));
+                result.insert(String::from("content"), Value::Array(items));
             }
         }
     }
@@ -553,62 +622,42 @@ fn build_state(
 }
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 enum ContentMode {
-    Keep,
+    /// Drop tool result content entirely.
     Skip,
-    TruncateBashOutput,
-    KeepFileMetadata,
+    /// Keep text (truncated) and strip binary payloads from other items.
+    Text,
 }
 
 fn truncate_attachment(attachment: &Value) -> Value {
     keep_fields(attachment, &["type", "mime", "id", "sessionID", "messageID"])
 }
 
-fn truncate_tool_bash(state: &Value) -> Value {
-    build_state(
-        state,
-        &["command", "description"],
-        &["exit", "truncated"],
-        ContentMode::TruncateBashOutput,
-    )
-}
-
-fn truncate_tool_read(state: &Value) -> Value {
-    build_state(state, &["filePath"], &["truncated"], ContentMode::Skip)
-}
-
-fn truncate_tool_write(state: &Value) -> Value {
-    build_state(
-        state,
-        &["filePath"],
-        &["filepath", "exists"],
-        ContentMode::Skip,
-    )
-}
-
-fn truncate_tool_edit(state: &Value) -> Value {
-    build_state(
-        state,
-        &["filePath"],
-        &["additions", "deletions"],
-        ContentMode::Skip,
-    )
-}
-
-fn truncate_tool_apply_patch(state: &Value) -> Value {
+fn truncate_tool_patch(state: &Value) -> Value {
     let mut result = Map::new();
 
-    if let Some(structured) = state.get("structured") {
-        let mut filtered = Map::new();
-        if let Some(files) = structured.get("files").and_then(|f| f.as_array()) {
-            let kept: Vec<Value> = files
-                .iter()
-                .map(|file| keep_fields(file, &["filePath", "type", "additions", "deletions"]))
-                .collect();
-            filtered.insert(String::from("files"), Value::Array(kept));
+    if let Some(status) = state.get("status") {
+        result.insert(String::from("status"), status.clone());
+    }
+    if let Some(input) = state.get("input") {
+        result.insert(
+            String::from("input"),
+            cap_value(&keep_fields(input, &[])),
+        );
+    }
+
+    for key in ["metadata", "structured"] {
+        if let Some(meta) = state.get(key) {
+            if let Some(files) = meta.get("files").and_then(|f| f.as_array()) {
+                let kept: Vec<Value> = files
+                    .iter()
+                    .map(|file| {
+                        keep_fields(file, &["filePath", "file", "type", "additions", "deletions"])
+                    })
+                    .collect();
+                result.insert(key.to_string(), json!({ "files": kept }));
+            }
         }
-        result.insert(String::from("structured"), Value::Object(filtered));
     }
 
     if let Some(attachments) = state.get("attachments").and_then(|a| a.as_array()) {
@@ -619,74 +668,36 @@ fn truncate_tool_apply_patch(state: &Value) -> Value {
     Value::Object(result)
 }
 
-fn truncate_tool_glob(state: &Value) -> Value {
-    build_state(
-        state,
-        &["pattern", "path"],
-        &["count", "truncated"],
-        ContentMode::Skip,
-    )
-}
-
-fn truncate_tool_grep(state: &Value) -> Value {
-    build_state(
-        state,
-        &["pattern", "path", "include"],
-        &["matches", "truncated"],
-        ContentMode::Skip,
-    )
-}
-
-fn truncate_tool_task(state: &Value) -> Value {
-    build_state(
-        state,
-        &["description", "subagent_type"],
-        &["sessionId", "model"],
-        ContentMode::Skip,
-    )
-}
-
-fn truncate_tool_webfetch(state: &Value) -> Value {
-    build_state(state, &["url", "format"], &[], ContentMode::Skip)
-}
-
-fn truncate_tool_websearch(state: &Value) -> Value {
-    build_state(state, &["query"], &["summary"], ContentMode::Skip)
-}
-
-fn truncate_tool_skill(state: &Value) -> Value {
-    build_state(
-        state,
-        &["name"],
-        &["name", "dir"],
-        ContentMode::Skip,
-    )
-}
-
-fn truncate_tool_lsp(state: &Value) -> Value {
-    build_state(
-        state,
-        &["operation", "filePath", "line", "character", "query"],
-        &[],
-        ContentMode::Skip,
-    )
-}
-
-fn truncate_tool_minimal(state: &Value) -> Value {
-    build_state(state, &["tool", "error"], &[], ContentMode::Skip)
-}
-
 fn truncate_tool_unknown(state: &Value) -> Value {
     let mut result = Map::new();
 
-    if let Some(input) = state.get("input") {
-        result.insert(String::from("input"), keep_fields(input, &["name"]));
+    if let Some(status) = state.get("status") {
+        result.insert(String::from("status"), status.clone());
     }
-
-    if let Some(structured) = state.get("structured") {
-        if structured.to_string().len() <= 500 {
-            result.insert(String::from("structured"), structured.clone());
+    if let Some(error) = state.get("error") {
+        result.insert(String::from("error"), cap_value(error));
+    }
+    if let Some(input) = state.get("input") {
+        result.insert(String::from("input"), cap_value(input));
+    }
+    if let Some(metadata) = state.get("metadata") {
+        let filtered = keep_fields(metadata, &["truncated"]);
+        if !filtered.as_object().map_or(true, |m| m.is_empty()) {
+            result.insert(String::from("metadata"), filtered);
         }
+    }
+    if let Some(content) = state.get("content").and_then(|c| c.as_array()) {
+        let items: Vec<Value> = content
+            .iter()
+            .map(|item| match item.get("type").and_then(|t| t.as_str()) {
+                Some("text") => {
+                    let text = item.get("text").and_then(|t| t.as_str()).unwrap_or("");
+                    json!({"type": "text", "text": truncate_bash_output(text, 5, 5)})
+                }
+                _ => sanitize_file_item(item),
+            })
+            .collect();
+        result.insert(String::from("content"), Value::Array(items));
     }
 
     Value::Object(result)
@@ -861,16 +872,18 @@ mod tests {
     #[test]
     fn test_truncate_tool_read() {
         let state = json!({
-            "input": {"filePath": "/src/main.rs", "offset": 0, "limit": 100},
-            "structured": {"truncated": true, "preview": "big preview"},
+            "status": "completed",
+            "input": {"path": "/src/main.rs", "offset": 0, "limit": 100},
+            "metadata": {"truncated": true, "preview": "big preview"},
             "content": [{"type": "text", "text": "file content"}]
         });
         let result = truncate_tool("read", &state);
-        assert_eq!(result["input"]["filePath"], "/src/main.rs");
+        assert_eq!(result["status"], "completed");
+        assert_eq!(result["input"]["path"], "/src/main.rs");
         assert!(result["input"]["offset"].is_null());
-        assert_eq!(result["structured"]["truncated"], true);
-        assert!(result["structured"]["preview"].is_null());
-        assert!(result.get("content").is_none());
+        assert_eq!(result["metadata"]["truncated"], true);
+        assert!(result["metadata"]["preview"].is_null());
+        assert_eq!(result["content"][0]["text"], "file content");
     }
 
     #[test]
@@ -912,7 +925,7 @@ mod tests {
             }
         });
         let result = truncate_tool("apply_patch", &state);
-        assert!(result.get("input").is_none());
+        assert!(result["input"]["patchText"].is_null());
         let files = result["structured"]["files"].as_array().unwrap();
         assert_eq!(files.len(), 2);
         assert_eq!(files[0]["filePath"], "a.rs");
@@ -941,9 +954,147 @@ mod tests {
         });
         let result = truncate_tool("custom_tool", &state);
         assert_eq!(result["input"]["name"], "myCustomTool");
-        assert!(result["input"]["bigArg"].is_null());
-        assert_eq!(result["structured"]["small"], "ok");
+        assert_eq!(result["input"]["bigArg"], "lots of data");
+        assert!(result.get("structured").is_none());
+        assert_eq!(result["content"][0]["text"], "big output");
+    }
+
+    #[test]
+    fn test_truncate_tool_read_strips_image_payload() {
+        let state = json!({
+            "status": "completed",
+            "input": {"path": "D:\\shots\\current1.png", "offset": 0, "limit": 0},
+            "metadata": {"truncated": false},
+            "content": [
+                {"type": "text", "text": "Image read successfully"},
+                {"type": "file", "mime": "image/png", "name": "current1.png", "uri": "data:image/png;base64,AAAA"}
+            ]
+        });
+        let result = truncate_tool("read", &state);
+        assert_eq!(result["input"]["path"], "D:\\shots\\current1.png");
+        assert_eq!(result["content"][0]["text"], "Image read successfully");
+        assert_eq!(result["content"][1]["mime"], "image/png");
+        assert_eq!(result["content"][1]["name"], "current1.png");
+        assert!(result["content"][1].get("uri").is_none());
+    }
+
+    #[test]
+    fn test_truncate_tool_shell_v2_metadata() {
+        let state = json!({
+            "status": "completed",
+            "input": {"command": "ls -la", "workdir": "/tmp", "timeout": 120, "background": true},
+            "metadata": {"status": "completed", "truncated": false, "exit": 0},
+            "content": [{"type": "text", "text": "a\nb\nc"}]
+        });
+        let result = truncate_tool("shell", &state);
+        assert_eq!(result["input"]["command"], "ls -la");
+        assert_eq!(result["input"]["background"], true);
+        assert!(result["input"]["workdir"].is_null());
+        assert_eq!(result["metadata"]["exit"], 0);
+    }
+
+    #[test]
+    fn test_truncate_tool_subagent_keeps_session_metadata() {
+        let state = json!({
+            "status": "completed",
+            "input": {"agent": "explore", "description": "find x", "prompt": "x".repeat(50000)},
+            "metadata": {"sessionId": "ses_child", "model": "m", "other": "drop"}
+        });
+        let result = truncate_tool("subagent", &state);
+        assert_eq!(result["input"]["agent"], "explore");
+        assert_eq!(result["input"]["description"], "find x");
+        assert_eq!(result["metadata"]["sessionId"], "ses_child");
+        assert!(result["metadata"]["other"].is_null());
+    }
+
+    #[test]
+    fn test_truncate_tool_execute_keeps_tool_calls() {
+        let state = json!({
+            "status": "completed",
+            "input": {"code": "const x = 1"},
+            "metadata": {"toolCalls": [{"tool": "search", "status": "completed"}], "truncated": false},
+            "content": [{"type": "text", "text": "result"}]
+        });
+        let result = truncate_tool("execute", &state);
+        assert_eq!(result["input"]["code"], "const x = 1");
+        assert_eq!(result["metadata"]["toolCalls"][0]["tool"], "search");
         assert!(result.get("content").is_none());
+    }
+
+    #[test]
+    fn test_truncate_tool_skill_keeps_name() {
+        let state = json!({
+            "status": "completed",
+            "input": {"id": "release"},
+            "metadata": {"name": "release", "directory": "/x", "junk": "drop"},
+            "content": [{"type": "text", "text": "skill body"}]
+        });
+        let result = truncate_tool("skill", &state);
+        assert_eq!(result["input"]["id"], "release");
+        assert_eq!(result["metadata"]["name"], "release");
+        assert!(result["metadata"]["junk"].is_null());
+        assert!(result.get("content").is_none());
+    }
+
+    #[test]
+    fn test_truncate_assistant_strips_top_level_file_payload() {
+        let data = json!({
+            "content": [
+                {"type": "text", "text": "hi"},
+                {"type": "file", "mime": "image/png", "name": "a.png", "uri": "data:image/png;base64,AAAA"}
+            ]
+        });
+        let result = truncate_assistant(&data);
+        assert_eq!(result["content"][1]["mime"], "image/png");
+        assert_eq!(result["content"][1]["name"], "a.png");
+        assert!(result["content"][1].get("uri").is_none());
+    }
+
+    #[test]
+    fn test_truncate_user_strips_file_payload() {
+        let data = json!({
+            "text": "hi",
+            "files": [
+                {"name": "a.png", "mime": "image/png", "uri": "data:image/png;base64,AAAA", "source": {"text": "big"}}
+            ]
+        });
+        let result = truncate_user(&data);
+        assert_eq!(result["files"][0]["name"], "a.png");
+        assert!(result["files"][0].get("uri").is_none());
+        assert!(result["files"][0].get("source").is_none());
+    }
+
+    #[test]
+    fn test_truncate_event_tool_success_strips_file_uri() {
+        let data = json!({
+            "sessionID": "s1",
+            "content": [{"type": "file", "mime": "image/png", "name": "a.png", "uri": "data:image/png;base64,AAAA"}]
+        });
+        let result = truncate_event("session.next.tool.success.1", &data);
+        assert_eq!(result["content"][0]["name"], "a.png");
+        assert!(result["content"][0].get("uri").is_none());
+    }
+
+    #[test]
+    fn test_truncate_event_part_updated_tool_v2() {
+        let data = json!({
+            "part": {
+                "type": "tool",
+                "name": "read",
+                "state": {
+                    "status": "completed",
+                    "input": {"path": "/a.png", "offset": 0},
+                    "metadata": {"truncated": false, "extra": "drop"},
+                    "content": [{"type": "file", "mime": "image/png", "uri": "data:image/png;base64,AAAA"}]
+                }
+            }
+        });
+        let result = truncate_event("message.part.updated.1", &data);
+        let state = &result["part"]["state"];
+        assert_eq!(state["status"], "completed");
+        assert_eq!(state["input"]["path"], "/a.png");
+        assert!(state["metadata"]["extra"].is_null());
+        assert!(state["content"][0].get("uri").is_none());
     }
 
     #[test]
