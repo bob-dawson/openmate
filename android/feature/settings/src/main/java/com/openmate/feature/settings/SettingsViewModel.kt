@@ -315,11 +315,11 @@ class SettingsViewModel @Inject constructor(
             if (_appDownloadState.value.isDownloading) return@launch
             _appDownloadState.value = AppDownloadState(isDownloading = true)
             try {
-                val url = ReleaseAssets.apkUrl(tag)
+                val urls = ReleaseAssets.apkUrls(tag, latestModuleVersion?.mirrors)
                 val destDir = File(appContext.cacheDir, "file_cache")
                 val destFile = File(destDir, ReleaseAssets.apkFilename(tag))
                 versionClient.downloadReleaseAsset(
-                    url = url,
+                    urls = urls,
                     destFile = destFile,
                     onProgress = { downloaded, total ->
                         if (total > 0) {

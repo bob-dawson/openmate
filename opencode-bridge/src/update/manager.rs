@@ -176,19 +176,48 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>, force: bool) -> Result<Str
     }
 
     let asset = platform::asset_name();
-    let url = format!("{}/{}/{}", GITHUB_BASE, bridge.tag, asset);
+    let region = version::region_key();
+    let bases = version::select_mirrors(&bridge.mirrors, &region, GITHUB_BASE);
     let dest = std::env::temp_dir().join(format!("openmate-{}.update", bridge.version));
 
     let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
         .timeout(std::time::Duration::from_secs(300))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let total_size = fetch_content_length(&client, &url).await;
+    tracing::info!("Bridge update: region={} mirrors={:?}", region, bases);
+
+    let mut last_error = String::from("No download mirror available");
+    for base in bases.iter() {
+        let url = format!("{}/{}/{}", base, bridge.tag, asset);
+        match attempt_download(&client, &state, &url, &dest, force).await {
+            Ok(()) => {
+                tracing::info!("Downloaded update from {}", base);
+                return Ok(bridge.version);
+            }
+            Err(e) => {
+                tracing::warn!("Mirror {} failed: {}", base, e);
+                last_error = e;
+                let _ = tokio::fs::remove_file(&dest).await;
+            }
+        }
+    }
+    Err(last_error)
+}
+
+async fn attempt_download(
+    client: &reqwest::Client,
+    state: &Arc<Mutex<UpgradeState>>,
+    url: &str,
+    dest: &std::path::Path,
+    force: bool,
+) -> Result<(), String> {
+    let total_size = fetch_content_length(client, url).await;
 
     if total_size > 0 && dest.exists() && dest.metadata().map(|m| m.len()).unwrap_or(0) == total_size && !force {
         tracing::info!("Update file already downloaded ({} bytes), skipping download", total_size);
-        return Ok(bridge.version);
+        return Ok(());
     }
 
     let existing_bytes = if dest.exists() && total_size > 0 {
@@ -200,14 +229,14 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>, force: bool) -> Result<Str
             if len > 0 {
                 tracing::info!("Existing partial file size {} unexpected (expected {}), re-downloading", len, total_size);
             }
-            let _ = tokio::fs::remove_file(&dest).await;
+            let _ = tokio::fs::remove_file(dest).await;
             0
         }
     } else {
         0
     };
 
-    let mut request = client.get(&url);
+    let mut request = client.get(url);
     if existing_bytes > 0 {
         request = request.header("Range", format!("bytes={}-", existing_bytes));
     }
@@ -236,11 +265,11 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>, force: bool) -> Result<Str
     let mut file = if is_partial {
         tokio::fs::OpenOptions::new()
             .append(true)
-            .open(&dest)
+            .open(dest)
             .await
             .map_err(|e| format!("Cannot open temp file for append: {}", e))?
     } else {
-        tokio::fs::File::create(&dest)
+        tokio::fs::File::create(dest)
             .await
             .map_err(|e| format!("Cannot create temp file: {}", e))?
     };
@@ -261,7 +290,7 @@ async fn do_download(state: Arc<Mutex<UpgradeState>>, force: bool) -> Result<Str
     file.flush().await.map_err(|e| format!("Flush error: {}", e))?;
 
     tracing::info!("Downloaded {} bytes to {}", downloaded, dest.display());
-    Ok(bridge.version)
+    Ok(())
 }
 
 async fn fetch_content_length(client: &reqwest::Client, url: &str) -> u64 {

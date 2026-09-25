@@ -13,4 +13,5 @@ data class ModuleVersion(
     val version: String,
     val tag: String,
     val releasedAt: String? = null,
+    val mirrors: Map<String, List<String>>? = null,
 )

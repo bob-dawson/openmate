@@ -99,7 +99,7 @@ object NetworkModule {
     fun provideReleaseOkHttpClient(): OkHttpClient {
         return OkHttpClient.Builder()
             .readTimeout(0, java.util.concurrent.TimeUnit.MINUTES)
-            .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
             .build()
     }
 

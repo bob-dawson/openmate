@@ -76,13 +76,15 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
 9. **更新 version.json（Release 成功后）**
    - **必须在 GitHub Release 创建且产物上传完成之后执行此步骤**
    - 编辑 `D:\openmate\version.json`，将 android 和 bridge 的 version、tag、releasedAt 更新为新版本
-   - 示例：
+   - **保留 `mirrors` 字段**（按区域分组的下载镜像，客户端据此选择 GitHub / AtomGit）。不要删除或改动它，否则国内用户更新下载会退回 GitHub
+   - 示例（实际 `mirrors` 保持原样，此处省略内容）：
      ```json
      {
-       "android": {"version": "0.2.0", "tag": "v0.2.0", "releasedAt": "2026-06-16"},
-       "bridge": {"version": "0.2.0", "tag": "v0.2.0", "releasedAt": "2026-06-16"}
+       "android": {"version": "0.3.4", "tag": "v0.3.4", "releasedAt": "2026-09-25", "mirrors": { "cn": ["..."], "default": ["..."] }},
+       "bridge":  {"version": "0.3.4", "tag": "v0.3.4", "releasedAt": "2026-09-25", "mirrors": { "cn": ["..."], "default": ["..."] }}
      }
      ```
+   - **新增字段只增不改**：`version`/`tag`/`releasedAt` 的层级与类型必须保持不变，以保证旧版本客户端能继续解析并升级
    - `git add version.json && git commit -m "chore: update version.json to v{版本号}"`
    - `git push origin main`
 

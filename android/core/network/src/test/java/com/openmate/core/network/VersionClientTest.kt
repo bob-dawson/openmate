@@ -85,7 +85,7 @@ class VersionClientTest {
         val dest = File.createTempFile("test", ".apk").apply { delete() }
         var lastDownloaded = 0L
         c.downloadReleaseAsset(
-            url = downloadServer.url("/asset").toString(),
+            urls = listOf(downloadServer.url("/asset").toString()),
             destFile = dest,
             onProgress = { downloaded, _ -> lastDownloaded = downloaded }
         )
@@ -108,7 +108,7 @@ class VersionClientTest {
         dest.writeBytes(bytes)
         var progressCalled = false
         c.downloadReleaseAsset(
-            url = downloadServer.url("/asset").toString(),
+            urls = listOf(downloadServer.url("/asset").toString()),
             destFile = dest,
             onProgress = { _, _ -> progressCalled = true }
         )
@@ -139,10 +139,59 @@ class VersionClientTest {
         )
         val c = client(downloadServer.url("/").toString(), rawServer.url("/").toString())
         c.downloadReleaseAsset(
-            url = downloadServer.url("/asset").toString(),
+            urls = listOf(downloadServer.url("/asset").toString()),
             destFile = dest,
         )
         assertThat(dest.length()).isEqualTo(200L)
         dest.delete()
+    }
+
+    @Test
+    fun fetchAndroidVersion_parsesMirrors_andAcceptsOldFormatWithoutMirrors() = runBlocking {
+        jsdelivrServer.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"android":{"version":"0.3.4","tag":"v0.3.4","mirrors":{"cn":["a"],"default":["b"]}}}"""
+            )
+        )
+        val withMirrors = client(jsdelivrServer.url("/").toString(), rawServer.url("/").toString()).fetchAndroidVersion()
+        assertThat(withMirrors?.mirrors?.get("cn")).containsExactly("a")
+
+        // Old version.json (no mirrors) must still parse so older clients can upgrade.
+        jsdelivrServer.enqueue(MockResponse().setResponseCode(500))
+        rawServer.enqueue(
+            MockResponse().setResponseCode(200).setBody("""{"android":{"version":"0.3.3","tag":"v0.3.3"}}""")
+        )
+        val old = client(jsdelivrServer.url("/").toString(), rawServer.url("/").toString()).fetchAndroidVersion()
+        assertThat(old?.version).isEqualTo("0.3.3")
+        assertThat(old?.mirrors).isNull()
+    }
+
+    @Test
+    fun downloadReleaseAsset_firstMirrorFails_fallsBackToSecond() = runBlocking<Unit> {
+        val failingServer = MockWebServer(); failingServer.start()
+        val bytes = ByteArray(50) { it.toByte() }
+        failingServer.enqueue(MockResponse().setResponseCode(500))
+        failingServer.enqueue(MockResponse().setResponseCode(500))
+        downloadServer.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Accept-Ranges", "bytes")
+                .setHeader("Content-Length", "50")
+        )
+        downloadServer.enqueue(
+            MockResponse().setResponseCode(200)
+                .setHeader("Accept-Ranges", "bytes")
+                .setHeader("Content-Length", "50")
+                .setBody(okio.Buffer().write(bytes))
+        )
+        val c = client(downloadServer.url("/").toString(), rawServer.url("/").toString())
+        val dest = File.createTempFile("test", ".apk").apply { delete() }
+        c.downloadReleaseAsset(
+            urls = listOf(failingServer.url("/asset").toString(), downloadServer.url("/asset").toString()),
+            destFile = dest,
+        )
+        assertThat(dest.exists()).isTrue()
+        assertThat(dest.length()).isEqualTo(50L)
+        dest.delete()
+        failingServer.shutdown()
     }
 }

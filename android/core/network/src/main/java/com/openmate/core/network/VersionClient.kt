@@ -40,17 +40,41 @@ class VersionClient(
         }
     }.getOrNull()
 
+    /**
+     * Download from the first working mirror in [urls] (most-preferred first),
+     * falling back to the next on failure. Partial data is discarded when
+     * switching mirrors so files from different sources are never mixed.
+     */
     suspend fun downloadReleaseAsset(
-        url: String,
+        urls: List<String>,
         destFile: File,
         onProgress: ((downloaded: Long, total: Long) -> Unit)? = null,
     ) = withContext(Dispatchers.IO) {
+        require(urls.isNotEmpty()) { "No download URLs" }
+        var lastError: Exception? = null
+        for (url in urls) {
+            try {
+                downloadFromMirror(url, destFile, onProgress)
+                return@withContext
+            } catch (e: Exception) {
+                lastError = e
+                runCatching { if (destFile.exists()) destFile.delete() }
+            }
+        }
+        throw lastError ?: IllegalStateException("Download failed")
+    }
+
+    private fun downloadFromMirror(
+        url: String,
+        destFile: File,
+        onProgress: ((downloaded: Long, total: Long) -> Unit)? = null,
+    ) {
         destFile.parentFile?.mkdirs()
 
         val totalSize = fetchContentLength(url)
         if (totalSize > 0 && destFile.exists() && destFile.length() == totalSize) {
             onProgress?.invoke(totalSize, totalSize)
-            return@withContext
+            return
         }
 
         val existingBytes = if (destFile.exists() && totalSize > 0 && destFile.length() < totalSize) {
