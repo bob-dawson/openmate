@@ -93,7 +93,7 @@ Bridge 会自动启动 opencode 并开始监听——同时会自动连接云中
 
 ### 2. 安装 Android 客户端
 
-**直接安装 APK：** 从 [Releases](../../releases) 下载 `OpenMate-{version}.apk` 并安装到手机。
+**直接安装 APK：** 从 [Releases](../../releases) 下载 `OpenMate-{version}.apk` 并安装到手机；GitHub 访问受限时，可从 [AtomGit 国内镜像](https://atomgit.com/article88/openmate) 下载同一 APK。
 
 **自动更新（Obtainium）：** 安装 [Obtainium](https://github.com/ImranR98/Obtainium)，添加源 `https://github.com/bob-dawson/openmate`。Obtainium 会跟踪 GitHub Releases，每次新版本都会提示一键更新。
 
@@ -159,6 +159,8 @@ Bridge 会在**终端显示一个二维码**（同时也可在 Web 管理页面 
 ## 下载与文档
 
 **获取程序：** [Releases 发布页](../../releases)
+
+**国内镜像（AtomGit）：** [atomgit.com/article88/openmate](https://atomgit.com/article88/openmate) — 分支、标签与 Release 产物（APK 及各平台二进制）自动同步，GitHub 访问受限时可用。
 
 **了解更多：**
 - [安装指南（中文）](docs/INSTALL.zh-CN.md) — 安装说明

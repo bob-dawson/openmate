@@ -95,6 +95,8 @@ The Bridge auto-starts opencode and begins listening — it also auto-connects t
 
 **Direct APK:** download `OpenMate-{version}.apk` from [Releases](../../releases) and install on your phone.
 
+**China mirror:** if GitHub is slow or unreachable, download the same APK from the [AtomGit mirror](https://atomgit.com/article88/openmate).
+
 **Auto-updates (Obtainium):** install [Obtainium](https://github.com/ImranR98/Obtainium) and add `https://github.com/bob-dawson/openmate` as a source. Obtainium watches GitHub Releases, so every new version shows up as a one-tap update.
 
 ### 3. Pair Your Phone
@@ -159,6 +161,8 @@ Same network uses LAN for the fastest response; otherwise the app routes through
 ## Download & Documentation
 
 **Get started:** [Releases page](../../releases)
+
+**China mirror (AtomGit):** [atomgit.com/article88/openmate](https://atomgit.com/article88/openmate) — branches, tags and release artifacts (APK + all platform binaries) are mirrored automatically, for when GitHub is slow or unreachable.
 
 **Learn more:**
 - [Installation Guide](docs/INSTALL.md) — Setup instructions
