@@ -20,7 +20,9 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import javax.inject.Inject
 import javax.inject.Named
+import javax.inject.Singleton
 
+@Singleton
 class SyncSseClient @Inject constructor(
     @Named("sse") private val client: Call.Factory,
     private val tokenStore: TokenStore,

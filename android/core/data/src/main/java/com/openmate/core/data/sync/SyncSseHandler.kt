@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class SyncSseHandler @Inject constructor(
     private val syncSseClient: SyncSseClient,
     private val repository: SessionMessageRepository,
