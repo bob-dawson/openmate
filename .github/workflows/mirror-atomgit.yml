@@ -55,14 +55,26 @@ jobs:
           fi
 
           plain="${ATOMGIT_BASE_URL:-https://${ATOMGIT_HOST}/${ATOMGIT_USER}/${ATOMGIT_REPO}.git}"
-          echo "Target repo: $(echo "$plain" | sed -E 's#https://##')"
-
+          hostpath="${plain#https://}"
+          echo "Target repo: ${hostpath}"
           redact() { local s="$1"; s="${s//$ATOMGIT_TOKEN/***}"; s="${s//$plain/<repo>}"; echo "$s"; }
 
-          hostpath="$(echo "$plain" | sed -E 's#^https://##')"
+          echo "== API probe (token validity, HTTP status only) =="
+          for ep in \
+            "https://${ATOMGIT_HOST}/api/v1/user" \
+            "https://${ATOMGIT_HOST}/api/v4/user" \
+            "https://${ATOMGIT_HOST}/api/v5/user" ; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${ATOMGIT_TOKEN}" "$ep" 2>/dev/null || echo "err")
+            echo "  ${ep} -> HTTP ${code}"
+          done
+
+          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*" >/dev/null 2>&1
+
+          echo "== auth format probe (git push --dry-run) =="
           candidates=(
             "user:token|https://${ATOMGIT_USER}:${ATOMGIT_TOKEN}@${hostpath}"
             "oauth2:token|https://oauth2:${ATOMGIT_TOKEN}@${hostpath}"
+            "x-access-token:token|https://x-access-token:${ATOMGIT_TOKEN}@${hostpath}"
             "token@|https://${ATOMGIT_TOKEN}@${hostpath}"
             "token:token|https://${ATOMGIT_TOKEN}:${ATOMGIT_TOKEN}@${hostpath}"
           )
@@ -70,18 +82,17 @@ jobs:
           working=""
           for entry in "${candidates[@]}"; do
             name="${entry%%|*}"; url="${entry#*|}"
-            if out=$(GIT_TERMINAL_PROMPT=0 git ls-remote "$url" 2>&1); then
-              echo "OK   auth=${name} (refs: $(echo "$out" | wc -l))"
-              working="$url"; break
+            if out=$(GIT_TERMINAL_PROMPT=0 git push --dry-run --force "$url" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*" 2>&1); then
+              echo "  OK   auth=${name}"; working="$url"; break
             else
-              echo "FAIL auth=${name}: $(redact "$(echo "$out" | head -n1)")"
+              echo "  FAIL auth=${name}: $(redact "$(echo "$out" | grep -m1 -Ei 'denied|fatal|error|not found|forbidden|401|403|404' || echo "$out" | head -n1)")"
             fi
           done
 
           if [ -z "$working" ]; then
-            echo "::error::No working AtomGit auth format. Verify the repo exists, ATOMGIT_USER is your login handle, and the PAT is created on atomgit.com with code read/write."
+            echo "::error::No working AtomGit auth format. Verify: repo exists, ATOMGIT_USER is your login handle, PAT created on atomgit.com with code read/write, not expired."
             exit 1
           fi
 
-          git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*" "+refs/tags/*:refs/tags/*"
+          echo "Pushing to AtomGit using auth=${working%%|*}"
           git push --prune --force "$working" "+refs/remotes/origin/*:refs/heads/*" "+refs/tags/*:refs/tags/*"
