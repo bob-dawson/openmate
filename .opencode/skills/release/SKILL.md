@@ -73,9 +73,13 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
    若 `AtomGit Release Mirror` 失败或卡住（该 job 已设 30 分钟超时），在**本机**补传即可（幂等，可重复运行）：
 
    ```powershell
-   $env:ATOMGIT_USER='article88'; $env:ATOMGIT_TOKEN='<token>'   # 不要提交/回显 token
+   # 凭据解析顺序：-User/-Token 参数 -> 环境变量 -> %USERPROFILE%\.openmate\atomgit_{user,token}
    pwsh -File D:\openmate\scripts\mirror-release-atomgit.ps1 -Tag v{版本号}
    ```
+   凭据准备（二选一，凭证**不入库**）：
+   - 环境变量：`setx ATOMGIT_USER "article88"`、`setx ATOMGIT_TOKEN "<token>"`；
+   - 或凭证文件：`%USERPROFILE%\.openmate\atomgit_user` 与 `%USERPROFILE%\.openmate\atomgit_token`。
+   （`setx` 只对之后新启动的进程生效；若当前 shell 读不到，用凭证文件最稳。）
 
    验证：`curl.exe -s -o NUL -w "%{http_code}" -L -r 0-1023 "https://atomgit.com/article88/openmate/releases/download/v{版本号}/OpenMate-{版本号}.apk"` 应返回 `206`。
    注意：AtomGit 拒绝 HEAD 请求（会返回 401），请用 Range GET 验证。

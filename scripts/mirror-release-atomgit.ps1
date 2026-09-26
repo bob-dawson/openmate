@@ -22,8 +22,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Credential resolution: params -> env vars -> files under %USERPROFILE%\.openmate\
+# (kept outside the repo; never commit the token).
+if ([string]::IsNullOrWhiteSpace($User)) {
+    $userFile = Join-Path $env:USERPROFILE '.openmate\atomgit_user'
+    if (Test-Path $userFile) { $User = (Get-Content -Raw $userFile).Trim() }
+}
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    $tokenFile = Join-Path $env:USERPROFILE '.openmate\atomgit_token'
+    if (Test-Path $tokenFile) { $Token = (Get-Content -Raw $tokenFile).Trim() }
+}
+
 if ([string]::IsNullOrWhiteSpace($User) -or [string]::IsNullOrWhiteSpace($Token)) {
-    Write-Error 'ATOMGIT_USER / ATOMGIT_TOKEN are required (set env vars or pass -User/-Token).'
+    Write-Error 'AtomGit credentials missing. Provide -User/-Token, set ATOMGIT_USER/ATOMGIT_TOKEN, or create %USERPROFILE%\.openmate\atomgit_user / atomgit_token.'
     exit 2
 }
 
