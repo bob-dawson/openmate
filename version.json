@@ -1,7 +1,7 @@
 {
   "android": {
-    "version": "0.3.6",
-    "tag": "v0.3.6",
+    "version": "0.3.7",
+    "tag": "v0.3.7",
     "releasedAt": "2026-09-25",
     "mirrors": {
       "cn": [
@@ -15,8 +15,8 @@
     }
   },
   "bridge": {
-    "version": "0.3.6",
-    "tag": "v0.3.6",
+    "version": "0.3.7",
+    "tag": "v0.3.7",
     "releasedAt": "2026-09-25",
     "mirrors": {
       "cn": [
