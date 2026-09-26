@@ -69,6 +69,17 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
    - 全部成功后，`release` job 会自动创建 GitHub Release 并上传所有产物（`generate_release_notes: true`）
    - 如有 job 失败，不打断：报告失败原因，修复后重新打 tag（需先删除旧 tag）
 
+   **AtomGit 镜像 job 失败时的兜底**：CI 从 GitHub Actions runner 上传 AtomGit 有时会挂起/502（本机上传正常）。
+   若 `AtomGit Release Mirror` 失败或卡住（该 job 已设 30 分钟超时），在**本机**补传即可（幂等，可重复运行）：
+
+   ```powershell
+   $env:ATOMGIT_USER='article88'; $env:ATOMGIT_TOKEN='<token>'   # 不要提交/回显 token
+   pwsh -File D:\openmate\scripts\mirror-release-atomgit.ps1 -Tag v{版本号}
+   ```
+
+   验证：`curl.exe -s -o NUL -w "%{http_code}" -L -r 0-1023 "https://atomgit.com/article88/openmate/releases/download/v{版本号}/OpenMate-{版本号}.apk"` 应返回 `206`。
+   注意：AtomGit 拒绝 HEAD 请求（会返回 401），请用 Range GET 验证。
+
 8. **验证 Release**
    - `gh release view v{版本号}` 确认 Release 已创建且产物完整
    - 核对产物清单（见下）
