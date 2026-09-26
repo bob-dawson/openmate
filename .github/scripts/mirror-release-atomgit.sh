@@ -61,7 +61,7 @@ for fname in "${assets[@]}"; do
   headers=()
   while IFS=$'\t' read -r k v; do headers+=(-H "$k: $v"); done < <(echo "$upload_json" | jq -r '.headers // {} | to_entries[] | "\(.key)\t\(.value)"')
   # Large assets + slow links: keep a generous per-attempt cap, but never hang forever.
-  ucode=$(curl -s "${connect_timeout[@]}" "${retry[@]}" --retry-max-time 1800 --max-time 1200 -o /dev/null -w "%{http_code}" -X PUT "${headers[@]}" --data-binary @"/tmp/assets/${fname}" "$url")
+  ucode=$(curl -s "${connect_timeout[@]}" "${retry[@]}" --retry-max-time 900 --max-time 600 -o /dev/null -w "%{http_code}" -X PUT "${headers[@]}" --data-binary @"/tmp/assets/${fname}" "$url")
   echo "upload ${fname} -> HTTP ${ucode}"
   if [ "${ucode:0:1}" != "2" ]; then
     echo "  !! upload failed for ${fname}"
