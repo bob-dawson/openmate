@@ -516,10 +516,40 @@ fn which_opencode() -> anyhow::Result<PathBuf> {
         }
     }
 
+    // Bridge 可能以精简 PATH 启动（服务 / launchd / nohup），用户 shell 里追加的目录不生效
+    #[cfg(not(windows))]
+    {
+        for dir in extra_binary_dirs() {
+            let candidate = dir.join("opencode");
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+
     anyhow::bail!(
         "opencode not found in PATH. \
          Install opencode first: https://opencode.ai"
     )
+}
+
+/// 常见的 opencode / 包管理器安装目录（非 Windows）。
+///
+/// Bridge 常以精简 PATH 启动（macOS 的 nohup/launchd、Linux 的 systemd），
+/// 而 `~/.opencode/bin` 之类通常只由用户的 `.zshrc`/`.bashrc` 追加到交互式 shell。
+#[cfg(not(windows))]
+pub fn extra_binary_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        dirs.push(home.join(".opencode").join("bin"));
+        dirs.push(home.join(".local").join("bin"));
+        dirs.push(home.join(".npm-global").join("bin"));
+        dirs.push(home.join(".bun").join("bin"));
+    }
+    dirs.push(PathBuf::from("/opt/homebrew/bin"));
+    dirs.push(PathBuf::from("/usr/local/bin"));
+    dirs.push(PathBuf::from("/usr/bin"));
+    dirs
 }
 
 #[cfg(test)]

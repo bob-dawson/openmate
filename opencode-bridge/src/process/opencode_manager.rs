@@ -501,39 +501,54 @@ async fn opencode_cmd(binary: &str) -> tokio::process::Command {
         c
     };
 
+    let mut dirs: Vec<String> = Vec::new();
     if let Some(dir) = resolved_binary_dir(binary).await {
-        prepend_child_path(&mut cmd, &dir);
+        dirs.push(dir);
     }
     if let Some(home) = dirs::home_dir() {
-        let extras = [
+        for dir in [
             home.join("AppData").join("Roaming").join("npm"),
             home.join(".opencode").join("bin"),
-        ];
-        for dir in extras {
+        ] {
             if dir.exists() {
-                prepend_child_path(&mut cmd, &dir.to_string_lossy());
+                dirs.push(dir.to_string_lossy().to_string());
             }
         }
     }
+    prepend_child_paths(&mut cmd, &dirs);
     cmd
 }
 
+/// 非 Windows：Bridge 常以精简 PATH 启动（macOS 的 nohup/launchd、Linux 的 systemd），
+/// 需要把常见安装目录前置到子进程 PATH，否则 `opencode` / `npm` 等无法解析。
 #[cfg(not(windows))]
 async fn opencode_cmd(binary: &str) -> tokio::process::Command {
-    tokio::process::Command::new(binary)
+    let mut cmd = tokio::process::Command::new(binary);
+    let dirs: Vec<String> = crate::config::extra_binary_dirs()
+        .into_iter()
+        .filter(|dir| dir.exists())
+        .map(|dir| dir.to_string_lossy().to_string())
+        .collect();
+    prepend_child_paths(&mut cmd, &dirs);
+    cmd
 }
 
-/// 把目录前置到子进程 `PATH`，确保 opencode 及其包管理器（npm 等）能被找到。
-#[cfg(windows)]
-fn prepend_child_path(cmd: &mut tokio::process::Command, dir: &str) {
-    if dir.is_empty() {
+/// 把若干目录前置到子进程 `PATH`，确保 opencode 及其包管理器（npm 等）能被找到。
+fn prepend_child_paths(cmd: &mut tokio::process::Command, dirs: &[String]) {
+    let prefix = dirs
+        .iter()
+        .filter(|dir| !dir.is_empty())
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(if cfg!(windows) { ";" } else { ":" });
+    if prefix.is_empty() {
         return;
     }
     let current = std::env::var("PATH").unwrap_or_default();
     let value = if current.is_empty() {
-        dir.to_string()
+        prefix
     } else {
-        format!("{dir};{current}")
+        format!("{prefix}{}{current}", if cfg!(windows) { ";" } else { ":" })
     };
     cmd.env("PATH", value);
 }
@@ -652,14 +667,29 @@ async fn resolve_binary_path(binary: &str) -> Option<String> {
         .output()
         .await
         .ok()?;
-    if !out.status.success() {
-        return None;
+    #[allow(unused_mut)]
+    let mut lines: Vec<String> = if out.status.success() {
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // Bridge 可能以精简 PATH 启动（服务/launchd/nohup），再查一遍常见安装目录
+    #[cfg(not(windows))]
+    {
+        for dir in crate::config::extra_binary_dirs() {
+            let candidate = dir.join(binary);
+            if candidate.exists() {
+                let candidate = candidate.to_string_lossy().to_string();
+                if !lines.contains(&candidate) {
+                    lines.push(candidate);
+                }
+            }
+        }
     }
-    let lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
     // Windows 上 `where` 可能先返回无扩展名的 shell 脚本，优先选择可直接执行的扩展名
     #[cfg(windows)]
     {

@@ -12,6 +12,7 @@ Released: 2026-10-14
 
 - **macOS（及全新安装）下会话里看不到消息**：修复 Bridge 读取的 opencode 数据库路径指向旧文件名的问题——opencode 正式版使用 `opencode.db`，而 Bridge 的默认值是旧名 `opencode-next.db`（一个空库），导致同步接口读不到任何消息。现在默认值已修正，且当配置的路径不可用时会自动改用同目录下真正在用的 opencode 数据库
 - **会话列表接口报 500**：Bridge 的会话列表查询改用 opencode v2 的 `session_v2` 表，不再因表名不匹配而失败
+- **以服务/后台方式启动后找不到 opencode（macOS / Linux）**：Bridge 在精简 PATH 环境（macOS 的 `nohup`/launchd、Linux 的 systemd）下也能找到 opencode —— 会额外查找 `~/.opencode/bin`、`/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin` 等常见安装目录，此前这些目录只由用户 shell 配置（`.zshrc` 等）提供
 
 ## 0.3.8
 
