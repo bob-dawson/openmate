@@ -107,6 +107,7 @@ wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db \"UPDATE config
 | `opencode.auto_start` | `true` | Bridge 启动时自动拉起 opencode |
 | `opencode.auto_restart` | `true` | opencode 崩溃后自动重启 |
 | `opencode.password` | `` | opencode 密码；**为空时自动从 `~/.local/state/opencode/service.json` 读取**（V2 service 模式），再 fallback 到 `~/.local/state/opencode/password` |
+| `opencode.upgrade_registry` | `` | opencode 升级用的 npm 源；空=自动（按区域列出候选源并实测吞吐选最快，失败顺延下一个）。改动需重启 Bridge 生效 |
 | `fs.allowed_paths` | `` | 逗号分隔白名单，空=允许所有路径 |
 | `gateway.url` | `` | 网关地址 |
 | `gateway.auto_connect` | `true` | 是否自动连接网关 |
@@ -123,6 +124,9 @@ wsl -d Ubuntu-24.04 -e bash -l -c "sqlite3 ~/.openmate/bridge.db \"UPDATE config
 | POST | `/api/bridge/opencode/start` | 启动 opencode |
 | POST | `/api/bridge/opencode/stop` | 停止 opencode |
 | POST | `/api/bridge/opencode/restart` | 重启 opencode |
+| POST | `/api/bridge/opencode/upgrade` | 升级 opencode（原子抢占：已有升级在进行中时返回 `{"status":"in_progress"}`，不会重复发起） |
+| GET | `/api/bridge/opencode/upgrade-status` | 升级进度/结果 (`upgrading`/`success`/`error`/`previousVersion`/`newVersion`) |
+| GET | `/api/bridge/opencode/latest-version` | 当前版本与最新版本 (`current`/`latest`/`hasUpdate`) |
 | POST | `/api/bridge/pair/request` | 请求配对 PIN |
 | POST | `/api/bridge/pair/approve` | 批准 PIN (仅 localhost) |
 | POST | `/api/bridge/pair/confirm` | 确认配对，获取 token |

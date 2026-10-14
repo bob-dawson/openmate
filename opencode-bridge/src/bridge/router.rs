@@ -137,14 +137,15 @@ pub async fn opencode_upgrade_status(State(state): State<AppState>) -> impl Into
 pub async fn upgrade_opencode(
     State(state): State<AppState>,
 ) -> impl IntoResponse {
-    if state.opencode_manager.is_upgrade_in_progress() {
+    // 原子抢占升级槽位：网页端与移动端同时点击时只允许一个真正发起（避免 check-then-act 竞态）
+    if !state.opencode_manager.try_begin_upgrade() {
+        tracing::info!("Upgrade request ignored: another upgrade is in progress");
         return Json(json!({ "status": "in_progress" }));
     }
 
     let manager = state.opencode_manager.clone();
     tokio::spawn(async move {
-        let result = manager.upgrade().await;
-        match result {
+        match manager.run_claimed_upgrade().await {
             Ok(r) => tracing::info!("Upgrade completed: success={}", r.success),
             Err(e) => tracing::error!("Upgrade failed: {}", e),
         }

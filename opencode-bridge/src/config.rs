@@ -29,6 +29,7 @@ pub struct OpencodeConfig {
     pub auto_restart: bool,
     pub db_path: String,
     pub run_as_user: String,
+    pub upgrade_registry: String,
     pub password: String,
 }
 
@@ -148,6 +149,7 @@ impl Default for Config {
                 auto_restart: true,
                 db_path: default_db_path(),
                 run_as_user: String::new(),
+                upgrade_registry: String::new(),
                 password: String::new(),
             },
             fs: FsConfig::default(),
@@ -222,6 +224,14 @@ impl Config {
                 r#type: "string".into(),
                 needs_restart: false,
                 description: "Run opencode as this user (empty = current user, for systemd service)".into(),
+            },
+            ConfigEntry {
+                key: "opencode.upgrade_registry".into(),
+                value: String::new(),
+                default: String::new(),
+                r#type: "string".into(),
+                needs_restart: true,
+                description: "npm registry for opencode upgrade (empty = auto: probe and pick the fastest)".into(),
             },
             ConfigEntry {
                 key: "fs.allowed_paths".into(),
@@ -324,6 +334,7 @@ impl Config {
                 auto_restart: get_bool("opencode.auto_restart", true),
                 db_path: get("opencode.db_path", &default_db_path()),
                 run_as_user: get("opencode.run_as_user", ""),
+                upgrade_registry: get("opencode.upgrade_registry", ""),
                 password: {
                     let configured = get("opencode.password", "");
                     if configured.is_empty() { read_opencode_password() } else { configured }
@@ -352,6 +363,7 @@ impl Config {
             ("opencode.auto_restart".to_string(), self.opencode.auto_restart.to_string()),
             ("opencode.db_path".to_string(), self.opencode.db_path.clone()),
             ("opencode.run_as_user".to_string(), self.opencode.run_as_user.clone()),
+            ("opencode.upgrade_registry".to_string(), self.opencode.upgrade_registry.clone()),
             ("fs.allowed_paths".to_string(), self.fs.allowed_paths.join(",")),
             ("gateway.url".to_string(), self.gateway.url.clone()),
             ("gateway.auto_connect".to_string(), self.gateway.auto_connect.to_string()),

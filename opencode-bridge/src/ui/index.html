@@ -322,6 +322,9 @@ const I18N = {
   'version.upgrade': {en:v=>'Upgrade to ' + v,zh:v=>'升级到 ' + v},
   'version.latest': {en:'Latest',zh:'最新'},
   'version.upgradeStarted': {en:'Upgrade started',zh:'升级已开始'},
+  'version.upgrading': {en:'Upgrading...',zh:'升级中...'},
+  'version.upgradeInProgress': {en:'Upgrade already in progress',zh:'升级已在进行中'},
+  'version.upgradeDone': {en:'Upgrade completed',zh:'升级已完成'},
   'version.upgradeFailed': {en:e=>'Upgrade failed: ' + e,zh:e=>'升级失败: ' + e},
 
   'qr.title': {en:'Scan / Download App',zh:'扫码连接 / 下载 App'},
@@ -518,6 +521,14 @@ async function loadOverview() {
 async function checkLatestVersion() {
   const verSub = document.getElementById('oc-version-sub');
   if (!verSub) return;
+  try {
+    const st = await api('/api/bridge/opencode/upgrade-status').then(r => r.json());
+    if (st.upgrading) {
+      verSub.innerHTML = '<span class="badge badge-update">' + esc(t('version.upgrading')) + '</span>';
+      pollUpgrade();
+      return;
+    }
+  } catch(e) {}
   verSub.innerHTML = '<span class="badge badge-ok">' + esc(t('version.checking')) + '</span>';
   try {
     const res = await api('/api/bridge/opencode/latest-version').then(r => r.json());
@@ -529,6 +540,48 @@ async function checkLatestVersion() {
   } catch(e) {
     if (verSub) verSub.innerHTML = '<span class="badge badge-ok">' + esc(t('version.latest')) + '</span>';
   }
+}
+
+let upgradePollTimer = null;
+
+async function startOpencodeUpgrade() {
+  const badge = document.getElementById('upgrade-badge');
+  if (badge) {
+    badge.removeAttribute('id');
+    badge.textContent = t('version.upgrading');
+    badge.style.cursor = 'default';
+  }
+  try {
+    const res = await api('/api/bridge/opencode/upgrade', {method:'POST'}).then(r => r.json());
+    if (res.status === 'in_progress') {
+      showToast(t('version.upgradeInProgress'));
+    } else {
+      showToast(t('version.upgradeStarted'));
+    }
+    pollUpgrade();
+  } catch(err) {
+    showToast(t('version.upgradeFailed', err.message), true);
+    checkLatestVersion();
+  }
+}
+
+function pollUpgrade() {
+  if (upgradePollTimer) clearInterval(upgradePollTimer);
+  upgradePollTimer = setInterval(async () => {
+    try {
+      const status = await api('/api/bridge/opencode/upgrade-status').then(r => r.json());
+      if (status.upgrading) return;
+      clearInterval(upgradePollTimer);
+      upgradePollTimer = null;
+      if (status.success === false) {
+        showToast(t('version.upgradeFailed', status.error || ''), true);
+      } else {
+        showToast(t('version.upgradeDone'));
+      }
+      latestVersionChecked = false;
+      loadOverview();
+    } catch(e) {}
+  }, 3000);
 }
 
 function renderDevices(devices) {
@@ -618,12 +671,7 @@ async function doRename(id) {
 
 document.addEventListener('click', async e => {
   if (e.target.id === 'upgrade-badge') {
-    try {
-      await api('/api/bridge/opencode/upgrade', {method:'POST'});
-      showToast(t('version.upgradeStarted'));
-    } catch(err) {
-      showToast(t('version.upgradeFailed', err.message), true);
-    }
+    await startOpencodeUpgrade();
   }
 });
 

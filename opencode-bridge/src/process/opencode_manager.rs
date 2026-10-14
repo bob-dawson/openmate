@@ -15,6 +15,7 @@ pub struct OpencodeManager {
     opencode_version: Arc<RwLock<Option<String>>>,
     upgrade_in_progress: Arc<AtomicBool>,
     last_upgrade: Arc<RwLock<Option<UpgradeResult>>>,
+    upgrade_registry: Arc<String>,
     pid: Arc<RwLock<Option<u32>>>,
 }
 
@@ -44,6 +45,7 @@ impl OpencodeManager {
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
             last_upgrade: Arc::new(RwLock::new(None)),
+            upgrade_registry: Arc::new(String::new()),
             pid: Arc::new(RwLock::new(None)),
         }
     }
@@ -54,6 +56,7 @@ impl OpencodeManager {
         directory: String,
         auto_restart: bool,
         run_as_user: String,
+        upgrade_registry: String,
     ) -> Self {
         OpencodeManager {
             opencode_url,
@@ -65,6 +68,7 @@ impl OpencodeManager {
             opencode_version: Arc::new(RwLock::new(None)),
             upgrade_in_progress: Arc::new(AtomicBool::new(false)),
             last_upgrade: Arc::new(RwLock::new(None)),
+            upgrade_registry: Arc::new(upgrade_registry),
             pid: Arc::new(RwLock::new(None)),
         }
     }
@@ -332,9 +336,19 @@ impl OpencodeManager {
     }
 
     pub async fn upgrade(&self) -> Result<UpgradeResult, String> {
-        if self.upgrade_in_progress.swap(true, Ordering::Relaxed) {
+        if !self.try_begin_upgrade() {
             return Err("Upgrade already in progress".to_string());
         }
+        self.run_claimed_upgrade().await
+    }
+
+    /// 原子抢占升级槽位；返回 false 表示已有升级在进行中。
+    pub fn try_begin_upgrade(&self) -> bool {
+        !self.upgrade_in_progress.swap(true, Ordering::Relaxed)
+    }
+
+    /// 在已抢占槽位的前提下执行升级，结束时必定释放槽位。
+    pub async fn run_claimed_upgrade(&self) -> Result<UpgradeResult, String> {
         *self.last_upgrade.write().await = None;
         let result = self.do_upgrade_internal().await;
         if let Ok(ref r) = result {
@@ -344,15 +358,22 @@ impl OpencodeManager {
         result
     }
 
-    async fn do_upgrade_internal(&self) -> Result<UpgradeResult, String> {
-        let previous_version = self.get_cached_version().await;
-        let prev_ver_clone = previous_version.clone();
-        let binary = self.binary.clone();
+    /// 升级可用 npm 源候选（最优先在前）；brew/curl 安装方式无需换源。
+    async fn upgrade_registries(&self) -> Vec<String> {
+        let method = detect_upgrade_method(self.binary.as_str()).await;
+        if method == "brew" || method == "curl" {
+            return Vec::new();
+        }
+        crate::process::npm_registry::select(self.upgrade_registry.as_str()).await
+    }
 
-        // opencode v2 通过自身 CLI 升级（V2 服务端已无 /global/upgrade）。
-        // 先让 opencode 自动探测安装方式；若在 Windows 上探测失败
-        // （"Could not detect the installation method"），再由 Bridge 探测后显式传入 --method。
-        let mut run = exec_opencode_upgrade(binary.as_str(), None).await;
+    /// 单次升级：先让 opencode 自动探测安装方式，失败时由 Bridge 显式传入 --method。
+    async fn run_upgrade_once(
+        &self,
+        binary: &str,
+        registry: Option<&str>,
+    ) -> Result<std::process::Output, String> {
+        let mut run = exec_opencode_upgrade(binary, None, registry).await;
         let needs_method = match &run {
             Ok(output) if !output.status.success() => {
                 let text = format!(
@@ -365,10 +386,17 @@ impl OpencodeManager {
             _ => false,
         };
         if needs_method {
-            let method = detect_upgrade_method(binary.as_str()).await;
+            let method = detect_upgrade_method(binary).await;
             tracing::info!("opencode 自动探测安装方式失败，改用 --method {}", method);
-            run = exec_opencode_upgrade(binary.as_str(), Some(method.as_str())).await;
+            run = exec_opencode_upgrade(binary, Some(method.as_str()), registry).await;
         }
+        run
+    }
+
+    async fn do_upgrade_internal(&self) -> Result<UpgradeResult, String> {
+        let previous_version = self.get_cached_version().await;
+        let prev_ver_clone = previous_version.clone();
+        let binary = self.binary.clone();
 
         let failure = |error: String, prev: Option<String>, cur: Option<String>| UpgradeResult {
             success: false,
@@ -379,49 +407,80 @@ impl OpencodeManager {
             current_version: cur,
         };
 
-        match run {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                if !output.status.success() {
-                    let error = if stderr.trim().is_empty() {
+        // 依次尝试候选 npm 源（最多 MAX_UPGRADE_ATTEMPTS 个）：源太慢或不可用时顺延下一个。
+        let registries = self.upgrade_registries().await;
+        let attempts: Vec<Option<String>> = if registries.is_empty() {
+            vec![None]
+        } else {
+            registries
+                .into_iter()
+                .take(MAX_UPGRADE_ATTEMPTS)
+                .map(Some)
+                .collect()
+        };
+
+        let mut last_error = String::from("Upgrade failed");
+        for (index, registry) in attempts.iter().enumerate() {
+            if let Some(registry) = registry {
+                tracing::info!(
+                    "opencode upgrade attempt {}/{} via npm registry {}",
+                    index + 1,
+                    attempts.len(),
+                    registry
+                );
+            }
+
+            match self
+                .run_upgrade_once(binary.as_str(), registry.as_deref())
+                .await
+            {
+                Ok(output) if output.status.success() => {
+                    tracing::info!(
+                        "opencode upgrade output: {}",
+                        String::from_utf8_lossy(&output.stdout).trim()
+                    );
+
+                    if let Err(e) = self.restart().await {
+                        let error = format!("Upgrade succeeded but restart failed: {}", e);
+                        tracing::error!("{}", error);
+                        return Ok(failure(error, previous_version, prev_ver_clone));
+                    }
+
+                    // 等待服务恢复并刷新缓存版本
+                    for _ in 0..15 {
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                        if self.check_health().await {
+                            break;
+                        }
+                    }
+                    let current_version = self.get_cached_version().await;
+                    return Ok(UpgradeResult {
+                        success: true,
+                        previous_version,
+                        new_version: current_version.clone(),
+                        error: None,
+                        recovered: None,
+                        current_version,
+                    });
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    let error = if stderr.is_empty() {
                         format!("opencode upgrade exited with {}", output.status)
                     } else {
-                        stderr.trim().to_string()
+                        stderr
                     };
-                    tracing::error!("opencode upgrade failed: {}", error);
-                    return Ok(failure(error, previous_version, prev_ver_clone));
+                    tracing::warn!("opencode upgrade failed: {}", error);
+                    last_error = error;
                 }
-                tracing::info!("opencode upgrade output: {}", stdout.trim());
-
-                if let Err(e) = self.restart().await {
-                    let error = format!("Upgrade succeeded but restart failed: {}", e);
-                    tracing::error!("{}", error);
-                    return Ok(failure(error, previous_version, prev_ver_clone));
+                Err(e) => {
+                    tracing::warn!("opencode upgrade failed: {}", e);
+                    last_error = e;
                 }
-
-                // 等待服务恢复并刷新缓存版本
-                for _ in 0..15 {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-                    if self.check_health().await {
-                        break;
-                    }
-                }
-                let current_version = self.get_cached_version().await;
-                Ok(UpgradeResult {
-                    success: true,
-                    previous_version,
-                    new_version: current_version.clone(),
-                    error: None,
-                    recovered: None,
-                    current_version,
-                })
-            }
-            Err(e) => {
-                tracing::error!("opencode upgrade failed: {}", e);
-                Ok(failure(e, previous_version, prev_ver_clone))
             }
         }
+
+        Ok(failure(last_error, previous_version, prev_ver_clone))
     }
 }
 
@@ -488,21 +547,98 @@ async fn resolved_binary_dir(binary: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// 运行 `opencode upgrade [--method <m>]`，最长 300s。
+/// 升级时最多尝试的 npm 源数量（首个 + 一个顺延）。
+const MAX_UPGRADE_ATTEMPTS: usize = 2;
+
+/// 升级超时。略长于 opencode 内部对 npm/pnpm 的 5 分钟上限，让 opencode 自己的
+/// 错误先返回（进程正常退出），而不是 Bridge 先放弃、留下孤儿进程继续替换全局包。
+const UPGRADE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(360);
+
+/// 运行 `opencode upgrade [--method <m>]`；`registry` 非空时通过 `NPM_CONFIG_REGISTRY`
+/// 让 opencode 内部的 npm/pnpm 走指定源（不改动用户全局 npm 配置）。
 async fn exec_opencode_upgrade(
     binary: &str,
     method: Option<&str>,
+    registry: Option<&str>,
 ) -> Result<std::process::Output, String> {
     let mut cmd = opencode_cmd(binary).await;
     cmd.arg("upgrade");
     if let Some(m) = method {
         cmd.args(["--method", m]);
     }
-    match tokio::time::timeout(std::time::Duration::from_secs(300), cmd.output()).await {
-        Ok(Ok(output)) => Ok(output),
-        Ok(Err(e)) => Err(format!("Failed to run '{} upgrade': {}", binary, e)),
-        Err(_) => Err("Upgrade timed out (300s)".to_string()),
+    if let Some(registry) = registry.filter(|r| !r.is_empty()) {
+        cmd.env("NPM_CONFIG_REGISTRY", registry);
     }
+    run_with_timeout(cmd, UPGRADE_TIMEOUT, &format!("{} upgrade", binary)).await
+}
+
+/// 运行命令；超时后杀掉**整棵进程树**（Windows `taskkill /T`，Unix 进程组），
+/// 避免 `opencode upgrade` / npm 变成孤儿进程继续替换全局包。
+async fn run_with_timeout(
+    mut cmd: tokio::process::Command,
+    timeout: std::time::Duration,
+    label: &str,
+) -> Result<std::process::Output, String> {
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(not(windows))]
+    cmd.process_group(0);
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run '{}': {}", label, e))?;
+    let pid = child.id();
+
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let killer = {
+        let timed_out = timed_out.clone();
+        let label = label.to_string();
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
+            timed_out.store(true, Ordering::Relaxed);
+            if let Some(pid) = pid {
+                tracing::warn!(
+                    "{} timed out ({}s), killing process tree {}",
+                    label,
+                    timeout.as_secs(),
+                    pid
+                );
+                kill_process_tree(pid).await;
+            }
+        })
+    };
+
+    let output = child.wait_with_output().await;
+    killer.abort();
+
+    if timed_out.load(Ordering::Relaxed) {
+        return Err(format!("{} timed out ({}s)", label, timeout.as_secs()));
+    }
+    output.map_err(|e| format!("Failed to run '{}': {}", label, e))
+}
+
+#[cfg(windows)]
+async fn kill_process_tree(pid: u32) {
+    let _ = tokio::process::Command::new("taskkill")
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await;
+}
+
+#[cfg(not(windows))]
+async fn kill_process_tree(pid: u32) {
+    // 子进程以自身为进程组组长启动（process_group(0)），负 pid 表示整组
+    let _ = tokio::process::Command::new("kill")
+        .args(["-9", &format!("-{}", pid)])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await;
 }
 
 /// 解析可执行文件在 PATH 中的实际路径（`where` / `which`）。
@@ -665,5 +801,33 @@ async fn restart_service_loop(
         }
 
         return;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// 超时后必须结束子进程（否则 npm 会变成孤儿进程继续替换全局包）。
+    #[tokio::test]
+    async fn run_with_timeout_kills_hung_process() {
+        let mut cmd = tokio::process::Command::new(if cfg!(windows) { "cmd" } else { "sleep" });
+        if cfg!(windows) {
+            cmd.args(["/C", "ping", "-n", "60", "127.0.0.1"]);
+        } else {
+            cmd.arg("60");
+        }
+
+        let started = std::time::Instant::now();
+        let error = run_with_timeout(cmd, Duration::from_secs(1), "test")
+            .await
+            .expect_err("hung command should time out");
+        assert!(error.contains("timed out"), "unexpected error: {}", error);
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "killing the process tree took too long: {:?}",
+            started.elapsed()
+        );
     }
 }

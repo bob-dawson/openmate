@@ -146,6 +146,15 @@ fn validate_config_value(key: &str, value: &str, entry: &ConfigEntry, state: &Ap
                     )));
                 }
             }
+            if key == "opencode.upgrade_registry"
+                && !value.is_empty()
+                && !(value.starts_with("http://") || value.starts_with("https://"))
+            {
+                return Err(AppError::ConfigValidation(format!(
+                    "Registry must start with http:// or https://: {}",
+                    value
+                )));
+            }
         }
         _ => {}
     }

@@ -218,6 +218,23 @@ class SettingsViewModel @Inject constructor(
             try {
                 _opencodeVersion.value = apiClient.bridgeOpencodeVersion()
                 _upgradeError.value = null
+                if (!_isUpgrading.value) {
+                    val upgrading = try {
+                        apiClient.bridgeOpencodeUpgradeStatus().upgrading
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (upgrading) {
+                        _isUpgrading.value = true
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                awaitUpgradeCompletion()
+                            } finally {
+                                _isUpgrading.value = false
+                            }
+                        }
+                    }
+                }
             } catch (_: Exception) {} finally {
                 _isCheckingVersion.value = false
             }
@@ -230,34 +247,40 @@ class SettingsViewModel @Inject constructor(
             _isUpgrading.value = true
             _upgradeError.value = null
             try {
-                val result = apiClient.bridgeOpencodeUpgrade()
-                if (result.status == "in_progress") {
-                    _upgradeError.value = "Upgrade already in progress"
-                    _isUpgrading.value = false
-                    return@launch
+                val alreadyRunning = try {
+                    apiClient.bridgeOpencodeUpgradeStatus().upgrading
+                } catch (_: Exception) {
+                    false
                 }
-                repeat(40) {
-                    delay(3000)
-                    try {
-                        val status = apiClient.bridgeOpencodeUpgradeStatus()
-                        if (!status.upgrading) {
-                            _opencodeVersion.value = apiClient.bridgeOpencodeVersion()
-                            _upgradeError.value = if (status.success == false) {
-                                status.error?.takeIf { it.isNotBlank() } ?: "Upgrade failed"
-                            } else {
-                                null
-                            }
-                            _isUpgrading.value = false
-                            return@launch
-                        }
-                    } catch (_: Exception) { }
+                if (!alreadyRunning) {
+                    apiClient.bridgeOpencodeUpgrade()
                 }
-                _upgradeError.value = "Upgrade timed out"
+                awaitUpgradeCompletion()
             } catch (e: Exception) {
                 _upgradeError.value = e.message ?: "Upgrade failed"
+            } finally {
+                _isUpgrading.value = false
             }
-            _isUpgrading.value = false
         }
+    }
+
+    private suspend fun awaitUpgradeCompletion() {
+        repeat(240) {
+            delay(3000)
+            try {
+                val status = apiClient.bridgeOpencodeUpgradeStatus()
+                if (!status.upgrading) {
+                    _opencodeVersion.value = apiClient.bridgeOpencodeVersion()
+                    _upgradeError.value = if (status.success == false) {
+                        status.error?.takeIf { it.isNotBlank() } ?: "Upgrade failed"
+                    } else {
+                        null
+                    }
+                    return
+                }
+            } catch (_: Exception) { }
+        }
+        _upgradeError.value = "Upgrade timed out"
     }
 
     fun clearUpgradeError() {
