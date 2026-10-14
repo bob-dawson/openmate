@@ -1,0 +1,1 @@
+The Bridge now supports macOS (Apple Silicon) officially. Fixed a bug where sessions showed no messages on a fresh install (macOS included): the Bridge was reading an empty legacy opencode database file instead of the real one.
