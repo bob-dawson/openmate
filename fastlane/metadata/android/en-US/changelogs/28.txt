@@ -1,0 +1,1 @@
+opencode upgrades now pick the fastest npm mirror automatically, cutting the ~95MB download from about 6 minutes to about 20 seconds. Fixed a bug where a timed-out upgrade could leave opencode broken, and upgrades can no longer be started twice at the same time from the web UI and the app.
