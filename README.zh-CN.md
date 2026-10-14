@@ -81,7 +81,17 @@ Linux 二进制为静态链接（musl），可在任意发行版上运行，无 
 
 ### 1. 安装 Bridge
 
-从 [Releases](../../releases) 下载对应平台的 Bridge，然后运行：
+一条命令即可 —— 安装脚本会自动选择正确的产物、镜像与自启方式（参数、手动安装与常见问题见[安装文档](docs/INSTALL.zh-CN.md)）：
+
+```bash
+# Linux / macOS
+curl -fsSL https://gateway.clawmate.net/install.sh | sh
+
+# Windows（PowerShell）
+irm https://gateway.clawmate.net/install.ps1 | iex
+```
+
+也可以从 [Releases](../../releases) 下载对应平台的 Bridge，然后运行：
 
 ```bash
 # Windows
@@ -89,13 +99,16 @@ openmate.exe
 
 # Linux
 ./openmate
+
+# macOS（Apple Silicon）
+./openmate-darwin-arm64
 ```
 
 Bridge 会自动启动 opencode 并开始监听——同时会自动连接云中继，因此你在任何网络下都能访问到它。
 
 ### 2. 安装 Android 客户端
 
-**直接安装 APK：** 从 [Releases](../../releases) 下载 `OpenMate-{version}.apk` 并安装到手机；GitHub 访问受限时，可从 [AtomGit 国内镜像](https://atomgit.com/article88/openmate) 下载同一 APK。
+**直接安装 APK：** 从 [Releases](../../releases) 下载 `OpenMate-{version}.apk` 并安装到手机，也可以直接扫[安装文档](docs/INSTALL.zh-CN.md#android-客户端)里的二维码；GitHub 访问受限时，可从 [AtomGit 国内镜像](https://atomgit.com/article88/openmate) 下载同一 APK。
 
 **自动更新（Obtainium）：** 安装 [Obtainium](https://github.com/ImranR98/Obtainium)，添加源 `https://github.com/bob-dawson/openmate`。Obtainium 会跟踪 GitHub Releases，每次新版本都会提示一键更新。
 

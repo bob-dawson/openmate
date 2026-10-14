@@ -81,7 +81,18 @@ Linux binaries are statically linked (musl) and run on any distribution regardle
 
 ### 1. Install Bridge
 
-Download the Bridge for your platform from [Releases](../../releases), then run it:
+One line — the installer picks the right build, mirror and autostart for your platform
+(see the [Installation Guide](docs/INSTALL.md) for options, manual install and troubleshooting):
+
+```bash
+# Linux / macOS
+curl -fsSL https://gateway.clawmate.net/install.sh | sh
+
+# Windows (PowerShell)
+irm https://gateway.clawmate.net/install.ps1 | iex
+```
+
+Or download the Bridge for your platform from [Releases](../../releases), then run it:
 
 ```bash
 # Windows
@@ -98,7 +109,7 @@ The Bridge auto-starts opencode and begins listening — it also auto-connects t
 
 ### 2. Install Android App
 
-**Direct APK:** download `OpenMate-{version}.apk` from [Releases](../../releases) and install on your phone.
+**Direct APK:** download `OpenMate-{version}.apk` from [Releases](../../releases) and install on your phone. Or scan the QR code in the [Installation Guide](docs/INSTALL.md#android-app).
 
 **China mirror:** if GitHub is slow or unreachable, download the same APK from the [AtomGit mirror](https://atomgit.com/article88/openmate).
 

@@ -107,6 +107,8 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
 
 11. **同步 version.json 到 Gateway 服务器**
     - `scp D:\openmate\version.json root@gateway.clawmate.net:/data/relay-gateway/static/version.json`
+    - `scp D:\openmate\scripts\install.sh D:\openmate\scripts\install.ps1 root@gateway.clawmate.net:/data/relay-gateway/static/`
+      （`docs/INSTALL.md` / `INSTALL.zh-CN.md` 里的快速安装一条命令用的就是 `https://gateway.clawmate.net/install.sh` 与 `install.ps1`）
     - 这确保客户端通过 `https://gateway.clawmate.net/version.json`（主源）立即获取到新版
     - nginx 已配置 `Cache-Control: no-store`，无需额外清缓存
 
