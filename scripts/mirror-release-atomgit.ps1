@@ -1,15 +1,20 @@
-# Mirror a GitHub Release (notes + assets) to AtomGit from a Windows machine.
+# Mirror a GitHub Release (assets) to AtomGit from a Windows machine.
 #
-# Why this exists: the CI job (.github/scripts/mirror-release-atomgit.sh) uploads
-# from GitHub Actions runners, which AtomGit sometimes cannot serve (uploads hang
-# or return 502). Running from a normal network works reliably. Use this when the
-# CI "AtomGit Release Mirror" job fails; it is idempotent and safe to re-run.
+# CI no longer mirrors releases to AtomGit: uploads from GitHub Actions runners are
+# slow and frequently fail. This script is the single supported path - it downloads
+# each asset from the GitHub release (optionally through a local proxy) and uploads
+# it to AtomGit. It is idempotent and safe to re-run.
 #
 # Usage:
-#   $env:ATOMGIT_USER  = 'article88'
-#   $env:ATOMGIT_TOKEN = '<rotated token>'          # never hardcode / never commit
-#   pwsh -File scripts/mirror-release-atomgit.ps1                  # latest release
+#   pwsh -File scripts/mirror-release-atomgit.ps1                       # latest release
 #   pwsh -File scripts/mirror-release-atomgit.ps1 -Tag v0.3.7
+#   pwsh -File scripts/mirror-release-atomgit.ps1 -Tag v0.3.7 -GitHubProxy http://127.0.0.1:7897
+#
+# GitHub download proxy resolution: -GitHubProxy -> $env:OPENMATE_GITHUB_PROXY ->
+# $env:HTTPS_PROXY -> `git config --get http.proxy`. Uploads to AtomGit never use it.
+#
+# Credentials: -User/-Token -> $env:ATOMGIT_USER/$env:ATOMGIT_TOKEN ->
+# %USERPROFILE%\.openmate\atomgit_user / atomgit_token (never commit them).
 #
 # Optional env: ATOMGIT_REPO (default "openmate"), ATOMGIT_HOST (default "atomgit.com").
 param(
@@ -17,7 +22,8 @@ param(
     [string]$User = $env:ATOMGIT_USER,
     [string]$Token = $env:ATOMGIT_TOKEN,
     [string]$Repo = $(if ($env:ATOMGIT_REPO) { $env:ATOMGIT_REPO } else { 'openmate' }),
-    [string]$HostName = $(if ($env:ATOMGIT_HOST) { $env:ATOMGIT_HOST } else { 'atomgit.com' })
+    [string]$HostName = $(if ($env:ATOMGIT_HOST) { $env:ATOMGIT_HOST } else { 'atomgit.com' }),
+    [string]$GitHubProxy = $env:OPENMATE_GITHUB_PROXY
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,8 +44,50 @@ if ([string]::IsNullOrWhiteSpace($User) -or [string]::IsNullOrWhiteSpace($Token)
     exit 2
 }
 
+# GitHub downloads may need a proxy (direct access is slow or blocked). Uploads to
+# AtomGit are always direct, so the proxy is applied per gh call, never globally.
+if ([string]::IsNullOrWhiteSpace($GitHubProxy)) { $GitHubProxy = $env:HTTPS_PROXY }
+if ([string]::IsNullOrWhiteSpace($GitHubProxy)) {
+    $configured = (git config --get http.proxy) 2>$null
+    if ($configured) { $GitHubProxy = $configured.Trim() }
+}
+
+function Test-ProxyReachable([string]$ProxyUrl) {
+    try {
+        $uri = [System.Uri]$ProxyUrl
+        $client = [System.Net.Sockets.TcpClient]::new()
+        $task = $client.ConnectAsync($uri.Host, $uri.Port)
+        $ok = $task.Wait(1500) -and $client.Connected
+        $client.Dispose()
+        return $ok
+    } catch {
+        return $false
+    }
+}
+
+# A configured-but-dead proxy (e.g. the VPN/proxy app is off) must not break downloads.
+if (-not [string]::IsNullOrWhiteSpace($GitHubProxy) -and -not (Test-ProxyReachable $GitHubProxy)) {
+    Write-Output "github proxy $GitHubProxy is unreachable, downloading directly"
+    $GitHubProxy = ''
+}
+
+function Invoke-WithGitHubProxy([scriptblock]$Action) {
+    $prevHttps = $env:HTTPS_PROXY
+    $prevHttp = $env:HTTP_PROXY
+    if (-not [string]::IsNullOrWhiteSpace($GitHubProxy)) {
+        $env:HTTPS_PROXY = $GitHubProxy
+        $env:HTTP_PROXY = $GitHubProxy
+    }
+    try {
+        & $Action
+    } finally {
+        $env:HTTPS_PROXY = $prevHttps
+        $env:HTTP_PROXY = $prevHttp
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($Tag)) {
-    $Tag = gh release list --limit 1 --json tagName --jq '.[0].tagName'
+    $Tag = Invoke-WithGitHubProxy { gh release list --limit 1 --json tagName --jq '.[0].tagName' }
 }
 if ([string]::IsNullOrWhiteSpace($Tag)) { Write-Error 'No release tag found.'; exit 2 }
 
@@ -49,6 +97,7 @@ $authHeader = @{ 'PRIVATE-TOKEN' = $Token }
 $workDir = Join-Path $env:TEMP "openmate-atomgit-$Tag"
 
 Write-Output "mirror $Tag -> $HostName/$User/$Repo"
+if (-not [string]::IsNullOrWhiteSpace($GitHubProxy)) { Write-Output "github downloads via proxy $GitHubProxy" }
 
 try {
     New-Item -ItemType Directory -Force $workDir | Out-Null
@@ -64,7 +113,7 @@ try {
     }
 
     # 2) Asset names come from the GitHub release, never from a directory listing.
-    $assets = @(gh release view $Tag --json assets --jq '.assets[].name')
+    $assets = @(Invoke-WithGitHubProxy { gh release view $Tag --json assets --jq '.assets[].name' })
     if ($assets.Count -eq 0) { Write-Error "GitHub release $Tag has no assets."; exit 1 }
 
     $failures = 0
@@ -80,7 +129,7 @@ try {
         }
 
         $local = Join-Path $workDir $name
-        gh release download $Tag -p $name -D $workDir --clobber
+        Invoke-WithGitHubProxy { gh release download $Tag -p $name -D $workDir --clobber }
         if (-not (Test-Path $local)) { Write-Output "download ERR $name"; $failures++; continue }
 
         $encoded = [uri]::EscapeDataString($name)
@@ -93,7 +142,7 @@ try {
         if (-not $up.url) { Write-Output "no upload url for $name : $($up | ConvertTo-Json -Compress)"; $failures++; continue }
 
         $curlArgs = @(
-            '--silent', '--show-error', '--location',
+            '--silent', '--show-error', '--location', '--noproxy', '*',
             '--connect-timeout', '20', '--max-time', '1800',
             '--retry', '3', '--retry-delay', '5',
             '-X', 'PUT', '--data-binary', "@$local",

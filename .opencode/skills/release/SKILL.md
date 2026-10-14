@@ -30,7 +30,7 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
    - **筛选原则**：只记录用户已发布版本中遇到的问题修复；开发过程中发现并修复的 bug（用户从未遇到过）不写入
    - 人工精炼变更条目：将技术性 commit 归纳为用户可读的中文描述，按"新功能"/"问题修复"分类
    - 每条以 `**关键词**：` 开头，简洁说明功能或修复内容
-   - 不描述尚未正式测试支持的平台（如 macOS）
+   - 平台：Windows / Linux / macOS 均为正式支持，可写入 CHANGELOG
    - 在 `CHANGELOG.md` 顶部（`# Changelog` 标题之后）插入新版本条目，保留所有历史版本
    - 格式模板：
      ```
@@ -69,26 +69,28 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
    - 全部成功后，`release` job 会自动创建 GitHub Release 并上传所有产物（`generate_release_notes: true`）
    - 如有 job 失败，不打断：报告失败原因，修复后重新打 tag（需先删除旧 tag）
 
-   **AtomGit 镜像 job 失败时的兜底**：CI 从 GitHub Actions runner 上传 AtomGit 有时会挂起/502（本机上传正常）。
-   若 `AtomGit Release Mirror` 失败或卡住（该 job 已设 30 分钟超时），在**本机**补传即可（幂等，可重复运行）：
+   - CI **不再**镜像到 AtomGit（GitHub Actions runner 上传 AtomGit 太慢且大概率失败）。GitHub Release 创建后，由本机执行第 8 步完成镜像。
+
+8. **本机镜像到 AtomGit（必做，不可跳过）**
+   GitHub Release 创建后，在**本机**执行（幂等，可重复运行；资产本地从 GitHub 下载并上传到 AtomGit）：
 
    ```powershell
-   # 凭据解析顺序：-User/-Token 参数 -> 环境变量 -> %USERPROFILE%\.openmate\atomgit_{user,token}
    pwsh -File D:\openmate\scripts\mirror-release-atomgit.ps1 -Tag v{版本号}
    ```
-   凭据准备（二选一，凭证**不入库**）：
-   - 环境变量：`setx ATOMGIT_USER "article88"`、`setx ATOMGIT_TOKEN "<token>"`；
-   - 或凭证文件：`%USERPROFILE%\.openmate\atomgit_user` 与 `%USERPROFILE%\.openmate\atomgit_token`。
-   （`setx` 只对之后新启动的进程生效；若当前 shell 读不到，用凭证文件最稳。）
 
-   验证：`curl.exe -s -o NUL -w "%{http_code}" -L -r 0-1023 "https://atomgit.com/article88/openmate/releases/download/v{版本号}/OpenMate-{版本号}.apk"` 应返回 `206`。
-   注意：AtomGit 拒绝 HEAD 请求（会返回 401），请用 Range GET 验证。
+   - 资产清单取自 GitHub Release（不会误传脚本自身），AtomGit 上已存在的资产自动跳过
+   - GitHub 下载代理（仅下载走代理，上传 AtomGit 直连）解析顺序：
+     `-GitHubProxy` 参数 → `OPENMATE_GITHUB_PROXY` → `HTTPS_PROXY` → `git config --get http.proxy`
+   - 凭据解析顺序：`-User`/`-Token` 参数 → 环境变量 → `%USERPROFILE%\.openmate\atomgit_{user,token}`（凭证**不入库**）
 
-8. **验证 Release**
+   验证（AtomGit 拒绝 HEAD 请求会返回 401，必须用 Range GET）：
+   `curl.exe -s -o NUL -w "%{http_code}" -L -r 0-1023 "https://atomgit.com/article88/openmate/releases/download/v{版本号}/OpenMate-{版本号}.apk"` 应返回 `206`
+
+9. **验证 Release**
    - `gh release view v{版本号}` 确认 Release 已创建且产物完整
    - 核对产物清单（见下）
 
-9. **更新 version.json（Release 成功后）**
+10. **更新 version.json（Release 成功后）**
    - **必须在 GitHub Release 创建且产物上传完成之后执行此步骤**
    - 编辑 `D:\openmate\version.json`，将 android 和 bridge 的 version、tag、releasedAt 更新为新版本
    - **保留 `mirrors` 字段**（按区域分组的下载镜像，客户端据此选择 GitHub / AtomGit）。不要删除或改动它，否则国内用户更新下载会退回 GitHub
@@ -103,7 +105,7 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
    - `git add version.json && git commit -m "chore: update version.json to v{版本号}"`
    - `git push origin main`
 
-10. **同步 version.json 到 Gateway 服务器**
+11. **同步 version.json 到 Gateway 服务器**
     - `scp D:\openmate\version.json root@gateway.clawmate.net:/data/relay-gateway/static/version.json`
     - 这确保客户端通过 `https://gateway.clawmate.net/version.json`（主源）立即获取到新版
     - nginx 已配置 `Cache-Control: no-store`，无需额外清缓存
