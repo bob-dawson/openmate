@@ -208,6 +208,12 @@ class OpencodeApiClient(
         postV2Unit("/api/session/$sessionID/interrupt", emptyMap<String, String>(), params)
     }
 
+    suspend fun backgroundSession(sessionID: String, directory: String? = null) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["location[directory]"] = it }
+        postV2Unit("/api/session/$sessionID/background", emptyMap<String, String>(), params)
+    }
+
     suspend fun revertSession(sessionID: String, messageID: String, partID: String? = null, directory: String? = null) {
         val body = mutableMapOf<String, String>()
         body["messageID"] = messageID

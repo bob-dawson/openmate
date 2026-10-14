@@ -789,6 +789,58 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun background_requestsBackgroundAndKeepsRunning() = runTest(dispatcher) {
+        val repository = FakeSessionMessageRepository(
+            recentWindow = listOf(
+                SessionMessage(
+                    id = "u1",
+                    sessionId = SESSION_ID,
+                    type = "user",
+                    data = "{}",
+                    timeCreated = 500L,
+                    timeUpdated = 500L,
+                    roundMark = true,
+                ),
+                SessionMessage(
+                    id = "m-running",
+                    sessionId = SESSION_ID,
+                    type = "assistant",
+                    data = """
+                        {
+                          "content": [
+                            {
+                              "type": "text",
+                              "text": "Working"
+                            }
+                          ]
+                        }
+                    """.trimIndent(),
+                    timeCreated = 1_000L,
+                    timeUpdated = 1_000L,
+                    completedAt = null,
+                    roundMark = false,
+                ),
+            ),
+        )
+        val sessionRepository = FakeSessionRepository()
+        val viewModel = createViewModel(
+            sessionMessageRepository = repository,
+            sessionRepository = sessionRepository,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        advanceUntilIdle()
+        waitUntil { viewModel.currentBusyStart.value != null }
+
+        viewModel.background(SESSION_ID)
+        waitUntil { sessionRepository.backgroundCalls == 1 }
+
+        assertThat(sessionRepository.backgroundCalls).isEqualTo(1)
+        assertThat(sessionRepository.abortCalls).isEqualTo(0)
+        assertThat(viewModel.sessionStatus.value).isNotEqualTo(SessionStatus.IDLE.name)
+    }
+
+    @Test
     fun abort_stopsBusyTimerWhenNoAssistantMessageYet() = runTest(dispatcher) {
         val repository = FakeSessionMessageRepository(
             recentWindow = listOf(
@@ -1199,6 +1251,8 @@ class SessionDetailViewModelTest {
         private val retryStatusFlow = MutableStateFlow(retryStatus)
         var abortCalls = 0
 
+        var backgroundCalls = 0
+
         private val session = Session(
             id = SESSION_ID,
             title = "Session",
@@ -1222,6 +1276,10 @@ class SessionDetailViewModelTest {
 
         override suspend fun abortSession(id: String, directory: String?) {
             abortCalls += 1
+        }
+
+        override suspend fun backgroundSession(id: String, directory: String?) {
+            backgroundCalls += 1
         }
 
         override suspend fun refreshSessionStatuses(directory: String?) = Unit

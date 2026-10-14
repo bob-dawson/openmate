@@ -153,6 +153,10 @@ class SessionRepositoryImpl @Inject constructor(
         api.abortSession(id, directory)
     }
 
+    override suspend fun backgroundSession(id: String, directory: String?) {
+        api.backgroundSession(id, directory)
+    }
+
     override suspend fun refreshSessionStatuses(directory: String?) {
         try {
             val statusMap = api.getSessionStatuses(directory)

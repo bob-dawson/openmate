@@ -21,6 +21,7 @@
 
     <string name="chat">Chat</string>
     <string name="abort">Abort</string>
+    <string name="run_in_background">Run in background</string>
     <string name="model">Model</string>
     <string name="mode_plan">Mode: Plan → Build</string>
     <string name="mode_build">Mode: Build → Plan</string>

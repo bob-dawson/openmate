@@ -153,6 +153,7 @@ fun SessionDetailScreen(
     val sessionTotalDuration by viewModel.sessionTotalDuration.collectAsState()
     val currentBusyStart by viewModel.currentBusyStart.collectAsState()
     val sessionRetryStatus by viewModel.sessionRetryStatus.collectAsState()
+    val isBusy = currentBusyStart != null || sessionRetryStatus != null
     val inputText by viewModel.inputText.collectAsState()
     val sessionTitle by viewModel.sessionTitle.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
@@ -482,6 +483,14 @@ fun SessionDetailScreen(
                                 },
                             )
                             DropdownMenuItem(
+                                text = { Text(stringResource(R.string.run_in_background)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    viewModel.background(sessionID)
+                                },
+                                enabled = isBusy,
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(R.string.abort)) },
                                 onClick = {
                                     menuExpanded = false
@@ -539,7 +548,6 @@ fun SessionDetailScreen(
             )
         },
     ) { padding ->
-        val isBusy = currentBusyStart != null || sessionRetryStatus != null
         val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
             val revertFromId = sessionRevert?.from
             val filtered = if (revertFromId != null) {

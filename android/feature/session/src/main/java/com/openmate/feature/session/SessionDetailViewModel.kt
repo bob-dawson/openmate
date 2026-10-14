@@ -885,6 +885,15 @@ class SessionDetailViewModel @Inject constructor(
         draftSessionID?.let { saveDraft(it, text, _attachedFiles.value) }
     }
 
+    fun background(sessionID: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                sessionRepository.backgroundSession(sessionID, currentDirectory.ifBlank { null })
+                refresh()
+            } catch (_: Exception) {}
+        }
+    }
+
     fun abort(sessionID: String) {
         abortSuppressed = true
         _currentBusyStart.value = null

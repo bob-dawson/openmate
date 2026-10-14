@@ -148,6 +148,8 @@ class SubtaskDetailScreenRunningAnchorTest {
         override suspend fun deleteSession(id: String) = Unit
         override suspend fun updateSession(id: String, title: String?, directory: String?) = Unit
         override suspend fun abortSession(id: String, directory: String?) = Unit
+
+        override suspend fun backgroundSession(id: String, directory: String?) = Unit
         override suspend fun refreshSessionStatuses() = Unit
         override suspend fun syncSessionStatusFromRemote(sessionID: String) = Unit
         override fun observeSessions(directory: String?): Flow<List<Session>> = flowOf(listOf(session))

@@ -528,6 +528,8 @@ class ConnectionManagerTest {
 
         override suspend fun abortSession(id: String, directory: String?) = Unit
 
+        override suspend fun backgroundSession(id: String, directory: String?) = Unit
+
         override suspend fun refreshSessionStatuses(directory: String?) {
             refreshCalls.incrementAndGet()
         }

@@ -21,6 +21,7 @@
 
     <string name="chat">聊天</string>
     <string name="abort">终止</string>
+    <string name="run_in_background">后台运行</string>
     <string name="model">模型</string>
     <string name="mode_plan">模式: 规划 → 构建</string>
     <string name="mode_build">模式: 构建 → 规划</string>
