@@ -102,8 +102,16 @@ if (-not [string]::IsNullOrWhiteSpace($GitHubProxy)) { Write-Output "github down
 try {
     New-Item -ItemType Directory -Force $workDir | Out-Null
 
-    # 1) Ensure the release exists (409 "already exists" is fine).
-    $body = @{ tag_name = $Tag; name = $Tag; body = ''; prerelease = $false } | ConvertTo-Json
+    # 1) Ensure the release exists (409/400 "already exists" is fine).
+    # AtomGit rejects an empty `body`, so mirror the GitHub release notes (or a fallback line).
+    $notes = ''
+    try {
+        $notes = (Invoke-WithGitHubProxy { gh release view $Tag --json body --jq '.body' }) -join "`n"
+    } catch {
+        Write-Output "fetch release notes -> $($_.Exception.Message)"
+    }
+    if ([string]::IsNullOrWhiteSpace($notes)) { $notes = "OpenMate $Tag release assets." }
+    $body = @{ tag_name = $Tag; name = $Tag; body = $notes; prerelease = $false } | ConvertTo-Json
     try {
         Invoke-RestMethod -Method Post -Uri "$api/releases?access_token=$Token" -Headers $authHeader `
             -ContentType 'application/json' -Body $body -TimeoutSec 60 | Out-Null
