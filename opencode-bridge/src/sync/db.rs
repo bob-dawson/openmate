@@ -6,9 +6,25 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use crate::config::Config;
 
+fn table_exists(pool: &Pool<SqliteConnectionManager>, name: &str) -> bool {
+    pool.get()
+        .ok()
+        .and_then(|conn| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                params![name],
+                |row| row.get::<_, i64>(0),
+            )
+            .ok()
+        })
+        .map(|found| found > 0)
+        .unwrap_or(false)
+}
+
 pub struct SyncDb {
     pool: Pool<SqliteConnectionManager>,
     db_path: PathBuf,
+    sessions_table: &'static str,
 }
 
 impl SyncDb {
@@ -48,7 +64,26 @@ impl SyncDb {
                 .ok();
         }
 
-        Self { pool, db_path: db_path.clone() }
+        let sessions_table = if table_exists(&pool, "session") {
+            "session"
+        } else if table_exists(&pool, "session_v2") {
+            "session_v2"
+        } else {
+            tracing::warn!(
+                "opencode database {} has neither `session` nor `session_v2` table; check opencode.db_path",
+                db_path.display()
+            );
+            "session"
+        };
+        if !table_exists(&pool, "session_message") {
+            tracing::warn!(
+                "opencode database {} has no `session_message` table - sessions will show no messages. \
+                 opencode.db_path should point at the database opencode actually uses (usually opencode.db)",
+                db_path.display()
+            );
+        }
+
+        Self { pool, db_path: db_path.clone(), sessions_table }
     }
 
     pub fn db_path(&self) -> &PathBuf {
@@ -329,14 +364,16 @@ impl SyncDb {
     pub fn get_sessions(&self) -> Result<Vec<Value>, String> {
         tracing::info!("get_sessions: using connection pool");
         let conn = self.conn()?;
-        let mut stmt = conn.prepare(
+        let sql = format!(
             "SELECT s.id, s.title, s.agent, s.model, s.time_created, s.time_updated,
                     CASE WHEN es.seq IS NOT NULL THEN 1 ELSE 0 END as hasEvents,
                     es.seq as maxSeq
-             FROM session s
+             FROM {} s
              LEFT JOIN event_sequence es ON es.aggregate_id = s.id
-             ORDER BY s.time_updated DESC"
-        ).map_err(|e| format!("Prepare failed: {}", e))?;
+             ORDER BY s.time_updated DESC",
+            self.sessions_table
+        );
+        let mut stmt = conn.prepare(&sql).map_err(|e| format!("Prepare failed: {}", e))?;
 
         let sessions: Vec<Value> = stmt.query_map([], |row| {
             let id: String = row.get(0)?;

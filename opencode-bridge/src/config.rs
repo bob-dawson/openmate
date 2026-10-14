@@ -47,8 +47,96 @@ pub struct GatewayConfig {
 
 pub fn default_db_path() -> String {
     let home = dirs::home_dir().unwrap_or_default();
-    let path = home.join(".local").join("share").join("opencode").join("opencode-next.db");
+    let path = home.join(".local").join("share").join("opencode").join("opencode.db");
     path.to_string_lossy().to_string()
+}
+
+/// 解析实际使用的 opencode 数据库文件。
+///
+/// opencode 正式渠道（latest/prod/dev/beta/next）使用 `opencode.db`，早期版本曾用
+/// `opencode-next.db`。配置值可能来自旧默认值或用户手填，这里做一次纠偏：
+/// 配置路径不可用（不存在 / 不是 opencode 库 / 缺少所需表）时，在同目录下按
+/// 「可用 + 文件最大」挑选候选，避免 Bridge 一直读空库（表现为 App 里消息全空）。
+pub fn resolve_opencode_db_path(configured: &str) -> PathBuf {
+    let configured = PathBuf::from(configured);
+    if is_opencode_db(&configured) {
+        return configured;
+    }
+
+    let dir = configured
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    let mut candidates: Vec<(u64, PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|ext| ext != "db").unwrap_or(true) {
+                continue;
+            }
+            if !is_opencode_db(&path) {
+                continue;
+            }
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            candidates.push((size, path));
+        }
+    }
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+
+    match candidates.into_iter().next() {
+        Some((size, path)) => {
+            tracing::warn!(
+                "opencode db_path {} is unusable; using {} instead ({} bytes)",
+                configured.display(),
+                path.display(),
+                size
+            );
+            path
+        }
+        None => {
+            tracing::warn!(
+                "opencode db_path {} is unusable and no candidate was found in {}",
+                configured.display(),
+                dir.display()
+            );
+            configured
+        }
+    }
+}
+
+/// 文件是否为可用的 opencode 数据库（含同步所需的表）。
+fn is_opencode_db(path: &std::path::Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    let Some(conn) = open_db_file(path) else {
+        return false;
+    };
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'
+         AND name IN ('session_message', 'message', 'session', 'session_v2')",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|found| found > 0)
+    .unwrap_or(false)
+}
+
+/// 以只读方式打开数据库；WAL 库在无其他连接时只读打开可能失败，失败则退回读写方式。
+fn open_db_file(path: &std::path::Path) -> Option<rusqlite::Connection> {
+    use rusqlite::OpenFlags;
+    rusqlite::Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .or_else(|_| {
+        rusqlite::Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+    })
+    .ok()
 }
 
 pub fn default_password_path() -> String {
@@ -280,7 +368,7 @@ impl Config {
     }
 
     pub fn db_path(&self) -> std::path::PathBuf {
-        std::path::PathBuf::from(&self.opencode.db_path)
+        resolve_opencode_db_path(&self.opencode.db_path)
     }
 
     pub fn bridge_listen_addr(&self) -> String {
@@ -455,6 +543,36 @@ mod tests {
     fn test_opencode_url() {
         let config = Config::default();
         assert_eq!(config.opencode_url(), "http://127.0.0.1:4096");
+    }
+
+    #[test]
+    fn test_default_db_path_uses_opencode_db() {
+        assert!(default_db_path().ends_with("opencode.db"));
+    }
+
+    #[test]
+    fn test_resolve_db_path_falls_back_to_real_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = dir.path().join("opencode-next.db");
+        let real = dir.path().join("opencode.db");
+
+        std::fs::File::create(&stale).unwrap();
+        let conn = rusqlite::Connection::open(&real).unwrap();
+        conn.execute_batch("CREATE TABLE session_message (id TEXT);").unwrap();
+        drop(conn);
+
+        assert_eq!(resolve_opencode_db_path(&stale.to_string_lossy()), real);
+    }
+
+    #[test]
+    fn test_resolve_db_path_keeps_usable_configured_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let configured = dir.path().join("custom.db");
+        let conn = rusqlite::Connection::open(&configured).unwrap();
+        conn.execute_batch("CREATE TABLE session_v2 (id TEXT);").unwrap();
+        drop(conn);
+
+        assert_eq!(resolve_opencode_db_path(&configured.to_string_lossy()), configured);
     }
 
     #[test]

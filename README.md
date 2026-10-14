@@ -71,7 +71,7 @@ OpenMate has three components:
 |----------|--------|
 | Windows | ✅ Supported |
 | Linux (x86_64, arm64) | ✅ Supported |
-| macOS (Apple Silicon) | ⚠️ Should work, but not yet tested |
+| macOS (Apple Silicon) | ✅ Supported |
 
 Linux binaries are statically linked (musl) and run on any distribution regardless of glibc version. Prebuilt binaries for all platforms are on the [Releases](../../releases) page. The Android app requires Android 8.0+ (API 26+).
 
@@ -89,6 +89,9 @@ openmate.exe
 
 # Linux
 ./openmate
+
+# macOS (Apple Silicon)
+./openmate-darwin-arm64
 ```
 
 The Bridge auto-starts opencode and begins listening — it also auto-connects to the cloud relay, so you can reach it from any network.
