@@ -1,0 +1,1 @@
+Background execution for running tasks: use the session menu ("Run in background", right above Abort) to move a running task to the background instead of interrupting it, keep chatting, and get a notification in the session when it finishes.
