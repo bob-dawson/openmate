@@ -137,8 +137,29 @@ try {
         }
 
         $local = Join-Path $workDir $name
-        Invoke-WithGitHubProxy { gh release download $Tag -p $name -D $workDir --clobber }
-        if (-not (Test-Path $local)) { Write-Output "download ERR $name"; $failures++; continue }
+        # gh's own downloader stalls on large assets when it has to tunnel through a
+        # local proxy; curl streams them reliably and much faster.
+        $downArgs = @(
+            '--silent', '--show-error', '--location', '--fail',
+            '--retry', '3', '--retry-delay', '5',
+            '--connect-timeout', '20', '--max-time', '1800',
+            '-o', $local
+        )
+        if ([string]::IsNullOrWhiteSpace($GitHubProxy)) {
+            $downArgs += @('--noproxy', '*')
+        } else {
+            $downArgs += @('--proxy', $GitHubProxy)
+        }
+        $downArgs += "https://github.com/bob-dawson/openmate/releases/download/$Tag/$name"
+        $downStart = Get-Date
+        & curl.exe @downArgs | Out-Null
+        $downSecs = [int]((Get-Date) - $downStart).TotalSeconds
+        if (-not (Test-Path $local) -or (Get-Item $local).Length -le 0) {
+            Write-Output "download ERR $name"
+            $failures++
+            continue
+        }
+        Write-Output ("  downloaded $name ({0:N1} MB in ${downSecs}s)" -f ((Get-Item $local).Length / 1MB))
 
         $encoded = [uri]::EscapeDataString($name)
         try {
