@@ -71,7 +71,7 @@ OpenMate 由三个组件构成：
 |----------|--------|
 | Windows | ✅ 支持 |
 | Linux (x86_64, arm64) | ✅ 支持 |
-| macOS (Apple Silicon) | ⚠️ 应该可用，但尚未测试 |
+| macOS (Apple Silicon) | ✅ 支持 |
 
 Linux 二进制为静态链接（musl），可在任意发行版上运行，无 glibc 版本要求。各平台预编译二进制均可在 [Releases](../../releases) 页面下载。Android 客户端需 Android 8.0+（API 26+）。
 
@@ -81,43 +81,19 @@ Linux 二进制为静态链接（musl），可在任意发行版上运行，无 
 
 ### 1. 安装 Bridge
 
-OpenMate 是 opencode 的配套产品，最省事的装法就是**把下面这段发给 opencode** —— 它会自己识别系统与架构、
-选择你所在区域更快的镜像并把 Bridge 跑起来：
-
-```text
-请在这台电脑上安装并启动 OpenMate Bridge（OpenMate 手机客户端的配套服务）：
-1. 判断当前操作系统与 CPU 架构；
-2. 读取 https://gateway.clawmate.net/version.json 里的 bridge.tag（失败则用
-   https://raw.githubusercontent.com/bob-dawson/openmate/main/version.json）；
-3. 从 {源}/{tag}/{文件名} 下载：中国大陆优先 https://atomgit.com/article88/openmate/releases/download，
-   其他地区优先 https://github.com/bob-dawson/openmate/releases/download，失败换另一个重试；
-4. 文件名：Windows 用 openmate.exe，Linux x86_64/arm64 用 openmate-linux-x86_64 / openmate-linux-arm64，
-   macOS Apple Silicon 用 openmate-darwin-arm64；
-5. Windows 保存到 %LOCALAPPDATA%\OpenMate\openmate.exe；macOS/Linux 装到 ~/.local/bin/openmate 并 chmod +x；
-6. 后台启动它，用 http://127.0.0.1:4097/api/bridge/status 确认，然后告诉我管理页面地址与配对方式。
-不要修改我现有的全局 npm 配置；如果这台机器没装 opencode v2，请先告诉我。
-```
-
-更多选项（开机自启、自定义路径、常见问题）见[安装文档](docs/INSTALL.zh-CN.md)。
-
-也可以从 [Releases](../../releases) 下载对应平台的 Bridge，然后运行：
-
-```bash
-# Windows
-openmate.exe
-
-# Linux
-./openmate
-
-# macOS（Apple Silicon）
-./openmate-darwin-arm64
-```
-
-Bridge 会自动启动 opencode 并开始监听——同时会自动连接云中继，因此你在任何网络下都能访问到它。
+Bridge 运行在你电脑上与 opencode 并存，**推荐直接让 opencode 来装**：把[安装文档](docs/INSTALL.zh-CN.md)
+里那段指令粘贴给它，它会自动识别系统与架构、选择你所在区域更快的镜像并把 Bridge 跑起来。
+想自己动手也可以从 [Releases](../../releases) 下载对应平台的产物运行——两条路径、开机自启与常见问题都写在安装文档里。
 
 ### 2. 安装 Android 客户端
 
-**直接安装 APK：** 打开 <https://gateway.clawmate.net/app>（自动选更快的镜像）或从 [Releases](../../releases) 下载 `OpenMate-{version}.apk`；手机扫码见[安装文档](docs/INSTALL.zh-CN.md#android-客户端)。
+<p align="center">
+  <img src="docs/assets/qr-app.png" width="150" alt="下载 OpenMate 客户端">
+</p>
+
+手机扫码下载即可，页面会自动选择更快的镜像（GitHub / AtomGit）。也可以从
+[Releases](../../releases) 下载 `OpenMate-{version}.apk`，或使用
+[AtomGit 国内镜像](https://atomgit.com/article88/openmate)。
 
 **自动更新（Obtainium）：** 安装 [Obtainium](https://github.com/ImranR98/Obtainium)，添加源 `https://github.com/bob-dawson/openmate`。Obtainium 会跟踪 GitHub Releases，每次新版本都会提示一键更新。
 
