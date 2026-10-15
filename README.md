@@ -81,16 +81,26 @@ Linux binaries are statically linked (musl) and run on any distribution regardle
 
 ### 1. Install Bridge
 
-One line — the installer picks the right build, mirror and autostart for your platform
-(see the [Installation Guide](docs/INSTALL.md) for options, manual install and troubleshooting):
+OpenMate is an opencode companion, so the quickest install is one prompt — paste this into opencode
+and it detects your OS/CPU, picks a mirror that is fast in your region and starts the Bridge:
 
-```bash
-# Linux / macOS
-curl -fsSL https://gateway.clawmate.net/install.sh | sh
-
-# Windows (PowerShell)
-irm https://gateway.clawmate.net/install.ps1 | iex
+```text
+Install and start OpenMate Bridge here (the companion service for the OpenMate Android app):
+1. detect my OS + CPU architecture;
+2. read bridge.tag from https://gateway.clawmate.net/version.json (fallback:
+   https://raw.githubusercontent.com/bob-dawson/openmate/main/version.json);
+3. download {mirror}/{tag}/{file}, preferring https://atomgit.com/article88/openmate/releases/download
+   in mainland China and https://github.com/bob-dawson/openmate/releases/download elsewhere;
+   retry with the other mirror on failure;
+4. file: openmate.exe (Windows) | openmate-linux-x86_64 | openmate-linux-arm64 | openmate-darwin-arm64;
+5. install to %LOCALAPPDATA%\OpenMate\openmate.exe (Windows) or ~/.local/bin/openmate + chmod +x
+   (macOS/Linux);
+6. start it in the background, verify http://127.0.0.1:4097/api/bridge/status, then tell me the
+   admin page URL and how to pair my phone.
+Do not change my global npm config. Tell me first if opencode v2 is missing.
 ```
+
+More options (autostart, custom paths, troubleshooting): [Installation Guide](docs/INSTALL.md).
 
 Or download the Bridge for your platform from [Releases](../../releases), then run it:
 
@@ -109,7 +119,7 @@ The Bridge auto-starts opencode and begins listening — it also auto-connects t
 
 ### 2. Install Android App
 
-**Direct APK:** download `OpenMate-{version}.apk` from [Releases](../../releases) and install on your phone. Or scan the QR code in the [Installation Guide](docs/INSTALL.md#android-app).
+**Direct APK:** open <https://gateway.clawmate.net/app> — it picks the fast mirror for you — or download `OpenMate-{version}.apk` from [Releases](../../releases). Phone QR code: [Installation Guide](docs/INSTALL.md#android-app).
 
 **China mirror:** if GitHub is slow or unreachable, download the same APK from the [AtomGit mirror](https://atomgit.com/article88/openmate).
 

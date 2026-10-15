@@ -2,52 +2,51 @@
 
 ## Quick install
 
-### Bridge — command line
+### Bridge — paste this into opencode
 
-**Linux / macOS**
+OpenMate is an opencode companion, so the easiest way to install the Bridge is to let
+opencode itself do it. Copy the block below into an opencode session and send it:
 
-```bash
-curl -fsSL https://gateway.clawmate.net/install.sh | sh
+```text
+Install and start OpenMate Bridge on this machine - it is the companion service for the OpenMate Android app.
+
+1. Detect my operating system and CPU architecture (Windows / Linux / macOS; x86_64 / arm64).
+2. Fetch the latest version: GET https://gateway.clawmate.net/version.json (fall back to
+   https://raw.githubusercontent.com/bob-dawson/openmate/main/version.json) and read bridge.tag.
+3. Choose a download mirror: in mainland China prefer
+   https://atomgit.com/article88/openmate/releases/download, otherwise prefer
+   https://github.com/bob-dawson/openmate/releases/download. If a download fails or times out,
+   retry with the other mirror.
+4. Download the asset for this machine from {mirror}/{tag}/{file}:
+   - Windows x64 -> openmate.exe
+   - Linux x86_64 -> openmate-linux-x86_64
+   - Linux arm64 -> openmate-linux-arm64
+   - macOS Apple Silicon -> openmate-darwin-arm64
+5. Install it: Windows -> %LOCALAPPDATA%\OpenMate\openmate.exe; macOS/Linux -> ~/.local/bin/openmate
+   with chmod +x (tell me if that directory is not in PATH).
+6. Start it in the background (macOS/Linux: nohup, log to ~/.openmate/bridge.log).
+7. Verify with GET http://127.0.0.1:4097/api/bridge/status, then tell me the admin page URL and
+   how to pair my phone.
+8. Only if I ask for autostart: Linux -> sudo <path>/openmate install; Windows -> run
+   openmate.exe install as administrator; macOS -> a launchd agent.
+
+Do not change my global npm configuration. If opencode v2 is not installed here, tell me first.
 ```
 
-**Windows (PowerShell)**
-
-```powershell
-irm https://gateway.clawmate.net/install.ps1 | iex
-```
-
-The installer detects your OS and CPU, reads the current version from `version.json`,
-prefers the download mirror for your region (GitHub / AtomGit) and falls back to the other
-one when a download fails. Both scripts live in this repository — read them first if you
-prefer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bob-dawson/openmate/main/scripts/install.sh | sh
-```
-
-Useful options:
-
-```bash
-# autostart at login / boot (systemd on Linux, launchd on macOS)
-curl -fsSL https://gateway.clawmate.net/install.sh | sh -s -- --service
-
-# pin a version, install elsewhere, or force a mirror order
-curl -fsSL https://gateway.clawmate.net/install.sh | sh -s -- --version v0.3.9 --dir ~/bin --region cn
-```
-
-> `scripts/install.sh` and `scripts/install.ps1` are the sources; the gateway URLs above
-> are just copies for a short one-liner.
+That is all — opencode detects your platform, picks the mirror that is fast in your region and
+starts the Bridge. Prefer to do it yourself? See [Manual install](#manual-install) below.
 
 ### Android app
 
-Scan with your phone — the release page opens, pick the newest APK:
+Scan with your phone — the page picks the fastest mirror (GitHub / AtomGit) automatically:
 
-| China (AtomGit) | Global (GitHub) |
-|:---:|:---:|
-| <img src="assets/qr-app-atomgit.png" width="180" alt="AtomGit releases"> | <img src="assets/qr-app-github.png" width="180" alt="GitHub releases"> |
+<p align="center">
+  <img src="assets/qr-app.png" width="200" alt="Download the OpenMate app">
+</p>
 
-Direct links: [AtomGit](https://atomgit.com/article88/openmate/releases) ·
-[GitHub](https://github.com/bob-dawson/openmate/releases/latest)
+Or open <https://gateway.clawmate.net/app> directly, or download `OpenMate-*.apk` from
+[Releases](https://github.com/bob-dawson/openmate/releases/latest) /
+[AtomGit mirror](https://atomgit.com/article88/openmate/releases).
 
 ## Manual install
 
@@ -57,17 +56,29 @@ The Bridge is the proxy service that connects the Android client to opencode.
 
 #### Windows
 
-1. Double-click `openmate.exe` to run
+1. Download `openmate.exe` from [Releases](https://github.com/bob-dawson/openmate/releases/latest) and double-click it
 2. After the Bridge starts, a **QR code** is displayed in the terminal or the admin page
 
 #### Linux / macOS
 
 ```bash
-chmod +x openmate          # macOS: openmate-darwin-arm64
+# Linux: openmate-linux-x86_64 or openmate-linux-arm64
+# macOS: openmate-darwin-arm64
+chmod +x openmate
 ./openmate
 ```
 
 After the Bridge starts, a **QR code** is displayed in the terminal.
+
+#### Optional: repository scripts
+
+`scripts/install.sh` (Linux/macOS) and `scripts/install.ps1` (Windows) do the same steps
+non-interactively — handy for unattended setups. They read `version.json`, prefer the mirror
+for your region and fall back to the other one:
+
+```bash
+sh scripts/install.sh --service        # --version v0.3.9 --dir ~/bin --region cn also work
+```
 
 #### Install as a System Service (Optional)
 
@@ -79,13 +90,13 @@ After the Bridge starts, a **QR code** is displayed in the terminal.
 On Windows, running as a service is generally not recommended because it requires setting up
 a separate service account and password. Running as a regular application is sufficient —
 auto-start on boot can be configured in the admin page. On macOS there is no `install`
-subcommand; use the launchd agent created by `install.sh --service`.
+subcommand; use a launchd agent (`scripts/install.sh --service` writes one).
 
 ### 2. Install the Android APK
 
 Download `OpenMate-*.apk` from [Releases](https://github.com/bob-dawson/openmate/releases/latest)
 (or the [AtomGit mirror](https://atomgit.com/article88/openmate/releases)) and install it on
-your phone — or just scan one of the QR codes above.
+your phone — or just scan the QR code above.
 
 ### 3. Scan to Pair
 

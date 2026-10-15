@@ -105,10 +105,11 @@ description: 发布 OpenMate 新版本。当用户提到"发布"、"release"、"
    - `git add version.json && git commit -m "chore: update version.json to v{版本号}"`
    - `git push origin main`
 
-11. **同步 version.json 到 Gateway 服务器**
+11. **同步 version.json 与 App 下载页到 Gateway 服务器**
     - `scp D:\openmate\version.json root@gateway.clawmate.net:/data/relay-gateway/static/version.json`
-    - `scp D:\openmate\scripts\install.sh D:\openmate\scripts\install.ps1 root@gateway.clawmate.net:/data/relay-gateway/static/`
-      （`docs/INSTALL.md` / `INSTALL.zh-CN.md` 里的快速安装一条命令用的就是 `https://gateway.clawmate.net/install.sh` 与 `install.ps1`）
+    - `scp D:\openmate\docs\download.html root@gateway.clawmate.net:/data/relay-gateway/static/download.html`
+      （App 扫码下载页 `https://gateway.clawmate.net/app`，nginx 用 `alias` 指向该文件；该页自行读取 version.json 并按区域选镜像。
+      **只有页面本身有改动时才需要重传**，日常发版只更新 version.json）
     - 这确保客户端通过 `https://gateway.clawmate.net/version.json`（主源）立即获取到新版
     - nginx 已配置 `Cache-Control: no-store`，无需额外清缓存
 
