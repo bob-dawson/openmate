@@ -425,6 +425,84 @@ class SessionMessageRepositoryImplTest {
         assertThat(rendered.any { it.contains("增量同步失败") }).isTrue()
     }
 
+    @Test
+    fun incrementalSync_keepsOptimisticUserMessageUntilServerConfirmsIt() = runTest {
+        server.enqueue(MockResponse().setBody("""{"events":[],"maxSeq":1}"""))
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "messages": [
+                    {"id":"m1","sessionId":"session-1","type":"user","timeCreated":1,"timeUpdated":1,"data":{"text":"hello"}},
+                    {"id":"m2","sessionId":"session-1","type":"assistant","timeCreated":2,"timeUpdated":2,"data":{"content":[],"time":{"created":2}}}
+                  ],
+                  "maxSeq": 1
+                }
+                """.trimIndent(),
+            ),
+        )
+        repository.initSync(SESSION_ID, limit = 30)
+
+        repository.insertOptimisticUserMessage(SESSION_ID, "u-new", "hi", created = 100L)
+
+        server.enqueue(
+            MockResponse().setBody("""{"messages":[],"hasMore":false,"maxSeq":2,"serverCount":2}"""),
+        )
+        server.enqueue(MockResponse().setBody("""{"ids":["m1","m2"]}"""))
+
+        repository.incrementalSync(SESSION_ID)
+
+        val dao = dbProvider.getActive().sessionMessageDao()
+        assertThat(dao.getById("u-new")).isNotNull()
+        assertThat(dao.getById("m2")).isNotNull()
+    }
+
+    @Test
+    fun incrementalSync_resumesDeletionReconciliationAfterServerConfirmsEcho() = runTest {
+        server.enqueue(MockResponse().setBody("""{"events":[],"maxSeq":1}"""))
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "messages": [
+                    {"id":"m1","sessionId":"session-1","type":"user","timeCreated":1,"timeUpdated":1,"data":{"text":"hello"}},
+                    {"id":"m2","sessionId":"session-1","type":"assistant","timeCreated":2,"timeUpdated":2,"data":{"content":[],"time":{"created":2}}}
+                  ],
+                  "maxSeq": 1
+                }
+                """.trimIndent(),
+            ),
+        )
+        repository.initSync(SESSION_ID, limit = 30)
+        repository.insertOptimisticUserMessage(SESSION_ID, "u-new", "hi", created = 100L)
+
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "messages": [
+                    {"id":"u-new","sessionId":"session-1","type":"user","timeCreated":100,"timeUpdated":100,"data":{"text":"hi"}}
+                  ],
+                  "hasMore": false,
+                  "maxSeq": 2
+                }
+                """.trimIndent(),
+            ),
+        )
+        repository.incrementalSync(SESSION_ID)
+
+        server.enqueue(
+            MockResponse().setBody("""{"messages":[],"hasMore":false,"maxSeq":3,"serverCount":2}"""),
+        )
+        server.enqueue(MockResponse().setBody("""{"ids":["m1","u-new"]}"""))
+
+        repository.incrementalSync(SESSION_ID)
+
+        val dao = dbProvider.getActive().sessionMessageDao()
+        assertThat(dao.getById("m2")).isNull()
+        assertThat(dao.getById("u-new")).isNotNull()
+    }
+
     private companion object {
         const val PROFILE_ID = "profile-1"
         const val SESSION_ID = "session-1"
