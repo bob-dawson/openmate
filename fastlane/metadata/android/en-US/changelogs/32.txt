@@ -1,0 +1,1 @@
+Fixed opencode becoming unusable after an interrupted upgrade: the Bridge now verifies the binary before and after upgrading and, if npm left its placeholder behind, stops the service and reinstalls it via npm automatically. The opencode version shown in the app also refreshes after an upgrade without restarting the Bridge.
