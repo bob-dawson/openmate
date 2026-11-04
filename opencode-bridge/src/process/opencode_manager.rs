@@ -83,28 +83,14 @@ impl OpencodeManager {
 
     pub async fn check_health(&self) -> bool {
         let base = crate::config::read_service_url().unwrap_or_else(|| self.opencode_url.clone());
-        let url = format!("{}/api/info", base);
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(2))
-            .connect_timeout(std::time::Duration::from_secs(1))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
-        let auth = crate::config::Config::quick_auth_header();
-        let mut req = client.get(&url);
-        if let Some(a) = auth {
-            req = req.header("Authorization", a);
-        }
-        match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                if let Ok(body) = resp.json::<serde_json::Value>().await {
-                    if let Some(version) = body.get("version").and_then(|v| v.as_str()) {
-                        let mut cached = self.opencode_version.write().await;
-                        *cached = Some(version.to_string());
-                    }
+        match fetch_health_version(&base).await {
+            Some(version) => {
+                if !version.is_empty() {
+                    *self.opencode_version.write().await = Some(version);
                 }
                 true
             }
-            _ => false,
+            None => false,
         }
     }
 
@@ -132,6 +118,7 @@ impl OpencodeManager {
 
         let url = self.opencode_url.clone();
         let status_arc = self.status.clone();
+        let version_arc = self.opencode_version.clone();
         let auto_restart = *self.auto_restart;
         let binary_r = binary.clone();
 
@@ -142,9 +129,12 @@ impl OpencodeManager {
             while retry_count < max_retries {
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
-                if check_health_url(&url).await {
+                if let Some(version) = fetch_health_version(&url).await {
                     let mut s = status_arc.write().await;
                     *s = OpencodeStatus::Running;
+                    if !version.is_empty() {
+                        *version_arc.write().await = Some(version);
+                    }
                     tracing::info!("opencode service is ready");
                     break;
                 }
@@ -173,8 +163,14 @@ impl OpencodeManager {
                     return;
                 }
 
-                if check_health_url(&url).await {
+                if let Some(version) = fetch_health_version(&url).await {
                     health_failures = 0;
+                    if !version.is_empty() {
+                        let mut cached = version_arc.write().await;
+                        if cached.as_deref() != Some(version.as_str()) {
+                            *cached = Some(version);
+                        }
+                    }
                 } else {
                     health_failures += 1;
                     tracing::warn!("opencode health check failed ({}/3)", health_failures);
@@ -186,11 +182,12 @@ impl OpencodeManager {
                         if auto_restart {
                             tracing::info!("Auto-restarting opencode service...");
                             let status_arc_r = status_arc.clone();
+                            let version_arc_r = version_arc.clone();
                             let url_r = url.clone();
                             let binary_rr = binary_r.clone();
                             tokio::spawn(async move {
                                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-                                restart_service_loop(&binary_rr, &url_r, &status_arc_r).await;
+                                restart_service_loop(&binary_rr, &url_r, &status_arc_r, &version_arc_r).await;
                             });
                         }
                         return;
@@ -398,17 +395,29 @@ impl OpencodeManager {
         let prev_ver_clone = previous_version.clone();
         let binary = self.binary.clone();
 
-        let failure = |error: String, prev: Option<String>, cur: Option<String>| UpgradeResult {
+        let make_failure = |error: String| UpgradeResult {
             success: false,
-            previous_version: prev,
+            previous_version: previous_version.clone(),
             new_version: None,
             error: Some(error),
             recovered: Some(true),
-            current_version: cur,
+            current_version: prev_ver_clone.clone(),
         };
 
         // 依次尝试候选 npm 源（最多 MAX_UPGRADE_ATTEMPTS 个）：源太慢或不可用时顺延下一个。
         let registries = self.upgrade_registries().await;
+        let primary_registry = registries.first().cloned();
+
+        // 上一次升级被 opencode 内部的 300s 上限打断，会留下 npm 的占位 bin
+        // （内容就是 "postinstall was not run"），此时 opencode 已不可执行，
+        // 再跑 `opencode upgrade` 只会秒失败，直接用 npm 修复。
+        if !self.verify_opencode().await {
+            tracing::warn!("opencode is not runnable (interrupted npm install?); repairing instead of upgrading");
+            return self
+                .repair_and_restart(primary_registry.as_deref(), previous_version, prev_ver_clone)
+                .await;
+        }
+
         let attempts: Vec<Option<String>> = if registries.is_empty() {
             vec![None]
         } else {
@@ -440,14 +449,22 @@ impl OpencodeManager {
                         String::from_utf8_lossy(&output.stdout).trim()
                     );
 
+                    // 安装可能在 postinstall 前被打断（占位 bin 还留在原地），先校验再重启。
+                    if !self.verify_opencode().await {
+                        tracing::warn!("upgrade reported success but the binary is not runnable; repairing via npm");
+                        return self
+                            .repair_and_restart(registry.as_deref(), previous_version, prev_ver_clone)
+                            .await;
+                    }
+
                     if let Err(e) = self.restart().await {
                         let error = format!("Upgrade succeeded but restart failed: {}", e);
                         tracing::error!("{}", error);
-                        return Ok(failure(error, previous_version, prev_ver_clone));
+                        return Ok(make_failure(error));
                     }
 
                     // 等待服务恢复并刷新缓存版本
-                    for _ in 0..15 {
+                    for _ in 0..HEALTH_WAIT_ATTEMPTS {
                         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                         if self.check_health().await {
                             break;
@@ -480,7 +497,113 @@ impl OpencodeManager {
             }
         }
 
-        Ok(failure(last_error, previous_version, prev_ver_clone))
+        // 所有尝试都失败：如果二进制已经被写坏，至少把用户从「opencode 不可用」里救回来。
+        if !self.verify_opencode().await {
+            tracing::warn!("upgrade failed and opencode is not runnable; repairing via npm");
+            return self
+                .repair_and_restart(primary_registry.as_deref(), previous_version, prev_ver_clone)
+                .await;
+        }
+
+        Ok(make_failure(last_error))
+    }
+
+    /// 确认 opencode 可执行。npm 安装被中断时会留下 "postinstall was not run" 的占位 bin，
+    /// 此时 `opencode --version` 会失败（或在 Unix 上打印那句提示）。
+    pub async fn verify_opencode(&self) -> bool {
+        let mut cmd = opencode_cmd(self.binary.as_str()).await;
+        cmd.arg("--version");
+        match run_with_timeout(cmd, VERIFY_TIMEOUT, "opencode --version").await {
+            Ok(output) => version_output_ok(
+                output.status.success(),
+                &String::from_utf8_lossy(&output.stdout),
+                &String::from_utf8_lossy(&output.stderr),
+            ),
+            Err(_) => false,
+        }
+    }
+
+    /// 用 npm 直接重装 @opencode/cli@latest。
+    ///
+    /// 不能走 `opencode upgrade`：安装被打断后连 opencode 本身都不可执行。
+    /// 调用前必须先停服务，否则 Windows 会锁住 exe 导致 npm 替换失败。
+    async fn repair_opencode(&self, registry: Option<&str>) -> Result<(), String> {
+        let mut cmd = npm_cmd().await;
+        cmd.args(["install", "--global", "--force", "@opencode/cli@latest"]);
+        if let Some(registry) = registry.filter(|r| !r.is_empty()) {
+            cmd.env("NPM_CONFIG_REGISTRY", registry);
+        }
+        tracing::info!(
+            "repairing opencode: npm install -g --force @opencode/cli@latest (registry={:?})",
+            registry
+        );
+        let output = run_with_timeout(cmd, REPAIR_TIMEOUT, "npm install @opencode/cli").await?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(if stderr.is_empty() {
+                format!("npm install exited with {}", output.status)
+            } else {
+                stderr
+            });
+        }
+        Ok(())
+    }
+
+    async fn repair_and_restart(
+        &self,
+        registry: Option<&str>,
+        previous_version: Option<String>,
+        prev_ver_clone: Option<String>,
+    ) -> Result<UpgradeResult, String> {
+        let make_failure = |error: String| UpgradeResult {
+            success: false,
+            previous_version: previous_version.clone(),
+            new_version: None,
+            error: Some(error),
+            recovered: Some(true),
+            current_version: prev_ver_clone.clone(),
+        };
+
+        if self.is_running().await {
+            if let Err(e) = self.stop().await {
+                tracing::warn!("stop before repair failed: {}", e);
+            }
+        }
+
+        if let Err(e) = self.repair_opencode(registry).await {
+            tracing::error!("opencode repair failed: {}", e);
+            let _ = self.start().await;
+            return Ok(make_failure(format!(
+                "opencode 安装已损坏，自动修复失败：{}。可在电脑上执行 `npm install -g --force @opencode/cli` 手动修复",
+                e
+            )));
+        }
+
+        if !self.verify_opencode().await {
+            let _ = self.start().await;
+            return Ok(make_failure(
+                "opencode 修复后仍然无法运行，请在电脑上执行 `npm install -g --force @opencode/cli`".to_string(),
+            ));
+        }
+
+        if let Err(e) = self.start().await {
+            return Ok(make_failure(format!("opencode 已修复，但启动失败：{}", e)));
+        }
+        for _ in 0..HEALTH_WAIT_ATTEMPTS {
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            if self.check_health().await {
+                break;
+            }
+        }
+        let current_version = self.get_cached_version().await;
+        Ok(UpgradeResult {
+            success: true,
+            previous_version,
+            new_version: current_version.clone(),
+            error: None,
+            recovered: Some(true),
+            current_version,
+        })
     }
 }
 
@@ -564,6 +687,15 @@ async fn resolved_binary_dir(binary: &str) -> Option<String> {
 
 /// 升级时最多尝试的 npm 源数量（首个 + 一个顺延）。
 const MAX_UPGRADE_ATTEMPTS: usize = 2;
+
+/// 修复安装的超时。直接走 npm（不受 opencode 内部 300s 上限约束），给慢网留足下载时间。
+const REPAIR_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(900);
+
+/// `opencode --version` 的校验超时。
+const VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(25);
+
+/// 升级/修复后等待服务就绪的轮询次数（每次 2s，最长约 90s）。
+const HEALTH_WAIT_ATTEMPTS: usize = 45;
 
 /// 升级超时。略长于 opencode 内部对 npm/pnpm 的 5 分钟上限，让 opencode 自己的
 /// 错误先返回（进程正常退出），而不是 Bridge 先放弃、留下孤儿进程继续替换全局包。
@@ -656,6 +788,52 @@ async fn kill_process_tree(pid: u32) {
         .await;
 }
 
+/// 判断 `opencode --version` 的输出是否来自真实的二进制。
+///
+/// npm 安装被中断时，`@opencode/cli` 自带的占位 bin 会留在原地，内容包含
+/// "postinstall script was not run"，必须当作「不可用」处理并触发修复。
+fn version_output_ok(success: bool, stdout: &str, stderr: &str) -> bool {
+    if !success {
+        return false;
+    }
+    let text = format!("{}{}", stdout, stderr).trim().to_lowercase();
+    !text.is_empty() && !text.contains("postinstall")
+}
+
+/// npm 命令（Windows 上是 `.cmd` shim，需要经 `cmd /C` 执行）。
+async fn npm_cmd() -> tokio::process::Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = tokio::process::Command::new("cmd");
+        cmd.arg("/C").arg("npm");
+        let mut dirs: Vec<String> = Vec::new();
+        for binary in ["npm", "node"] {
+            if let Some(dir) = resolved_binary_dir(binary).await {
+                dirs.push(dir);
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            let dir = home.join("AppData").join("Roaming").join("npm");
+            if dir.exists() {
+                dirs.push(dir.to_string_lossy().to_string());
+            }
+        }
+        prepend_child_paths(&mut cmd, &dirs);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = tokio::process::Command::new("npm");
+        let dirs: Vec<String> = crate::config::extra_binary_dirs()
+            .into_iter()
+            .filter(|dir| dir.exists())
+            .map(|dir| dir.to_string_lossy().to_string())
+            .collect();
+        prepend_child_paths(&mut cmd, &dirs);
+        cmd
+    }
+}
+
 /// 解析可执行文件在 PATH 中的实际路径（`where` / `which`）。
 async fn resolve_binary_path(binary: &str) -> Option<String> {
     if std::path::Path::new(binary).is_absolute() {
@@ -746,7 +924,9 @@ async fn run_service_cmd(binary: &str, args: &[&str]) -> Result<String, String> 
     }
 }
 
-async fn check_health_url(opencode_url: &str) -> bool {
+/// 请求 `/api/info`：成功时返回运行中的 opencode 版本（空串表示响应里没有版本字段）。
+/// 健康检查与监控循环共用，保证版本缓存能随服务状态刷新。
+async fn fetch_health_version(opencode_url: &str) -> Option<String> {
     let base = crate::config::read_service_url().unwrap_or_else(|| opencode_url.to_string());
     let url = format!("{}/api/info", base);
     let client = reqwest::Client::builder()
@@ -759,8 +939,18 @@ async fn check_health_url(opencode_url: &str) -> bool {
         req = req.header("Authorization", a);
     }
     match req.send().await {
-        Ok(resp) if resp.status().is_success() => true,
-        _ => false,
+        Ok(resp) if resp.status().is_success() => {
+            let version = match resp.json::<serde_json::Value>().await {
+                Ok(body) => body
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                Err(_) => String::new(),
+            };
+            Some(version)
+        }
+        _ => None,
     }
 }
 
@@ -768,6 +958,7 @@ async fn restart_service_loop(
     binary: &str,
     opencode_url: &str,
     status_arc: &Arc<RwLock<OpencodeStatus>>,
+    version_arc: &Arc<RwLock<Option<String>>>,
 ) {
     let mut attempt = 0u32;
     loop {
@@ -785,10 +976,13 @@ async fn restart_service_loop(
             }
         }
 
-        if check_health_url(opencode_url).await {
+        if let Some(version) = fetch_health_version(opencode_url).await {
             tracing::info!("opencode health check passed, marking as Running");
             let mut s = status_arc.write().await;
             *s = OpencodeStatus::Running;
+            if !version.is_empty() {
+                *version_arc.write().await = Some(version);
+            }
             return;
         }
 
@@ -812,9 +1006,12 @@ async fn restart_service_loop(
         let mut became_ready = false;
         while retry_count < 30 {
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            if check_health_url(opencode_url).await {
+            if let Some(version) = fetch_health_version(opencode_url).await {
                 let mut s = status_arc.write().await;
                 *s = OpencodeStatus::Running;
+                if !version.is_empty() {
+                    *version_arc.write().await = Some(version);
+                }
                 tracing::info!("opencode is ready after auto-restart");
                 became_ready = true;
                 break;
@@ -859,5 +1056,18 @@ mod tests {
             "killing the process tree took too long: {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn version_output_detects_interrupted_install_stub() {
+        assert!(version_output_ok(true, "opencode v2.1.4\n", ""));
+        assert!(version_output_ok(true, "", "2.1.4"));
+        assert!(!version_output_ok(
+            true,
+            "echo \"Error: @opencode/cli's postinstall script was not run.\"\n",
+            ""
+        ));
+        assert!(!version_output_ok(false, "", "not a valid Win32 application"));
+        assert!(!version_output_ok(true, "   ", ""));
     }
 }
