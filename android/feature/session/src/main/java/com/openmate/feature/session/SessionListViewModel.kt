@@ -60,6 +60,8 @@ class SessionListViewModel @Inject constructor(
                 Log.w(TAG, "refresh skipped: ${e.javaClass.simpleName}")
             }
             _isLoading.value = false
+            // 同 WorkspaceListViewModel.refresh()：列表先出，再异步对账忙碌状态，失败静默。
+            runCatching { sessionRepository.refreshSessionStatuses(currentDirectory) }
         }
     }
 

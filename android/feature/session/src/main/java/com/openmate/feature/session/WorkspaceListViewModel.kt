@@ -87,6 +87,9 @@ class WorkspaceListViewModel @Inject constructor(
                 Log.w(TAG, "refresh skipped: ${e.javaClass.simpleName}")
             }
             _isLoading.value = false
+            // 再对账一次忙碌状态：SSE 的 session.status 是 ephemeral，后台/断连期间会丢，
+            // 回到列表时以 /api/session/active 为准。失败静默，不影响列表。
+            runCatching { sessionRepository.refreshSessionStatuses() }
         }
     }
 
