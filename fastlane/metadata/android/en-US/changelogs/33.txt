@@ -1,0 +1,1 @@
+Fixed the session list showing the wrong busy state: the client treated the server's "running" status as idle, so every status re-sync turned running sessions idle until you opened the session and went back. Also fixed stuck busy states never clearing, and a crash in the execute tool summary when tool arguments were arrays or objects.
