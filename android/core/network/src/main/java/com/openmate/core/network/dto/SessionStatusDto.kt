@@ -13,6 +13,7 @@ data class SessionStatusDto(
 
 fun SessionStatusDto.toDomain(): SessionStatus {
     return when (type) {
+        "running" -> SessionStatus.RUNNING
         "busy" -> SessionStatus.BUSY
         "retry" -> SessionStatus.BUSY
         else -> SessionStatus.IDLE

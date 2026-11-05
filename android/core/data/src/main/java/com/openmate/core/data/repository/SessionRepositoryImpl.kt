@@ -160,7 +160,6 @@ class SessionRepositoryImpl @Inject constructor(
     override suspend fun refreshSessionStatuses(directory: String?) {
         try {
             val statusMap = api.getSessionStatuses(directory)
-            if (statusMap.isEmpty()) return
             val dao = dbProvider.getActive().sessionDao()
             val now = System.currentTimeMillis()
 

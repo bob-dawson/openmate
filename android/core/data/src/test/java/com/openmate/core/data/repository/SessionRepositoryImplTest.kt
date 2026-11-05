@@ -76,18 +76,9 @@ class SessionRepositoryImplTest {
     }
 
     @Test
-    fun syncSessionStatusFromRemote_appliesRemoteBusyStatus() = runTest {
-        dbProvider.getActive().sessionDao().upsert(
-            com.openmate.core.database.entity.SessionEntity(
-                id = SESSION_ID,
-                title = "session",
-                directory = "/workspace",
-                projectID = "",
-                createdAt = 1L,
-                updatedAt = 1L,
-                status = SessionStatus.IDLE.name,
-            ),
-        )
+    fun syncSessionStatusFromRemote_appliesRemoteRunningStatus() = runTest {
+        val dao = dbProvider.getActive().sessionDao()
+        dao.upsert(sessionEntity(SESSION_ID, status = SessionStatus.IDLE.name))
         server.enqueue(
             MockResponse()
                 .setResponseCode(200)
@@ -95,7 +86,7 @@ class SessionRepositoryImplTest {
                     """
                     {
                       "data": {
-                        "$SESSION_ID": { "type": "busy" }
+                        "$SESSION_ID": { "type": "running" }
                       }
                     }
                     """.trimIndent(),
@@ -104,8 +95,64 @@ class SessionRepositoryImplTest {
 
         repository.syncSessionStatusFromRemote(SESSION_ID)
 
-        assertThat(dbProvider.getActive().sessionDao().getById(SESSION_ID)?.status)
-            .isEqualTo(SessionStatus.BUSY.name)
+        val stored = dao.getById(SESSION_ID)
+        assertThat(stored?.status).isEqualTo(SessionStatus.RUNNING.name)
+        assertThat(stored?.startedAt).isNotNull()
+    }
+
+    @Test
+    fun syncSessionStatusFromRemote_clearsStaleBusyWhenNoActiveSessions() = runTest {
+        val dao = dbProvider.getActive().sessionDao()
+        dao.upsert(sessionEntity(SESSION_ID, status = SessionStatus.BUSY.name, startedAt = 123L))
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody("""{"data":{}}"""),
+        )
+
+        repository.syncSessionStatusFromRemote(SESSION_ID)
+
+        val stored = dao.getById(SESSION_ID)
+        assertThat(stored?.status).isEqualTo(SessionStatus.IDLE.name)
+        assertThat(stored?.startedAt).isNull()
+    }
+
+    @Test
+    fun refreshSessionStatuses_keepsRunningSessionAndClearsOthersInOnePass() = runTest {
+        val dao = dbProvider.getActive().sessionDao()
+        dao.upsert(sessionEntity("s-running", status = SessionStatus.BUSY.name, startedAt = 10L))
+        dao.upsert(sessionEntity("s-stale", status = SessionStatus.RUNNING.name, startedAt = 20L))
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(
+                    """
+                    {
+                      "data": {
+                        "s-running": { "type": "running" }
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+        )
+
+        repository.refreshSessionStatuses(null)
+
+        assertThat(dao.getById("s-running")?.status).isEqualTo(SessionStatus.RUNNING.name)
+        assertThat(dao.getById("s-running")?.startedAt).isEqualTo(10L)
+        assertThat(dao.getById("s-stale")?.status).isEqualTo(SessionStatus.IDLE.name)
+        assertThat(dao.getById("s-stale")?.startedAt).isNull()
+    }
+
+    @Test
+    fun refreshSessionStatuses_keepsLocalStatusWhenRemoteFails() = runTest {
+        val dao = dbProvider.getActive().sessionDao()
+        dao.upsert(sessionEntity(SESSION_ID, status = SessionStatus.BUSY.name, startedAt = 123L))
+        server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
+
+        repository.refreshSessionStatuses(null)
+
+        val stored = dao.getById(SESSION_ID)
+        assertThat(stored?.status).isEqualTo(SessionStatus.BUSY.name)
+        assertThat(stored?.startedAt).isEqualTo(123L)
     }
 
     @Test
@@ -138,6 +185,21 @@ class SessionRepositoryImplTest {
         val remaining = dao.getAll().map { it.id }
         assertThat(remaining).containsExactly("s-keep", "s-other", "s-old")
     }
+
+    private fun sessionEntity(
+        id: String,
+        status: String? = null,
+        startedAt: Long? = null,
+    ) = com.openmate.core.database.entity.SessionEntity(
+        id = id,
+        title = id,
+        directory = "/workspace",
+        projectID = "",
+        createdAt = 1L,
+        updatedAt = 1L,
+        status = status,
+        startedAt = startedAt,
+    )
 
     private companion object {
         const val PROFILE_ID = "profile-1"
