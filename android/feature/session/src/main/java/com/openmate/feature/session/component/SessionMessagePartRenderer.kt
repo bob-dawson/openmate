@@ -56,6 +56,7 @@ import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.ToolCallState
 import com.openmate.feature.session.R
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -909,6 +910,25 @@ internal fun BlockToolLine(
     }
 }
 
+internal fun buildExecuteToolSummary(code: String, metadata: JsonObject?): String {
+    val calls = metadata?.get("toolCalls") as? JsonArray
+    return if (!calls.isNullOrEmpty()) {
+        calls.joinToString(", ") { c ->
+            val o = c as? JsonObject
+            val tool = (o?.get("tool") as? JsonPrimitive)?.contentOrNull ?: "?"
+            val input = o?.get("input") as? JsonObject
+            val kv = input?.entries?.firstOrNull()?.let { (k, v) ->
+                val raw = (v as? JsonPrimitive)?.contentOrNull ?: v.toString()
+                val short = if (raw.length > 40) raw.take(40) + "…" else raw
+                "$k=$short"
+            }
+            if (kv != null) "$tool($kv)" else tool
+        }
+    } else {
+        code.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    }.ifBlank { "execute" }
+}
+
 @Composable
 internal fun ExecuteToolLine(
     item: DisplayItem.ToolItem,
@@ -919,24 +939,9 @@ internal fun ExecuteToolLine(
         if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
     } catch (_: Exception) { null }
     val code = jsonArgs?.str("code") ?: ""
-    val calls = item.metadata?.get("toolCalls")?.jsonArray
 
     val summary = remember(item.args, item.metadata) {
-        if (calls != null && calls.isNotEmpty()) {
-            calls.joinToString(", ") { c ->
-                val o = runCatching { c.jsonObject }.getOrNull()
-                val tool = o?.get("tool")?.jsonPrimitive?.contentOrNull ?: "?"
-                val input = o?.get("input")?.jsonObject
-                val kv = input?.entries?.firstOrNull()?.let { (k, v) ->
-                    val raw = v.jsonPrimitive.contentOrNull ?: v.toString()
-                    val short = if (raw.length > 40) raw.take(40) + "…" else raw
-                    "$k=$short"
-                }
-                if (kv != null) "$tool($kv)" else tool
-            }
-        } else {
-            code.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
-        }.ifBlank { "execute" }
+        buildExecuteToolSummary(code, item.metadata)
     }
 
     val hasBody = code.isNotBlank() || !item.result.isNullOrBlank()

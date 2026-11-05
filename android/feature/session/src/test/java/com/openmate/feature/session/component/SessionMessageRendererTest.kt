@@ -324,6 +324,102 @@ class SessionMessageRendererTest {
     }
 
     @Test
+    fun buildExecuteToolSummary_handlesArrayValuedInputField() {
+        val metadata = Json.parseToJsonElement(
+            """
+            {
+              "toolCalls": [
+                {
+                  "tool": "task",
+                  "input": {
+                    "todos": [{"content": "a"}],
+                    "prompt": "do things"
+                  }
+                }
+              ]
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        assertThat(buildExecuteToolSummary("", metadata))
+            .isEqualTo("""task(todos=[{"content":"a"}])""")
+    }
+
+    @Test
+    fun buildExecuteToolSummary_truncatesLongArrayValuedInputField() {
+        val metadata = Json.parseToJsonElement(
+            """
+            {
+              "toolCalls": [
+                {
+                  "tool": "task",
+                  "input": {
+                    "questions": [{"question": "pick one", "options": ["a", "b"]}]
+                  }
+                }
+              ]
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        assertThat(buildExecuteToolSummary("", metadata))
+            .isEqualTo("""task(questions=[{"question":"pick one","options":["a","…)""")
+    }
+
+    @Test
+    fun buildExecuteToolSummary_handlesNonObjectToolCallEntry() {
+        val metadata = Json.parseToJsonElement(
+            """
+            {
+              "toolCalls": [
+                ["unexpected"],
+                {"tool": "shell", "input": {"command": "ls -la"}}
+              ]
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        assertThat(buildExecuteToolSummary("", metadata)).isEqualTo("?, shell(command=ls -la)")
+    }
+
+    @Test
+    fun buildExecuteToolSummary_handlesNonObjectInput() {
+        val metadata = Json.parseToJsonElement(
+            """
+            {
+              "toolCalls": [
+                {"tool": "read", "input": ["file.kt"]}
+              ]
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        assertThat(buildExecuteToolSummary("", metadata)).isEqualTo("read")
+    }
+
+    @Test
+    fun buildExecuteToolSummary_fallsBackToCodeWhenNoToolCalls() {
+        assertThat(buildExecuteToolSummary("print('hi')\nprint('bye')", null))
+            .isEqualTo("print('hi')")
+    }
+
+    @Test
+    fun buildExecuteToolSummary_defaultsToExecuteWhenBlank() {
+        assertThat(buildExecuteToolSummary("", null)).isEqualTo("execute")
+        assertThat(buildExecuteToolSummary("\n  \n", Json.parseToJsonElement("""{}""").jsonObject))
+            .isEqualTo("execute")
+    }
+
+    @Test
+    fun buildExecuteToolSummary_ignoresNonArrayToolCalls() {
+        val metadata = Json.parseToJsonElement(
+            """{"toolCalls": "not-an-array"}""",
+        ).jsonObject
+
+        assertThat(buildExecuteToolSummary("run", metadata)).isEqualTo("run")
+    }
+
+    @Test
     fun extractApplyPatchResultFiles_parsesUpdatedFilesFromToolOutput() {
         val files = extractApplyPatchResultFiles(
             """
