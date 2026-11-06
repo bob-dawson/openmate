@@ -25,3 +25,5 @@ pub mod service_windows;
 pub mod tray;
 #[cfg(target_os = "linux")]
 pub mod service_linux;
+#[cfg(any(target_os = "macos", test))]
+pub mod service_macos;

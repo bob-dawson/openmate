@@ -8,15 +8,19 @@ use crate::error::AppError;
 mod windows;
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
 
 #[cfg(target_os = "windows")]
 pub use windows::WindowsAutostart as Autostart;
 #[cfg(target_os = "linux")]
 pub use linux::LinuxAutostart as Autostart;
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(target_os = "macos")]
+pub use macos::MacosAutostart as Autostart;
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 pub use self::unsupported::UnsupportedAutostart as Autostart;
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 mod unsupported {
     use crate::error::AppError;
     use super::AutostartImpl;

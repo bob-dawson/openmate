@@ -350,6 +350,8 @@ const I18N = {
   'settings.autoStartDesc': {en:'Run Bridge silently when Windows starts',zh:'Windows 启动时静默运行 Bridge'},
   'settings.autoStartSystemd': {en:'Auto-start on boot (systemd)',zh:'系统启动时自动启动 (systemd)'},
   'settings.autoStartSystemdDesc': {en:'Auto-start via systemd service',zh:'通过 systemd 服务开机自启'},
+  'settings.autoStartLaunchd': {en:'Auto-start on boot (launchd)',zh:'系统启动时自动运行 (launchd)'},
+  'settings.autoStartLaunchdDesc': {en:'Auto-start via launchd daemon, no login required',zh:'通过 launchd 守护进程开机自启（无需登录）'},
   'settings.dangerZone': {en:'Danger Zone',zh:'危险操作'},
   'settings.resetKey': {en:'Reset Secret Key',zh:'重置密钥'},
   'settings.resetKeyDesc': {en:'All paired devices need to re-pair',zh:'所有已配对设备需要重新配对'},
@@ -819,6 +821,9 @@ async function loadSettings() {
     } else if (autostartMode === 'windows') {
       autostartLabel.textContent = t('settings.autoStart');
       autostartDesc.textContent = t('settings.autoStartDesc');
+    } else if (autostartMode === 'launchd') {
+      autostartLabel.textContent = t('settings.autoStartLaunchd');
+      autostartDesc.textContent = t('settings.autoStartLaunchdDesc');
     }
 
     configEntries = cfgRes.configs || [];

@@ -53,6 +53,8 @@ async fn main() -> anyhow::Result<()> {
             return run_service_mode();
             #[cfg(target_os = "linux")]
             return run_service_mode().await;
+            #[cfg(target_os = "macos")]
+            return run_service_mode().await;
         }
         None => {}
     }
@@ -298,7 +300,12 @@ fn run_install() -> anyhow::Result<()> {
     openmate::service_linux::install()
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(target_os = "macos")]
+fn run_install() -> anyhow::Result<()> {
+    openmate::service_macos::install()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn run_install() -> anyhow::Result<()> {
     anyhow::bail!("Service installation is not supported on this platform");
 }
@@ -313,7 +320,12 @@ fn run_uninstall() -> anyhow::Result<()> {
     openmate::service_linux::uninstall()
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(target_os = "macos")]
+fn run_uninstall() -> anyhow::Result<()> {
+    openmate::service_macos::uninstall()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn run_uninstall() -> anyhow::Result<()> {
     anyhow::bail!("Service uninstallation is not supported on this platform");
 }
@@ -329,7 +341,13 @@ async fn run_service_mode() -> anyhow::Result<()> {
     openmate::server::run_server(buffer, None, None, None).await
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(target_os = "macos")]
+async fn run_service_mode() -> anyhow::Result<()> {
+    let buffer = init_capture_logging();
+    openmate::server::run_server(buffer, None, None, None).await
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn run_service_mode() -> anyhow::Result<()> {
     anyhow::bail!("Service mode is not supported on this platform");
 }
