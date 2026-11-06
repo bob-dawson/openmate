@@ -1,0 +1,1 @@
+macOS now supports "openmate install" with a launchd daemon that starts at boot without logging in, so auto-start works like on Windows and Linux. Also fixed in-app Bridge upgrades on macOS stopping the service: launchd killed the update script, leaving the old binary and a dead service.

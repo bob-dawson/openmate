@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.14
+
+Released: 2026-11-06
+
+### 新功能
+
+- **macOS 支持开机自启（无需登录）**：`openmate install` 现在会注册 launchd 守护进程（`/Library/LaunchDaemons/net.clawmate.openmate.plist`），开机即启动、不用登录账户；`openmate uninstall` 和 `openmate service` 也同样可用。此前 macOS 上这三条命令都直接报「本平台不支持」，只能手工写 plist。设置页里的「开机自启」开关在 macOS 上也不再隐藏
+
+- **升级后自动修复能力补齐到 macOS**：依赖 npm 的 opencode 修复路径此前在 macOS 上不可用（没有 Node 环境）
+
+### 问题修复
+
+- **macOS 上通过 app 升级 Bridge 会「假升级」并停服**：升级脚本需要在主进程退出后替换二进制，而 launchd 默认会把该任务的整个进程组一起杀掉，脚本一行没跑就被干掉 —— 结果二进制没换、服务也停了，app 里表现为一直转圈，之后连不上。现在守护进程配置了 `AbandonProcessGroup`，升级脚本能正常完成替换并拉起新版
+
 ## 0.3.13
 
 Released: 2026-11-05
