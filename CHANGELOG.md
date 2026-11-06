@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.15
+
+Released: 2026-11-06
+
+### 问题修复
+
+- **macOS 上 `openmate install` 报 `Bootstrap failed: 5: Input/output error` 且服务停掉**：launchd 的 `bootout` 是异步的，旧任务还没彻底卸载就执行 `bootstrap` 会被拒绝，而此时服务已经被停下来了（表现为安装失败、Bridge 不再运行）。现在会等旧任务真正退出后再注册，并对 `bootstrap` 重试；`uninstall` 同样会等待卸载完成
+
 ## 0.3.14
 
 Released: 2026-11-06

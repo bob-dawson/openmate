@@ -211,6 +211,60 @@ fn persist_run_as_user(user: &str, home: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `bootout` 是异步的：launchd 还没把任务彻底摘掉就 `bootstrap` 会返回
+/// `Bootstrap failed: 5: Input/output error`。这里等到任务真正消失再继续。
+fn bootout_and_wait() {
+    let _ = Command::new("launchctl")
+        .args(["bootout", &format!("system/{LABEL}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    for _ in 0..40 {
+        if !is_loaded() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+}
+
+fn bootstrap_with_retry() -> anyhow::Result<()> {
+    let _ = Command::new("launchctl")
+        .args(["enable", &format!("system/{LABEL}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    let mut last_error = String::new();
+    for attempt in 0..20 {
+        let output = Command::new("launchctl")
+            .args(["bootstrap", "system", PLIST_PATH])
+            .output()?;
+
+        if output.status.success() {
+            return Ok(());
+        }
+
+        last_error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        if is_loaded() {
+            return Ok(());
+        }
+
+        if attempt == 0 {
+            eprintln!("launchctl bootstrap did not succeed yet ({}), retrying...", last_error);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+
+    anyhow::bail!(
+        "launchctl bootstrap failed: {}. Try `sudo launchctl bootout system/{}` then `sudo launchctl bootstrap system {}`",
+        last_error,
+        LABEL,
+        PLIST_PATH
+    )
+}
+
 pub fn install() -> anyhow::Result<()> {
     require_root("install")?;
 
@@ -246,21 +300,8 @@ pub fn install() -> anyhow::Result<()> {
     let _ = Command::new("chown").args(["root:wheel", PLIST_PATH]).status();
     let _ = Command::new("chmod").args(["644", PLIST_PATH]).status();
 
-    let _ = Command::new("launchctl")
-        .args(["bootout", &format!("system/{LABEL}")])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-
-    let bootstrap = Command::new("launchctl")
-        .args(["bootstrap", "system", PLIST_PATH])
-        .output()?;
-    if !bootstrap.status.success() {
-        anyhow::bail!(
-            "launchctl bootstrap failed: {}",
-            String::from_utf8_lossy(&bootstrap.stderr).trim()
-        );
-    }
+    bootout_and_wait();
+    bootstrap_with_retry()?;
 
     if let Err(e) = persist_run_as_user(&user, &home) {
         eprintln!("warning: failed to persist opencode.run_as_user: {}", e);
@@ -278,11 +319,7 @@ pub fn install() -> anyhow::Result<()> {
 pub fn uninstall() -> anyhow::Result<()> {
     require_root("uninstall")?;
 
-    let _ = Command::new("launchctl")
-        .args(["bootout", &format!("system/{LABEL}")])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    bootout_and_wait();
 
     let path = plist_path();
     if path.exists() {

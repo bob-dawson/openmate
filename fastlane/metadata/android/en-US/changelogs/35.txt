@@ -1,0 +1,1 @@
+Fixed "openmate install" failing on macOS with "Bootstrap failed: 5" and leaving the bridge stopped: launchd unloads jobs asynchronously, so registering the new job right after unload was rejected. Install now waits for the old job to fully unload and retries before giving up.
