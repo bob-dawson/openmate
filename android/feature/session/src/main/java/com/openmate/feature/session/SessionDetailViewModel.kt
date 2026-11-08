@@ -1513,17 +1513,20 @@ class SessionDetailViewModel @Inject constructor(
         val anchors = _runningAnchors.value.toMutableMap()
         val now = android.os.SystemClock.elapsedRealtime()
         val wallNow = System.currentTimeMillis()
+        val incompleteIds = HashSet<String>()
         for (msg in list) {
-            if ((msg.type == "assistant" || msg.type == "compaction") && msg.completedAt == null) {
-                val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
-                val finish = data?.get("finish")?.jsonPrimitive?.contentOrNull
-                if (finish == null && !anchors.containsKey(msg.id)) {
-                    val elapsed = (wallNow - msg.timeCreated).coerceAtLeast(0L)
-                    anchors[msg.id] = now - elapsed
-                }
+            if (msg.type != "assistant" && msg.type != "compaction") continue
+            if (msg.completedAt != null) continue
+            val data = runCatching { Json.parseToJsonElement(msg.data).jsonObject }.getOrNull()
+            if (SessionMessageCompletion.displayCompletedAt(null, msg.type, data, msg.timeCreated) != null) continue
+            incompleteIds += msg.id
+            val finish = data?.get("finish")?.jsonPrimitive?.contentOrNull
+            if (finish == null && !anchors.containsKey(msg.id)) {
+                val elapsed = (wallNow - msg.timeCreated).coerceAtLeast(0L)
+                anchors[msg.id] = now - elapsed
             }
         }
-        anchors.keys.retainAll { id -> list.any { it.id == id && it.completedAt == null } }
+        anchors.keys.retainAll { it in incompleteIds }
         _runningAnchors.value = anchors
     }
 

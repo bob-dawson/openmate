@@ -18,7 +18,7 @@ object SessionMessageMapper {
             data = dto.data.toString(),
             timeCreated = dto.timeCreated,
             timeUpdated = dto.timeUpdated,
-            completedAt = extractCompletedAt(dto.data),
+            completedAt = extractCompletedAt(dto.type, dto.data, dto.timeUpdated),
             roundMark = roundMark,
         )
     }
@@ -30,7 +30,18 @@ object SessionMessageMapper {
         return (finish == "stop" || finish == "length") || error != null
     }
 
-    private fun extractCompletedAt(data: kotlinx.serialization.json.JsonObject): Long? {
-        return data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull
+    private fun extractCompletedAt(
+        type: String,
+        data: kotlinx.serialization.json.JsonObject,
+        timeUpdated: Long,
+    ): Long? {
+        data["time"]?.jsonObject?.get("completed")?.jsonPrimitive?.longOrNull?.let { return it }
+        if (type == "compaction" && isCompactionSettled(data)) return timeUpdated
+        return null
+    }
+
+    fun isCompactionSettled(data: kotlinx.serialization.json.JsonObject): Boolean {
+        val status = data["status"]?.jsonPrimitive?.contentOrNull
+        return status == "completed" || status == "failed"
     }
 }

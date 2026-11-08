@@ -30,6 +30,7 @@ import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.ui.component.MessageBubble
 import com.openmate.feature.session.R
+import com.openmate.feature.session.SessionMessageCompletion
 import com.openmate.core.common.formatDurationMillis
 import com.openmate.core.common.toTimeString
 import dev.jeziellago.compose.markdowntext.MarkdownText
@@ -274,7 +275,13 @@ private fun CompactionMessageItem(
     runningAnchors: Map<String, Long>,
 ) {
     val summary = data["summary"]?.jsonPrimitive?.contentOrNull.orEmpty()
-    val isRunning = entity.completedAt == null
+    val completedAt = SessionMessageCompletion.displayCompletedAt(
+        entity.completedAt,
+        entity.type,
+        data,
+        entity.timeCreated,
+    )
+    val isRunning = completedAt == null
     var expanded by remember(entity.id) { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -289,7 +296,7 @@ private fun CompactionMessageItem(
         MessageMetadata(
             messageId = entity.id,
             timeCreated = entity.timeCreated,
-            completedAt = entity.completedAt,
+            completedAt = completedAt,
             modelName = null,
             isQueued = false,
             isStepRunning = isRunning,
