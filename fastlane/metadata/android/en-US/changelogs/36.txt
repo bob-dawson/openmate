@@ -1,0 +1,1 @@
+Fixed compaction messages showing a running timer forever after the compaction finished, which also kept the session marked busy in the list. The client now recognizes the server's completion status, and existing stored compactions are repaired the first time their session is opened.

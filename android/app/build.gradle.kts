@@ -29,8 +29,8 @@ android {
         applicationId = "com.openmate"
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "0.3.15"
+        versionCode = 36
+        versionName = "0.3.16"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
