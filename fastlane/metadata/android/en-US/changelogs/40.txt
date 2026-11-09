@@ -1,0 +1,1 @@
+Fixed the Windows service not restarting after an in-app bridge update. The service is now configured to restart automatically after a failure, and upgrades no longer spawn an extra desktop process.
