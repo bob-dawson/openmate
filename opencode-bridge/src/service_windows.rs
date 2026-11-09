@@ -5,7 +5,8 @@ use std::time::Duration;
 use tokio::sync::Notify;
 use windows_service::define_windows_service;
 use windows_service::service::{
-    ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceExitCode,
+    ServiceAccess, ServiceAction, ServiceActionType, ServiceControl, ServiceControlAccept,
+    ServiceErrorControl, ServiceExitCode, ServiceFailureActions, ServiceFailureResetPeriod,
     ServiceInfo, ServiceState, ServiceStatus, ServiceType,
 };
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
@@ -20,6 +21,56 @@ use crate::server::run_server;
 const SERVICE_NAME: &str = "OpenMate";
 const SERVICE_DISPLAY_NAME: &str = "OpenMate Bridge";
 const SERVICE_DESCRIPTION: &str = "OpenMate Bridge - proxy, file serving, and authentication for OpenCode";
+const RECOVERY_CONFIG_KEY: &str = "service.restart_on_failure";
+
+fn configure_recovery(service: &windows_service::service::Service) -> bool {
+    let actions = vec![
+        ServiceAction {
+            action_type: ServiceActionType::Restart,
+            delay: Duration::from_secs(5),
+        },
+        ServiceAction {
+            action_type: ServiceActionType::Restart,
+            delay: Duration::from_secs(10),
+        },
+        ServiceAction {
+            action_type: ServiceActionType::Restart,
+            delay: Duration::from_secs(30),
+        },
+    ];
+    let configured = service
+        .update_failure_actions(ServiceFailureActions {
+            reset_period: ServiceFailureResetPeriod::After(Duration::from_secs(86400)),
+            reboot_msg: None,
+            command: None,
+            actions: Some(actions),
+        })
+        .and_then(|_| service.set_failure_actions_on_non_crash_failures(true));
+    match configured {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!("Failed to configure service recovery actions: {}", e);
+            false
+        }
+    }
+}
+
+fn try_configure_recovery() -> bool {
+    let manager = match ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT) {
+        Ok(manager) => manager,
+        Err(e) => {
+            tracing::warn!("Failed to open service manager for recovery setup: {}", e);
+            return false;
+        }
+    };
+    match manager.open_service(SERVICE_NAME, ServiceAccess::CHANGE_CONFIG) {
+        Ok(service) => configure_recovery(&service),
+        Err(e) => {
+            tracing::warn!("Failed to open service for recovery setup: {}", e);
+            false
+        }
+    }
+}
 
 pub fn install() -> anyhow::Result<()> {
     let exe_path = std::env::current_exe()?;
@@ -46,6 +97,15 @@ pub fn install() -> anyhow::Result<()> {
 
     let service = service_manager.create_service(&service_info, ServiceAccess::CHANGE_CONFIG)?;
     service.set_description(SERVICE_DESCRIPTION)?;
+
+    if configure_recovery(&service) {
+        if let Ok(db) = BridgeDb::open() {
+            let _ = db.set_config(RECOVERY_CONFIG_KEY, "1");
+        }
+        println!("Configured automatic restart on failure (required for in-app upgrades).");
+    } else {
+        println!("WARNING: could not configure automatic restart on failure.");
+    }
 
     println!("{} service installed successfully.", SERVICE_NAME);
     println!("");
@@ -150,6 +210,21 @@ fn run_service_inner() -> anyhow::Result<()> {
             .with(env_filter)
             .with(capture_layer)
             .init();
+    }
+
+    let mut recovery = bridge_db.get_config(RECOVERY_CONFIG_KEY).ok().flatten().as_deref()
+        == Some("1");
+    if !recovery {
+        recovery = try_configure_recovery();
+        if recovery {
+            let _ = bridge_db.set_config(RECOVERY_CONFIG_KEY, "1");
+        }
+    }
+    if recovery {
+        unsafe { std::env::set_var("OPENMATE_SERVICE_MODE", "1") };
+        tracing::info!("Service recovery actions enabled; in-app upgrades restart automatically");
+    } else {
+        tracing::warn!("Service recovery actions unavailable; in-app upgrade falls back to detached restart");
     }
 
     let rt = tokio::runtime::Runtime::new()?;

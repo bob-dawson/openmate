@@ -1,4 +1,14 @@
-pub fn generate_ps1(exe: &str, update: &str, pid: u32) -> String {
+pub fn generate_ps1(exe: &str, update: &str, pid: u32, restart: bool) -> String {
+    let start_line = if restart {
+        "Start-Process $tgt -ArgumentList \"--tray\" -WindowStyle Hidden\n"
+    } else {
+        ""
+    };
+    let start_indented = if restart {
+        "    Start-Process $tgt -ArgumentList \"--tray\" -WindowStyle Hidden\n"
+    } else {
+        ""
+    };
     format!(
         r#"$ErrorActionPreference = 'Stop'
 $targetPid = {pid}
@@ -18,11 +28,9 @@ try {{
     Move-Item $new $tgt -Force
 }} catch {{
     Move-Item "$tgt.bak" $tgt -Force
-    Start-Process $tgt -ArgumentList "--tray" -WindowStyle Hidden
-    exit 1
+{start_indented}    exit 1
 }}
-Start-Process $tgt -ArgumentList "--tray" -WindowStyle Hidden
-Remove-Item "$tgt.bak" -Force -ErrorAction SilentlyContinue
+{start_line}Remove-Item "$tgt.bak" -Force -ErrorAction SilentlyContinue
 Remove-Item $MyInvocation.MyCommand.Path -Force
 "#,
         pid = pid,
@@ -76,7 +84,7 @@ fn start_line(restart_args: Option<&str>) -> String {
 
 pub fn generate(exe: &str, update: &str, pid: u32, restart_args: Option<&str>) -> String {
     if cfg!(windows) {
-        generate_ps1(exe, update, pid)
+        generate_ps1(exe, update, pid, restart_args.is_some())
     } else {
         generate_sh(exe, update, pid, restart_args)
     }
@@ -88,7 +96,7 @@ mod tests {
 
     #[test]
     fn ps1_contains_key_steps() {
-        let s = generate_ps1("/path/to/openmate.exe", "/tmp/openmate.update", 12345);
+        let s = generate_ps1("/path/to/openmate.exe", "/tmp/openmate.update", 12345, true);
         assert!(s.contains("$targetPid = 12345"));
         assert!(s.contains("Get-Process"));
         assert!(s.contains(".bak"));
@@ -98,8 +106,15 @@ mod tests {
     }
 
     #[test]
+    fn ps1_skips_restart_when_managed_by_service() {
+        let s = generate_ps1("/path/openmate.exe", "/tmp/update", 99, false);
+        assert!(!s.contains("Start-Process"));
+        assert!(s.contains("Remove-Item $MyInvocation.MyCommand.Path"));
+    }
+
+    #[test]
     fn ps1_has_rollback_on_move_failure() {
-        let s = generate_ps1("/path/openmate.exe", "/tmp/update", 99);
+        let s = generate_ps1("/path/openmate.exe", "/tmp/update", 99, true);
         assert!(s.contains("catch"));
         assert!(s.contains(".bak"));
     }
