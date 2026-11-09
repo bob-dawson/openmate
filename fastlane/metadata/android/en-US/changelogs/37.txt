@@ -1,0 +1,1 @@
+Fixed file uploads failing or producing truncated files when connected through the relay gateway. Upload frames are now sent in order over a single channel, so the received file is complete.
