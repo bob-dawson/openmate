@@ -1,0 +1,1 @@
+Send images from your gallery, with or without text. Images are compressed on-device, shown as [Image 1] in the chat, and loaded on demand when you tap them.
