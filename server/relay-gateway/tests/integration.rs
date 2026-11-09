@@ -98,3 +98,133 @@ async fn test_bridge_register_and_status() {
     assert_eq!(body["online"], true);
     assert_eq!(body["instance_id"], "inst-002");
 }
+
+#[tokio::test]
+async fn test_upload_frames_preserve_order_and_full_body() {
+    use futures::{SinkExt, StreamExt};
+    use relay_gateway::tunnel::frame::TunnelFrame;
+    use tokio_tungstenite::tungstenite::Message;
+
+    const SIZE: usize = 512 * 1024;
+    const INSTANCE: &str = "inst-upload-order";
+
+    let state = make_state();
+    let addr = start_server(state.clone()).await;
+
+    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{}/ws", addr))
+        .await
+        .unwrap();
+
+    let register = TunnelFrame::register(INSTANCE);
+    ws.send(Message::Text(
+        serde_json::to_string(&register).unwrap().into(),
+    ))
+    .await
+    .unwrap();
+
+    // Wait for pong: guarantees the bridge is registered before the upload.
+    let pong = ws.next().await.unwrap().unwrap();
+    match pong {
+        Message::Text(t) => {
+            let frame: TunnelFrame = serde_json::from_str(&t).unwrap();
+            assert_eq!(frame.frame_type, "pong");
+        }
+        other => panic!("expected pong text frame, got {other:?}"),
+    }
+
+    let payload: Vec<u8> = (0..SIZE).map(|i| (i % 251) as u8).collect();
+    let expected = payload.clone();
+
+    let bridge = tokio::spawn(async move {
+        let mut started = false;
+        let mut ended = false;
+        let mut received: Vec<u8> = Vec::new();
+        let mut request_id: Option<String> = None;
+        let mut violations: Vec<&'static str> = Vec::new();
+
+        while let Some(msg) = ws.next().await {
+            match msg.unwrap() {
+                Message::Text(text) => {
+                    let frame: TunnelFrame = serde_json::from_str(&text).unwrap();
+                    match frame.frame_type.as_str() {
+                        "request_start" => {
+                            if started {
+                                violations.push("duplicate request_start");
+                            }
+                            started = true;
+                            request_id = frame.request_id.clone();
+                        }
+                        "request_end" => {
+                            if !started {
+                                violations.push("request_end before request_start");
+                            }
+                            if ended {
+                                violations.push("duplicate request_end");
+                            }
+                            let rid = frame.request_id.clone().unwrap();
+                            let start =
+                                TunnelFrame::response_start(&rid, 200, None);
+                            ws.send(Message::Text(
+                                serde_json::to_string(&start).unwrap().into(),
+                            ))
+                            .await
+                            .unwrap();
+                            let end = TunnelFrame::response_end(&rid);
+                            ws.send(Message::Text(
+                                serde_json::to_string(&end).unwrap().into(),
+                            ))
+                            .await
+                            .unwrap();
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                Message::Binary(data) => {
+                    if !started {
+                        violations.push("binary chunk before request_start");
+                    }
+                    if ended {
+                        violations.push("binary chunk after request_end");
+                    }
+                    let rid = String::from_utf8_lossy(&data[..36]).to_string();
+                    if request_id.as_deref() != Some(rid.as_str()) {
+                        violations.push("binary chunk with mismatched request id");
+                    }
+                    received.extend_from_slice(&data[36..]);
+                }
+                _ => {}
+            }
+        }
+
+        (violations, received)
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .put(format!(
+            "http://{}/api/bridge/fs/upload?path=/tmp/upload-order.bin",
+            addr
+        ))
+        .header("x-instance-id", INSTANCE)
+        .body(payload)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), reqwest::StatusCode::OK);
+
+    let (violations, received) = bridge.await.unwrap();
+    assert!(
+        violations.is_empty(),
+        "upload frame ordering violations: {violations:?}"
+    );
+    assert_eq!(
+        received.len(),
+        SIZE,
+        "upload body was truncated: got {} of {} bytes",
+        received.len(),
+        SIZE
+    );
+    assert_eq!(received, expected, "upload body content mismatch");
+}

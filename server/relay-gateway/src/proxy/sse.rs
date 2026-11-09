@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use crate::error::GatewayError;
 use crate::state::{SseStream, SharedState};
-use crate::tunnel::frame::TunnelFrame;
+use crate::tunnel::frame::{BridgeOut, TunnelFrame};
 
 pub fn open_sse_tunnel(
     state: &SharedState,
@@ -25,7 +25,7 @@ pub fn open_sse_tunnel(
     );
 
     let frame = TunnelFrame::sse_open(&request_id, path, headers);
-    if tx.send(frame).is_err() {
+    if tx.send(BridgeOut::Json(frame)).is_err() {
         state.pending_sse.remove(&request_id);
         return Err(GatewayError::BridgeOffline(format!(
             "bridge '{}' connection lost",

@@ -3,11 +3,12 @@ use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::config::Config;
-use crate::tunnel::frame::TunnelFrame;
+use crate::tunnel::frame::BridgeOut;
 
 pub struct BridgeConn {
-    pub tx: mpsc::UnboundedSender<TunnelFrame>,
-    pub binary_tx: mpsc::UnboundedSender<(String, Vec<u8>)>,
+    /// Single ordered channel: JSON frames and binary upload chunks share it so
+    /// the websocket writer cannot reorder them.
+    pub tx: mpsc::UnboundedSender<BridgeOut>,
     pub instance_id: String,
     pub last_heartbeat: Instant,
 }

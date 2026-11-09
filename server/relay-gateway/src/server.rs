@@ -17,7 +17,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::error::GatewayError;
 use crate::state::SharedState;
-use crate::tunnel::frame::TunnelFrame;
+use crate::tunnel::frame::{BridgeOut, TunnelFrame};
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
@@ -29,13 +29,14 @@ async fn ws_handler(
 async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
     let (mut sink, mut stream) = socket.split();
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<TunnelFrame>();
-    let (binary_tx, mut binary_rx) = mpsc::unbounded_channel::<(String, Vec<u8>)>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<BridgeOut>();
 
+    // Single writer task consuming one ordered channel: JSON frames and binary
+    // upload chunks are emitted in exactly the order they were submitted.
     let send_task = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                Some(frame) = rx.recv() => {
+        while let Some(item) = rx.recv().await {
+            match item {
+                BridgeOut::Json(frame) => {
                     let msg = match serde_json::to_string(&frame) {
                         Ok(json) => Message::Text(json.into()),
                         Err(e) => {
@@ -47,15 +48,14 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
                         break;
                     }
                 }
-                Some((rid, data)) = binary_rx.recv() => {
+                BridgeOut::Binary { request_id, data } => {
                     let mut msg = Vec::with_capacity(36 + data.len());
-                    msg.extend_from_slice(rid.as_bytes());
+                    msg.extend_from_slice(request_id.as_bytes());
                     msg.extend_from_slice(&data);
                     if sink.send(Message::Binary(msg.into())).await.is_err() {
                         break;
                     }
                 }
-                else => break,
             }
         }
     });
@@ -94,9 +94,9 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
                         };
 
                         *instance_id_holder.lock().await = Some(instance_id.clone());
-                        crate::tunnel::bridge::handle_register(&recv_state, instance_id, tx.clone(), binary_tx.clone());
+                        crate::tunnel::bridge::handle_register(&recv_state, instance_id, tx.clone());
 
-                        if tx.send(TunnelFrame::pong()).is_err() {
+                        if tx.send(BridgeOut::Json(TunnelFrame::pong())).is_err() {
                             break;
                         }
                     }
@@ -107,7 +107,7 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
                         }
                         drop(holder);
 
-                        if tx.send(TunnelFrame::pong()).is_err() {
+                        if tx.send(BridgeOut::Json(TunnelFrame::pong())).is_err() {
                             break;
                         }
                     }
@@ -214,11 +214,6 @@ async fn proxy_handler(
 
         Ok(sse_response.into_response())
     } else if is_upload {
-        let binary_tx = crate::tunnel::bridge::get_bridge_binary_tx(&state, &instance_id)
-            .ok_or_else(|| {
-                GatewayError::BridgeOffline(format!("bridge '{}' is offline", instance_id))
-            })?;
-
         let tx = crate::tunnel::bridge::get_bridge_tx(&state, &instance_id)
             .ok_or_else(|| {
                 GatewayError::BridgeOffline(format!("bridge '{}' is offline", instance_id))
@@ -244,7 +239,7 @@ async fn proxy_handler(
         let start_frame = TunnelFrame::request_start(
             &request_id, method.as_str(), &full_path, Some(req_headers),
         );
-        if tx.send(start_frame).is_err() {
+        if tx.send(BridgeOut::Json(start_frame)).is_err() {
             state.pending_streams.remove(&request_id);
             return Err(GatewayError::BridgeOffline("bridge connection lost".into()));
         }
@@ -261,18 +256,24 @@ async fn proxy_handler(
                 }
                 Err(e) => {
                     tracing::error!("Upload body read error: {}", e);
-                    let _ = tx.send(TunnelFrame::request_end(&request_id));
+                    let _ = tx.send(BridgeOut::Json(TunnelFrame::request_end(&request_id)));
                     state.pending_streams.remove(&request_id);
                     return Err(GatewayError::BadRequest(format!("body read error: {e}")));
                 }
             };
-            if binary_tx.send((request_id.clone(), data.to_vec())).is_err() {
+            if tx
+                .send(BridgeOut::Binary {
+                    request_id: request_id.clone(),
+                    data: data.to_vec(),
+                })
+                .is_err()
+            {
                 state.pending_streams.remove(&request_id);
                 return Err(GatewayError::BridgeOffline("bridge connection lost".into()));
             }
         }
 
-        let _ = tx.send(TunnelFrame::request_end(&request_id));
+        let _ = tx.send(BridgeOut::Json(TunnelFrame::request_end(&request_id)));
 
         let timeout = Duration::from_secs(state.config.tunnel.request_timeout);
         let (status, resp_headers) = match tokio::time::timeout(timeout, start_rx).await {

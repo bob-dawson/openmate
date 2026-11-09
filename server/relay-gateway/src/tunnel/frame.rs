@@ -27,6 +27,18 @@ pub struct TunnelFrame {
     pub error_message: Option<String>,
 }
 
+/// Ordered outbound item for a bridge connection.
+///
+/// JSON frames and binary upload chunks must travel through the *same* channel:
+/// with two separate queues the websocket writer can reorder them, so an upload
+/// body can arrive before `request_start` (dropped as unknown) or after
+/// `request_end` (dropped as closed), silently truncating the file.
+#[derive(Debug)]
+pub enum BridgeOut {
+    Json(TunnelFrame),
+    Binary { request_id: String, data: Vec<u8> },
+}
+
 impl TunnelFrame {
     pub fn register(instance_id: &str) -> Self {
         Self {

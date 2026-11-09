@@ -5,7 +5,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::error::GatewayError;
 use crate::state::{PendingStream, SharedState};
-use crate::tunnel::frame::TunnelFrame;
+use crate::tunnel::frame::{BridgeOut, TunnelFrame};
 
 pub async fn proxy_http_request_streaming(
     state: SharedState,
@@ -32,7 +32,7 @@ pub async fn proxy_http_request_streaming(
     );
 
     let frame = TunnelFrame::request(&request_id, method, path, headers, body);
-    if tx.send(frame).is_err() {
+    if tx.send(BridgeOut::Json(frame)).is_err() {
         state.pending_streams.remove(&request_id);
         return Err(GatewayError::BridgeOffline(format!(
             "bridge '{}' connection lost",
