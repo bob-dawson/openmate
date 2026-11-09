@@ -11,6 +11,50 @@ use super::version;
 
 const GITHUB_BASE: &str = "https://github.com/bob-dawson/openmate/releases/download";
 
+/// Set before shutting down for an in-app upgrade. The process must exit with a
+/// non-zero status so the service manager (launchd `SuccessfulExit=false`,
+/// systemd `Restart=on-failure`) starts the freshly installed binary again.
+pub static RESTART_AFTER_UPGRADE: AtomicBool = AtomicBool::new(false);
+
+/// True when the current process was started by launchd/systemd, which will
+/// restart it on its own after a failed exit.
+pub fn managed_service_mode() -> bool {
+    if std::env::var("OPENMATE_SERVICE_MODE").is_ok() {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        launchd_owns_process()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var("INVOCATION_ID").is_ok()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn launchd_owns_process() -> bool {
+    let output = std::process::Command::new("launchctl")
+        .args(["print", "system/net.clawmate.openmate"])
+        .output();
+    match output {
+        Ok(result) if result.status.success() => {
+            launchctl_reports_pid(&String::from_utf8_lossy(&result.stdout), std::process::id())
+        }
+        _ => false,
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn launchctl_reports_pid(output: &str, pid: u32) -> bool {
+    let needle = format!("pid = {pid}");
+    output.lines().any(|line| line.trim() == needle)
+}
+
 #[derive(Clone, Default)]
 pub struct UpgradeState {
     pub phase: UpgradePhase,
@@ -88,9 +132,6 @@ impl UpgradeManager {
     }
 
     pub async fn apply(&self) -> Result<(), String> {
-        if std::env::var("OPENMATE_SERVICE_MODE").is_ok() {
-            return Err("Running as service — please update manually".to_string());
-        }
         {
             let s = self.state.lock().await;
             if s.phase != UpgradePhase::Downloaded {
@@ -112,11 +153,20 @@ impl UpgradeManager {
             return Err("Update file missing".to_string());
         }
         let pid = std::process::id();
+        let managed = managed_service_mode();
+        let restart_args = if managed {
+            None
+        } else if std::env::args().skip(1).any(|arg| arg == "service") {
+            Some("service")
+        } else {
+            Some("")
+        };
 
         let script_content = script::generate(
             &exe_path.to_string_lossy(),
             &update_path.to_string_lossy(),
             pid,
+            restart_args,
         );
 
         let ext = if cfg!(windows) { "ps1" } else { "sh" };
@@ -149,7 +199,12 @@ impl UpgradeManager {
                 .map_err(|e| format!("Failed to spawn update script: {}", e))?;
         }
 
-        tracing::info!("Update script spawned (pid={}), sending shutdown signal", pid);
+        tracing::info!(
+            "Update script spawned (pid={}), sending shutdown signal (managed={})",
+            pid,
+            managed
+        );
+        RESTART_AFTER_UPGRADE.store(managed, Ordering::SeqCst);
         let _ = self.shutdown_tx.send(true);
         Ok(())
     }
@@ -307,5 +362,23 @@ async fn fetch_content_length(client: &reqwest::Client, url: &str) -> u64 {
             if accept_ranges && cl > 0 { cl } else { 0 }
         }
         _ => 0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launchctl_pid_match_requires_exact_process() {
+        let output = "\tstate = running\n\tpid = 4242\n\tprogram = /Users/a/openmate\n";
+        assert!(launchctl_reports_pid(output, 4242));
+        assert!(!launchctl_reports_pid(output, 4243));
+    }
+
+    #[test]
+    fn launchctl_without_pid_is_not_managed() {
+        let output = "\tstate = not running\n\tpath = /Library/LaunchDaemons/x.plist\n";
+        assert!(!launchctl_reports_pid(output, 100));
     }
 }

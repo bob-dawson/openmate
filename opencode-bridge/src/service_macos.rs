@@ -76,6 +76,8 @@ pub fn build_plist(spec: &PlistSpec<'_>) -> String {
         <string>{path}</string>
         <key>RUST_LOG</key>
         <string>info</string>
+        <key>OPENMATE_SERVICE_MODE</key>
+        <string>1</string>
     </dict>
 
     <key>RunAtLoad</key>

@@ -31,7 +31,14 @@ Remove-Item $MyInvocation.MyCommand.Path -Force
     )
 }
 
-pub fn generate_sh(exe: &str, update: &str, pid: u32) -> String {
+pub fn generate_sh(exe: &str, update: &str, pid: u32, restart_args: Option<&str>) -> String {
+    let restart_line = start_line(restart_args);
+    let restart_indented = start_line(restart_args)
+        .lines()
+        .map(|line| format!("    {}", line))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + if restart_args.is_some() { "\n" } else { "" };
     format!(
         r#"#!/bin/bash
 set -e
@@ -46,25 +53,32 @@ fi
 cp "$TGT" "$TGT.bak"
 if ! mv "$NEW" "$TGT"; then
     mv "$TGT.bak" "$TGT"
-    nohup "$TGT" >/dev/null 2>&1 &
-    exit 1
+{restart_failed}    exit 1
 fi
 chmod +x "$TGT"
-nohup "$TGT" >/dev/null 2>&1 &
-rm -f "$TGT.bak"
+{restart_line}rm -f "$TGT.bak"
 rm -- "$0"
 "#,
         pid = pid,
         update = update.replace('\'', "'\\''"),
         exe = exe.replace('\'', "'\\''"),
+        restart_failed = restart_indented,
     )
 }
 
-pub fn generate(exe: &str, update: &str, pid: u32) -> String {
+fn start_line(restart_args: Option<&str>) -> String {
+    match restart_args {
+        Some("") => "nohup \"$TGT\" </dev/null >/dev/null 2>&1 &\n".to_string(),
+        Some(args) => format!("nohup \"$TGT\" {} </dev/null >/dev/null 2>&1 &\n", args),
+        None => String::new(),
+    }
+}
+
+pub fn generate(exe: &str, update: &str, pid: u32, restart_args: Option<&str>) -> String {
     if cfg!(windows) {
         generate_ps1(exe, update, pid)
     } else {
-        generate_sh(exe, update, pid)
+        generate_sh(exe, update, pid, restart_args)
     }
 }
 
@@ -92,7 +106,7 @@ mod tests {
 
     #[test]
     fn sh_contains_key_steps() {
-        let s = generate_sh("/path/openmate", "/tmp/openmate.update", 12345);
+        let s = generate_sh("/path/openmate", "/tmp/openmate.update", 12345, Some(""));
         assert!(s.contains("OLDPID=12345"));
         assert!(s.contains("kill -0"));
         assert!(s.contains(".bak"));
@@ -103,9 +117,22 @@ mod tests {
     }
 
     #[test]
+    fn sh_restarts_with_service_argument_for_manual_service_mode() {
+        let s = generate_sh("/path/openmate", "/tmp/update", 99, Some("service"));
+        assert!(s.contains("nohup \"$TGT\" service"));
+    }
+
+    #[test]
     fn sh_has_rollback_on_move_failure() {
-        let s = generate_sh("/path/openmate", "/tmp/update", 99);
+        let s = generate_sh("/path/openmate", "/tmp/update", 99, Some(""));
         assert!(s.contains("if ! mv"));
         assert!(s.contains("mv \"$TGT.bak\""));
+    }
+
+    #[test]
+    fn sh_skips_restart_when_managed_by_service() {
+        let s = generate_sh("/path/openmate", "/tmp/update", 99, None);
+        assert!(!s.contains("nohup"));
+        assert!(s.contains("rm -f \"$TGT.bak\""));
     }
 }

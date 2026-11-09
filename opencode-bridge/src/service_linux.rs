@@ -62,6 +62,7 @@ pub fn install() -> anyhow::Result<()> {
          Type=simple\n\
          Environment=\"PATH={}\"\n\
          Environment=\"HOME={}\"\n\
+         Environment=\"OPENMATE_SERVICE_MODE=1\"\n\
          ExecStart={} service\n\
          WorkingDirectory={}\n\
          Restart=on-failure\n\
