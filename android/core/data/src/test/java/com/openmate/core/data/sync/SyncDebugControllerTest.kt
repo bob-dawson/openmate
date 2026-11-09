@@ -132,7 +132,15 @@ class SyncDebugControllerTest {
         override suspend fun incrementalSyncAndNotify(sessionId: String) {}
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
-        override suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long) = Unit
+        override suspend fun fetchMessageData(sessionId: String, messageId: String): kotlinx.serialization.json.JsonObject =
+            kotlinx.serialization.json.JsonObject(emptyMap())
+        override suspend fun insertOptimisticUserMessage(
+            sessionId: String,
+            messageId: String,
+            text: String,
+            created: Long,
+            files: List<com.openmate.core.domain.model.MessageFileMeta>,
+        ) = Unit
 
         override suspend fun fetchDiffFiles(sessionId: String, messageId: String, toolName: String, targetFilePath: String?): List<com.openmate.core.domain.model.DiffFile> = emptyList()
 

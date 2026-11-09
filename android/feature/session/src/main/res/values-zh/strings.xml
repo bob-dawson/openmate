@@ -275,4 +275,10 @@
     <string name="bridge_upgrade_failed">升级失败，请前往 GitHub Releases 手动下载。</string>
     <string name="opencode_upgrade_failed">opencode 升级失败。</string>
     <string name="bridge_up_to_date">Bridge 已是最新版本</string>
+    <string name="pick_image">选择图片</string>
+    <string name="image_n">[图片%1$d]</string>
+    <string name="image_load_failed">图片加载失败</string>
+    <string name="image_limit">最多只能添加 %1$d 张图片</string>
+    <string name="image_too_large">图片过大，无法发送</string>
+    <string name="image_viewer_close">关闭</string>
 </resources>

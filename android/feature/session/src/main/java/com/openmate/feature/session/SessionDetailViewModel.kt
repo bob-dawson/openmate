@@ -23,6 +23,8 @@ import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.PermissionReply
+import com.openmate.core.domain.model.PromptImage
+import com.openmate.core.domain.model.MessageFileMeta
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
@@ -159,6 +161,16 @@ class SessionDetailViewModel @Inject constructor(
 
     private val _attachedFiles = MutableStateFlow<List<FileAttachment>>(emptyList())
     val attachedFiles: StateFlow<List<FileAttachment>> = _attachedFiles.asStateFlow()
+
+    private val _pendingImages = MutableStateFlow<List<PendingImage>>(emptyList())
+    val pendingImages: StateFlow<List<PendingImage>> = _pendingImages.asStateFlow()
+
+    private val _imageViewer = MutableStateFlow<MessageImageViewer?>(null)
+    val imageViewer: StateFlow<MessageImageViewer?> = _imageViewer.asStateFlow()
+
+    private val imageCache = object : android.util.LruCache<String, ByteArray>(16 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ByteArray): Int = value.size
+    }
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -838,12 +850,14 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun sendMessage(sessionID: String) {
-        val text = _inputText.value.ifBlank { return }
+        val text = _inputText.value
+        val images = _pendingImages.value
+        if (text.isBlank() && images.isEmpty()) return
         syncDebugController.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Manual,
             sessionId = sessionID,
-            message = "发送消息 send message requested textLength=${text.length} attachments=${_attachedFiles.value.size}",
+            message = "发送消息 send message requested textLength=${text.length} attachments=${_attachedFiles.value.size} images=${images.size}",
         )
         _isSending.value = true
         abortSuppressed = false
@@ -857,12 +871,32 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val apiFiles = files.map { com.openmate.core.network.OpencodeApiClient.FileAttachment(it.path, it.filename, it.mime) }
-                apiClient.sendPrompt(sessionID, text, sendModelPID, sendModelMID, sendAgent, apiFiles, currentDirectory.ifBlank { null }, variant)
-                    ?.let { sent ->
-                        sessionMessageRepository.insertOptimisticUserMessage(sessionID, sent.id, sent.text, sent.created)
+                val apiImages = images.map { PromptImage(it.name, it.mime, it.bytes) }
+                apiClient.sendPrompt(
+                    sessionID,
+                    text,
+                    sendModelPID,
+                    sendModelMID,
+                    sendAgent,
+                    apiFiles,
+                    apiImages,
+                    currentDirectory.ifBlank { null },
+                    variant,
+                )?.let { sent ->
+                    sessionMessageRepository.insertOptimisticUserMessage(
+                        sessionId = sessionID,
+                        messageId = sent.id,
+                        text = sent.text,
+                        created = sent.created,
+                        files = images.map { MessageFileMeta(it.mime, it.name) },
+                    )
+                    images.forEachIndexed { index, image ->
+                        imageCache.put("${sent.id}:$index", image.bytes)
                     }
+                }
                 _inputText.value = ""
                 _attachedFiles.value = emptyList()
+                _pendingImages.value = emptyList()
                 clearDraft(sessionID)
                 sessionMessageRepository.incrementalSync(sessionID)
                 if (_sessionRevert.value != null) {
@@ -1181,6 +1215,109 @@ class SessionDetailViewModel @Inject constructor(
     fun removeAttachedFile(index: Int) {
         _attachedFiles.value = _attachedFiles.value.toMutableList().apply { removeAt(index) }
         draftSessionID?.let { saveDraft(it, _inputText.value, _attachedFiles.value) }
+    }
+
+    fun addImages(uris: List<android.net.Uri>, contentResolver: android.content.ContentResolver) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val added = mutableListOf<PendingImage>()
+            var totalBytes = _pendingImages.value.sumOf { it.bytes.size }
+            for (uri in uris) {
+                if (_pendingImages.value.size + added.size >= ImageCompressor.MAX_IMAGES) {
+                    _errorMessage.value = appContext.getString(R.string.image_limit, ImageCompressor.MAX_IMAGES)
+                    break
+                }
+                try {
+                    val raw = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: throw ImageCompressor.DecodeException()
+                    val compressed = ImageCompressor.compress(raw)
+                    if (totalBytes + compressed.size > ImageCompressor.MAX_TOTAL_BYTES) {
+                        _errorMessage.value = appContext.getString(R.string.image_too_large)
+                        break
+                    }
+                    totalBytes += compressed.size
+                    added += PendingImage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = resolveImageName(uri, contentResolver),
+                        mime = "image/jpeg",
+                        bytes = compressed,
+                    )
+                } catch (e: ImageCompressor.TooLargeException) {
+                    _errorMessage.value = appContext.getString(R.string.image_too_large)
+                } catch (e: ImageCompressor.DecodeException) {
+                    _errorMessage.value = appContext.getString(R.string.image_load_failed)
+                } catch (e: Exception) {
+                    Log.w(TAG, "addImages failed: ${e.message}", e)
+                    _errorMessage.value = appContext.getString(R.string.image_load_failed)
+                }
+            }
+            if (added.isNotEmpty()) {
+                _pendingImages.value = _pendingImages.value + added
+            }
+        }
+    }
+
+    fun removePendingImage(id: String) {
+        _pendingImages.value = _pendingImages.value.filterNot { it.id == id }
+    }
+
+    fun openMessageImage(sessionId: String, messageId: String, index: Int) {
+        _imageViewer.value = MessageImageViewer(messageId, index, loading = true)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val key = "$messageId:$index"
+                var bytes = imageCache.get(key)
+                if (bytes == null) {
+                    val data = sessionMessageRepository.fetchMessageData(sessionId, messageId)
+                    val encoded = MessageImages.base64At(data, index)
+                        ?: throw IllegalStateException("image data missing")
+                    bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+                    if (bytes.size <= 2 * 1024 * 1024) {
+                        imageCache.put(key, bytes)
+                    }
+                }
+                val bitmap = decodeImage(bytes)
+                val current = _imageViewer.value
+                if (current != null && current.messageId == messageId && current.index == index) {
+                    _imageViewer.value = MessageImageViewer(messageId, index, loading = false, image = bitmap)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "openMessageImage failed", e)
+                val current = _imageViewer.value
+                if (current != null && current.messageId == messageId && current.index == index) {
+                    _imageViewer.value = MessageImageViewer(
+                        messageId = messageId,
+                        index = index,
+                        loading = false,
+                        error = appContext.getString(R.string.image_load_failed),
+                    )
+                }
+            }
+        }
+    }
+
+    fun closeImageViewer() {
+        _imageViewer.value = null
+    }
+
+    private fun decodeImage(bytes: ByteArray): android.graphics.Bitmap {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 2048) {
+            sample *= 2
+        }
+        return android.graphics.BitmapFactory.decodeByteArray(
+            bytes,
+            0,
+            bytes.size,
+            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+        ) ?: throw IllegalStateException("decode failed")
+    }
+
+    private fun resolveImageName(uri: android.net.Uri, contentResolver: android.content.ContentResolver): String {
+        val name = runCatching { resolveFilename(uri, contentResolver) }.getOrNull()
+        return name?.ifBlank { null } ?: "image_${System.currentTimeMillis()}.jpg"
     }
 
     private data class DraftData(val text: String, val files: List<FileAttachment>)

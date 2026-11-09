@@ -277,4 +277,10 @@
     <string name="duration_hms">%1$dh %2$dm %3$ds</string>
     <string name="duration_ms">%1$dm %2$ds</string>
     <string name="duration_s">%1$ds</string>
+    <string name="pick_image">Pick image</string>
+    <string name="image_n">[Image %1$d]</string>
+    <string name="image_load_failed">Failed to load image</string>
+    <string name="image_limit">You can attach at most %1$d images</string>
+    <string name="image_too_large">Image is too large to send</string>
+    <string name="image_viewer_close">Close</string>
 </resources>

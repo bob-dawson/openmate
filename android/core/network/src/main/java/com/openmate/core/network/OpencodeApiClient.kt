@@ -39,6 +39,7 @@ import com.openmate.core.network.dto.SkillInfoDto
 import com.openmate.core.network.dto.V2ModelInfoDto
 import com.openmate.core.network.dto.toModelInfoDto
 import com.openmate.core.domain.model.ConnectionRoute
+import com.openmate.core.domain.model.PromptImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -161,6 +162,7 @@ class OpencodeApiClient(
         modelID: String? = null,
         agent: String? = null,
         files: List<FileAttachment> = emptyList(),
+        images: List<PromptImage> = emptyList(),
         directory: String? = null,
         variant: String? = null,
     ): SentUserMessage? {
@@ -181,10 +183,16 @@ class OpencodeApiClient(
             try { postV2Unit("/api/session/$sessionID/agent", JsonObject(mapOf("agent" to JsonPrimitive(agent))), agentParams) } catch (_: Exception) {}
         }
         val extraFields = mutableMapOf<String, Any>()
-        if (files.isNotEmpty()) {
-            extraFields["files"] = files.map { f ->
-                mapOf("uri" to "file://${f.path}", "name" to f.filename)
+        if (files.isNotEmpty() || images.isNotEmpty()) {
+            val items = mutableListOf<Map<String, Any>>()
+            files.forEach { f ->
+                items += mapOf("uri" to "file://${f.path}", "name" to f.filename)
             }
+            images.forEach { image ->
+                val encoded = android.util.Base64.encodeToString(image.bytes, android.util.Base64.NO_WRAP)
+                items += mapOf("uri" to "data:${image.mime};base64,$encoded", "name" to image.name)
+            }
+            extraFields["files"] = items
         }
         val bodyMap = mutableMapOf<String, Any>("text" to content)
         bodyMap.putAll(extraFields)

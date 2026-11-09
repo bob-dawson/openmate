@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +35,8 @@ fun ChatInputBar(
     isBusy: Boolean = false,
     isUploading: Boolean = false,
     isSending: Boolean = false,
+    imageCount: Int = 0,
+    onPickImage: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -42,6 +46,17 @@ fun ChatInputBar(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        IconButton(
+            onClick = onPickImage,
+            enabled = !isSending,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Icon(
+                Icons.Filled.Image,
+                contentDescription = stringResource(R.string.pick_image),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         OutlinedTextField(
             value = text,
             onValueChange = onTextChange,
@@ -62,8 +77,7 @@ fun ChatInputBar(
             ),
             shape = RoundedCornerShape(4.dp),
         )
-        if (text.isBlank() && isBusy) {
-            IconButton(
+        if (text.isBlank() && imageCount == 0 && isBusy) {            IconButton(
                 onClick = onAbort,
                 modifier = Modifier.height(40.dp),
                 colors = IconButtonDefaults.iconButtonColors(
@@ -79,7 +93,7 @@ fun ChatInputBar(
         } else {
             IconButton(
                 onClick = onSend,
-                enabled = text.isNotBlank() && !isUploading && !isSending,
+                enabled = (text.isNotBlank() || imageCount > 0) && !isUploading && !isSending,
                 modifier = Modifier.height(40.dp),
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -88,7 +102,7 @@ fun ChatInputBar(
                 Icon(
                     Icons.AutoMirrored.Filled.Send,
                     contentDescription = stringResource(R.string.content_desc_send),
-                    tint = if (text.isNotBlank() && !isSending) {
+                    tint = if ((text.isNotBlank() || imageCount > 0) && !isSending) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant

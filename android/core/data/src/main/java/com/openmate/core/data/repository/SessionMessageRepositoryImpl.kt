@@ -13,6 +13,7 @@ import com.openmate.core.database.entity.SessionMessageFullContentEntity
 import com.openmate.core.database.entity.SyncStateEntity
 import com.openmate.core.domain.model.DiffBuilder
 import com.openmate.core.domain.model.DiffFile
+import com.openmate.core.domain.model.MessageFileMeta
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionMessageSyncEvent
 import com.openmate.core.domain.model.SessionMessageSyncChange
@@ -32,6 +33,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
 import androidx.room.withTransaction
 import java.util.concurrent.ConcurrentHashMap
@@ -412,12 +414,28 @@ class SessionMessageRepositoryImpl @Inject constructor(
         incrementalSync(sessionId)
     }
 
-    override suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long) {
+    override suspend fun insertOptimisticUserMessage(
+        sessionId: String,
+        messageId: String,
+        text: String,
+        created: Long,
+        files: List<MessageFileMeta>,
+    ) {
         try {
             val db = dbProvider.getActive()
             if (db.sessionMessageDao().getById(messageId) != null) return
             val data = buildJsonObject {
                 put("text", text)
+                if (files.isNotEmpty()) {
+                    put("files", buildJsonArray {
+                        files.forEach { file ->
+                            add(buildJsonObject {
+                                put("mime", file.mime)
+                                put("name", file.name)
+                            })
+                        }
+                    })
+                }
                 put("time", buildJsonObject { put("created", created) })
             }
             val dto = SyncMessageDto(
@@ -461,6 +479,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
                 fetchedAt = System.currentTimeMillis(),
             )
         )
+    }
+
+    override suspend fun fetchMessageData(sessionId: String, messageId: String): kotlinx.serialization.json.JsonObject {
+        return syncApiClient.full(sessionId, messageId).data
     }
 
     override suspend fun fetchDiffFiles(sessionId: String, messageId: String, toolName: String, targetFilePath: String?): List<DiffFile> {

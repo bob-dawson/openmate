@@ -103,6 +103,7 @@ import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.FileViewer
+import com.openmate.feature.session.component.ImageViewerDialog
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
 import com.openmate.feature.session.component.SessionMessageSearchPanel
@@ -174,6 +175,8 @@ fun SessionDetailScreen(
     val skills by viewModel.skills.collectAsState()
     val mcpServers by viewModel.mcpServers.collectAsState()
     val attachedFiles by viewModel.attachedFiles.collectAsState()
+    val pendingImages by viewModel.pendingImages.collectAsState()
+    val imageViewer by viewModel.imageViewer.collectAsState()
     val pendingQuestions by viewModel.pendingQuestions.collectAsState()
     val pendingPermissions by viewModel.pendingPermissions.collectAsState()
     val subtaskSessionIds by viewModel.subtaskSessionIds.collectAsState()
@@ -198,6 +201,14 @@ fun SessionDetailScreen(
     val compactMode by remember { mutableStateOf(prefs.getBoolean("compact_mode", false)) }
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val imagePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(4),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.addImages(uris, context.contentResolver)
+        }
+    }
 
     var menuExpanded by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
@@ -673,6 +684,9 @@ fun SessionDetailScreen(
                                 context.startActivity(intent)
                             },
                             onRevertToMessage = { messageID -> viewModel.revertToMessage(sessionID, messageID) },
+                            onImageClick = { messageId, index ->
+                                viewModel.openMessageImage(sessionID, messageId, index)
+                            },
                         )
                     }
                     if (displayMessages.isEmpty()) {
@@ -871,6 +885,32 @@ fun SessionDetailScreen(
                 }
             }
 
+            if (pendingImages.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    pendingImages.forEachIndexed { index, image ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+                                .clickable { viewModel.removePendingImage(image.id) }
+                                .padding(horizontal = 8.dp, vertical = 3.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.image_n, index + 1) + " \u00d7",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -997,9 +1037,21 @@ fun SessionDetailScreen(
                 isBusy = currentBusyStart != null || sessionRetryStatus != null,
                 isUploading = isUploading,
                 isSending = isSending,
+                imageCount = pendingImages.size,
+                onPickImage = {
+                    imagePickerLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly,
+                        ),
+                    )
+                },
             )
         }
     }
+    }
+
+    imageViewer?.let { viewer ->
+        ImageViewerDialog(state = viewer, onDismiss = { viewModel.closeImageViewer() })
     }
 
     if (showRenameDialog) {

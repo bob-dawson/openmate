@@ -164,6 +164,7 @@ fun SessionMessageRenderer(
     onViewFile: ((filePath: String) -> Unit)? = null,
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
     onRevertToMessage: (String) -> Unit = {},
+    onImageClick: ((messageId: String, index: Int) -> Unit)? = null,
     subtaskSessionIds: Map<String, String> = emptyMap(),
     onResolveSubtask: (String, String) -> Unit = { _, _ -> },
 ) {
@@ -181,6 +182,9 @@ fun SessionMessageRenderer(
                     data = dataJson,
                     messageID = entity.id,
                     onRevertToMessage = onRevertToMessage,
+                    onImageClick = onImageClick?.let { callback ->
+                        { index -> callback(entity.id, index) }
+                    },
                 )
                 MessageMetadata(
                     messageId = entity.id,
@@ -550,6 +554,7 @@ fun UserMessageItem(
     data: JsonObject,
     messageID: String,
     onRevertToMessage: (String) -> Unit = {},
+    onImageClick: ((Int) -> Unit)? = null,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val clipboardManager = LocalClipboardManager.current
@@ -569,13 +574,33 @@ fun UserMessageItem(
             }
             val files = data["files"]?.jsonArray
             if (files != null) {
+                var imageIndex = 0
+                val imageIndexes = mutableListOf<Int>()
+                val otherFiles = mutableListOf<Pair<String, String>>()
                 for (file in files) {
-                    val obj = file.jsonObject
+                    val obj = file as? JsonObject ?: continue
                     val mime = obj["mime"]?.jsonPrimitive?.contentOrNull ?: "file"
-                    val filename = obj["filename"]?.jsonPrimitive?.contentOrNull
-                    if (filename != null) {
-                        FileAttachmentTag(mime = mime, filename = filename)
+                    val name = obj["name"]?.jsonPrimitive?.contentOrNull
+                        ?: obj["filename"]?.jsonPrimitive?.contentOrNull
+                    if (mime.startsWith("image/")) {
+                        imageIndexes += imageIndex
+                        imageIndex++
+                    } else if (name != null) {
+                        otherFiles += mime to name
                     }
+                }
+                if (imageIndexes.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        imageIndexes.forEach { index ->
+                            ImageChip(index = index + 1, onClick = { onImageClick?.invoke(index) })
+                        }
+                    }
+                }
+                otherFiles.forEach { (mime, name) ->
+                    FileAttachmentTag(mime = mime, filename = name)
                 }
             }
             val content = data["content"]?.jsonArray
@@ -893,6 +918,23 @@ private fun QueuedBadge() {
                 color = MaterialTheme.colorScheme.onPrimary,
             )
         }
+    }
+}
+
+@Composable
+private fun ImageChip(index: Int, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.image_n, index),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 
