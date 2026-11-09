@@ -1,0 +1,1 @@
+Fixed the bridge failing to reconnect after an in-app update on macOS. The service now restarts automatically through the system service manager after updating.
