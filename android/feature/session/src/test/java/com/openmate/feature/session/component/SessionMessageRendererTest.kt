@@ -439,4 +439,20 @@ class SessionMessageRendererTest {
             "old/obsolete.txt",
         ).inOrder()
     }
+
+    @Test
+    fun formatExitCode_convertsUnsignedExitToSigned() {
+        assertThat(formatExitCode("4294967295")).isEqualTo("-1")
+        assertThat(formatExitCode("4294967294")).isEqualTo("-2")
+        assertThat(formatExitCode("2147483648")).isEqualTo("-2147483648")
+    }
+
+    @Test
+    fun formatExitCode_keepsNormalAndInvalidValues() {
+        assertThat(formatExitCode("0")).isEqualTo("0")
+        assertThat(formatExitCode("1")).isEqualTo("1")
+        assertThat(formatExitCode("-1")).isEqualTo("-1")
+        assertThat(formatExitCode("null")).isEqualTo("null")
+        assertThat(formatExitCode("abc")).isEqualTo("abc")
+    }
 }

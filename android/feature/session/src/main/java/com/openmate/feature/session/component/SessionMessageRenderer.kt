@@ -382,7 +382,9 @@ private fun ShellNoticeRow(command: String, state: String?, exit: String?) {
         state == "error" || state == "failed" -> "failed"
         else -> state
     }
-    val exitLabel = exit?.takeIf { it.isNotBlank() && it != "0" && it != "null" }
+    val exitLabel = exit
+        ?.takeIf { it.isNotBlank() && it != "0" && it != "null" }
+        ?.let { formatExitCode(it) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -402,6 +404,7 @@ private fun ShellNoticeRow(command: String, state: String?, exit: String?) {
             Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = command,
+                modifier = Modifier.weight(1f, fill = false),
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -414,8 +417,19 @@ private fun ShellNoticeRow(command: String, state: String?, exit: String?) {
                 text = "exit $exitLabel",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+internal fun formatExitCode(raw: String): String {
+    val value = raw.trim().toLongOrNull() ?: return raw
+    return if (value > Int.MAX_VALUE && value <= 0xFFFF_FFFFL) {
+        (value - 0x1_0000_0000L).toString()
+    } else {
+        raw
     }
 }
 
