@@ -16,15 +16,23 @@ object SessionMessageWindowManager {
         for (change in changes) {
             messages = when (change) {
                 is SessionMessageSyncChange.Insert -> {
-                    if (messages.any { it.id == change.message.id }) {
-                        val idx = messages.indexOfLast { it.id == change.message.id }
-                        if (idx == messages.lastIndex) {
+                    val existingIdx = messages.indexOfLast { it.id == change.message.id }
+                    if (existingIdx >= 0) {
+                        if (existingIdx == messages.lastIndex) {
                             messages.dropLast(1) + change.message
                         } else {
-                            messages.subList(0, idx) + change.message + messages.subList(idx + 1, messages.size)
+                            messages.subList(0, existingIdx) + change.message + messages.subList(existingIdx + 1, messages.size)
                         }
                     } else {
-                        messages + change.message
+                        val insertAt = messages.indexOfFirst { existing ->
+                            existing.timeCreated > change.message.timeCreated ||
+                                (existing.timeCreated == change.message.timeCreated && existing.id > change.message.id)
+                        }
+                        if (insertAt < 0) {
+                            messages + change.message
+                        } else {
+                            messages.subList(0, insertAt) + change.message + messages.subList(insertAt, messages.size)
+                        }
                     }
                 }
 

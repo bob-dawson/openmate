@@ -83,4 +83,35 @@ class SessionMessageWindowManagerTest {
             timeCreated = timeCreated,
             timeUpdated = timeCreated,
         )
+    @Test
+    fun applyInsert_placesOlderMessageInChronologicalPosition() {
+        val state = SessionMessageWindowManager.State(
+            messages = listOf(msg("m1", 100), msg("m2", 200), msg("m3", 300)),
+            loadedCount = 30,
+            hasOlderMessages = true,
+        )
+
+        val updated = SessionMessageWindowManager.apply(
+            state,
+            listOf(SessionMessageSyncChange.Insert(msg("old", 150))),
+        )
+
+        assertThat(updated.messages.map { it.id }).containsExactly("m1", "old", "m2", "m3").inOrder()
+    }
+
+    @Test
+    fun applyInsert_placesOldestMessageBeforeWindow() {
+        val state = SessionMessageWindowManager.State(
+            messages = listOf(msg("m1", 100), msg("m2", 200)),
+            loadedCount = 30,
+            hasOlderMessages = true,
+        )
+
+        val updated = SessionMessageWindowManager.apply(
+            state,
+            listOf(SessionMessageSyncChange.Insert(msg("oldest", 50))),
+        )
+
+        assertThat(updated.messages.map { it.id }).containsExactly("oldest", "m1", "m2").inOrder()
+    }
 }
