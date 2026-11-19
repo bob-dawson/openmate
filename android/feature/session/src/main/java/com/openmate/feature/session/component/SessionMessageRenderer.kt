@@ -14,6 +14,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -286,7 +287,7 @@ private fun CompactionMessageItem(
         entity.timeCreated,
     )
     val isRunning = completedAt == null
-    var expanded by remember(entity.id) { mutableStateOf(false) }
+    var expanded by rememberSaveable(key = "compaction") { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -674,7 +675,7 @@ fun AssistantMessageItem(
     onResolveSubtask: (String, String) -> Unit = { _, _ -> },
 ) {
     val content = data["content"]?.jsonArray ?: return
-    val reasoningExpanded = remember { mutableStateOf(false) }
+    val reasoningExpanded = rememberSaveable(key = "reasoning") { mutableStateOf(false) }
     val toolItems = remember(data) { extractToolItems(data, sessionId, messageId) }
     var toolIndex = 0
 

@@ -34,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -469,7 +470,7 @@ internal fun PendingToolLine(item: DisplayItem.ToolItem) {
 @Composable
 internal fun ErrorToolLine(item: DisplayItem.ToolItem) {
     val summary = toolSummary(item.toolName, item.args, item.result, item.metadata)
-    val expanded = remember { mutableStateOf(false) }
+    val expanded = rememberSaveable(key = "tool:${item.callID ?: item.args ?: item.toolName}") { mutableStateOf(false) }
     val textDecoration = if (item.result?.contains("rejected") == true || item.result?.contains("denied") == true) TextDecoration.LineThrough else TextDecoration.None
     Column {
         Row(
@@ -658,7 +659,7 @@ internal fun BlockToolLine(
     onViewDiff: ((sessionId: String, messageId: String, toolName: String, filePath: String?) -> Unit)? = null,
 ) {
     val isDiffTool = item.toolName == "edit" || item.toolName == "patch"
-    val expanded = remember { mutableStateOf(false) }
+    val expanded = rememberSaveable(key = "tool:${item.callID ?: item.args ?: item.toolName}") { mutableStateOf(false) }
     val files = if (item.toolName == "patch" && item.files.isEmpty()) {
         val metaFiles = item.metadata?.get("files")?.jsonArray?.mapNotNull { entry ->
             val obj = entry as? JsonObject ?: return@mapNotNull null
@@ -934,7 +935,7 @@ internal fun ExecuteToolLine(
     item: DisplayItem.ToolItem,
     onViewFile: ((filePath: String) -> Unit)? = null,
 ) {
-    val expanded = remember { mutableStateOf(false) }
+    val expanded = rememberSaveable(key = "tool:${item.callID ?: item.args ?: item.toolName}") { mutableStateOf(false) }
     val jsonArgs = try {
         if (item.args != null) questionJson.parseToJsonElement(item.args).jsonObject else null
     } catch (_: Exception) { null }
