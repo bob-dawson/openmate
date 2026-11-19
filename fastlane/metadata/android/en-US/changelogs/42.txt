@@ -1,0 +1,1 @@
+Expanded Thinking and tool blocks now stay expanded after scrolling away and back, so long content is easier to read.
