@@ -106,7 +106,7 @@ class AutoFollowTracker {
     }
 
     fun shouldAutoFollow(canScrollForward: Boolean, isScrollInProgress: Boolean): Boolean {
-        return shouldFollow && canScrollForward && !isScrollInProgress
+        return shouldFollow && canScrollForward && !isScrollInProgress && !isAutoScrolling
     }
 
     fun consumeShouldScrollToBottom(): Boolean {

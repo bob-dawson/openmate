@@ -343,4 +343,12 @@ class AutoFollowTrackerTest {
         tracker.onAutoScrollEnded()
         assertThat(tracker.shouldFollow).isTrue()
     }
+    @Test
+    fun shouldAutoFollow_duringAutoScroll_isFalse() {
+        val tracker = AutoFollowTracker()
+        tracker.onAutoScrollStarted()
+        assertThat(tracker.shouldAutoFollow(canScrollForward = true, isScrollInProgress = false)).isFalse()
+        tracker.onAutoScrollEnded()
+        assertThat(tracker.shouldAutoFollow(canScrollForward = true, isScrollInProgress = false)).isTrue()
+    }
 }

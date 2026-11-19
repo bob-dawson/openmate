@@ -12,12 +12,12 @@ internal suspend fun runAutoScroll(
 ) {
     onStarted()
     try {
-        if (messageCount > 0) {
+        var attempts = 0
+        while (messageCount > 0 && attempts < 4) {
             scroll(messageCount)
-        }
-        pause(100)
-        if (messageCount > 0 && canScrollForward()) {
-            scroll(messageCount)
+            pause(80)
+            if (!canScrollForward()) break
+            attempts++
         }
     } catch (_: NullPointerException) {
     } finally {

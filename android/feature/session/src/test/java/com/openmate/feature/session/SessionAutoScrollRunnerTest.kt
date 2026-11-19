@@ -30,22 +30,43 @@ class SessionAutoScrollRunnerTest {
     }
 
     @Test
-    fun runAutoScroll_scrollsTwiceWhenStillNotAtBottom() = runBlocking {
+    fun runAutoScroll_retriesUntilReachedBottom() = runBlocking {
         var started = 0
         var ended = 0
+        var remaining = 2
         val indices = mutableListOf<Int>()
 
         runAutoScroll(
             messageCount = 3,
-            canScrollForward = { true },
+            canScrollForward = { remaining > 0 },
             onStarted = { started++ },
             onEnded = { ended++ },
             pause = {},
-            scroll = { index -> indices += index },
+            scroll = { index ->
+                indices += index
+                remaining--
+            },
         )
 
         assertThat(started).isEqualTo(1)
         assertThat(ended).isEqualTo(1)
         assertThat(indices).containsExactly(3, 3).inOrder()
+    }
+
+    @Test
+    fun runAutoScroll_stopsAfterLimitedAttemptsForOversizedItem() = runBlocking {
+        val indices = mutableListOf<Int>()
+
+        runAutoScroll(
+            messageCount = 3,
+            canScrollForward = { true },
+            onStarted = {},
+            onEnded = {},
+            pause = {},
+            scroll = { index -> indices += index },
+        )
+
+        assertThat(indices).hasSize(4)
+        assertThat(indices).containsExactly(3, 3, 3, 3).inOrder()
     }
 }

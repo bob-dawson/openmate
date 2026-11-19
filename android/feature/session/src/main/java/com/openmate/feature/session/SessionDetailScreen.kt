@@ -311,20 +311,6 @@ fun SessionDetailScreen(
         }
     }
 
-    val needFollowScroll by remember {
-        derivedStateOf {
-            autoFollowTracker.shouldAutoFollow(
-                canScrollForward = listState.canScrollForward,
-                isScrollInProgress = listState.isScrollInProgress,
-            )
-        }
-    }
-    LaunchedEffect(needFollowScroll) {
-        if (needFollowScroll && !autoFollowTracker.consumeShouldScrollToBottom()) {
-            scrollToBottom()
-        }
-    }
-
     val firstMessageId = messages.firstOrNull()?.id
     LaunchedEffect(
         listState.firstVisibleItemIndex,
