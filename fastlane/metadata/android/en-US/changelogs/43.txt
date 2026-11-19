@@ -1,0 +1,1 @@
+Expanded Thinking blocks no longer make the list jump or pull you back to the bottom while scrolling.
