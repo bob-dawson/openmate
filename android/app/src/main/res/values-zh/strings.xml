@@ -181,4 +181,5 @@
     <string name="content_desc_add_instance">添加实例</string>
     <string name="content_desc_new_session">新建会话</string>
     <string name="content_desc_send">发送</string>
+    <string name="instances">实例</string>
 </resources>

@@ -89,6 +89,7 @@ class SessionDetailViewModel @Inject constructor(
     private val subtaskSessionTracker: SubtaskSessionTracker,
 ) : ViewModel() {
     private val prefs: SharedPreferences = appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+    private val draftImageStorage by lazy { DraftImageStorage(appContext) }
 
     val subtaskSessionIds: StateFlow<Map<String, String>> = subtaskSessionTracker.byCallId
 
@@ -499,6 +500,15 @@ class SessionDetailViewModel @Inject constructor(
         val savedDraft = loadDraft(sid)
         _inputText.value = savedDraft.text
         _attachedFiles.value = savedDraft.files
+        restorePendingImages(sid)
+    }
+
+    private fun restorePendingImages(sessionId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val restored = draftImageStorage.load(sessionId)
+            if (restored.isEmpty()) return@launch
+            _pendingImages.value = (restored + _pendingImages.value).distinctBy { it.id }
+        }
     }
 
     fun fetchFullContent(sessionId: String, messageId: String) {
@@ -593,6 +603,7 @@ class SessionDetailViewModel @Inject constructor(
         _hasOlderMessages.value = false
         _hasOlderUserMessage.value = false
         _pendingUserJumpTarget.value = null
+        _pendingImages.value = emptyList()
         _sessionRevert.value = null
         wasBusy = false
         abortSuppressed = false
@@ -661,6 +672,7 @@ class SessionDetailViewModel @Inject constructor(
         val savedDraft = loadDraft(sessionID)
         _inputText.value = savedDraft.text
         _attachedFiles.value = savedDraft.files
+        restorePendingImages(sessionID)
 
         observeTodos(sessionID)
         observeQuestions()
@@ -974,6 +986,7 @@ class SessionDetailViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.deleteSession(sid)
+                clearDraft(sid)
                 withContext(Dispatchers.Main) { onDeleted() }
             } catch (e: Exception) {
                 _errorMessage.value = appContext.getString(R.string.delete_session_msg_failed)
@@ -1267,12 +1280,23 @@ class SessionDetailViewModel @Inject constructor(
             }
             if (added.isNotEmpty()) {
                 _pendingImages.value = _pendingImages.value + added
+                val sid = currentSessionID ?: draftSessionID
+                if (sid != null) {
+                    draftImageStorage.saveImages(sid, added)
+                    draftImageStorage.writeMeta(sid, _pendingImages.value)
+                }
             }
         }
     }
 
     fun removePendingImage(id: String) {
         _pendingImages.value = _pendingImages.value.filterNot { it.id == id }
+        val sid = currentSessionID ?: draftSessionID ?: return
+        val remaining = _pendingImages.value
+        viewModelScope.launch(Dispatchers.IO) {
+            draftImageStorage.deleteImage(sid, id)
+            draftImageStorage.writeMeta(sid, remaining)
+        }
     }
 
     fun openMessageImage(sessionId: String, messageId: String, index: Int) {
@@ -1312,6 +1336,37 @@ class SessionDetailViewModel @Inject constructor(
 
     fun closeImageViewer() {
         _imageViewer.value = null
+    }
+
+    fun openPendingImage(index: Int) {
+        val image = _pendingImages.value.getOrNull(index) ?: return
+        val viewerId = "pending_${image.id}"
+        _imageViewer.value = MessageImageViewer(messageId = viewerId, index = index, loading = true)
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val bitmap = decodeImage(image.bytes)
+                val current = _imageViewer.value
+                if (current != null && current.messageId == viewerId) {
+                    _imageViewer.value = MessageImageViewer(
+                        messageId = viewerId,
+                        index = index,
+                        loading = false,
+                        image = bitmap,
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "openPendingImage failed", e)
+                val current = _imageViewer.value
+                if (current != null && current.messageId == viewerId) {
+                    _imageViewer.value = MessageImageViewer(
+                        messageId = viewerId,
+                        index = index,
+                        loading = false,
+                        error = appContext.getString(R.string.image_load_failed),
+                    )
+                }
+            }
+        }
     }
 
     private fun decodeImage(bytes: ByteArray): android.graphics.Bitmap {
@@ -1359,6 +1414,7 @@ class SessionDetailViewModel @Inject constructor(
             .remove("draft_text_$sessionID")
             .remove("draft_files_$sessionID")
             .apply()
+        draftImageStorage.clear(sessionID)
     }
 
     private fun loadRecentModels(): List<ModelRef> {

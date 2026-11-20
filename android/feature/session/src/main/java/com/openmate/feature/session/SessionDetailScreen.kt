@@ -105,6 +105,7 @@ import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
 import com.openmate.feature.session.component.FileViewer
 import com.openmate.feature.session.component.ImageViewerDialog
+import com.openmate.feature.session.component.PendingImageStrip
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.feature.session.component.SessionMessageRenderer
 import com.openmate.feature.session.component.SessionMessageSearchPanel
@@ -941,31 +942,11 @@ fun SessionDetailScreen(
                 }
             }
 
-            if (pendingImages.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    pendingImages.forEachIndexed { index, image ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                                .clickable { viewModel.removePendingImage(image.id) }
-                                .padding(horizontal = 8.dp, vertical = 3.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.image_n, index + 1) + " \u00d7",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-            }
+            PendingImageStrip(
+                images = pendingImages,
+                onOpen = { index -> viewModel.openPendingImage(index) },
+                onRemove = { id -> viewModel.removePendingImage(id) },
+            )
 
             Row(
                 modifier = Modifier

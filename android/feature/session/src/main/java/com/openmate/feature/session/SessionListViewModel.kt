@@ -86,6 +86,12 @@ class SessionListViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 sessionRepository.deleteSession(id)
+                DraftImageStorage(appContext).clear(id)
+                appContext.getSharedPreferences("openmate_settings", Context.MODE_PRIVATE)
+                    .edit()
+                    .remove("draft_text_$id")
+                    .remove("draft_files_$id")
+                    .apply()
             } catch (e: Exception) {
                 Log.e(TAG, "deleteSession failed", e)
                 _errorMessage.value = appContext.getString(R.string.delete_session_failed)

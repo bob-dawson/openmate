@@ -283,4 +283,6 @@
     <string name="image_limit">You can attach at most %1$d images</string>
     <string name="image_too_large">Image is too large to send</string>
     <string name="image_viewer_close">Close</string>
+    <string name="pending_image_open">View image</string>
+    <string name="pending_image_remove">Remove image</string>
 </resources>

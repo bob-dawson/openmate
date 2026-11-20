@@ -46,4 +46,13 @@
     <string name="bridge_not_paired">此 Bridge 尚未配对，请先在 Bridge 管理页面完成设备配对</string>
     <string name="device_credentials_not_found">未找到设备凭证，请重新配对</string>
     <string name="bridge_address_unknown_offline">Bridge 地址未知且不在线</string>
+    <string name="clear_all">全部清除</string>
+    <string name="content_desc_scan_qr">扫描二维码</string>
+    <string name="copy">复制</string>
+    <string name="crash_count">%1$d 条崩溃日志</string>
+    <string name="crash_detail">崩溃详情</string>
+    <string name="crash_log">崩溃日志</string>
+    <string name="delete_confirm">确定清除所有崩溃日志吗？</string>
+    <string name="no_crash_logs">暂无崩溃日志</string>
+    <string name="share">分享</string>
 </resources>
