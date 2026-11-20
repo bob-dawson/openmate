@@ -2,35 +2,49 @@ package com.openmate.core.common
 
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 class TimeExtensionsTest {
+    private val now = 1_800_000_000_000L
+
     @Test
-    fun toRelativeTimeString_justNow() {
-        val now = System.currentTimeMillis()
-        assertThat(now.toRelativeTimeString()).isEqualTo("just now")
+    fun toRelativeTime_justNow() {
+        assertThat(now.toRelativeTime(now)).isEqualTo(RelativeTime(RelativeTimeUnit.JustNow))
     }
 
     @Test
-    fun toRelativeTimeString_minutesAgo() {
-        val time = System.currentTimeMillis() - 5 * 60 * 1000
-        assertThat(time.toRelativeTimeString()).isEqualTo("5 min ago")
+    fun toRelativeTime_minutesAgo() {
+        val time = now - TimeUnit.MINUTES.toMillis(5)
+        assertThat(time.toRelativeTime(now)).isEqualTo(RelativeTime(RelativeTimeUnit.Minutes, 5))
     }
 
     @Test
-    fun toRelativeTimeString_hoursAgo() {
-        val time = System.currentTimeMillis() - 3 * 60 * 60 * 1000
-        assertThat(time.toRelativeTimeString()).isEqualTo("3 hr ago")
+    fun toRelativeTime_hoursAgo() {
+        val time = now - TimeUnit.HOURS.toMillis(3)
+        assertThat(time.toRelativeTime(now)).isEqualTo(RelativeTime(RelativeTimeUnit.Hours, 3))
     }
 
     @Test
-    fun toRelativeTimeString_daysAgo() {
-        val time = System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000L
-        assertThat(time.toRelativeTimeString()).isEqualTo("2 days ago")
+    fun toRelativeTime_singleDay() {
+        val time = now - TimeUnit.DAYS.toMillis(1)
+        assertThat(time.toRelativeTime(now)).isEqualTo(RelativeTime(RelativeTimeUnit.Days, 1))
     }
 
     @Test
-    fun toRelativeTimeString_singleDay() {
-        val time = System.currentTimeMillis() - 1 * 24 * 60 * 60 * 1000L
-        assertThat(time.toRelativeTimeString()).isEqualTo("1 day ago")
+    fun toRelativeTime_daysAgo() {
+        val time = now - TimeUnit.DAYS.toMillis(2)
+        assertThat(time.toRelativeTime(now)).isEqualTo(RelativeTime(RelativeTimeUnit.Days, 2))
+    }
+
+    @Test
+    fun toRelativeTime_weeksAgo() {
+        val time = now - TimeUnit.DAYS.toMillis(15)
+        assertThat(time.toRelativeTime(now)).isEqualTo(RelativeTime(RelativeTimeUnit.Weeks, 2))
+    }
+
+    @Test
+    fun toRelativeTime_futureTimestampIsJustNow() {
+        val time = now + TimeUnit.MINUTES.toMillis(10)
+        assertThat(time.toRelativeTime(now)).isEqualTo(RelativeTime(RelativeTimeUnit.JustNow))
     }
 }

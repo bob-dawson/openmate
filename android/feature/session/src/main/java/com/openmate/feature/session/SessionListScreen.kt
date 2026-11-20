@@ -52,12 +52,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.openmate.core.common.toRelativeTimeString
+import com.openmate.core.common.toRelativeTime
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.SessionStatus
 import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.component.TopBar
+import com.openmate.core.ui.util.asText
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -272,7 +273,7 @@ private fun SessionCard(
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = session.updatedAt.toRelativeTimeString(),
+            text = session.updatedAt.toRelativeTime().asText(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 11.sp,

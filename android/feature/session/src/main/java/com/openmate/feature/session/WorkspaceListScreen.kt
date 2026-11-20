@@ -74,7 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.openmate.core.common.toRelativeTimeString
+import com.openmate.core.common.toRelativeTime
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.domain.model.Session
 import com.openmate.core.domain.model.SessionStatus
@@ -82,6 +82,7 @@ import com.openmate.core.domain.model.Workspace
 import com.openmate.core.network.OpencodeApiClient
 import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.theme.Success
+import com.openmate.core.ui.util.asText
 import com.openmate.feature.session.component.DirectoryPickerSheet
 import com.openmate.feature.settings.SettingsViewModel
 
@@ -431,7 +432,7 @@ private fun AllSessionCard(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = session.updatedAt.toRelativeTimeString(),
+                text = session.updatedAt.toRelativeTime().asText(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 11.sp,

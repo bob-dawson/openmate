@@ -14,4 +14,9 @@
     <string name="create">Create</string>
     <string name="select_here">Select here</string>
     <string name="cancel">Cancel</string>
+    <string name="time_just_now">just now</string>
+    <string name="time_minutes_ago">%1$d min ago</string>
+    <string name="time_hours_ago">%1$d hr ago</string>
+    <string name="time_days_ago">%1$d days ago</string>
+    <string name="time_weeks_ago">%1$d weeks ago</string>
 </resources>
