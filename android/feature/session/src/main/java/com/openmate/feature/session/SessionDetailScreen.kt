@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -233,7 +234,7 @@ fun SessionDetailScreen(
     }
     var prevImeBottom by remember { mutableIntStateOf(0) }
     var pagingTriggerState by remember(sessionID) { mutableStateOf(SessionPagingTrigger.State(lastTriggeredFirstMessageId = null)) }
-    var pendingRestoreAnchor by remember(sessionID) { mutableStateOf<String?>(null) }
+    var pendingRestoreAnchor by remember(sessionID) { mutableStateOf<PagingAnchor?>(null) }
     val compactActionEnabled = sessionStatus == SessionStatus.IDLE.name
     val compactActionLabel = if (sessionStatus == SessionStatus.COMPACTING.name) {
         stringResource(R.string.compacting)
@@ -256,8 +257,29 @@ fun SessionDetailScreen(
         autoFollowTracker.onMessagesChanged(messages.size, isLoading)
         if (shouldScrollToBottomOnInitialLoad(messages.size, prevMessageCount.intValue, listRestored.value)) {
             delay(300)
+            var layoutAttempts = 0
+            while (listState.layoutInfo.totalItemsCount == 0 && layoutAttempts < 5) {
+                delay(100)
+                layoutAttempts++
+            }
             if (listState.layoutInfo.totalItemsCount > 0) {
-                listState.scrollToItem(listState.layoutInfo.totalItemsCount - 1)
+                // 初次进入时列表可能还在测量（长消息、代码块、表格），一次
+                // scrollToItem 会在后续内容长高后停在半路。反复滚到底，
+                // 直到位置不再变化为止。
+                var previousIndex = -1
+                var previousOffset = -1
+                var attempts = 0
+                while (attempts < 8) {
+                    attempts++
+                    if (listState.isScrollInProgress) break
+                    listState.scrollToItem(listState.layoutInfo.totalItemsCount)
+                    delay(120)
+                    val index = listState.firstVisibleItemIndex
+                    val offset = listState.firstVisibleItemScrollOffset
+                    if (index == previousIndex && offset == previousOffset) break
+                    previousIndex = index
+                    previousOffset = offset
+                }
             }
         }
         prevMessageCount.intValue = messages.size
@@ -332,20 +354,32 @@ fun SessionDetailScreen(
                 shouldFollow = autoFollowTracker.shouldFollow,
             )
         ) {
-            pendingRestoreAnchor = firstMessageId
+            pendingRestoreAnchor = PagingAnchor(
+                id = firstMessageId ?: return@LaunchedEffect,
+                offset = listState.firstVisibleItemScrollOffset,
+                messageCount = messages.size,
+            )
             pagingTriggerState = SessionPagingTrigger.onTriggered(pagingTriggerState, firstMessageId)
             viewModel.loadOlderMessages()
         }
     }
 
-    LaunchedEffect(isLoadingOlder, pendingRestoreAnchor, messages) {
-        val anchor = pendingRestoreAnchor ?: return@LaunchedEffect
-        if (isLoadingOlder) return@LaunchedEffect
-        val newIndex = messages.indexOfFirst { it.id == anchor }
-        if (newIndex > 0) {
-            listState.scrollToItem(newIndex)
+    val pagingAnchor = pendingRestoreAnchor
+    if (pagingAnchor != null && messages.size > pagingAnchor.messageCount) {
+        val anchorIndex = messages.indexOfFirst { it.id == pagingAnchor.id }
+        if (anchorIndex >= 0) {
+            SideEffect {
+                listState.requestScrollToItem(anchorIndex, pagingAnchor.offset)
+                pendingRestoreAnchor = null
+            }
         }
-        pendingRestoreAnchor = null
+    }
+
+    LaunchedEffect(isLoadingOlder) {
+        val anchor = pendingRestoreAnchor ?: return@LaunchedEffect
+        if (!isLoadingOlder && messages.size <= anchor.messageCount) {
+            pendingRestoreAnchor = null
+        }
     }
 
     val showScrollToBottom by remember {

@@ -1,5 +1,11 @@
 package com.openmate.feature.session
 
+data class PagingAnchor(
+    val id: String,
+    val offset: Int,
+    val messageCount: Int,
+)
+
 object SessionPagingTrigger {
     data class State(
         val lastTriggeredFirstMessageId: String?,
