@@ -15,16 +15,21 @@ object SessionPagingTrigger {
         state: State,
         firstVisibleItemIndex: Int,
         firstVisibleItemScrollOffset: Int,
+        prefetchDistancePx: Int,
         firstMessageId: String?,
         hasOlderMessages: Boolean,
         isLoadingOlder: Boolean,
         shouldFollow: Boolean,
     ): Boolean {
+        val distanceToTop = when (firstVisibleItemIndex) {
+            0 -> firstVisibleItemScrollOffset
+            1 -> prefetchDistancePx
+            else -> Int.MAX_VALUE
+        }
         return hasOlderMessages &&
             !isLoadingOlder &&
             !shouldFollow &&
-            firstVisibleItemIndex == 0 &&
-            firstVisibleItemScrollOffset == 0 &&
+            distanceToTop <= prefetchDistancePx &&
             firstMessageId != null &&
             state.lastTriggeredFirstMessageId != firstMessageId
     }

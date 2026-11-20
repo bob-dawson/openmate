@@ -121,6 +121,8 @@ import com.openmate.core.common.formatDurationMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+internal const val PAGE_PREFETCH_SCREENS = 3
+
 internal fun shouldScrollToBottomOnInitialLoad(
     messageCount: Int,
     previousMessageCount: Int,
@@ -336,46 +338,6 @@ fun SessionDetailScreen(
     }
 
     val firstMessageId = messages.firstOrNull()?.id
-    LaunchedEffect(
-        listState.firstVisibleItemIndex,
-        listState.firstVisibleItemScrollOffset,
-        firstMessageId,
-        hasOlderMessages,
-        isLoadingOlder,
-        pendingRestoreAnchor,
-    ) {
-        if (pendingRestoreAnchor != null) return@LaunchedEffect
-        if (
-            SessionPagingTrigger.shouldLoadOlder(
-                state = pagingTriggerState,
-                firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-                firstMessageId = firstMessageId,
-                hasOlderMessages = hasOlderMessages,
-                isLoadingOlder = isLoadingOlder,
-                shouldFollow = autoFollowTracker.shouldFollow,
-            )
-        ) {
-            pendingRestoreAnchor = PagingAnchor(
-                id = firstMessageId ?: return@LaunchedEffect,
-                offset = listState.firstVisibleItemScrollOffset,
-                messageCount = messages.size,
-            )
-            pagingTriggerState = SessionPagingTrigger.onTriggered(pagingTriggerState, firstMessageId)
-            viewModel.loadOlderMessages()
-        }
-    }
-
-    val pagingAnchor = pendingRestoreAnchor
-    if (pagingAnchor != null && messages.size > pagingAnchor.messageCount) {
-        val anchorIndex = messages.indexOfFirst { it.id == pagingAnchor.id }
-        if (anchorIndex >= 0) {
-            SideEffect {
-                listState.requestScrollToItem(anchorIndex, pagingAnchor.offset)
-                pendingRestoreAnchor = null
-            }
-        }
-    }
 
     LaunchedEffect(isLoadingOlder) {
         val anchor = pendingRestoreAnchor ?: return@LaunchedEffect
@@ -638,6 +600,58 @@ fun SessionDetailScreen(
                 autoFollowTracker.onNavigateComplete()
             }
             viewModel.clearPendingUserJumpTarget()
+        }
+
+        val prefetchDistancePx = (
+            listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+            ).coerceAtLeast(0) * PAGE_PREFETCH_SCREENS
+
+        LaunchedEffect(
+            listState.firstVisibleItemIndex,
+            listState.firstVisibleItemScrollOffset,
+            firstMessageId,
+            hasOlderMessages,
+            isLoadingOlder,
+            pendingRestoreAnchor,
+            prefetchDistancePx,
+        ) {
+            if (pendingRestoreAnchor != null) return@LaunchedEffect
+            if (
+                SessionPagingTrigger.shouldLoadOlder(
+                    state = pagingTriggerState,
+                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                    prefetchDistancePx = prefetchDistancePx,
+                    firstMessageId = firstMessageId,
+                    hasOlderMessages = hasOlderMessages,
+                    isLoadingOlder = isLoadingOlder,
+                    shouldFollow = autoFollowTracker.shouldFollow,
+                )
+            ) {
+                val anchorId = displayMessages.getOrNull(listState.firstVisibleItemIndex)?.id
+                    ?: firstMessageId
+                    ?: return@LaunchedEffect
+                pendingRestoreAnchor = PagingAnchor(
+                    id = anchorId,
+                    offset = listState.firstVisibleItemScrollOffset,
+                    messageCount = messages.size,
+                )
+                pagingTriggerState = SessionPagingTrigger.onTriggered(pagingTriggerState, firstMessageId)
+                viewModel.loadOlderMessages()
+            }
+        }
+
+        val pagingAnchor = pendingRestoreAnchor
+        if (pagingAnchor != null && messages.size > pagingAnchor.messageCount) {
+            val anchorIndex = displayMessages.indexOfFirst { it.id == pagingAnchor.id }
+            when {
+                anchorIndex < 0 -> SideEffect { pendingRestoreAnchor = null }
+                listState.isScrollInProgress -> SideEffect { pendingRestoreAnchor = null }
+                else -> SideEffect {
+                    listState.requestScrollToItem(anchorIndex, pagingAnchor.offset)
+                    pendingRestoreAnchor = null
+                }
+            }
         }
 
         val lastTotal by viewModel.lastMessageTokens.collectAsStateWithLifecycle()
