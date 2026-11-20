@@ -123,6 +123,18 @@ class SyncDebugControllerTest {
             userTurns: Int,
         ) = emptyList<SessionMessage>()
 
+        override suspend fun hasOlderUserMessage(
+            sessionId: String,
+            beforeTimeCreated: Long,
+            beforeId: String,
+        ): Boolean = false
+
+        override suspend fun findOlderUserMessage(
+            sessionId: String,
+            beforeTimeCreated: Long,
+            beforeId: String,
+        ): SessionMessage? = null
+
         override suspend fun findBusyStartTime(sessionId: String): Long? = null
 
         override suspend fun initSync(sessionId: String, limit: Int) = SessionMessageSyncResult(0L, emptyList())

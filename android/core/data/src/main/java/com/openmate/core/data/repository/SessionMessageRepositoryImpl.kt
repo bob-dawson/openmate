@@ -133,6 +133,25 @@ class SessionMessageRepositoryImpl @Inject constructor(
         return entities.map { it.toDomain() }
     }
 
+    override suspend fun hasOlderUserMessage(
+        sessionId: String,
+        beforeTimeCreated: Long,
+        beforeId: String,
+    ): Boolean {
+        return dbProvider.getActive().sessionMessageDao()
+            .hasOlderUserMessage(sessionId, beforeTimeCreated, beforeId)
+    }
+
+    override suspend fun findOlderUserMessage(
+        sessionId: String,
+        beforeTimeCreated: Long,
+        beforeId: String,
+    ): SessionMessage? {
+        return dbProvider.getActive().sessionMessageDao()
+            .findNthOlderUserMessage(sessionId, beforeTimeCreated, beforeId, offset = 0)
+            ?.toDomain()
+    }
+
     override suspend fun findBusyStartTime(sessionId: String): Long? {
         return dbProvider.getActive().sessionMessageDao().findBusyStartTime(sessionId)
     }

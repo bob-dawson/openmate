@@ -181,6 +181,12 @@ class SessionDetailViewModel @Inject constructor(
     private val _hasOlderMessages = MutableStateFlow(false)
     val hasOlderMessages: StateFlow<Boolean> = _hasOlderMessages.asStateFlow()
 
+    private val _hasOlderUserMessage = MutableStateFlow(false)
+    val hasOlderUserMessage: StateFlow<Boolean> = _hasOlderUserMessage.asStateFlow()
+
+    private val _pendingUserJumpTarget = MutableStateFlow<String?>(null)
+    val pendingUserJumpTarget: StateFlow<String?> = _pendingUserJumpTarget.asStateFlow()
+
     private val _isUploading = MutableStateFlow(false)
     val isUploading: StateFlow<Boolean> = _isUploading.asStateFlow()
 
@@ -306,6 +312,7 @@ class SessionDetailViewModel @Inject constructor(
     private var observePermissionJob: Job? = null
     private var observeSyncEventJob: Job? = null
     private var observeMessageSyncJob: Job? = null
+    private var observeOlderUserProbeJob: Job? = null
     private var observeSessionErrorJob: Job? = null
     private var observeRetryStatusJob: Job? = null
     private var observeSyncLogsJob: Job? = null
@@ -555,6 +562,7 @@ class SessionDetailViewModel @Inject constructor(
         observeTodoJob?.cancel()
         observeSyncEventJob?.cancel()
         observeMessageSyncJob?.cancel()
+        observeOlderUserProbeJob?.cancel()
         observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
         pollJob?.cancel()
@@ -583,6 +591,8 @@ class SessionDetailViewModel @Inject constructor(
         _runningAnchors.value = emptyMap()
         _isLoadingOlder.value = false
         _hasOlderMessages.value = false
+        _hasOlderUserMessage.value = false
+        _pendingUserJumpTarget.value = null
         _sessionRevert.value = null
         wasBusy = false
         abortSuppressed = false
@@ -657,6 +667,7 @@ class SessionDetailViewModel @Inject constructor(
         observePermissions()
         observeSyncEvents(sessionID)
         observeRetryStatus(sessionID)
+        observeOlderUserMessageProbe(sessionID)
         startPolling(sessionID)
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -723,6 +734,8 @@ class SessionDetailViewModel @Inject constructor(
                 sessionMessageRepository.rollbackSeq(sid, eventCount.toLong())
                 _messages.value = emptyList()
                 _hasOlderMessages.value = false
+                _hasOlderUserMessage.value = false
+                _pendingUserJumpTarget.value = null
                 _isStreaming.value = false
                 messageWindowState = SessionMessageWindowManager.State(
                     messages = emptyList(),
@@ -831,6 +844,7 @@ class SessionDetailViewModel @Inject constructor(
         observePermissionJob?.cancel()
         observeSyncEventJob?.cancel()
         observeMessageSyncJob?.cancel()
+        observeOlderUserProbeJob?.cancel()
         observeSessionErrorJob?.cancel()
         observeRetryStatusJob?.cancel()
         observeSyncLogsJob?.cancel()
@@ -1393,6 +1407,22 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun loadMoreSearchMessages(userTurns: Int) {
+        loadOlderUserTurns(userTurns = userTurns, jumpTarget = false)
+    }
+
+    /**
+     * 加载「上一条用户消息」所在的一轮更早消息。
+     * 加载完成后通过 [pendingUserJumpTarget] 抛出目标用户消息 id，由界面定位并跳转。
+     */
+    fun loadPreviousUserTurn() {
+        loadOlderUserTurns(userTurns = 1, jumpTarget = true)
+    }
+
+    fun clearPendingUserJumpTarget() {
+        _pendingUserJumpTarget.value = null
+    }
+
+    private fun loadOlderUserTurns(userTurns: Int, jumpTarget: Boolean) {
         val sessionId = currentSessionID ?: return
         if (_isLoadingOlder.value) return
         val first = messageWindowState.messages.firstOrNull() ?: return
@@ -1401,27 +1431,50 @@ class SessionDetailViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val target = if (jumpTarget) {
+                    try {
+                        sessionMessageRepository.findOlderUserMessage(
+                            sessionId = sessionId,
+                            beforeTimeCreated = first.timeCreated,
+                            beforeId = first.id,
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "findOlderUserMessage failed", e)
+                        null
+                    }
+                } else {
+                    null
+                }
                 val older = sessionMessageRepository.getOlderPageByUserTurns(
                     sessionId = sessionId,
                     beforeTimeCreated = first.timeCreated,
                     beforeId = first.id,
                     userTurns = userTurns,
                 )
-                if (older.isNotEmpty()) {
-                    messageWindowState = SessionMessageWindowManager.prependOlderPage(
-                        state = messageWindowState,
-                        olderPage = older,
-                        hasOlderMessages = true,
-                    )
-                    _messages.value = messageWindowState.messages
-                    _hasOlderMessages.value = messageWindowState.hasOlderMessages
-                    recalculateMessageDerivedState(messageWindowState.messages)
-                } else {
-                    _hasOlderMessages.value = false
+                if (older.isEmpty()) {
                     messageWindowState = messageWindowState.copy(hasOlderMessages = false)
+                    _hasOlderMessages.value = false
+                    if (jumpTarget) _hasOlderUserMessage.value = false
+                    return@launch
+                }
+                messageWindowState = SessionMessageWindowManager.prependOlderPage(
+                    state = messageWindowState,
+                    olderPage = older,
+                    hasOlderMessages = true,
+                )
+                _messages.value = messageWindowState.messages
+                _hasOlderMessages.value = messageWindowState.hasOlderMessages
+                recalculateMessageDerivedState(messageWindowState.messages)
+                if (jumpTarget) {
+                    val targetId = target?.id ?: older.lastOrNull { it.type == "user" }?.id
+                    if (targetId != null) {
+                        _pendingUserJumpTarget.value = targetId
+                    } else {
+                        _hasOlderUserMessage.value = false
+                    }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "loadMoreSearchMessages failed", e)
+                Log.e(TAG, "loadOlderUserTurns failed", e)
             } finally {
                 _isLoadingOlder.value = false
             }
@@ -1672,6 +1725,36 @@ class SessionDetailViewModel @Inject constructor(
         if (latest != null || _sessionRetryStatus.value != null) {
             _sessionRetryStatus.value = latest
             recalculateMessageDerivedState(messageWindowState.messages)
+        }
+    }
+
+    private fun observeOlderUserMessageProbe(sessionId: String) {
+        observeOlderUserProbeJob?.cancel()
+        observeOlderUserProbeJob = viewModelScope.launch(Dispatchers.IO) {
+            var lastProbedFirstId: String? = null
+            try {
+                _messages.collect { list ->
+                    val first = list.firstOrNull()
+                    if (first == null) {
+                        lastProbedFirstId = null
+                        if (currentSessionID == sessionId) _hasOlderUserMessage.value = false
+                        return@collect
+                    }
+                    if (first.id == lastProbedFirstId) return@collect
+                    lastProbedFirstId = first.id
+                    val exists = try {
+                        sessionMessageRepository.hasOlderUserMessage(sessionId, first.timeCreated, first.id)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "hasOlderUserMessage failed", e)
+                        false
+                    }
+                    if (currentSessionID == sessionId) {
+                        _hasOlderUserMessage.value = exists
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "observeOlderUserMessageProbe failed", e)
+            }
         }
     }
 

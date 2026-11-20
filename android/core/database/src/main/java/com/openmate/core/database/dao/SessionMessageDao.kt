@@ -83,6 +83,16 @@ interface SessionMessageDao {
     suspend fun findNthOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String, offset: Int): SessionMessageEntity?
 
     @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM session_message
+            WHERE sessionId = :sessionId
+              AND type = 'user'
+              AND (timeCreated < :beforeTimeCreated OR (timeCreated = :beforeTimeCreated AND id < :beforeId))
+        )
+    """)
+    suspend fun hasOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String): Boolean
+
+    @Query("""
         SELECT * FROM session_message
         WHERE sessionId = :sessionId
           AND (timeCreated > :anchorTimeCreated OR (timeCreated = :anchorTimeCreated AND id >= :anchorId))

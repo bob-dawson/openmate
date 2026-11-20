@@ -12,6 +12,8 @@ interface SessionMessageRepository {
     suspend fun getRecentWindow(sessionId: String, limit: Int): List<SessionMessage>
     suspend fun getOlderPage(sessionId: String, beforeTimeCreated: Long, beforeId: String, limit: Int): List<SessionMessage>
     suspend fun getOlderPageByUserTurns(sessionId: String, beforeTimeCreated: Long, beforeId: String, userTurns: Int): List<SessionMessage>
+    suspend fun hasOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String): Boolean
+    suspend fun findOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String): SessionMessage?
     suspend fun findBusyStartTime(sessionId: String): Long?
     suspend fun initSync(sessionId: String, limit: Int = 30): SessionMessageSyncResult
     suspend fun incrementalSync(sessionId: String)

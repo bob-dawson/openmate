@@ -192,6 +192,56 @@ class SessionDetailViewModelTest {
     }
 
     @Test
+    fun hasOlderUserMessage_probesBeforeWindowHead() = runTest(dispatcher) {
+        val recentWindow = (3L..32L).map { timeCreated -> message("m$timeCreated", timeCreated = timeCreated) }
+        val repository = FakeSessionMessageRepository(
+            recentWindow = recentWindow,
+            lastSeq = null,
+            hasOlderUserMessageResult = true,
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.hasOlderUserMessage.value }
+
+        assertThat(repository.hasOlderUserMessageCalls).contains(Triple(SESSION_ID, 3L, "m3"))
+    }
+
+    @Test
+    fun loadPreviousUserTurn_prependsTurnAndEmitsJumpTarget() = runTest(dispatcher) {
+        val recentWindow = (3L..32L).map { timeCreated -> message("m$timeCreated", timeCreated = timeCreated) }
+        val targetUser = message("u2", timeCreated = 2, type = "user")
+        val repository = FakeSessionMessageRepository(
+            recentWindow = recentWindow,
+            lastSeq = null,
+            hasOlderUserMessageResult = true,
+            olderUserMessage = targetUser,
+            olderUserTurnPages = ArrayDeque(
+                listOf(
+                    listOf(
+                        message("u1", timeCreated = 1, type = "user"),
+                        targetUser,
+                    ),
+                ),
+            ),
+        )
+        val viewModel = createViewModel(sessionMessageRepository = repository)
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+
+        viewModel.loadPreviousUserTurn()
+        waitUntil { viewModel.pendingUserJumpTarget.value == "u2" }
+
+        assertThat(viewModel.messages.value.first().id).isEqualTo("u1")
+        assertThat(repository.olderUserTurnCalls).containsExactly(1)
+        assertThat(viewModel.pendingUserJumpTarget.value).isEqualTo("u2")
+
+        viewModel.clearPendingUserJumpTarget()
+        assertThat(viewModel.pendingUserJumpTarget.value).isNull()
+    }
+
+    @Test
     fun loadOlderMessages_stopsAfterShortOlderPage() = runTest(dispatcher) {
         val recentWindow = (3L..32L).map { timeCreated ->
             message("m$timeCreated", timeCreated = timeCreated)
@@ -1037,6 +1087,9 @@ class SessionDetailViewModelTest {
         private val incrementalSyncResults: ArrayDeque<SessionMessageSyncResult> = ArrayDeque(),
         private val olderPageDelayMillis: Long = 0,
         private val olderPages: ArrayDeque<List<SessionMessage>> = ArrayDeque(),
+        private val hasOlderUserMessageResult: Boolean = false,
+        private val olderUserMessage: SessionMessage? = null,
+        private val olderUserTurnPages: ArrayDeque<List<SessionMessage>> = ArrayDeque(),
     ) : SessionMessageRepository {
         private val observedMessages = MutableStateFlow(emptyList<SessionMessage>())
         private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 16)
@@ -1048,6 +1101,8 @@ class SessionDetailViewModelTest {
         val getOlderPageCalls = mutableListOf<OlderPageCall>()
         val incrementalSyncCalls = mutableListOf<String>()
         val incrementalSyncAndNotifyCalls = mutableListOf<String>()
+        val hasOlderUserMessageCalls = mutableListOf<Triple<String, Long, String>>()
+        val olderUserTurnCalls = mutableListOf<Int>()
 
         override fun observeMessages(sessionId: String): Flow<List<SessionMessage>> {
             observeMessagesCalls += 1
@@ -1079,7 +1134,25 @@ class SessionDetailViewModelTest {
             beforeTimeCreated: Long,
             beforeId: String,
             userTurns: Int,
-        ): List<SessionMessage> = emptyList()
+        ): List<SessionMessage> {
+            olderUserTurnCalls += userTurns
+            return if (olderUserTurnPages.isEmpty()) emptyList() else olderUserTurnPages.removeFirst()
+        }
+
+        override suspend fun hasOlderUserMessage(
+            sessionId: String,
+            beforeTimeCreated: Long,
+            beforeId: String,
+        ): Boolean {
+            hasOlderUserMessageCalls += Triple(sessionId, beforeTimeCreated, beforeId)
+            return hasOlderUserMessageResult
+        }
+
+        override suspend fun findOlderUserMessage(
+            sessionId: String,
+            beforeTimeCreated: Long,
+            beforeId: String,
+        ): SessionMessage? = olderUserMessage
 
         override suspend fun findBusyStartTime(sessionId: String): Long? = null
 
@@ -1386,11 +1459,11 @@ class SessionDetailViewModelTest {
         override fun notifyProfileUpdated(profile: ServerProfile) = Unit
     }
 
-    private fun message(id: String, timeCreated: Long, data: String = "{}") =
+    private fun message(id: String, timeCreated: Long, data: String = "{}", type: String = "assistant") =
         SessionMessage(
             id = id,
             sessionId = SESSION_ID,
-            type = "assistant",
+            type = type,
             data = data,
             timeCreated = timeCreated,
             timeUpdated = timeCreated,

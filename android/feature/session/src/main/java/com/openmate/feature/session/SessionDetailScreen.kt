@@ -184,6 +184,8 @@ fun SessionDetailScreen(
     val syncLogEntries by viewModel.syncLogEntries.collectAsState()
     val hasOlderMessages by viewModel.hasOlderMessages.collectAsState()
     val isLoadingOlder by viewModel.isLoadingOlder.collectAsState()
+    val hasOlderUserMessage by viewModel.hasOlderUserMessage.collectAsState()
+    val pendingUserJumpTarget by viewModel.pendingUserJumpTarget.collectAsState()
     val previewFileState by viewModel.previewFileState.collectAsState()
     val previewFileContent by viewModel.previewFileContent.collectAsState()
     val previewFileLoading by viewModel.previewFileLoading.collectAsState()
@@ -618,6 +620,26 @@ fun SessionDetailScreen(
             }
         }
 
+        // 补加载更早的用户轮次后，跳到目标用户消息。
+        LaunchedEffect(pendingUserJumpTarget, displayMessages, isLoadingOlder) {
+            val targetId = pendingUserJumpTarget ?: return@LaunchedEffect
+            if (isLoadingOlder) return@LaunchedEffect
+            val firstVisible = listState.firstVisibleItemIndex
+            var target = displayMessages
+                .subList(0, minOf(firstVisible, displayMessages.size))
+                .indexOfLast { it.type == "user" }
+            // prepend 之后下标会整体后移，用目标 id 校验，避免跳到错误位置
+            if (target < 0 || displayMessages.getOrNull(target)?.id != targetId) {
+                target = displayMessages.indexOfFirst { it.id == targetId }
+            }
+            if (target >= 0) {
+                autoFollowTracker.onNavigateToMessage()
+                listState.animateScrollToItem(target)
+                autoFollowTracker.onNavigateComplete()
+            }
+            viewModel.clearPendingUserJumpTarget()
+        }
+
         val lastTotal by viewModel.lastMessageTokens.collectAsStateWithLifecycle()
         val lastCost by viewModel.lastMessageCost.collectAsStateWithLifecycle()
         val sessionCost by viewModel.sessionCost.collectAsStateWithLifecycle()
@@ -943,16 +965,14 @@ fun SessionDetailScreen(
                 ) {
                     IconButton(
                         onClick = {
-                            val idx = listState.firstVisibleItemIndex
-                            if (idx > 0 && displayMessages.isNotEmpty()) {
-                                val target = displayMessages.subList(0, minOf(idx, displayMessages.size))
-                                    .indexOfLast { it.type == "user" }
-                                if (target >= 0) {
-                                    coroutineScope.launch { listState.animateScrollToItem(target) }
-                                }
+                            if (previousUserMessageIndex >= 0) {
+                                val target = previousUserMessageIndex
+                                coroutineScope.launch { listState.animateScrollToItem(target) }
+                            } else if (hasOlderUserMessage) {
+                                viewModel.loadPreviousUserTurn()
                             }
                         },
-                        enabled = previousUserMessageIndex >= 0,
+                        enabled = !isLoadingOlder && (previousUserMessageIndex >= 0 || hasOlderUserMessage),
                         modifier = Modifier.size(28.dp),
                     ) {
                         Icon(

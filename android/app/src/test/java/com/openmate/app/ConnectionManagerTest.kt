@@ -574,6 +574,10 @@ class ConnectionManagerTest {
 
         override suspend fun getOlderPageByUserTurns(sessionId: String, beforeTimeCreated: Long, beforeId: String, userTurns: Int): List<SessionMessage> = emptyList()
 
+        override suspend fun hasOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String): Boolean = false
+
+        override suspend fun findOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String): SessionMessage? = null
+
         override suspend fun findBusyStartTime(sessionId: String): Long? = null
 
         override suspend fun fetchDiffFiles(
@@ -592,7 +596,18 @@ class ConnectionManagerTest {
         override suspend fun incrementalSyncAndNotify(sessionId: String) = Unit
 
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
-        override suspend fun insertOptimisticUserMessage(sessionId: String, messageId: String, text: String, created: Long) = Unit
+        override suspend fun fetchMessageData(
+            sessionId: String,
+            messageId: String,
+        ): kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap())
+
+        override suspend fun insertOptimisticUserMessage(
+            sessionId: String,
+            messageId: String,
+            text: String,
+            created: Long,
+            files: List<com.openmate.core.domain.model.MessageFileMeta>,
+        ) = Unit
 
         override suspend fun getLastSeq(sessionId: String): Long? = null
 
