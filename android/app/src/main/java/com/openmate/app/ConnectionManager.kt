@@ -13,6 +13,7 @@ import com.openmate.app.connection.v2.ConnEvent
 import com.openmate.app.connection.v2.ConnState
 import com.openmate.app.connection.v2.ConnectionActor
 import com.openmate.app.connection.v2.EffectExecutor
+import com.openmate.core.data.LanDiscoveryStateStore
 import com.openmate.core.data.RouteCache
 import com.openmate.app.connection.v2.Route
 import com.openmate.core.database.ActiveDatabaseProvider
@@ -68,6 +69,7 @@ class ConnectionManager @Inject constructor(
     private val permissionRepository: PermissionRepository,
     private val questionRepository: QuestionRepository,
     private val routeCache: RouteCache,
+    private val lanDiscoveryStore: LanDiscoveryStateStore,
     private val routeEvidenceAggregator: RouteEvidenceAggregator,
     private val routeEvidenceReporter: RouteEvidenceReporter,
     @Named("api") private val probeHttpClient: OkHttpClient,
@@ -131,6 +133,7 @@ class ConnectionManager @Inject constructor(
         logStore = logStore,
         networkMonitor = networkChangeMonitor,
         routeCache = routeCache,
+        lanDiscoveryStore = lanDiscoveryStore,
         routeEvidenceAggregator = routeEvidenceAggregator,
         probeClientBase = probeHttpClient,
     )

@@ -2,13 +2,29 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures::{SinkExt, StreamExt};
+use futures::{Sink, SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream};
 
 use crate::config::GatewayConfig;
 use crate::gateway::frame::{GatewayOutgoing, TunnelFrame};
 use crate::gateway::{proxy, sse_proxy};
+
+const SEND_TIMEOUT: Duration = Duration::from_secs(10);
+
+async fn send_with_timeout<S>(sink: &mut S, msg: Message) -> anyhow::Result<()>
+where
+    S: Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+{
+    match tokio::time::timeout(SEND_TIMEOUT, sink.send(msg)).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => Err(e.into()),
+        Err(_) => Err(anyhow::anyhow!(
+            "gateway send timed out after {}s",
+            SEND_TIMEOUT.as_secs()
+        )),
+    }
+}
 
 pub struct GatewayClient {
     config: GatewayConfig,
@@ -101,7 +117,7 @@ impl GatewayClient {
 
         let register_frame = TunnelFrame::register(&self.instance_id);
         let register_json = serde_json::to_string(&register_frame)?;
-        ws_sink.send(Message::Text(register_json.into())).await?;
+        send_with_timeout(&mut ws_sink, Message::Text(register_json.into())).await?;
 
         tracing::info!("Registered with gateway as {}", self.instance_id);
 
@@ -119,8 +135,8 @@ impl GatewayClient {
                 _ = heartbeat.tick() => {
                     let ping = TunnelFrame::ping();
                     let json = serde_json::to_string(&ping)?;
-                    if ws_sink.send(Message::Text(json.into())).await.is_err() {
-                        tracing::warn!("Failed to send heartbeat, connection lost");
+                    if let Err(e) = send_with_timeout(&mut ws_sink, Message::Text(json.into())).await {
+                        tracing::warn!("Failed to send heartbeat ({}), connection lost", e);
                         break;
                     }
                     if last_received.elapsed() > read_timeout {
@@ -133,14 +149,14 @@ impl GatewayClient {
                     match outgoing {
                         GatewayOutgoing::Json(frame) => {
                             let json = serde_json::to_string(&frame)?;
-                            ws_sink.send(Message::Text(json.into())).await?;
+                            send_with_timeout(&mut ws_sink, Message::Text(json.into())).await?;
                         }
                         GatewayOutgoing::Binary { request_id, data } => {
                             let mut msg = Vec::with_capacity(36 + data.len());
                             msg.extend_from_slice(request_id.as_bytes());
                             msg.extend_from_slice(&data);
-                            if ws_sink.send(Message::Binary(msg.into())).await.is_err() {
-                                tracing::warn!("Failed to send binary frame, connection lost");
+                            if let Err(e) = send_with_timeout(&mut ws_sink, Message::Binary(msg.into())).await {
+                                tracing::warn!("Failed to send binary frame ({}), connection lost", e);
                                 break;
                             }
                         }
@@ -185,7 +201,10 @@ impl GatewayClient {
                         }
                         Some(Ok(Message::Ping(data))) => {
                             last_received = std::time::Instant::now();
-                            let _ = ws_sink.send(Message::Pong(data)).await;
+                            if let Err(e) = send_with_timeout(&mut ws_sink, Message::Pong(data)).await {
+                                tracing::warn!("Failed to send pong ({}), connection lost", e);
+                                break;
+                            }
                         }
                         Some(Ok(Message::Close(_))) | None => {
                             tracing::info!("Gateway WebSocket closed");

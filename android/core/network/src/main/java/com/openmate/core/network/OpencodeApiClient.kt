@@ -6,6 +6,7 @@ import com.openmate.core.network.dto.BridgeDeleteRequest
 import com.openmate.core.network.dto.BridgeDirEntryDto
 import com.openmate.core.network.dto.BridgeFileContent
 import com.openmate.core.network.dto.BridgeGitStatusEntry
+import com.openmate.core.network.dto.LanCandidatesResponse
 import com.openmate.core.network.dto.BridgeFileStatDto
 import com.openmate.core.network.dto.BridgeMkdirRequest
 import com.openmate.core.network.dto.BridgeRenameRequest
@@ -509,6 +510,10 @@ class OpencodeApiClient(
 
     suspend fun bridgeStatus(): BridgeStatusResponse {
         return get("/api/bridge/status")
+    }
+
+    suspend fun bridgeLanCandidates(): LanCandidatesResponse {
+        return get("/api/bridge/network/lan")
     }
 
     suspend fun bridgePairRequest(): PairRequestResponse {

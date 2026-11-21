@@ -30,6 +30,7 @@ pub fn routes() -> Router<AppState> {
             "/api/bridge/network/interfaces",
             get(network::list_interfaces),
         )
+        .route("/api/bridge/network/lan", get(network::lan_candidates))
         .route("/api/bridge/qrcode", get(qrcode::generate_qrcode))
         .route("/api/bridge/autostart", get(autostart::get_autostart))
         .route("/api/bridge/autostart", post(autostart::set_autostart))

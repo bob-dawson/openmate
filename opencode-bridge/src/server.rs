@@ -16,6 +16,41 @@ use crate::log_capture::SharedLogBuffer;
 use crate::state::{ScanTokenEntry, create_app_state_with_db_event_source_and_actual_port};
 use crate::sync;
 
+async fn bind_listener_with_retry(
+    listen_addr: &str,
+    hostname: &str,
+    configured_port: u16,
+) -> anyhow::Result<tokio::net::TcpListener> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(20);
+    loop {
+        match tokio::net::TcpListener::bind(listen_addr).await {
+            Ok(listener) => return Ok(listener),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                if tokio::time::Instant::now() >= deadline {
+                    tracing::warn!(
+                        "Port {} still in use after retries, falling back to a random port",
+                        configured_port
+                    );
+                    let fallback_addr = format!("{}:0", hostname);
+                    let listener = tokio::net::TcpListener::bind(&fallback_addr).await?;
+                    tracing::warn!(
+                        "Bridge listening on random port {} (configured: {})",
+                        listener.local_addr()?.port(),
+                        configured_port
+                    );
+                    return Ok(listener);
+                }
+                tracing::info!(
+                    "Port {} is still in use, retrying (previous instance may be shutting down)",
+                    configured_port
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+}
+
 pub async fn run_server(
     log_buffer: SharedLogBuffer,
     shutdown: Option<(tokio::sync::watch::Sender<bool>, tokio::sync::watch::Receiver<bool>)>,
@@ -166,24 +201,12 @@ pub async fn run_server(
         .layer(TraceLayer::new_for_http())
         .with_state(app_state.clone());
 
-    let listener = match tokio::net::TcpListener::bind(&listen_addr).await {
-        Ok(l) => l,
-        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-            tracing::warn!(
-                "Port {} is already in use, falling back to a random port",
-                configured_port
-            );
-            let fallback_addr = format!("{}:0", config.bridge.hostname);
-            let l = tokio::net::TcpListener::bind(&fallback_addr).await?;
-            tracing::info!(
-                "Bridge listening on random port {} (configured: {})",
-                l.local_addr()?.port(),
-                configured_port
-            );
-            l
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let listener = bind_listener_with_retry(
+        &listen_addr,
+        &config.bridge.hostname,
+        configured_port,
+    )
+    .await?;
 
     let actual_port = listener.local_addr()?.port();
     let port_changed = actual_port != configured_port;
@@ -265,18 +288,36 @@ pub async fn run_server(
     if !gateway_url.is_empty() && gateway_auto_connect {
         let gw_url = gateway_url.clone();
         let gw_instance_id = gateway_instance_id.clone();
-        let gw_shutdown_rx = app_state.shutdown_tx.subscribe();
+        let shutdown_rx = app_state.shutdown_tx.subscribe();
         tokio::spawn(async move {
-            let mut client = crate::gateway::client::GatewayClient::new(
-                &crate::config::GatewayConfig {
-                    url: gw_url,
-                    auto_connect: true,
-                    instance_id: gw_instance_id,
-                },
-                &gateway_instance_id,
-                port,
-            );
-            client.connect(gw_shutdown_rx).await;
+            use futures::FutureExt;
+            loop {
+                if *shutdown_rx.borrow() {
+                    tracing::info!("Gateway client shutting down");
+                    break;
+                }
+                let mut client = crate::gateway::client::GatewayClient::new(
+                    &crate::config::GatewayConfig {
+                        url: gw_url.clone(),
+                        auto_connect: true,
+                        instance_id: gw_instance_id.clone(),
+                    },
+                    &gw_instance_id,
+                    port,
+                );
+                let outcome = std::panic::AssertUnwindSafe(client.connect(shutdown_rx.clone()))
+                    .catch_unwind()
+                    .await;
+                if *shutdown_rx.borrow() {
+                    tracing::info!("Gateway client shutting down");
+                    break;
+                }
+                tracing::warn!(
+                    "Gateway client stopped unexpectedly (panic={}), restarting in 5s",
+                    outcome.is_err()
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            }
         });
     }
 

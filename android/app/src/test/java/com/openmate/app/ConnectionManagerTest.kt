@@ -395,6 +395,7 @@ class ConnectionManagerTest {
             probeHttpClient = probeHttpClient,
             routeEvidenceAggregator = routeEvidenceAggregator,
             routeEvidenceReporter = routeEvidenceReporter,
+            lanDiscoveryStore = com.openmate.core.data.LanDiscoveryStateStore(RuntimeEnvironment.getApplication()),
             routeCache = object : com.openmate.core.data.RouteCache(RuntimeEnvironment.getApplication()) {
                 private val cache = mutableMapOf<String, com.openmate.core.data.CachedRoute>()
                 override suspend fun get(profileId: String): com.openmate.core.data.CachedRoute? = cache[profileId]
@@ -623,6 +624,11 @@ class ConnectionManagerTest {
     private class FakeNetworkChangeMonitor : NetworkChangeMonitor {
         override val events = emptyFlow<com.openmate.app.connection.NetworkChangeEvent>()
         override fun hasInternet(): Boolean = true
+        override fun isWifiActive(): Boolean = true
+        override fun isCellularActive(): Boolean = false
+        override fun networkFingerprint(): String = "wifi:test:192.168.1.10/24"
+        override fun localIpv4Addresses(): List<com.openmate.app.connection.LocalIpv4> =
+            listOf(com.openmate.app.connection.LocalIpv4("192.168.1.10", 24))
     }
 
     private class FakePermissionRepository : PermissionRepository {

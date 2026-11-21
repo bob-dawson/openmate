@@ -6,6 +6,7 @@ import com.openmate.app.connection.RouteEvidenceAggregator
 import com.openmate.core.data.sync.SyncLogCategory
 import com.openmate.core.data.sync.SyncLogLevel
 import com.openmate.core.data.CachedRoute
+import com.openmate.core.data.LanDiscoveryStateStore
 import com.openmate.core.data.RouteCache
 import com.openmate.core.data.sync.SyncLogStore
 import com.openmate.core.data.sync.SyncSseHandler
@@ -45,6 +46,7 @@ class EffectExecutor(
     private val logStore: SyncLogStore,
     private val networkMonitor: NetworkChangeMonitor,
     private val routeCache: RouteCache,
+    private val lanDiscoveryStore: LanDiscoveryStateStore,
     private val routeEvidenceAggregator: RouteEvidenceAggregator,
     probeClientBase: OkHttpClient = OkHttpClient(),
 ) {
@@ -54,6 +56,14 @@ class EffectExecutor(
         .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
         .build()
+
+    private val lanProbeClient = probeClientBase.newBuilder()
+        .connectTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        .readTimeout(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        .build()
+
+    private val lanProber = LanProber(lanProbeClient, json)
+
     private var backoffJob: Job? = null
     private var sseJob: Job? = null
     private var directCheckJob: Job? = null
@@ -199,21 +209,6 @@ class EffectExecutor(
         return json.decodeFromString<BridgeStatusResponse>(body)
     }
 
-    private suspend fun isDirectReachable(address: String, port: Int): Boolean {
-        return try {
-            val request = Request.Builder()
-                .url("http://$address:$port/api/bridge/status")
-                .get()
-                .build()
-            val response = probeClient.newCall(request).execute()
-            val success = response.isSuccessful
-            response.close()
-            success
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     private suspend fun isGatewayOnline(instanceId: String): Boolean {
         return try {
             val request = Request.Builder()
@@ -277,23 +272,116 @@ class EffectExecutor(
     }
 
     private fun startDirectCheckLoop() {
-        val profile = activeProfile() ?: return
-        val address = profile.address
-        val port = profile.port
         stopDirectCheckLoop()
         directCheckJob = scope.launch {
             while (true) {
-                delay(DIRECT_CHECK_INTERVAL_MS)
-                if (isDirectReachable(address, port)) {
-                    logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "直连恢复 切回直连")
-                    routeEvidenceAggregator.record(
-                        RouteEvidence.ProbeSuccess(ConnectionRoute.Direct(address, port), System.currentTimeMillis())
+                val profile = activeProfile() ?: return@launch
+                val now = System.currentTimeMillis()
+                var state = lanDiscoveryStore.load(profile.id)
+                val fingerprint = networkMonitor.networkFingerprint().orEmpty()
+                val decision = LanDiscoveryPolicy.decide(
+                    state = state,
+                    now = now,
+                    fingerprint = fingerprint,
+                    intervalMs = LanDiscoveryPolicy.intervalMs(state.failures),
+                )
+
+                if (decision.reset) {
+                    state = state.copy(failures = 0)
+                    logStore.log(
+                        SyncLogLevel.Info,
+                        SyncLogCategory.Connection,
+                        "网络环境探测重置 ${if (decision.envChanged) "network-changed" else "gateway-recovered"} " +
+                            "fingerprint=$fingerprint",
                     )
-                    sendEvent(ConnEvent.ProbeOk(Route.Direct(address, port)))
-                    break
                 }
+
+                state = state.copy(fingerprint = fingerprint, lastGatewaySeenAt = now)
+                lanDiscoveryStore.save(profile.id, state)
+
+                if (decision.shouldProbe) {
+                    lanDiscoveryStore.save(profile.id, state.copy(lastProbeAt = System.currentTimeMillis()))
+                    val result = discoverAndSwitch(profile)
+                    if (result.switched) {
+                        logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "局域网直连已恢复，已切换路由")
+                        return@launch
+                    }
+                    val latest = lanDiscoveryStore.load(profile.id)
+                    val candidatesChanged = result.candidatesSignature != null &&
+                        latest.candidatesSignature.isNotEmpty() &&
+                        latest.candidatesSignature != result.candidatesSignature
+                    val nextFailures = LanDiscoveryPolicy.nextFailures(latest.failures, candidatesChanged)
+                    lanDiscoveryStore.save(
+                        profile.id,
+                        latest.copy(
+                            failures = nextFailures,
+                            candidatesSignature = result.candidatesSignature ?: latest.candidatesSignature,
+                        ),
+                    )
+                    logStore.log(
+                        SyncLogLevel.Info,
+                        SyncLogCategory.Connection,
+                        "局域网探测失败 failures=$nextFailures " +
+                            "nextIn=${LanDiscoveryPolicy.intervalMs(nextFailures) / 1000}s",
+                    )
+                }
+
+                delay(LOOP_TICK_MS)
             }
         }
+    }
+
+    private data class DiscoveryOutcome(
+        val switched: Boolean,
+        val candidatesSignature: String?,
+    )
+
+    private suspend fun discoverAndSwitch(profile: ServerProfile): DiscoveryOutcome {
+        val candidates = mutableListOf<LanCandidate>()
+        if (profile.address.isNotBlank()) {
+            candidates += LanCandidate(
+                ip = profile.address,
+                port = profile.port,
+                scope = LanCandidateRanking.scopeOf(profile.address),
+            )
+        }
+        val remote = runCatching { apiClient.bridgeLanCandidates() }.getOrNull()
+        remote?.candidates?.forEach { dto ->
+            if (dto.ip.isNotBlank()) {
+                candidates += LanCandidate(
+                    ip = dto.ip,
+                    port = if (dto.port > 0) dto.port else profile.port,
+                    scope = dto.scope,
+                )
+            }
+        }
+        val signature = remote?.candidates
+            ?.map { "${it.ip}:${it.port}:${it.scope}" }
+            ?.sorted()
+            ?.joinToString(",")
+        val ranked = LanCandidateRanking.rank(
+            candidates = candidates,
+            localIpv4 = networkMonitor.localIpv4Addresses(),
+            allowPrivate = !networkMonitor.isCellularActive(),
+        )
+        if (ranked.isEmpty()) return DiscoveryOutcome(switched = false, candidatesSignature = signature)
+
+        val best = lanProber.probeBest(profile.instanceId, ranked)
+            ?: return DiscoveryOutcome(switched = false, candidatesSignature = signature)
+
+        if (best.ip != profile.address || best.port != profile.port) {
+            profileRepository.save(profile.copy(address = best.ip, port = best.port))
+            logStore.log(
+                SyncLogLevel.Info,
+                SyncLogCategory.Connection,
+                "局域网地址更新 ${profile.address}:${profile.port} -> ${best.ip}:${best.port}",
+            )
+        }
+        routeEvidenceAggregator.record(
+            RouteEvidence.ProbeSuccess(ConnectionRoute.Direct(best.ip, best.port), System.currentTimeMillis())
+        )
+        sendEvent(ConnEvent.ProbeOk(Route.Direct(best.ip, best.port)))
+        return DiscoveryOutcome(switched = true, candidatesSignature = signature)
     }
 
     private fun stopDirectCheckLoop() {
@@ -303,6 +391,6 @@ class EffectExecutor(
 
     companion object {
         private const val GATEWAY_URL = "https://gateway.clawmate.net"
-        private const val DIRECT_CHECK_INTERVAL_MS = 30_000L
+        private const val LOOP_TICK_MS = 30_000L
     }
 }
