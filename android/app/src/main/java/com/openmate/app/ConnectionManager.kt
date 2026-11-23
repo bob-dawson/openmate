@@ -134,6 +134,7 @@ class ConnectionManager @Inject constructor(
         networkMonitor = networkChangeMonitor,
         routeCache = routeCache,
         lanDiscoveryStore = lanDiscoveryStore,
+        onProfileUpdated = { updated -> notifyProfileUpdated(updated) },
         routeEvidenceAggregator = routeEvidenceAggregator,
         probeClientBase = probeHttpClient,
     )
@@ -215,8 +216,18 @@ class ConnectionManager @Inject constructor(
                 if (isForeground) {
                     sendEvent(ConnEvent.AppForegrounded)
                     val s = actor.state.value
-                    if (s is ConnState.Idle && s.profile != null) {
-                        connect(s.profile)
+                    val idleProfile = (s as? ConnState.Idle)?.profile
+                    if (idleProfile != null) {
+                        val fresh = profileRepository.getById(idleProfile.id)
+                        if (fresh != null && fresh != idleProfile) {
+                            logStore.log(
+                                SyncLogLevel.Info,
+                                SyncLogCategory.Connection,
+                                "前台刷新配置 address=${fresh.address}:${fresh.port}",
+                            )
+                            notifyProfileUpdated(fresh)
+                        }
+                        connect(fresh ?: idleProfile)
                     }
                 } else {
                     sendEvent(ConnEvent.AppBackgrounded)

@@ -47,6 +47,7 @@ class EffectExecutor(
     private val networkMonitor: NetworkChangeMonitor,
     private val routeCache: RouteCache,
     private val lanDiscoveryStore: LanDiscoveryStateStore,
+    private val onProfileUpdated: (ServerProfile) -> Unit = {},
     private val routeEvidenceAggregator: RouteEvidenceAggregator,
     probeClientBase: OkHttpClient = OkHttpClient(),
 ) {
@@ -92,7 +93,14 @@ class EffectExecutor(
             is ConnEffect.RestartDirectCheckLoop -> { stopDirectCheckLoop(); startDirectCheckLoop() }
             is ConnEffect.WriteCacheDirect -> scope.launch { routeCache.setDirect(effect.profileId) }
             is ConnEffect.WriteCacheGateway -> scope.launch { routeCache.setGateway(effect.profileId) }
-            is ConnEffect.ClearCache -> scope.launch { routeCache.clear(effect.profileId) }
+            is ConnEffect.ClearCache -> scope.launch {
+                routeCache.clear(effect.profileId)
+                val state = lanDiscoveryStore.load(effect.profileId)
+                lanDiscoveryStore.save(
+                    effect.profileId,
+                    state.copy(failures = 0, lastProbeAt = 0L),
+                )
+            }
         }
     }
 
@@ -151,6 +159,7 @@ class EffectExecutor(
                     if (p != null && status.bridge.instanceId != p.instanceId) {
                         val updated = p.copy(instanceId = status.bridge.instanceId)
                         profileRepository.save(updated)
+                        onProfileUpdated(updated)
                         logStore.log(SyncLogLevel.Info, SyncLogCategory.Connection, "更新instanceId old='${p.instanceId}' new='${status.bridge.instanceId}'")
                     }
                 }
@@ -370,7 +379,9 @@ class EffectExecutor(
             ?: return DiscoveryOutcome(switched = false, candidatesSignature = signature)
 
         if (best.ip != profile.address || best.port != profile.port) {
-            profileRepository.save(profile.copy(address = best.ip, port = best.port))
+            val updated = profile.copy(address = best.ip, port = best.port)
+            profileRepository.save(updated)
+            onProfileUpdated(updated)
             logStore.log(
                 SyncLogLevel.Info,
                 SyncLogCategory.Connection,
