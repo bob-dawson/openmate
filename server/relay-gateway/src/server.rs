@@ -147,7 +147,7 @@ async fn handle_bridge_ws(socket: WebSocket, state: SharedState) {
     {
         let holder = instance_id_holder.lock().await;
         if let Some(ref iid) = *holder {
-            crate::tunnel::bridge::remove_bridge(&recv_state, iid);
+            crate::tunnel::bridge::remove_bridge(&recv_state, iid, &tx);
         }
     }
 

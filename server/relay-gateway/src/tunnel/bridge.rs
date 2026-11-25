@@ -28,7 +28,22 @@ pub fn handle_register(
     tracing::info!(instance_id = %instance_id, "bridge registered");
 }
 
-pub fn remove_bridge(state: &SharedState, instance_id: &str) {
+pub fn remove_bridge(
+    state: &SharedState,
+    instance_id: &str,
+    tx: &mpsc::UnboundedSender<BridgeOut>,
+) {
+    let is_current = match state.bridges.get(instance_id) {
+        Some(entry) => entry.tx.same_channel(tx),
+        None => false,
+    };
+    if !is_current {
+        tracing::info!(
+            instance_id = %instance_id,
+            "bridge already replaced, skipping removal"
+        );
+        return;
+    }
     if state.bridges.remove(instance_id).is_some() {
         tracing::info!(instance_id = %instance_id, "bridge removed");
     }
@@ -65,6 +80,13 @@ pub fn cleanup_stale_bridges(state: &SharedState, timeout_secs: u64) {
         .collect();
 
     for (instance_id, elapsed, tx) in stale {
+        let is_current = match state.bridges.get(&instance_id) {
+            Some(entry) => entry.tx.same_channel(&tx),
+            None => false,
+        };
+        if !is_current {
+            continue;
+        }
         tracing::warn!(instance_id = %instance_id, elapsed_secs = elapsed, "removing stale bridge");
         let _ = tx.send(BridgeOut::Json(TunnelFrame::error(
             None,
@@ -72,5 +94,52 @@ pub fn cleanup_stale_bridges(state: &SharedState, timeout_secs: u64) {
             "heartbeat timeout",
         )));
         state.bridges.remove(&instance_id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use crate::state::GatewayState;
+    use std::sync::Arc;
+    use tokio::sync::mpsc;
+
+    fn state() -> SharedState {
+        Arc::new(GatewayState::new(Config::default()))
+    }
+
+    fn sender() -> mpsc::UnboundedSender<BridgeOut> {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        tx
+    }
+
+    #[test]
+    fn remove_bridge_keeps_newer_connection() {
+        let state = state();
+        let old_tx = sender();
+        let new_tx = sender();
+
+        handle_register(&state, "inst-1".to_string(), old_tx.clone());
+        handle_register(&state, "inst-1".to_string(), new_tx.clone());
+
+        remove_bridge(&state, "inst-1", &old_tx);
+
+        assert!(is_bridge_online(&state, "inst-1"), "newer connection must survive");
+
+        remove_bridge(&state, "inst-1", &new_tx);
+
+        assert!(!is_bridge_online(&state, "inst-1"));
+    }
+
+    #[test]
+    fn remove_bridge_removes_current_connection() {
+        let state = state();
+        let tx = sender();
+
+        handle_register(&state, "inst-2".to_string(), tx.clone());
+        remove_bridge(&state, "inst-2", &tx);
+
+        assert!(!is_bridge_online(&state, "inst-2"));
     }
 }
