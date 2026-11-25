@@ -21,6 +21,126 @@ fn table_exists(pool: &Pool<SqliteConnectionManager>, name: &str) -> bool {
         .unwrap_or(false)
 }
 
+
+fn session_part_table_exists(conn: &rusqlite::Connection) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'session_part'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|found| found > 0)
+    .unwrap_or(false)
+}
+
+/// opencode 2.x stores message parts in a separate `session_part` table instead of
+/// `session_message.data.content`. Merge them back so clients keep receiving the
+/// same shape, and surface part updates through `timeUpdated`.
+fn attach_session_parts(
+    conn: &rusqlite::Connection,
+    messages: &mut [Value],
+) -> Result<(), String> {
+    if messages.is_empty() || !session_part_table_exists(conn) {
+        return Ok(());
+    }
+
+    let ids: Vec<String> = messages
+        .iter()
+        .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+        .collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let placeholders = vec!["?"; ids.len()].join(",");
+    let sql = format!(
+        "SELECT message_id, data, time_updated FROM session_part \
+         WHERE message_id IN ({}) ORDER BY ordinal ASC",
+        placeholders
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("Prepare session_part failed: {}", e))?;
+    let params: Vec<&dyn rusqlite::ToSql> = ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let rows = stmt
+        .query_map(params.as_slice(), |row| {
+            let mid: String = row.get(0)?;
+            let data_str: String = row.get(1)?;
+            let tu: i64 = row.get(2)?;
+            Ok((mid, data_str, tu))
+        })
+        .map_err(|e| format!("Query session_part failed: {}", e))?;
+
+    let mut parts_by_msg: HashMap<String, Vec<Value>> = HashMap::new();
+    let mut updated_by_msg: HashMap<String, i64> = HashMap::new();
+    for (mid, data_str, tu) in rows.flatten() {
+        if let Ok(part) = serde_json::from_str::<Value>(&data_str) {
+            parts_by_msg.entry(mid.clone()).or_default().push(part);
+            updated_by_msg
+                .entry(mid)
+                .and_modify(|v| *v = (*v).max(tu))
+                .or_insert(tu);
+        }
+    }
+
+    for message in messages.iter_mut() {
+        let id = match message.get("id").and_then(|v| v.as_str()) {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+        let parts = match parts_by_msg.get(&id) {
+            Some(parts) => parts.clone(),
+            None => continue,
+        };
+        let msg_type = message
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        if let Some(data_obj) = message.get_mut("data").and_then(|d| d.as_object_mut()) {
+            if msg_type == "assistant" {
+                let empty = data_obj
+                    .get("content")
+                    .and_then(|c| c.as_array())
+                    .map(|a| a.is_empty())
+                    .unwrap_or(true);
+                if empty {
+                    data_obj.insert("content".to_string(), Value::Array(parts));
+                }
+            } else if msg_type == "user" {
+                let text_empty = data_obj
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t.trim().is_empty())
+                    .unwrap_or(true);
+                if text_empty {
+                    let joined = parts
+                        .iter()
+                        .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+                        .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !joined.is_empty() {
+                        data_obj.insert("text".to_string(), Value::String(joined));
+                    }
+                }
+            }
+        }
+
+        if let Some(max_updated) = updated_by_msg.get(&id) {
+            let current = message
+                .get("timeUpdated")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            if *max_updated > current {
+                message["timeUpdated"] = json!(max_updated);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub struct SyncDb {
     pool: Pool<SqliteConnectionManager>,
     db_path: PathBuf,
@@ -107,15 +227,28 @@ impl SyncDb {
 
     pub fn get_messages_since(&self, session_id: &str, since: i64, limit: i64) -> Result<(Vec<Value>, bool, Option<i64>), String> {
         let conn = self.conn()?;
-        let mut stmt = conn.prepare(
+        let has_parts = session_part_table_exists(&conn);
+        let sql = if has_parts {
+            "SELECT id, session_id, type, time_created, time_updated, data
+             FROM session_message m
+             WHERE session_id = ? AND (
+                 m.time_updated > ? OR EXISTS (
+                     SELECT 1 FROM session_part p
+                     WHERE p.message_id = m.id AND p.time_updated > ?
+                 )
+             )
+             ORDER BY m.time_updated ASC
+             LIMIT ?"
+        } else {
             "SELECT id, session_id, type, time_created, time_updated, data
              FROM session_message
              WHERE session_id = ? AND time_updated > ?
              ORDER BY time_updated ASC
              LIMIT ?"
-        ).map_err(|e| format!("Prepare failed: {}", e))?;
+        };
+        let mut stmt = conn.prepare(sql).map_err(|e| format!("Prepare failed: {}", e))?;
 
-        let mut messages: Vec<Value> = stmt.query_map(params![session_id, since, limit + 1], |row| {
+        let mut messages: Vec<Value> = stmt.query_map(params![session_id, since, since, limit + 1], |row| {
             let id: String = row.get(0)?;
             let sid: String = row.get(1)?;
             let msg_type: String = row.get(2)?;
@@ -139,6 +272,8 @@ impl SyncDb {
         if has_more {
             messages.truncate(limit as usize);
         }
+
+        attach_session_parts(&conn, &mut messages)?;
 
         let max_seq: Option<i64> = conn.query_row(
             "SELECT seq FROM event_sequence WHERE aggregate_id = ?",
@@ -254,6 +389,8 @@ impl SyncDb {
 
         messages.reverse();
 
+        attach_session_parts(&conn, &mut messages)?;
+
         let max_seq: Option<i64> = conn.query_row(
             "SELECT seq FROM event_sequence WHERE aggregate_id = ?",
             params![session_id],
@@ -318,7 +455,11 @@ impl SyncDb {
             },
         );
         match result {
-            Ok(val) => Ok(Some(val)),
+            Ok(val) => {
+                let mut messages = vec![val];
+                attach_session_parts(&conn, &mut messages)?;
+                Ok(messages.pop())
+            }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(format!("Query failed: {}", e)),
         }
@@ -739,5 +880,101 @@ mod tests {
     fn probe_empty_is_empty() {
         let (db, _d) = setup(&[]);
         assert!(db.count_alive_upto("ses_1", "msg_a", &[]).unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod session_part_tests {
+    use super::attach_session_parts;
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    fn conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session_message (
+                 id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER,
+                 time_created INTEGER, time_updated INTEGER, data TEXT);
+             CREATE TABLE session_part (
+                 message_id TEXT, session_id TEXT, ordinal INTEGER, type TEXT,
+                 call_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn message(id: &str, msg_type: &str, data: serde_json::Value, time_updated: i64) -> serde_json::Value {
+        json!({
+            "id": id,
+            "sessionId": "ses_1",
+            "type": msg_type,
+            "timeCreated": 100,
+            "timeUpdated": time_updated,
+            "data": data,
+        })
+    }
+
+    fn insert_part(conn: &Connection, mid: &str, ordinal: i64, data: serde_json::Value, time_updated: i64) {
+        conn.execute(
+            "INSERT INTO session_part (message_id, session_id, ordinal, type, call_id, time_created, time_updated, data)
+             VALUES (?1, 'ses_1', ?2, 'x', NULL, 100, ?3, ?4)",
+            rusqlite::params![mid, ordinal, time_updated, data.to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn merges_parts_in_ordinal_order_and_bumps_time_updated() {
+        let conn = conn();
+        insert_part(&conn, "m1", 1, json!({"type": "text", "text": "hello"}), 150);
+        insert_part(&conn, "m1", 0, json!({"type": "reasoning", "text": "think"}), 120);
+        insert_part(&conn, "m1", 2, json!({"type": "tool", "name": "shell"}), 200);
+
+        let mut messages = vec![message("m1", "assistant", json!({"content": [], "finish": "stop"}), 110)];
+        attach_session_parts(&conn, &mut messages).unwrap();
+
+        let content = messages[0]["data"]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 3);
+        assert_eq!(content[0]["type"], "reasoning");
+        assert_eq!(content[1]["type"], "text");
+        assert_eq!(content[2]["type"], "tool");
+        assert_eq!(messages[0]["timeUpdated"], 200);
+    }
+
+    #[test]
+    fn keeps_existing_inline_content() {
+        let conn = conn();
+        insert_part(&conn, "m1", 0, json!({"type": "text", "text": "from parts"}), 150);
+
+        let mut messages = vec![message(
+            "m1",
+            "assistant",
+            json!({"content": [{"type": "text", "text": "inline"}]}),
+            110,
+        )];
+        attach_session_parts(&conn, &mut messages).unwrap();
+
+        let content = messages[0]["data"]["content"].as_array().unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["text"], "inline");
+    }
+
+    #[test]
+    fn fills_user_text_from_parts() {
+        let conn = conn();
+        insert_part(&conn, "u1", 0, json!({"type": "text", "text": "hi there"}), 150);
+
+        let mut messages = vec![message("u1", "user", json!({"text": ""}), 110)];
+        attach_session_parts(&conn, &mut messages).unwrap();
+
+        assert_eq!(messages[0]["data"]["text"], "hi there");
+    }
+
+    #[test]
+    fn no_op_without_session_part_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        let mut messages = vec![message("m1", "assistant", json!({"content": []}), 110)];
+        attach_session_parts(&conn, &mut messages).unwrap();
+        assert_eq!(messages[0]["data"]["content"].as_array().unwrap().len(), 0);
     }
 }

@@ -688,6 +688,13 @@ class SessionDetailViewModel @Inject constructor(
                 if (pk != null && providerBucket[pk] == null) {
                     loadCachedProviders()?.let { providerBucket[pk] = it; _providers.value = it }
                 }
+                try {
+                    if (sessionMessageRepository.needsContentRepair(sessionID, MESSAGE_WINDOW_PAGE_SIZE)) {
+                        sessionMessageRepository.refreshRecentWindow(sessionID, MESSAGE_WINDOW_PAGE_SIZE)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "refreshRecentWindow failed", e)
+                }
                 rebuildInitialWindow(sessionID)
                 val lastSeq = sessionMessageRepository.getLastSeq(sessionID)
                 val hasLocalMessages = messageWindowState.messages.isNotEmpty()

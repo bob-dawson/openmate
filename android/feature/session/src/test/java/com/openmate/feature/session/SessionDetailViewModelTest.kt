@@ -1139,6 +1139,10 @@ class SessionDetailViewModelTest {
             return if (olderUserTurnPages.isEmpty()) emptyList() else olderUserTurnPages.removeFirst()
         }
 
+        override suspend fun needsContentRepair(sessionId: String, limit: Int): Boolean = false
+
+        override suspend fun refreshRecentWindow(sessionId: String, limit: Int) = Unit
+
         override suspend fun hasOlderUserMessage(
             sessionId: String,
             beforeTimeCreated: Long,

@@ -15,6 +15,8 @@ interface SessionMessageRepository {
     suspend fun hasOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String): Boolean
     suspend fun findOlderUserMessage(sessionId: String, beforeTimeCreated: Long, beforeId: String): SessionMessage?
     suspend fun findBusyStartTime(sessionId: String): Long?
+    suspend fun needsContentRepair(sessionId: String, limit: Int = 30): Boolean
+    suspend fun refreshRecentWindow(sessionId: String, limit: Int = 30)
     suspend fun initSync(sessionId: String, limit: Int = 30): SessionMessageSyncResult
     suspend fun incrementalSync(sessionId: String)
     suspend fun incrementalSyncAndNotify(sessionId: String)

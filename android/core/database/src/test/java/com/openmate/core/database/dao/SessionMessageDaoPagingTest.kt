@@ -55,6 +55,52 @@ class SessionMessageDaoPagingTest {
         assertThat(result.map { it.id }).containsExactly("m2", "m3").inOrder()
     }
 
+    @Test
+    fun countAssistantMessagesMissingParts_countsOnlyEmptyContentInWindow() = runTest {
+        dao.upsertAll(
+            listOf(
+                assistantMessage("a1", timeCreated = 1, data = "{\"content\":[]}"),
+                assistantMessage("a2", timeCreated = 2, data = "{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}"),
+                assistantMessage("a3", timeCreated = 3, data = "{\"content\":[]}"),
+                SessionMessageEntity(
+                    id = "u1",
+                    sessionId = SESSION_ID,
+                    type = "user",
+                    data = "{\"content\":[]}",
+                    timeCreated = 4,
+                    timeUpdated = 4,
+                ),
+            )
+        )
+
+        val count = dao.countAssistantMessagesMissingParts(SESSION_ID, limit = 10)
+
+        assertThat(count).isEqualTo(2)
+    }
+
+    @Test
+    fun countAssistantMessagesMissingParts_ignoresMessagesOutsideWindow() = runTest {
+        dao.upsertAll(
+            listOf(
+                assistantMessage("old", timeCreated = 1, data = "{\"content\":[]}"),
+                assistantMessage("new", timeCreated = 2, data = "{\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}"),
+            )
+        )
+
+        val count = dao.countAssistantMessagesMissingParts(SESSION_ID, limit = 1)
+
+        assertThat(count).isEqualTo(0)
+    }
+
+    private fun assistantMessage(id: String, timeCreated: Long, data: String) = SessionMessageEntity(
+        id = id,
+        sessionId = SESSION_ID,
+        type = "assistant",
+        data = data,
+        timeCreated = timeCreated,
+        timeUpdated = timeCreated,
+    )
+
     private fun message(
         id: String,
         timeCreated: Long,

@@ -123,6 +123,10 @@ class SyncDebugControllerTest {
             userTurns: Int,
         ) = emptyList<SessionMessage>()
 
+        override suspend fun needsContentRepair(sessionId: String, limit: Int): Boolean = false
+
+        override suspend fun refreshRecentWindow(sessionId: String, limit: Int) = Unit
+
         override suspend fun hasOlderUserMessage(
             sessionId: String,
             beforeTimeCreated: Long,

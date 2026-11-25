@@ -66,6 +66,17 @@ interface SessionMessageDao {
     @Query("SELECT COUNT(*) FROM session_message WHERE sessionId = :sessionId")
     suspend fun countBySession(sessionId: String): Int
 
+    @Query("""
+        SELECT COUNT(*) FROM (
+            SELECT type, data FROM session_message
+            WHERE sessionId = :sessionId
+            ORDER BY timeCreated DESC, id DESC
+            LIMIT :limit
+        )
+        WHERE type = 'assistant' AND data LIKE '%"content":[]%'
+    """)
+    suspend fun countAssistantMessagesMissingParts(sessionId: String, limit: Int): Int
+
     @Query("SELECT id FROM session_message WHERE sessionId = :sessionId ORDER BY timeCreated ASC, id ASC LIMIT 1")
     suspend fun getFirstId(sessionId: String): String?
 

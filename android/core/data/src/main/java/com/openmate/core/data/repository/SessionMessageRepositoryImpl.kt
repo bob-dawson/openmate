@@ -156,6 +156,28 @@ class SessionMessageRepositoryImpl @Inject constructor(
         return dbProvider.getActive().sessionMessageDao().findBusyStartTime(sessionId)
     }
 
+    override suspend fun needsContentRepair(sessionId: String, limit: Int): Boolean {
+        val missing = dbProvider.getActive().sessionMessageDao()
+            .countAssistantMessagesMissingParts(sessionId, limit)
+        return missing > 0
+    }
+
+    override suspend fun refreshRecentWindow(sessionId: String, limit: Int) {
+        val response = syncApiClient.init(sessionId, limit)
+        if (response.messages.isEmpty()) return
+        val entities = response.messages.map { dto ->
+            val truncatedData = MobileTruncator.truncate(dto.type, dto.data)
+            dto.copy(data = truncatedData).let { SessionMessageMapper.dtoToEntity(it) }
+        }
+        dbProvider.getActive().sessionMessageDao().upsertAll(entities)
+        logStore.log(
+            SyncLogLevel.Info,
+            SyncLogCategory.Sync,
+            "refreshRecentWindow repaired ${entities.size} messages",
+            sessionId = sessionId,
+        )
+    }
+
     override suspend fun initSync(sessionId: String, limit: Int): SessionMessageSyncResult {
         val db = dbProvider.getActive()
         Log.d("SyncRepo", "initSync start: sessionId=$sessionId")

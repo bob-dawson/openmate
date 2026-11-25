@@ -3,6 +3,7 @@ package com.openmate.feature.session.component
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +78,11 @@ private fun PendingImageThumbnail(
             .size(ThumbnailSize)
             .clip(RoundedCornerShape(ThumbnailCorner))
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f),
+                shape = RoundedCornerShape(ThumbnailCorner),
+            )
             .clickable(onClick = onClick),
     ) {
         bitmap?.let {
