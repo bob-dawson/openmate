@@ -103,6 +103,7 @@ import com.openmate.core.ui.component.TopBar
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
+import com.openmate.feature.session.component.PendingPromptsBar
 import com.openmate.feature.session.component.FileViewer
 import com.openmate.feature.session.component.ImageViewerDialog
 import com.openmate.feature.session.component.PendingImageStrip
@@ -153,7 +154,9 @@ fun SessionDetailScreen(
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
-    val queuedMessageIds by viewModel.queuedMessageIds.collectAsState()
+    val pendingPrompts by viewModel.pendingPrompts.collectAsState()
+    val deliveryPickerVisible by viewModel.deliveryPickerVisible.collectAsState()
+    val editingPendingPrompt by viewModel.editingPendingPrompt.collectAsState()
     val runningAnchors by viewModel.runningAnchors.collectAsState()
     val sessionTotalDuration by viewModel.sessionTotalDuration.collectAsState()
     val currentBusyStart by viewModel.currentBusyStart.collectAsState()
@@ -544,22 +547,12 @@ fun SessionDetailScreen(
             )
         },
     ) { padding ->
-        val displayMessages = remember(messages, queuedMessageIds, isBusy, sessionRevert) {
+        val displayMessages = remember(messages, sessionRevert) {
             val revertFromId = sessionRevert?.from
-            val filtered = if (revertFromId != null) {
+            if (revertFromId != null) {
                 val revertTs = extractMsgTimestamp(revertFromId)
                 messages.filter { extractMsgTimestamp(it.id) < revertTs }
             } else messages
-            if (!isBusy || queuedMessageIds.isEmpty()) filtered
-            else {
-                val queued = mutableListOf<SessionMessage>()
-                val rest = mutableListOf<SessionMessage>()
-                for (msg in filtered) {
-                    if (msg.id in queuedMessageIds) queued.add(msg)
-                    else rest.add(msg)
-                }
-                rest + queued
-            }
         }
 
         val previousUserMessageIndex by remember(displayMessages) {
@@ -714,7 +707,6 @@ fun SessionDetailScreen(
                             entity = entity,
                             showReasoning = showReasoning && !compactMode,
                             compactMode = compactMode,
-                            isQueued = entity.id in queuedMessageIds,
                             userModelName = userModelName,
                             onFullContentRequest = { messageId ->
                                 viewModel.fetchFullContent(sessionID, messageId)
@@ -1061,6 +1053,19 @@ fun SessionDetailScreen(
                 }
             }
 
+            PendingPromptsBar(
+                prompts = pendingPrompts,
+                onCancel = { id -> viewModel.cancelPendingPrompt(sessionID, id) },
+                onToggleDelivery = { prompt ->
+                    viewModel.setPendingPromptDelivery(
+                        sessionID,
+                        prompt.id,
+                        if (prompt.delivery == PromptDelivery.QUEUE) PromptDelivery.STEER else PromptDelivery.QUEUE,
+                    )
+                },
+                onEdit = { prompt -> viewModel.startEditingPendingPrompt(prompt) },
+            )
+
             ChatInputBar(
                 text = inputText,
                 onTextChange = { viewModel.updateInput(it) },
@@ -1087,6 +1092,50 @@ fun SessionDetailScreen(
 
     imageViewer?.let { viewer ->
         ImageViewerDialog(state = viewer, onDismiss = { viewModel.closeImageViewer() })
+    }
+
+    if (deliveryPickerVisible) {
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelDeliveryPicker() },
+            title = { Text(stringResource(R.string.pending_send_title)) },
+            text = { Text(stringResource(R.string.pending_send_message)) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.confirmSendMessage(sessionID, PromptDelivery.STEER) }) {
+                    Text(stringResource(R.string.pending_send_steer))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.confirmSendMessage(sessionID, PromptDelivery.QUEUE) }) {
+                    Text(stringResource(R.string.pending_send_queue))
+                }
+            },
+        )
+    }
+
+    editingPendingPrompt?.let { prompt ->
+        var editText by remember(prompt.id) { mutableStateOf(prompt.text) }
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelEditingPendingPrompt() },
+            title = { Text(stringResource(R.string.pending_edit_title)) },
+            text = {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    minLines = 2,
+                    maxLines = 6,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.submitPendingPromptEdit(sessionID, editText) }) {
+                    Text(stringResource(R.string.confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelEditingPendingPrompt() }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 
     if (showRenameDialog) {

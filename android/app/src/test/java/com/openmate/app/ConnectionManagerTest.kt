@@ -606,14 +606,6 @@ class ConnectionManagerTest {
             messageId: String,
         ): kotlinx.serialization.json.JsonObject = kotlinx.serialization.json.JsonObject(emptyMap())
 
-        override suspend fun insertOptimisticUserMessage(
-            sessionId: String,
-            messageId: String,
-            text: String,
-            created: Long,
-            files: List<com.openmate.core.domain.model.MessageFileMeta>,
-        ) = Unit
-
         override suspend fun getLastSeq(sessionId: String): Long? = null
 
         override suspend fun rollbackSeq(sessionId: String, count: Long) = Unit

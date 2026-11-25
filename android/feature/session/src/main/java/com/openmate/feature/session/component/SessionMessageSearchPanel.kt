@@ -63,6 +63,17 @@ import kotlinx.serialization.json.jsonPrimitive
 
 private fun sessionMessageSummary(message: SessionMessage, maxLen: Int = 60): String {
     val data = runCatching { Json.parseToJsonElement(message.data).jsonObject }.getOrNull() ?: return "—"
+    fun clip(value: String?): String? {
+        val text = value?.trim().orEmpty()
+        if (text.isBlank()) return null
+        return if (text.length <= maxLen) text else "${text.take(maxLen)}…"
+    }
+    clip(data["description"]?.jsonPrimitive?.contentOrNull)?.let { return it }
+    when (message.type) {
+        "compaction" -> clip(data["summary"]?.jsonPrimitive?.contentOrNull)?.let { return it }
+        "shell" -> clip(data["command"]?.jsonPrimitive?.contentOrNull)?.let { return it }
+        "skill" -> clip(data["name"]?.jsonPrimitive?.contentOrNull)?.let { return it }
+    }
     val text = data["text"]?.jsonPrimitive?.contentOrNull
     if (text != null && text.isNotBlank()) {
         return if (text.length <= maxLen) text else "${text.take(maxLen)}…"
@@ -203,7 +214,11 @@ fun SessionMessageSearchPanel(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (message.type == "user") stringResource(R.string.label_you) else stringResource(R.string.label_agent),
+                                    text = when (message.type) {
+                                        "user" -> stringResource(R.string.label_you)
+                                        "system" -> stringResource(R.string.label_system)
+                                        else -> stringResource(R.string.label_agent)
+                                    },
                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                     color = if (message.type == "user") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

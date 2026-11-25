@@ -89,14 +89,26 @@ fun QuestionDialog(
                                         role = Role.RadioButton,
                                     ),
                             ) {
-                                Text(
-                                    text = if (selected) "\u2713 ${option.label}" else option.label,
-                                    color = if (selected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    },
-                                )
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.Start,
+                                ) {
+                                    Text(
+                                        text = if (selected) "\u2713 ${option.label}" else option.label,
+                                        color = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface
+                                        },
+                                    )
+                                    if (option.description.isNotBlank()) {
+                                        Text(
+                                            text = option.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
                             }
                         }
                         if (questionInfo.custom) {

@@ -63,6 +63,7 @@ class EventDispatcher @Inject constructor(
                 type.startsWith("session.step.") ||
                 type.startsWith("session.compaction.") ||
                 type.startsWith("session.shell.") ||
+                type.startsWith("session.inbox.") ||
                 type.startsWith("session.revert.") ||
                 type.startsWith("session.input.") ||
                 type.startsWith("session.execution.") ||

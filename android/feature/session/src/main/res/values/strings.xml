@@ -285,4 +285,31 @@
     <string name="image_viewer_close">Close</string>
     <string name="pending_image_open">View image</string>
     <string name="pending_image_remove">Remove image</string>
+
+    <string name="label_system">System</string>
+    <string name="compaction_failed">compaction failed</string>
+    <string name="pending_delivery_steer">Steer</string>
+    <string name="pending_delivery_queue">Queue</string>
+    <string name="pending_delivering">Sending</string>
+    <string name="pending_image_count">[image %1$d]</string>
+    <string name="pending_file_count">[file %1$d]</string>
+    <string name="pending_attachment_only">Attachment</string>
+    <string name="pending_edit">Edit</string>
+    <string name="pending_delete">Remove</string>
+    <string name="pending_edit_title">Edit queued message</string>
+    <string name="pending_edit_empty">Message cannot be empty</string>
+    <string name="pending_edit_attachments_unsupported">Messages with images or files can only be switched or removed</string>
+    <string name="pending_edit_failed">Failed to edit queued message</string>
+    <string name="pending_already_delivered">Message was already sent, so it cannot be edited</string>
+    <string name="pending_cancel_failed">Failed to remove queued message</string>
+    <string name="pending_delivery_failed">Failed to change delivery mode</string>
+    <string name="pending_send_title">Agent is working</string>
+    <string name="pending_send_message">Deliver this message now (steer), or wait for the current work to finish (queue)?</string>
+    <string name="pending_send_steer">Steer</string>
+    <string name="pending_send_queue">Queue</string>
+    <string name="revert_cancelled_pending">Reverted; %1$d queued message(s) cancelled</string>
+    <string name="pending_more">+%1$d more queued</string>
+    <string name="tool_file_image_placeholder">[image]</string>
+    <string name="tool_file_file_placeholder">[file]</string>
+    <string name="compaction_label">compaction</string>
 </resources>

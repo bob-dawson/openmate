@@ -13,7 +13,6 @@ import com.openmate.core.database.entity.SessionMessageFullContentEntity
 import com.openmate.core.database.entity.SyncStateEntity
 import com.openmate.core.domain.model.DiffBuilder
 import com.openmate.core.domain.model.DiffFile
-import com.openmate.core.domain.model.MessageFileMeta
 import com.openmate.core.domain.model.SessionMessage
 import com.openmate.core.domain.model.SessionMessageSyncEvent
 import com.openmate.core.domain.model.SessionMessageSyncChange
@@ -21,7 +20,6 @@ import com.openmate.core.domain.model.SessionMessageSyncResult
 import com.openmate.core.domain.repository.SessionMessageRepository
 import com.openmate.core.network.SyncApiClient
 import com.openmate.core.network.dto.MessagesResponseDto
-import com.openmate.core.network.dto.SyncMessageDto
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -32,9 +30,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.put
 import androidx.room.withTransaction
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -50,16 +45,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
     private val syncEvents = MutableSharedFlow<SessionMessageSyncEvent>(extraBufferCapacity = 64)
 
     private val syncingSessions = ConcurrentHashMap<String, Unit>()
-
-    // 本地已回显、服务端尚未确认的消息（id -> 本地记录时间）。发送是异步的，紧随其后的同步
-    // 可能还没被服务端收录；这类消息若参与删除对账，会被误判为「服务端已删」而先消失再重现。
-    private val pendingLocalMessages = ConcurrentHashMap<String, Long>()
-
-    private fun activePendingLocalMessages(): Set<String> {
-        val now = System.currentTimeMillis()
-        pendingLocalMessages.entries.removeIf { now - it.value > PENDING_LOCAL_TTL_MS }
-        return pendingLocalMessages.keys.toSet()
-    }
 
     override fun observeMessages(sessionId: String): Flow<List<SessionMessage>> {
         return dbProvider.getActive().sessionMessageDao().observeBySession(sessionId)
@@ -249,12 +234,9 @@ class SessionMessageRepositoryImpl @Inject constructor(
 
             // Pre-sync local range for the deletion gate. New messages always have ids > lastId,
             // so a count over [firstId, lastId] can only shrink (deletions), never grow.
-            // Locally echoed messages the server has not confirmed yet are excluded entirely: their
-            // ids occupy lastId but the server cannot count them yet (prompt is async).
-            val gateEnabled = activePendingLocalMessages().isEmpty()
-            val gateFirstId = if (gateEnabled) db.sessionMessageDao().getFirstId(sessionId) else null
-            val gateLastId = if (gateEnabled) db.sessionMessageDao().getLastId(sessionId) else null
-            val gateCount = if (gateEnabled && gateFirstId != null && gateLastId != null) {
+            val gateFirstId = db.sessionMessageDao().getFirstId(sessionId)
+            val gateLastId = db.sessionMessageDao().getLastId(sessionId)
+            val gateCount = if (gateFirstId != null && gateLastId != null) {
                 db.sessionMessageDao().countBySession(sessionId).toLong()
             } else {
                 0L
@@ -307,14 +289,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
                         }
 
                         db.sessionMessageDao().upsert(entity)
-                        if (pendingLocalMessages.remove(entity.id) != null) {
-                            logStore.log(
-                                SyncLogLevel.Info,
-                                SyncLogCategory.Sync,
-                                "回显消息已确认 optimistic confirmed id=${entity.id}",
-                                sessionId,
-                            )
-                        }
                         if (existing == null) {
                             batchChanges += SessionMessageSyncChange.Insert(entity.toDomain())
                         } else {
@@ -405,11 +379,10 @@ class SessionMessageRepositoryImpl @Inject constructor(
         val dao = dbProvider.getActive().sessionMessageDao()
         val local = dao.getInRange(sessionId, firstId, lastId)
         if (local.isEmpty()) return emptyList()
-        val pending = activePendingLocalMessages()
 
         if (localCount <= REPAIR_FULL_LIMIT) {
             val serverIds = syncApiClient.ids(sessionId, firstId, lastId).ids.toHashSet()
-            return local.filter { it.id !in serverIds && it.id !in pending }.map { it.id }
+            return local.filter { it.id !in serverIds }.map { it.id }
         }
 
         val ids = local.map { it.id }
@@ -447,67 +420,12 @@ class SessionMessageRepositoryImpl @Inject constructor(
         val toId = ids[blockEnd]
         val blockServerIds = syncApiClient.ids(sessionId, fromId, toId).ids.toHashSet()
         return local
-            .filter { it.id >= fromId && it.id <= toId && it.id !in blockServerIds && it.id !in pending }
+            .filter { it.id >= fromId && it.id <= toId && it.id !in blockServerIds }
             .map { it.id }
     }
 
     override suspend fun incrementalSyncAndNotify(sessionId: String) {
         incrementalSync(sessionId)
-    }
-
-    override suspend fun insertOptimisticUserMessage(
-        sessionId: String,
-        messageId: String,
-        text: String,
-        created: Long,
-        files: List<MessageFileMeta>,
-    ) {
-        try {
-            val db = dbProvider.getActive()
-            if (db.sessionMessageDao().getById(messageId) != null) return
-            val data = buildJsonObject {
-                put("text", text)
-                if (files.isNotEmpty()) {
-                    put("files", buildJsonArray {
-                        files.forEach { file ->
-                            add(buildJsonObject {
-                                put("mime", file.mime)
-                                put("name", file.name)
-                            })
-                        }
-                    })
-                }
-                put("time", buildJsonObject { put("created", created) })
-            }
-            val dto = SyncMessageDto(
-                id = messageId,
-                sessionId = sessionId,
-                type = "user",
-                timeCreated = created,
-                timeUpdated = created,
-                data = data,
-            )
-            val entity = SessionMessageMapper.dtoToEntity(dto)
-            db.sessionMessageDao().upsert(entity)
-            pendingLocalMessages[messageId] = System.currentTimeMillis()
-            syncEvents.tryEmit(
-                SessionMessageSyncEvent(
-                    sessionId = sessionId,
-                    result = SessionMessageSyncResult(
-                        lastSeq = db.syncStateDao().get(sessionId)?.lastSeq ?: 0L,
-                        changes = listOf(SessionMessageSyncChange.Insert(entity.toDomain())),
-                    ),
-                )
-            )
-            logStore.log(
-                level = SyncLogLevel.Info,
-                category = SyncLogCategory.Manual,
-                message = "本地回显用户消息 optimistic user message id=$messageId",
-                sessionId = sessionId,
-            )
-        } catch (e: Exception) {
-            Log.w("SyncRepo", "insertOptimisticUserMessage failed: ${e.message}", e)
-        }
     }
 
     override suspend fun fetchFullMessage(sessionId: String, messageId: String) {
@@ -557,8 +475,6 @@ class SessionMessageRepositoryImpl @Inject constructor(
 }
 
 private const val REPAIR_FULL_LIMIT = 100L
-
-private const val PENDING_LOCAL_TTL_MS = 10 * 60 * 1000L
 
 private fun ceilSqrt(n: Int): Int {
     if (n <= 1) return 1

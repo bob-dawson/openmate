@@ -60,7 +60,13 @@ internal fun extractSubtaskSessionId(
         ?: resultText?.let { TaskIdRegex.find(it)?.groupValues?.getOrNull(1) }
 }
 
-internal fun extractToolItems(data: JsonObject, sessionId: String = "", messageId: String = ""): List<DisplayItem.ToolItem> {
+internal fun extractToolItems(
+    data: JsonObject,
+    sessionId: String = "",
+    messageId: String = "",
+    imageLabel: String = "[image]",
+    fileLabel: String = "[file]",
+): List<DisplayItem.ToolItem> {
     val content = data["content"]?.jsonArray ?: return emptyList()
     val items = mutableListOf<DisplayItem.ToolItem>()
     val patches = mutableListOf<List<String>>()
@@ -99,9 +105,20 @@ internal fun extractToolItems(data: JsonObject, sessionId: String = "", messageI
                 val resultText = when {
                     errorObj != null -> errorObj.toString()
                     contentArr != null && contentArr.isNotEmpty() -> {
-                        contentArr.joinToString("\n") { elem ->
-                            elem.jsonObject["text"]?.jsonPrimitive?.contentOrNull ?: elem.toString()
-                        }
+                        contentArr.mapNotNull { elem ->
+                            val item = elem as? JsonObject
+                            when (item?.get("type")?.jsonPrimitive?.contentOrNull) {
+                                "text" -> item["text"]?.jsonPrimitive?.contentOrNull
+                                "file" -> {
+                                    val mime = item["mime"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                                    val name = item["name"]?.jsonPrimitive?.contentOrNull
+                                        ?: item["filename"]?.jsonPrimitive?.contentOrNull
+                                    val label = if (mime.startsWith("image/")) imageLabel else fileLabel
+                                    if (name.isNullOrBlank()) label else "$label $name"
+                                }
+                                else -> null
+                            }
+                        }.joinToString("\n").ifBlank { null }
                     }
                     structuredResult != null -> structuredResult.toString()
                     else -> null
@@ -269,6 +286,9 @@ fun SessionMessageRenderer(
         "shell" -> {
             ShellLifecycleMessageItem(data = dataJson)
         }
+        "system" -> {
+            SystemNoticeItem(data = dataJson)
+        }
         else -> { }
     }
 }
@@ -280,6 +300,8 @@ private fun CompactionMessageItem(
     runningAnchors: Map<String, Long>,
 ) {
     val summary = data["summary"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val failed = data["status"]?.jsonPrimitive?.contentOrNull == "failed"
+    val errorText = if (failed) extractAssistantErrorMessage(data) else null
     val completedAt = SessionMessageCompletion.displayCompletedAt(
         entity.completedAt,
         entity.type,
@@ -291,9 +313,13 @@ private fun CompactionMessageItem(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = if (expanded) "▾ compaction" else "▸ compaction",
+            text = when {
+                failed -> stringResource(R.string.compaction_failed)
+                expanded -> "▾ ${stringResource(R.string.compaction_label)}"
+                else -> "▸ ${stringResource(R.string.compaction_label)}"
+            },
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .padding(horizontal = 4.dp, vertical = 3.dp)
                 .clickable(enabled = summary.isNotBlank()) { expanded = !expanded },
@@ -307,6 +333,9 @@ private fun CompactionMessageItem(
             isStepRunning = isRunning,
             runningAnchors = runningAnchors,
         )
+        if (errorText != null) {
+            AssistantErrorCard(errorText)
+        }
         AnimatedVisibility(visible = expanded && summary.isNotBlank()) {
             Card(
                 modifier = Modifier
@@ -330,8 +359,28 @@ private fun CompactionMessageItem(
     }
 }
 
-private val SHELL_TEXT_COMMAND = Regex("""command="([^"]*)"""")
+@Composable
+private fun SystemNoticeItem(data: JsonObject) {
+    val description = data["description"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+    val text = data["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
+    val collapsedLabel = description ?: text
+    if (collapsedLabel.isBlank()) return
+    var expanded by rememberSaveable(key = "system-notice") { mutableStateOf(false) }
+    val canExpand = text.isNotBlank() && text != collapsedLabel
+    Text(
+        text = if (expanded && canExpand) text else collapsedLabel,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = if (expanded && canExpand) Int.MAX_VALUE else 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 3.dp)
+            .clickable(enabled = canExpand) { expanded = !expanded },
+    )
+}
 
+private val SHELL_TEXT_COMMAND = Regex("""command="([^"]*)"""")
 /**
  * V2 `synthetic` 消息：目前用于后台 shell 完成通知（metadata.source = "shell"），
  * 文本形如 `<shell id="sh_..." state="completed" command="sleep 60">`。
@@ -676,7 +725,17 @@ fun AssistantMessageItem(
 ) {
     val content = data["content"]?.jsonArray ?: return
     val reasoningExpanded = rememberSaveable(key = "reasoning") { mutableStateOf(false) }
-    val toolItems = remember(data) { extractToolItems(data, sessionId, messageId) }
+    val imageLabel = stringResource(R.string.tool_file_image_placeholder)
+    val fileLabel = stringResource(R.string.tool_file_file_placeholder)
+    val toolItems = remember(data, sessionId, messageId, imageLabel, fileLabel) {
+        extractToolItems(
+            data = data,
+            sessionId = sessionId,
+            messageId = messageId,
+            imageLabel = imageLabel,
+            fileLabel = fileLabel,
+        )
+    }
     var toolIndex = 0
 
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
@@ -892,7 +951,7 @@ fun AssistantMessageItem(
                 "compaction" -> {
                     if (compactMode) continue
                     Text(
-                        text = "▸ compaction",
+                        text = "▸ ${stringResource(R.string.compaction_label)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 1.dp),

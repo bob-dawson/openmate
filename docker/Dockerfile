@@ -6,7 +6,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g @opencode/cli@latest \
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm config set registry "$NPM_REGISTRY" \
+    && npm install -g @opencode/cli@latest \
     && which opencode2
 
 COPY openmate-linux-x86_64 /usr/local/bin/openmate

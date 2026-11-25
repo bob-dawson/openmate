@@ -174,6 +174,10 @@ fn build_compat_sync_notification(normalized: &Value) -> Option<Value> {
             | "session.reasoning.ended"
             | "session.revert.committed"
             | "session.revert.staged"
+            | "session.inbox.enqueued"
+            | "session.inbox.delivered"
+            | "session.inbox.cancelled"
+            | "session.inbox.delivery.changed"
             | "session.input.admitted"
             | "session.input.promoted"
             | "session.execution.succeeded"
@@ -255,6 +259,10 @@ fn retain_session_event(event_type: &str) -> bool {
             | "session.compaction.ended"
             | "session.revert.staged"
             | "session.revert.committed"
+            | "session.inbox.enqueued"
+            | "session.inbox.delivered"
+            | "session.inbox.cancelled"
+            | "session.inbox.delivery.changed"
             | "session.input.admitted"
             | "session.input.promoted"
             | "session.execution.succeeded"
@@ -458,6 +466,23 @@ mod tests {
         let output = filter_event(&input).expect("form.created should be retained");
         assert_eq!(output["type"], json!("form.created"));
         assert_eq!(output["properties"]["form"]["id"], json!("frm_1"));
+    }
+
+    #[test]
+    fn forwards_and_notifies_inbox_events() {
+        let input = json!({
+            "type": "session.inbox.delivered",
+            "properties": {
+                "sessionID": "ses_1",
+                "inboxID": "msg_1"
+            }
+        });
+
+        let retained = filter_event(&input).expect("inbox event should reach clients");
+        assert_eq!(retained["type"], json!("session.inbox.delivered"));
+
+        let shared = build_shared_event(&input).expect("inbox event should trigger sync");
+        assert_eq!(shared.sync_notification, Some(json!({ "sessionID": "ses_1" })));
     }
 
     #[test]

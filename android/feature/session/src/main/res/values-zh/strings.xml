@@ -285,4 +285,31 @@
     <string name="question_custom_answer">你的回答</string>
     <string name="question_custom_answer_placeholder">输入你自己的回答</string>
     <string name="question_dismissed">提问已取消</string>
+
+    <string name="label_system">系统</string>
+    <string name="compaction_failed">压缩失败</string>
+    <string name="pending_delivery_steer">插话</string>
+    <string name="pending_delivery_queue">排队</string>
+    <string name="pending_delivering">投递中</string>
+    <string name="pending_image_count">[图片%1$d]</string>
+    <string name="pending_file_count">[文件%1$d]</string>
+    <string name="pending_attachment_only">附件</string>
+    <string name="pending_edit">编辑</string>
+    <string name="pending_delete">删除</string>
+    <string name="pending_edit_title">编辑排队消息</string>
+    <string name="pending_edit_empty">消息内容不能为空</string>
+    <string name="pending_edit_attachments_unsupported">含图片或文件的消息只能切换投递方式或删除</string>
+    <string name="pending_edit_failed">编辑排队消息失败</string>
+    <string name="pending_already_delivered">消息已发送，无法修改</string>
+    <string name="pending_cancel_failed">删除排队消息失败</string>
+    <string name="pending_delivery_failed">切换投递方式失败</string>
+    <string name="pending_send_title">Agent 正在工作</string>
+    <string name="pending_send_message">立即插入（插话），还是等当前工作结束后再发送（排队）？</string>
+    <string name="pending_send_steer">插话</string>
+    <string name="pending_send_queue">排队</string>
+    <string name="revert_cancelled_pending">已回退，取消了 %1$d 条排队消息</string>
+    <string name="pending_more">还有 %1$d 条排队</string>
+    <string name="tool_file_image_placeholder">[图片]</string>
+    <string name="tool_file_file_placeholder">[文件]</string>
+    <string name="compaction_label">压缩</string>
 </resources>

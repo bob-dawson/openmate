@@ -32,6 +32,7 @@ pub fn truncate_event(event_type: &str, data: &Value) -> Value {
         "session.next.compaction.ended" => truncate_event_compaction_ended(data),
         "session.next.shell.ended" => truncate_event_shell_ended(data),
         "session.next.prompted" => truncate_event_prompted(data),
+        "session.inbox.enqueued" => truncate_event_inbox_enqueued(data),
         "message.part.updated" => truncate_event_part_updated(data),
         "message.updated" => truncate_event_message_updated(data),
         _ => data.clone(),
@@ -136,8 +137,28 @@ fn truncate_event_tool_result(data: &Value) -> Value {
     result
 }
 
-fn truncate_event_compaction_ended(data: &Value) -> Value {
-    let mut result = data.clone();
+/// An enqueued inbox item carries the full prompt payload (possibly image bytes). Clients only
+/// need the identifiers; they read the payload from the inbox API.
+fn truncate_event_inbox_enqueued(data: &Value) -> Value {
+    let mut result = Map::new();
+    for key in ["sessionID", "inboxID"] {
+        if let Some(value) = data.get(key) {
+            result.insert(key.to_string(), value.clone());
+        }
+    }
+    if let Some(item) = data.get("item").and_then(|item| item.as_object()) {
+        let mut trimmed = Map::new();
+        for key in ["type", "delivery"] {
+            if let Some(value) = item.get(key) {
+                trimmed.insert(key.to_string(), value.clone());
+            }
+        }
+        result.insert(String::from("item"), Value::Object(trimmed));
+    }
+    Value::Object(result)
+}
+
+fn truncate_event_compaction_ended(data: &Value) -> Value {    let mut result = data.clone();
     if let Some(obj) = result.as_object_mut() {
         obj.remove("include");
         if let Some(text) = obj.get("text").and_then(|t| t.as_str()) {
@@ -257,7 +278,7 @@ fn truncate_user(data: &Value) -> Value {
 
     if let Some(files) = obj.get_mut("files").and_then(|f| f.as_array_mut()) {
         for file in files.iter_mut() {
-            *file = sanitize_file_item(file);
+            *file = sanitize_user_file_item(file);
         }
     }
 
@@ -449,6 +470,34 @@ fn sanitize_file_item(item: &Value) -> Value {
     Value::Object(result)
 }
 
+/// User attachments keep image bytes: the phone displays them and has no other source for
+/// inline media. Non-image files keep only metadata, as before.
+fn sanitize_user_file_item(item: &Value) -> Value {
+    let mut result = Map::new();
+    for key in ["type", "mime", "name", "filename"] {
+        if let Some(value) = item.get(key) {
+            result.insert(key.to_string(), value.clone());
+        }
+    }
+    let is_image = item
+        .get("mime")
+        .and_then(|v| v.as_str())
+        .map(|mime| mime.starts_with("image/"))
+        .unwrap_or(false);
+    if is_image {
+        if let Some(data) = item.get("data") {
+            result.insert(String::from("data"), data.clone());
+        }
+    }
+    for key in ["uri", "url"] {
+        if let Some(Value::String(value)) = item.get(key) {
+            if !value.starts_with("data:") && value.len() <= MAX_INLINE_PAYLOAD {
+                result.insert(key.to_string(), Value::String(value.clone()));
+            }
+        }
+    }
+    Value::Object(result)
+}
 /// Keep a patch content item: drop per-file patch text, keep paths and stats.
 fn sanitize_patch_item(item: &Value) -> Value {
     let mut result = Map::new();
@@ -1062,6 +1111,43 @@ mod tests {
         assert_eq!(result["files"][0]["name"], "a.png");
         assert!(result["files"][0].get("uri").is_none());
         assert!(result["files"][0].get("source").is_none());
+    }
+
+    #[test]
+    fn test_truncate_user_keeps_image_bytes_but_not_other_payloads() {
+        let data = json!({
+            "text": "hi",
+            "files": [
+                {"name": "a.png", "mime": "image/png", "data": "AAAA", "source": {"type": "inline"}},
+                {"name": "b.pdf", "mime": "application/pdf", "data": "BBBB"}
+            ]
+        });
+        let result = truncate_user(&data);
+        assert_eq!(result["files"][0]["data"], "AAAA");
+        assert!(result["files"][0].get("source").is_none());
+        assert!(result["files"][1].get("data").is_none());
+    }
+
+    #[test]
+    fn test_truncate_event_inbox_enqueued_drops_payload() {
+        let data = json!({
+            "sessionID": "s1",
+            "inboxID": "msg_1",
+            "item": {
+                "type": "user",
+                "delivery": "queue",
+                "payload": {
+                    "text": "hi",
+                    "files": [{"mime": "image/png", "name": "a.png", "data": "AAAA"}]
+                }
+            }
+        });
+        let result = truncate_event("session.inbox.enqueued.1", &data);
+        assert_eq!(result["sessionID"], "s1");
+        assert_eq!(result["inboxID"], "msg_1");
+        assert_eq!(result["item"]["type"], "user");
+        assert_eq!(result["item"]["delivery"], "queue");
+        assert!(result["item"].get("payload").is_none());
     }
 
     #[test]

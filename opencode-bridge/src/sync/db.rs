@@ -1,8 +1,9 @@
 use rusqlite::{OpenFlags, params};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use serde_json::{Value, json};
-use std::collections::HashMap;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use serde_json::{Map, Value, json};
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use crate::config::Config;
 
@@ -99,14 +100,16 @@ fn attach_session_parts(
 
         if let Some(data_obj) = message.get_mut("data").and_then(|d| d.as_object_mut()) {
             if msg_type == "assistant" {
-                let empty = data_obj
+                // opencode's withParts merges the split parts before any inline content the
+                // projector moved back, so downstream clients see both in event order.
+                let inline = data_obj
                     .get("content")
                     .and_then(|c| c.as_array())
-                    .map(|a| a.is_empty())
-                    .unwrap_or(true);
-                if empty {
-                    data_obj.insert("content".to_string(), Value::Array(parts));
-                }
+                    .cloned()
+                    .unwrap_or_default();
+                let mut merged = parts.clone();
+                merged.extend(inline);
+                data_obj.insert("content".to_string(), Value::Array(merged));
             } else if msg_type == "user" {
                 let text_empty = data_obj
                     .get("text")
@@ -138,6 +141,191 @@ fn attach_session_parts(
         }
     }
 
+    Ok(())
+}
+
+fn blob_table_exists(conn: &rusqlite::Connection) -> bool {
+    conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'blob'",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|found| found > 0)
+    .unwrap_or(false)
+}
+
+/// A `media:` ref is `media:` plus the lowercase hex SHA-256 of the blob's bytes.
+fn media_ref_hash(uri: &str) -> Option<&str> {
+    let hash = uri.strip_prefix("media:")?;
+    if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        Some(hash)
+    } else {
+        None
+    }
+}
+
+fn load_blob_data(
+    conn: &rusqlite::Connection,
+    hashes: &HashSet<String>,
+) -> Result<HashMap<String, String>, String> {
+    let mut blobs = HashMap::new();
+    let hashes: Vec<&String> = hashes.iter().collect();
+    for chunk in hashes.chunks(400) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let sql = format!("SELECT hash, data FROM blob WHERE hash IN ({})", placeholders);
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| format!("Prepare blob failed: {}", e))?;
+        let params: Vec<&dyn rusqlite::ToSql> = chunk.iter().map(|h| *h as &dyn rusqlite::ToSql).collect();
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let hash: String = row.get(0)?;
+                let data: Vec<u8> = row.get(1)?;
+                Ok((hash, data))
+            })
+            .map_err(|e| format!("Query blob failed: {}", e))?;
+        for row in rows.flatten() {
+            blobs.insert(row.0, BASE64.encode(row.1));
+        }
+    }
+    Ok(blobs)
+}
+
+/// Reads as this text when a blob is missing, mirroring opencode's SessionBlob hydration.
+fn unavailable_file(file: &Map<String, Value>) -> Value {
+    let mime = file
+        .get("mime")
+        .and_then(|v| v.as_str())
+        .unwrap_or("application/octet-stream");
+    let text = match file.get("name").and_then(|v| v.as_str()) {
+        Some(name) => format!("[media unavailable: {} ({})]", name, mime),
+        None => format!("[media unavailable: {}]", mime),
+    };
+    let mut out = file.clone();
+    out.remove("uri");
+    out.insert("mime".to_string(), Value::String("text/plain".to_string()));
+    out.insert("data".to_string(), Value::String(BASE64.encode(text.as_bytes())));
+    Value::Object(out)
+}
+
+fn inline_file(file: &Map<String, Value>, blobs: &HashMap<String, String>) -> Value {
+    let Some(hash) = file.get("uri").and_then(|v| v.as_str()).and_then(media_ref_hash) else {
+        return Value::Object(file.clone());
+    };
+    match blobs.get(hash) {
+        Some(data) => {
+            let mut out = file.clone();
+            out.remove("uri");
+            out.insert("data".to_string(), Value::String(data.clone()));
+            Value::Object(out)
+        }
+        None => unavailable_file(file),
+    }
+}
+
+/// Restores image bytes stored in `blob` (opencode's `experimental.media_blob`) for user messages.
+/// Non-image attachments keep their short `media:` ref: clients only show their file name.
+fn hydrate_user_image_files(
+    conn: &rusqlite::Connection,
+    messages: &mut [Value],
+) -> Result<(), String> {
+    if messages.is_empty() || !blob_table_exists(conn) {
+        return Ok(());
+    }
+
+    let mut hashes: HashSet<String> = HashSet::new();
+    for message in messages.iter() {
+        let Some(files) = message
+            .get("data")
+            .and_then(|d| d.get("files"))
+            .and_then(|f| f.as_array())
+        else {
+            continue;
+        };
+        for file in files {
+            let Some(obj) = file.as_object() else { continue };
+            if !obj.get("mime").and_then(|v| v.as_str()).unwrap_or("").starts_with("image/") {
+                continue;
+            }
+            if let Some(hash) = obj.get("uri").and_then(|v| v.as_str()).and_then(media_ref_hash) {
+                hashes.insert(hash.to_string());
+            }
+        }
+    }
+    if hashes.is_empty() {
+        return Ok(());
+    }
+
+    let blobs = load_blob_data(conn, &hashes)?;
+    for message in messages.iter_mut() {
+        let Some(files) = message
+            .get_mut("data")
+            .and_then(|d| d.get_mut("files"))
+            .and_then(|f| f.as_array_mut())
+        else {
+            continue;
+        };
+        for file in files.iter_mut() {
+            let Some(obj) = file.as_object() else { continue };
+            if !obj.get("mime").and_then(|v| v.as_str()).unwrap_or("").starts_with("image/") {
+                continue;
+            }
+            *file = inline_file(obj, &blobs);
+        }
+    }
+    Ok(())
+}
+
+/// Tool results may carry inline `data:` files. The App only renders their type/name, so drop the
+/// base64 before it crosses the wire and ends up in the phone's database.
+fn strip_tool_inline_media(messages: &mut [Value]) {
+    for message in messages.iter_mut() {
+        let Some(content) = message
+            .get_mut("data")
+            .and_then(|d| d.get_mut("content"))
+            .and_then(|c| c.as_array_mut())
+        else {
+            continue;
+        };
+        for part in content.iter_mut() {
+            if part.get("type").and_then(|t| t.as_str()) != Some("tool") {
+                continue;
+            }
+            let Some(items) = part
+                .get_mut("state")
+                .and_then(|s| s.get_mut("content"))
+                .and_then(|c| c.as_array_mut())
+            else {
+                continue;
+            };
+            for item in items.iter_mut() {
+                if item.get("type").and_then(|t| t.as_str()) != Some("file") {
+                    continue;
+                }
+                let inline = item
+                    .get("uri")
+                    .and_then(|u| u.as_str())
+                    .map(|u| u.starts_with("data:"))
+                    .unwrap_or(false);
+                if inline {
+                    if let Some(obj) = item.as_object_mut() {
+                        obj.remove("uri");
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Brings a row to the shape clients expect: split parts merged back, image bytes restored,
+/// and bulky inline tool media removed.
+fn prepare_messages(
+    conn: &rusqlite::Connection,
+    messages: &mut [Value],
+) -> Result<(), String> {
+    attach_session_parts(conn, messages)?;
+    hydrate_user_image_files(conn, messages)?;
+    strip_tool_inline_media(messages);
     Ok(())
 }
 
@@ -273,7 +461,7 @@ impl SyncDb {
             messages.truncate(limit as usize);
         }
 
-        attach_session_parts(&conn, &mut messages)?;
+        prepare_messages(&conn, &mut messages)?;
 
         let max_seq: Option<i64> = conn.query_row(
             "SELECT seq FROM event_sequence WHERE aggregate_id = ?",
@@ -389,7 +577,7 @@ impl SyncDb {
 
         messages.reverse();
 
-        attach_session_parts(&conn, &mut messages)?;
+        prepare_messages(&conn, &mut messages)?;
 
         let max_seq: Option<i64> = conn.query_row(
             "SELECT seq FROM event_sequence WHERE aggregate_id = ?",
@@ -457,7 +645,7 @@ impl SyncDb {
         match result {
             Ok(val) => {
                 let mut messages = vec![val];
-                attach_session_parts(&conn, &mut messages)?;
+                prepare_messages(&conn, &mut messages)?;
                 Ok(messages.pop())
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -942,7 +1130,7 @@ mod session_part_tests {
     }
 
     #[test]
-    fn keeps_existing_inline_content() {
+    fn appends_parts_before_existing_inline_content() {
         let conn = conn();
         insert_part(&conn, "m1", 0, json!({"type": "text", "text": "from parts"}), 150);
 
@@ -955,8 +1143,9 @@ mod session_part_tests {
         attach_session_parts(&conn, &mut messages).unwrap();
 
         let content = messages[0]["data"]["content"].as_array().unwrap();
-        assert_eq!(content.len(), 1);
-        assert_eq!(content[0]["text"], "inline");
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0]["text"], "from parts");
+        assert_eq!(content[1]["text"], "inline");
     }
 
     #[test]
@@ -976,5 +1165,113 @@ mod session_part_tests {
         let mut messages = vec![message("m1", "assistant", json!({"content": []}), 110)];
         attach_session_parts(&conn, &mut messages).unwrap();
         assert_eq!(messages[0]["data"]["content"].as_array().unwrap().len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod blob_tests {
+    use super::{hydrate_user_image_files, media_ref_hash, strip_tool_inline_media};
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use rusqlite::{params, Connection};
+    use serde_json::json;
+
+    const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blob (
+                 hash TEXT PRIMARY KEY, mime TEXT NOT NULL, bytes INTEGER NOT NULL,
+                 width INTEGER, height INTEGER, data BLOB NOT NULL, time_created INTEGER NOT NULL);",
+        )
+        .unwrap();
+        conn
+    }
+
+    fn store_blob(conn: &Connection, hash: &str, mime: &str, data: &[u8]) {
+        conn.execute(
+            "INSERT INTO blob (hash, mime, bytes, data, time_created) VALUES (?1, ?2, ?3, ?4, 0)",
+            params![hash, mime, data.len() as i64, data],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn media_ref_requires_lowercase_hex_sha256() {
+        assert_eq!(media_ref_hash(&format!("media:{}", HASH)), Some(HASH));
+        assert_eq!(media_ref_hash(&format!("media:{}", HASH.to_uppercase())), None);
+        assert_eq!(media_ref_hash("media:abc"), None);
+        assert_eq!(media_ref_hash("data:image/png;base64,AAA"), None);
+    }
+
+    #[test]
+    fn hydrates_image_file_from_blob() {
+        let conn = conn();
+        store_blob(&conn, HASH, "image/png", b"PNGDATA");
+        let mut messages = vec![json!({
+            "data": {"files": [{"uri": format!("media:{}", HASH), "mime": "image/png", "name": "a.png"}]}
+        })];
+
+        hydrate_user_image_files(&conn, &mut messages).unwrap();
+
+        let file = &messages[0]["data"]["files"][0];
+        assert_eq!(file["data"], json!(BASE64.encode(b"PNGDATA")));
+        assert!(file.get("uri").is_none());
+        assert_eq!(file["mime"], json!("image/png"));
+    }
+
+    #[test]
+    fn missing_blob_becomes_unavailable_text() {
+        let conn = conn();
+        let mut messages = vec![json!({
+            "data": {"files": [{"uri": format!("media:{}", HASH), "mime": "image/png", "name": "a.png"}]}
+        })];
+
+        hydrate_user_image_files(&conn, &mut messages).unwrap();
+
+        let file = &messages[0]["data"]["files"][0];
+        assert_eq!(file["mime"], json!("text/plain"));
+        let decoded = BASE64.decode(file["data"].as_str().unwrap()).unwrap();
+        assert_eq!(String::from_utf8(decoded).unwrap(), "[media unavailable: a.png (image/png)]");
+        assert!(file.get("uri").is_none());
+    }
+
+    #[test]
+    fn leaves_non_image_refs_and_inline_files_alone() {
+        let conn = conn();
+        store_blob(&conn, HASH, "application/pdf", b"PDF");
+        let mut messages = vec![json!({
+            "data": {"files": [
+                {"uri": format!("media:{}", HASH), "mime": "application/pdf", "name": "a.pdf"},
+                {"uri": "data:image/png;base64,AAA", "mime": "image/png", "name": "b.png"}
+            ]}
+        })];
+
+        hydrate_user_image_files(&conn, &mut messages).unwrap();
+
+        assert_eq!(messages[0]["data"]["files"][0]["uri"], json!(format!("media:{}", HASH)));
+        assert_eq!(messages[0]["data"]["files"][1]["uri"], json!("data:image/png;base64,AAA"));
+    }
+
+    #[test]
+    fn strips_inline_tool_media_but_keeps_refs() {
+        let mut messages = vec![json!({
+            "data": {"content": [{
+                "type": "tool",
+                "state": {"status": "completed", "content": [
+                    {"type": "file", "uri": "data:image/png;base64,AAA", "mime": "image/png", "name": "x.png"},
+                    {"type": "file", "uri": format!("media:{}", HASH), "mime": "image/png", "name": "y.png"},
+                    {"type": "text", "text": "done"}
+                ]}
+            }]}
+        })];
+
+        strip_tool_inline_media(&mut messages);
+
+        let items = messages[0]["data"]["content"][0]["state"]["content"].as_array().unwrap();
+        assert!(items[0].get("uri").is_none());
+        assert_eq!(items[0]["mime"], json!("image/png"));
+        assert_eq!(items[1]["uri"], json!(format!("media:{}", HASH)));
+        assert_eq!(items[2]["text"], json!("done"));
     }
 }

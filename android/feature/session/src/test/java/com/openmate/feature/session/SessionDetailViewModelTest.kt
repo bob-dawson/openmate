@@ -1015,6 +1015,61 @@ class SessionDetailViewModelTest {
             .inOrder()
     }
 
+    @Test
+    fun loadSession_showsInboxItemsAsPendingPrompts() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient().apply {
+            inboxJson =
+                """[{"id":"msg_p1","type":"user","delivery":"queue","time":{"created":5},"payload":{"text":"queued","files":[{"mime":"image/png","name":"a.png"}]}}]"""
+        }
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(message("m1", timeCreated = 1)),
+                lastSeq = null,
+            ),
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.pendingPrompts.value.isNotEmpty() }
+
+        val prompt = viewModel.pendingPrompts.value.single()
+        assertThat(prompt.id).isEqualTo("msg_p1")
+        assertThat(prompt.text).isEqualTo("queued")
+        assertThat(prompt.delivery).isEqualTo(PromptDelivery.QUEUE)
+        assertThat(prompt.imageCount).isEqualTo(1)
+        assertThat(prompt.localOnly).isFalse()
+    }
+
+    @Test
+    fun sendWhileBusy_asksForDeliveryThenSendsChosenMode() = runTest(dispatcher) {
+        val apiClient = FakeOpencodeApiClient()
+        val viewModel = createViewModel(
+            sessionMessageRepository = FakeSessionMessageRepository(
+                recentWindow = listOf(
+                    message("u1", timeCreated = 1_000, data = """{"text":"hi"}""", type = "user"),
+                ),
+                lastSeq = null,
+            ),
+            apiClient = apiClient.client,
+        )
+
+        viewModel.loadSession(SESSION_ID)
+        waitUntil { viewModel.messages.value.isNotEmpty() }
+        waitUntil { viewModel.currentBusyStart.value != null }
+        viewModel.updateInput("next")
+
+        viewModel.sendMessage(SESSION_ID)
+
+        assertThat(viewModel.deliveryPickerVisible.value).isTrue()
+        assertThat(apiClient.promptCalls).isEmpty()
+
+        viewModel.confirmSendMessage(SESSION_ID, PromptDelivery.QUEUE)
+        waitUntil { apiClient.promptCalls.isNotEmpty() }
+
+        assertThat(viewModel.deliveryPickerVisible.value).isFalse()
+        assertThat(apiClient.promptCalls.single().delivery).isEqualTo("queue")
+    }
+
     private fun createViewModel(
         sessionMessageRepository: FakeSessionMessageRepository,
         sessionRepository: SessionRepository = FakeSessionRepository(),
@@ -1181,13 +1236,6 @@ class SessionDetailViewModelTest {
         override suspend fun fetchFullMessage(sessionId: String, messageId: String) = Unit
         override suspend fun fetchMessageData(sessionId: String, messageId: String): kotlinx.serialization.json.JsonObject =
             kotlinx.serialization.json.JsonObject(emptyMap())
-        override suspend fun insertOptimisticUserMessage(
-            sessionId: String,
-            messageId: String,
-            text: String,
-            created: Long,
-            files: List<com.openmate.core.domain.model.MessageFileMeta>,
-        ) = Unit
 
         override suspend fun getLastSeq(sessionId: String): Long? = lastSeq
 
@@ -1232,6 +1280,7 @@ class SessionDetailViewModelTest {
         data class PromptCall(
             val sessionId: String,
             val variant: String?,
+            val delivery: String? = null,
         )
 
         data class SummarizeCall(
@@ -1243,6 +1292,8 @@ class SessionDetailViewModelTest {
         val summarizeCalls = mutableListOf<SummarizeCall>()
         val promptCalls = mutableListOf<PromptCall>()
         val readFileCalls = mutableListOf<String>()
+        val inboxCalls = mutableListOf<String>()
+        var inboxJson: String = "[]"
 
         private var lastVariant: String? = null
 
@@ -1298,10 +1349,35 @@ class SessionDetailViewModelTest {
                         }
                         path.contains("/api/session/") && path.endsWith("/prompt") -> {
                             val sessionId = request.url.pathSegments.getOrNull(2).orEmpty()
+                            val bodyText = Buffer().also { buffer ->
+                                request.body?.writeTo(buffer)
+                            }.readUtf8()
+                            val body = Json.parseToJsonElement(bodyText).jsonObject
                             promptCalls += PromptCall(
                                 sessionId = sessionId,
                                 variant = lastVariant,
+                                delivery = body["delivery"]?.jsonPrimitive?.contentOrNull,
                             )
+                            val newId = "msg_new_${promptCalls.size}"
+                            return@addInterceptor Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body(
+                                    """{"data":{"id":"$newId","type":"user","delivery":"${body["delivery"]?.jsonPrimitive?.contentOrNull ?: "steer"}","time":{"created":1},"payload":{"text":"sent"}}}""".toResponseBody()
+                                )
+                                .build()
+                        }
+                        path.contains("/api/session/") && path.endsWith("/inbox") -> {
+                            inboxCalls += path
+                            return@addInterceptor Response.Builder()
+                                .request(request)
+                                .protocol(Protocol.HTTP_1_1)
+                                .code(200)
+                                .message("OK")
+                                .body("""{"data":$inboxJson}""".toResponseBody())
+                                .build()
                         }
                         path == "/api/bridge/fs/read" -> {
                             val path2 = request.url.queryParameter("path").orEmpty()

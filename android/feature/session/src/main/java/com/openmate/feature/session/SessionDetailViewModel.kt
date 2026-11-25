@@ -24,7 +24,6 @@ import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PromptImage
-import com.openmate.core.domain.model.MessageFileMeta
 import com.openmate.core.domain.repository.FileAttachment
 import com.openmate.core.domain.repository.ConnectionRepository
 import com.openmate.core.domain.repository.SessionMessageRepository
@@ -111,8 +110,21 @@ class SessionDetailViewModel @Inject constructor(
     private val _isStreaming = MutableStateFlow(false)
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
-    private val _queuedMessageIds = MutableStateFlow<Set<String>>(emptySet())
-    val queuedMessageIds: StateFlow<Set<String>> = _queuedMessageIds.asStateFlow()
+    private val _pendingPrompts = MutableStateFlow<List<PendingPrompt>>(emptyList())
+    val pendingPrompts: StateFlow<List<PendingPrompt>> = _pendingPrompts.asStateFlow()
+
+    private val _deliveryPickerVisible = MutableStateFlow(false)
+    val deliveryPickerVisible: StateFlow<Boolean> = _deliveryPickerVisible.asStateFlow()
+
+    private val _editingPendingPrompt = MutableStateFlow<PendingPrompt?>(null)
+    val editingPendingPrompt: StateFlow<PendingPrompt?> = _editingPendingPrompt.asStateFlow()
+
+    private val _isReverting = MutableStateFlow(false)
+    val isReverting: StateFlow<Boolean> = _isReverting.asStateFlow()
+
+    /** Prompts sent by this client that the inbox has not reflected yet. */
+    private val localPendingPrompts = java.util.concurrent.ConcurrentHashMap<String, PendingPrompt>()
+    private val localPendingSince = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     private val _runningAnchors = MutableStateFlow<Map<String, Long>>(emptyMap())
     val runningAnchors: StateFlow<Map<String, Long>> = _runningAnchors.asStateFlow()
@@ -300,6 +312,7 @@ class SessionDetailViewModel @Inject constructor(
         private const val KEY_RECENT_MODELS = "recent_models"
         private const val KEY_DRAFTS = "draft_messages"
         private const val POLL_INTERVAL_MS = 15_000L
+        private const val LOCAL_PENDING_TTL_MS = 60_000L
         private const val MESSAGE_WINDOW_PAGE_SIZE = 30
     }
 
@@ -597,7 +610,6 @@ class SessionDetailViewModel @Inject constructor(
         _sessionRetryStatus.value = null
         _sessionStatus.value = ""
         _isStreaming.value = false
-        _queuedMessageIds.value = emptySet()
         _runningAnchors.value = emptyMap()
         _isLoadingOlder.value = false
         _hasOlderMessages.value = false
@@ -605,6 +617,11 @@ class SessionDetailViewModel @Inject constructor(
         _pendingUserJumpTarget.value = null
         _pendingImages.value = emptyList()
         _sessionRevert.value = null
+        _pendingPrompts.value = emptyList()
+        _editingPendingPrompt.value = null
+        _deliveryPickerVisible.value = false
+        localPendingPrompts.clear()
+        localPendingSince.clear()
         wasBusy = false
         abortSuppressed = false
         isModelOverridden = false
@@ -681,6 +698,8 @@ class SessionDetailViewModel @Inject constructor(
         observeRetryStatus(sessionID)
         observeOlderUserMessageProbe(sessionID)
         startPolling(sessionID)
+
+        viewModelScope.launch(Dispatchers.IO) { refreshInbox(sessionID) }
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -840,6 +859,7 @@ class SessionDetailViewModel @Inject constructor(
                 } catch (e: Exception) {
                     Log.e(TAG, "poll sync failed", e)
                 }
+                refreshInbox(sessionId)
                 try {
                     questionRepository.refresh(sessionId, currentDirectory.ifBlank { "/" })
                     permissionRepository.refresh(currentDirectory.ifBlank { "/" })
@@ -886,18 +906,157 @@ class SessionDetailViewModel @Inject constructor(
         val text = _inputText.value
         val images = _pendingImages.value
         if (text.isBlank() && images.isEmpty()) return
+        if (isAgentBusy()) {
+            // The agent is working: let the user choose between steering and queueing.
+            _deliveryPickerVisible.value = true
+            return
+        }
+        sendMessageWithDelivery(sessionID, PromptDelivery.STEER)
+    }
+
+    fun cancelDeliveryPicker() {
+        _deliveryPickerVisible.value = false
+    }
+
+    fun confirmSendMessage(sessionID: String, delivery: PromptDelivery) {
+        _deliveryPickerVisible.value = false
+        sendMessageWithDelivery(sessionID, delivery)
+    }
+
+    fun cancelPendingPrompt(sessionID: String, id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                apiClient.cancelSessionInboxItem(sessionID, id, currentDirectory.ifBlank { null })
+            } catch (e: Exception) {
+                Log.w(TAG, "cancelPendingPrompt failed", e)
+                _errorMessage.value = appContext.getString(R.string.pending_cancel_failed)
+            }
+            localPendingPrompts.remove(id)
+            localPendingSince.remove(id)
+            _pendingPrompts.value = _pendingPrompts.value.filterNot { it.id == id }
+            refreshInbox(sessionID)
+        }
+    }
+
+    fun setPendingPromptDelivery(sessionID: String, id: String, delivery: PromptDelivery) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                apiClient.updateSessionInboxDelivery(
+                    sessionID,
+                    id,
+                    delivery.wire,
+                    currentDirectory.ifBlank { null },
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "setPendingPromptDelivery failed", e)
+                _errorMessage.value = appContext.getString(R.string.pending_delivery_failed)
+            }
+            refreshInbox(sessionID)
+        }
+    }
+
+    fun startEditingPendingPrompt(prompt: PendingPrompt) {
+        if (prompt.hasAttachments) {
+            _errorMessage.value = appContext.getString(R.string.pending_edit_attachments_unsupported)
+            return
+        }
+        _editingPendingPrompt.value = prompt
+    }
+
+    fun cancelEditingPendingPrompt() {
+        _editingPendingPrompt.value = null
+    }
+
+    /**
+     * opencode has no edit API for queued prompts: cancel the old item, make sure it was not
+     * delivered in the meantime, then send the new text again with the same delivery mode.
+     */
+    fun submitPendingPromptEdit(sessionID: String, text: String) {
+        val target = _editingPendingPrompt.value ?: return
+        val newText = text.trim()
+        if (newText.isBlank()) {
+            _errorMessage.value = appContext.getString(R.string.pending_edit_empty)
+            return
+        }
+        if (newText == target.text) {
+            _editingPendingPrompt.value = null
+            return
+        }
+        _editingPendingPrompt.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            val directory = currentDirectory.ifBlank { null }
+            try {
+                apiClient.cancelSessionInboxItem(sessionID, target.id, directory)
+                if (apiClient.messageExists(sessionID, target.id, directory)) {
+                    localPendingPrompts.remove(target.id)
+                    localPendingSince.remove(target.id)
+                    _pendingPrompts.value = _pendingPrompts.value.filterNot { it.id == target.id }
+                    _errorMessage.value = appContext.getString(R.string.pending_already_delivered)
+                    refreshInbox(sessionID)
+                    return@launch
+                }
+                // The old item is cancelled; drop it from the pending list before re-sending.
+                localPendingPrompts.remove(target.id)
+                localPendingSince.remove(target.id)
+                _pendingPrompts.value = _pendingPrompts.value.filterNot { it.id == target.id }
+                val model = _selectedModel.value
+                val agent = _selectedAgent.value
+                val sent = apiClient.sendPrompt(
+                    sessionID,
+                    newText,
+                    if (isModelOverridden) model?.providerID else null,
+                    if (isModelOverridden) model?.modelID else null,
+                    if (isAgentOverridden) agent else null,
+                    emptyList(),
+                    emptyList(),
+                    directory,
+                    _selectedVariant.value,
+                    target.delivery.wire,
+                )
+                if (sent != null) {
+                    val pending = PendingPrompt(
+                        id = sent.id,
+                        text = sent.text,
+                        delivery = target.delivery,
+                        createdAt = sent.created,
+                        imageCount = 0,
+                        fileCount = 0,
+                        localOnly = true,
+                    )
+                    localPendingPrompts[sent.id] = pending
+                    localPendingSince[sent.id] = System.currentTimeMillis()
+                    _pendingPrompts.value =
+                        _pendingPrompts.value.filterNot { it.id == target.id || it.id == sent.id } + pending
+                }
+                refreshInbox(sessionID)
+            } catch (e: Exception) {
+                Log.w(TAG, "submitPendingPromptEdit failed", e)
+                _errorMessage.value = appContext.getString(R.string.pending_edit_failed)
+                refreshInbox(sessionID)
+            }
+        }
+    }
+
+    private fun isAgentBusy(): Boolean =
+        _currentBusyStart.value != null || _sessionRetryStatus.value != null
+
+    private fun sendMessageWithDelivery(sessionID: String, delivery: PromptDelivery) {
+        val text = _inputText.value
+        val images = _pendingImages.value
+        val files = _attachedFiles.value
+        if (text.isBlank() && images.isEmpty()) return
+        if (_isSending.value) return
         syncDebugController.log(
             level = SyncLogLevel.Info,
             category = SyncLogCategory.Manual,
             sessionId = sessionID,
-            message = "发送消息 send message requested textLength=${text.length} attachments=${_attachedFiles.value.size} images=${images.size}",
+            message = "send message requested textLength=${text.length} attachments=${files.size} images=${images.size} delivery=${delivery.wire}",
         )
         _isSending.value = true
         abortSuppressed = false
         val model = _selectedModel.value
         val agent = _selectedAgent.value
         val variant = _selectedVariant.value
-        val files = _attachedFiles.value
         val sendModelPID = if (isModelOverridden) model?.providerID else null
         val sendModelMID = if (isModelOverridden) model?.modelID else null
         val sendAgent = if (isAgentOverridden) agent else null
@@ -915,14 +1074,21 @@ class SessionDetailViewModel @Inject constructor(
                     apiImages,
                     currentDirectory.ifBlank { null },
                     variant,
+                    delivery.wire,
                 )?.let { sent ->
-                    sessionMessageRepository.insertOptimisticUserMessage(
-                        sessionId = sessionID,
-                        messageId = sent.id,
+                    val pending = PendingPrompt(
+                        id = sent.id,
                         text = sent.text,
-                        created = sent.created,
-                        files = images.map { MessageFileMeta(it.mime, it.name) },
+                        delivery = delivery,
+                        createdAt = sent.created,
+                        imageCount = images.size,
+                        fileCount = files.size,
+                        localOnly = true,
                     )
+                    localPendingPrompts[sent.id] = pending
+                    localPendingSince[sent.id] = System.currentTimeMillis()
+                    _pendingPrompts.value =
+                        _pendingPrompts.value.filterNot { it.id == sent.id } + pending
                     images.forEachIndexed { index, image ->
                         imageCache.put("${sent.id}:$index", image.bytes)
                     }
@@ -931,19 +1097,55 @@ class SessionDetailViewModel @Inject constructor(
                 _attachedFiles.value = emptyList()
                 _pendingImages.value = emptyList()
                 clearDraft(sessionID)
-                sessionMessageRepository.incrementalSync(sessionID)
                 if (_sessionRevert.value != null) {
                     // opencode commits a staged revert as part of admitting this prompt.
                     _sessionRevert.value = null
                     _revertedPrompt.value = null
                     sessionRepository.updateLocalRevert(sessionID, null)
                 }
+                sessionMessageRepository.incrementalSync(sessionID)
+                refreshInbox(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "sendMessage FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                 _errorMessage.value = appContext.getString(R.string.send_failed)
             } finally {
                 _isSending.value = false
             }
+        }
+    }
+
+    private suspend fun refreshInbox(sessionID: String) {
+        val items = try {
+            apiClient.listSessionInbox(sessionID, currentDirectory.ifBlank { null })
+        } catch (e: Exception) {
+            // An older opencode or a transient failure must not hide input we know is pending.
+            Log.d(TAG, "refreshInbox skipped: ${e.message}")
+            prunePendingAgainstMessages(_messages.value)
+            return
+        }
+        val inbox = items.mapNotNull { it.toPendingPrompt() }
+        val inboxIds = inbox.mapTo(HashSet()) { it.id }
+        val knownIds = _messages.value.mapTo(HashSet()) { it.id }
+        val now = System.currentTimeMillis()
+        localPendingPrompts.entries.removeIf { (id, _) ->
+            id in knownIds || (id !in inboxIds && now - (localPendingSince[id] ?: now) > LOCAL_PENDING_TTL_MS)
+        }
+        localPendingSince.keys.removeIf { it !in localPendingPrompts.keys }
+        val extra = localPendingPrompts.values
+            .filter { it.id !in inboxIds && it.id !in knownIds }
+            .sortedBy { it.createdAt }
+        _pendingPrompts.value = inbox + extra
+    }
+
+    private fun prunePendingAgainstMessages(list: List<SessionMessage>) {
+        if (localPendingPrompts.isEmpty() && _pendingPrompts.value.isEmpty()) return
+        val ids = list.mapTo(HashSet()) { it.id }
+        if (ids.isEmpty()) return
+        localPendingPrompts.keys.removeAll(ids)
+        localPendingSince.keys.removeAll(ids)
+        val filtered = _pendingPrompts.value.filterNot { it.id in ids }
+        if (filtered.size != _pendingPrompts.value.size) {
+            _pendingPrompts.value = filtered
         }
     }
 
@@ -1618,6 +1820,7 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     private fun recalculateMessageDerivedState(list: List<SessionMessage>) {
+        prunePendingAgainstMessages(list)
         val lastAssistant = list.lastOrNull { it.type == "assistant" }
         val lastAssistantFinish = lastAssistant?.let {
             runCatching {
@@ -1708,7 +1911,6 @@ class SessionDetailViewModel @Inject constructor(
         val suppressed = abortSuppressed
         val lastIsUserWaitingReply = list.lastOrNull()?.type == "user" && !isReverting && !suppressed
         _isStreaming.value = !suppressed && (lastIsUserWaitingReply || lastAssistant == null || (!lastAssistantFinished && !isReverting))
-        _queuedMessageIds.value = buildQueuedMessageIds(list)
         _userModelMap.value = buildUserModelMap(list)
 
         val localBusy = _isStreaming.value && !abortSuppressed
@@ -1831,23 +2033,6 @@ class SessionDetailViewModel @Inject constructor(
         }
     }
 
-    private fun buildQueuedMessageIds(list: List<SessionMessage>): Set<String> {
-        val lastAssistantIdx = list.indexOfLast { it.type == "assistant" }
-        val lastAssistantRoundMark = list.getOrNull(lastAssistantIdx)?.roundMark ?: true
-        val firstUserAfterLastAssistant = if (lastAssistantIdx >= 0) {
-            list.drop(lastAssistantIdx + 1).indexOfFirst { it.type == "user" }
-                .let { if (it >= 0) lastAssistantIdx + 1 + it else -1 }
-        } else -1
-        return buildSet {
-            for ((idx, msg) in list.withIndex()) {
-                if (idx > lastAssistantIdx && msg.type == "user") {
-                    if (!lastAssistantRoundMark) add(msg.id)
-                    else if (idx != firstUserAfterLastAssistant) add(msg.id)
-                }
-            }
-        }
-    }
-
     private fun buildUserModelMap(list: List<SessionMessage>): Map<String, String> {
         val map = mutableMapOf<String, String>()
         var currentModel: String? = null
@@ -1941,6 +2126,7 @@ class SessionDetailViewModel @Inject constructor(
                             } catch (e: Exception) {
                                 Log.e(TAG, "SSE-triggered incremental sync failed", e)
                             }
+                            refreshInbox(sid)
                         }
                     }
             } catch (e: Exception) {
@@ -2003,9 +2189,11 @@ class SessionDetailViewModel @Inject constructor(
     }
 
     fun revertToMessage(sessionID: String, messageID: String) {
+        if (_isReverting.value) return
+        _isReverting.value = true
         viewModelScope.launch(Dispatchers.IO) {
+            val directory = currentDirectory.ifBlank { null }
             try {
-                val busy = isSessionBusy()
                 val recentMessages = sessionMessageRepository.getRecentWindow(sessionID, 100)
                 val targetMsg = recentMessages.find { it.id == messageID }
                 if (targetMsg == null) {
@@ -2013,7 +2201,7 @@ class SessionDetailViewModel @Inject constructor(
                         level = SyncLogLevel.Error,
                         category = SyncLogCategory.Manual,
                         sessionId = sessionID,
-                        message = "revert失败 messageID=$messageID not found in recent window",
+                        message = "revert failed messageID=$messageID not found in recent window",
                     )
                     return@launch
                 }
@@ -2021,33 +2209,45 @@ class SessionDetailViewModel @Inject constructor(
                 // used as the revert boundary. The legacy /resolve-message-id endpoint reads
                 // the empty V1 `message` table and would always fail.
                 val msgID = targetMsg.id
+                val busy = isSessionBusy() || isAgentBusy()
                 syncDebugController.log(
                     level = SyncLogLevel.Info,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    message = "revert请求 messageID=$msgID busy=$busy dir=${currentDirectory.ifBlank { "null" }}",
+                    message = "revert start messageID=$msgID busy=$busy dir=$directory",
                 )
                 if (busy) {
                     syncDebugController.log(
                         level = SyncLogLevel.Info,
                         category = SyncLogCategory.Manual,
                         sessionId = sessionID,
-                        message = "abort先执行 session busy, aborting before revert",
+                        message = "abort session busy, aborting before revert",
                     )
-                    sessionRepository.abortSession(sessionID, currentDirectory.ifBlank { null })
-                    delay(500)
+                    runCatching { sessionRepository.abortSession(sessionID, directory) }
+                    // Staging needs a genuinely idle session; the old fixed sleep was racy.
+                    runCatching { apiClient.waitSession(sessionID) }
                 }
                 val promptText = runCatching {
                     val obj = Json.parseToJsonElement(targetMsg.data).jsonObject
                     obj["text"]?.jsonPrimitive?.contentOrNull
                 }.getOrNull()
-                sessionRepository.revertSession(sessionID, msgID, directory = currentDirectory.ifBlank { null })
+                try {
+                    sessionRepository.revertSession(sessionID, msgID, directory = directory)
+                } catch (first: Exception) {
+                    // Something (usually a queued prompt) resumed the session after the abort.
+                    runCatching { sessionRepository.abortSession(sessionID, directory) }
+                    runCatching { apiClient.waitSession(sessionID) }
+                    sessionRepository.revertSession(sessionID, msgID, directory = directory)
+                }
                 _sessionRevert.value = SessionRevert(messageID = msgID, from = targetMsg.id)
                 sessionRepository.updateLocalRevert(sessionID, SessionRevert(messageID = msgID, from = targetMsg.id))
                 _revertedPrompt.value = promptText
                 if (!promptText.isNullOrBlank()) {
                     _inputText.value = promptText
                 }
+                // Everything still queued was enqueued after the boundary, so opencode would
+                // delete it when the revert commits. Cancel it now instead of letting it appear.
+                cancelPendingForRevert(sessionID, directory)
                 sessionMessageRepository.incrementalSync(sessionID)
             } catch (e: Exception) {
                 Log.e(TAG, "revertToMessage failed", e)
@@ -2055,10 +2255,28 @@ class SessionDetailViewModel @Inject constructor(
                     level = SyncLogLevel.Error,
                     category = SyncLogCategory.Manual,
                     sessionId = sessionID,
-                    message = "revert失败 evtID=$messageID error=${e.message}",
+                    message = "revert failed evtID=$messageID error=${e.message}",
                 )
                 _errorMessage.value = appContext.getString(R.string.revert_failed)
+            } finally {
+                _isReverting.value = false
             }
+        }
+    }
+
+    private suspend fun cancelPendingForRevert(sessionID: String, directory: String?) {
+        val pending = _pendingPrompts.value
+        var cancelled = 0
+        for (item in pending) {
+            if (runCatching { apiClient.cancelSessionInboxItem(sessionID, item.id, directory) }.isSuccess) {
+                cancelled++
+            }
+        }
+        localPendingPrompts.clear()
+        localPendingSince.clear()
+        _pendingPrompts.value = emptyList()
+        if (cancelled > 0) {
+            _errorMessage.value = appContext.getString(R.string.revert_cancelled_pending, cancelled)
         }
     }
 

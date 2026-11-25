@@ -34,6 +34,7 @@ import com.openmate.core.network.dto.ProviderInfoDto
 import com.openmate.core.network.dto.ProviderListDto
 import com.openmate.core.network.dto.FormDto
 import com.openmate.core.network.dto.SessionDto
+import com.openmate.core.network.dto.SessionInboxItemDto
 import com.openmate.core.network.dto.PathInfo
 import com.openmate.core.network.dto.SessionStatusDto
 import com.openmate.core.network.dto.SkillInfoDto
@@ -166,6 +167,7 @@ class OpencodeApiClient(
         images: List<PromptImage> = emptyList(),
         directory: String? = null,
         variant: String? = null,
+        delivery: String? = null,
     ): SentUserMessage? {
         if (providerID != null && modelID != null) {
             val modelFields = mutableMapOf(
@@ -196,6 +198,7 @@ class OpencodeApiClient(
             extraFields["files"] = items
         }
         val bodyMap = mutableMapOf<String, Any>("text" to content)
+        if (!delivery.isNullOrBlank()) bodyMap["delivery"] = delivery
         bodyMap.putAll(extraFields)
         val body = mapToJson(bodyMap)
         val params = mutableMapOf<String, String>()
@@ -210,6 +213,58 @@ class OpencodeApiClient(
             ?: content
         return SentUserMessage(id = id, created = created, text = text)
     }
+
+    /**
+     * Lists items the agent has not received yet, oldest first.
+     *
+     * The capability header keeps stored media as short `media:` refs so a queued image is not
+     * downloaded again on every refresh.
+     */
+    suspend fun listSessionInbox(sessionID: String, directory: String? = null): List<SessionInboxItemDto> {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["location[directory]"] = it }
+        return getV2List(
+            "/api/session/$sessionID/inbox",
+            params,
+            mapOf("x-opencode-capabilities" to "experimental-media-uri"),
+        )
+    }
+
+    suspend fun cancelSessionInboxItem(sessionID: String, inboxID: String, directory: String? = null) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["location[directory]"] = it }
+        deleteV2("/api/session/$sessionID/inbox/$inboxID", params)
+    }
+
+    suspend fun updateSessionInboxDelivery(
+        sessionID: String,
+        inboxID: String,
+        delivery: String,
+        directory: String? = null,
+    ) {
+        val params = mutableMapOf<String, String>()
+        directory?.let { params["location[directory]"] = it }
+        patchV2Unit("/api/session/$sessionID/inbox/$inboxID", mapOf("delivery" to delivery), params)
+    }
+
+    /** Returns once the agent stops running (immediately when idle). */
+    suspend fun waitSession(sessionID: String) {
+        postV2Unit(
+            "/api/experimental/session/$sessionID/wait",
+            emptyMap<String, String>(),
+            emptyMap(),
+        )
+    }
+
+    /** Whether a message has been admitted into `session_message` (used to detect delivery races). */
+    suspend fun messageExists(sessionID: String, messageID: String, directory: String? = null): Boolean =
+        withContext(Dispatchers.IO) {
+            val params = mutableMapOf<String, String>()
+            directory?.let { params["location[directory]"] = it }
+            val path = "/api/session/$sessionID/message/${java.net.URLEncoder.encode(messageID, "UTF-8")}"
+            val request = requestBuilder("GET", path, params).get().build()
+            client.newCall(request).execute().use { response -> response.isSuccessful }
+        }
 
     suspend fun abortSession(sessionID: String, directory: String? = null) {
         val params = mutableMapOf<String, String>()
@@ -779,8 +834,14 @@ class OpencodeApiClient(
         json.decodeFromString(json.encodeToString(JsonElement.serializer(), dataElement))
     }
 
-    private suspend inline fun <reified T> getV2List(path: String, params: Map<String, String> = emptyMap()): List<T> = withContext(Dispatchers.IO) {
-        val request = requestBuilder("GET", path, params).get().build()
+    private suspend inline fun <reified T> getV2List(
+        path: String,
+        params: Map<String, String> = emptyMap(),
+        headers: Map<String, String> = emptyMap(),
+    ): List<T> = withContext(Dispatchers.IO) {
+        val builder = requestBuilder("GET", path, params)
+        headers.forEach { (name, value) -> builder.addHeader(name, value) }
+        val request = builder.get().build()
         val response = client.newCall(request).execute()
         val body = response.body?.string() ?: return@withContext emptyList()
         if (!response.isSuccessful) throw ServerUnavailableException("HTTP ${response.code}: $body")
