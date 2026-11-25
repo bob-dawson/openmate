@@ -1,8 +1,8 @@
 {
   "android": {
-    "version": "0.3.27",
-    "tag": "v0.3.27",
-    "releasedAt": "2026-11-23",
+    "version": "0.3.28",
+    "tag": "v0.3.28",
+    "releasedAt": "2026-11-25",
     "mirrors": {
       "cn": [
         "https://atomgit.com/article88/openmate/releases/download",
@@ -15,9 +15,9 @@
     }
   },
   "bridge": {
-    "version": "0.3.27",
-    "tag": "v0.3.27",
-    "releasedAt": "2026-11-23",
+    "version": "0.3.28",
+    "tag": "v0.3.28",
+    "releasedAt": "2026-11-25",
     "mirrors": {
       "cn": [
         "https://atomgit.com/article88/openmate/releases/download",
