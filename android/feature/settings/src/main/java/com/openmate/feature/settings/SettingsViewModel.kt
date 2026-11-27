@@ -16,6 +16,8 @@ import com.openmate.core.network.ReleaseAssets
 import com.openmate.core.network.VersionClient
 import com.openmate.core.network.dto.ModuleVersion
 import com.openmate.core.network.dto.OpencodeVersionResponse
+import com.openmate.core.ui.theme.AppFontScale
+import com.openmate.core.ui.theme.setAppFontScale
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.openmate.feature.settings.R
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -59,6 +61,11 @@ class SettingsViewModel @Inject constructor(
 
     private val _compactMode = MutableStateFlow(prefs.getBoolean(KEY_COMPACT_MODE, false))
     val compactMode: StateFlow<Boolean> = _compactMode.asStateFlow()
+
+    private val _fontScale = MutableStateFlow(
+        AppFontScale.fromKey(prefs.getString(AppFontScale.PREF_KEY, null)),
+    )
+    val fontScale: StateFlow<AppFontScale> = _fontScale.asStateFlow()
 
     private val _gatewayEnabled = MutableStateFlow(true)
     val gatewayEnabled: StateFlow<Boolean> = _gatewayEnabled.asStateFlow()
@@ -201,6 +208,11 @@ class SettingsViewModel @Inject constructor(
     fun setCompactMode(enabled: Boolean) {
         _compactMode.value = enabled
         prefs.edit().putBoolean(KEY_COMPACT_MODE, enabled).apply()
+    }
+
+    fun setFontScale(scale: AppFontScale) {
+        _fontScale.value = scale
+        setAppFontScale(appContext, scale)
     }
 
     fun setGatewayEnabled(enabled: Boolean) {

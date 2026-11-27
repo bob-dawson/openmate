@@ -1,4 +1,5 @@
 package com.openmate.app.fileviewer
+import com.openmate.core.ui.theme.rememberScaledTextStyle
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -313,8 +314,10 @@ fun FileViewerContent(
                         item {
                             MarkdownText(
                                 markdown = content.ifEmpty { stringResource(R.string.empty_file) },
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onBackground,
+                                style = rememberScaledTextStyle(
+                                    MaterialTheme.typography.bodySmall.copy(
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                    ),
                                 ),
                                 syntaxHighlightColor = CodeBlockBackground,
                                 syntaxHighlightTextColor = CodeBlockText,

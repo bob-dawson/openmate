@@ -49,4 +49,14 @@
     <string name="bridge_download_failed">下载失败，请前往 GitHub Releases 手动更新</string>
     <string name="bridge_download_timeout">下载超时，请前往 GitHub Releases 手动更新</string>
     <string name="bridge_upgrade_failed">升级失败，请前往 GitHub Releases 手动更新</string>
+    <string name="font_size_title">字体大小</string>
+    <string name="font_size_back">返回</string>
+    <string name="font_size_standard">标准</string>
+    <string name="font_size_large">大</string>
+    <string name="font_size_extra_large">超大</string>
+    <string name="font_size_applies_immediately">立即应用到整个 App</string>
+    <string name="font_size_preview_1">如果文字看不清，可以把它调大一些。</string>
+    <string name="font_size_preview_2">拖动滑块时，这里会实时更新。</string>
+    <string name="font_size_preview_3">试试每一档，选一个自己觉得舒服的大小。</string>
+    <string name="font_size_preview_4">选择后会立即应用到整个 App。</string>
 </resources>

@@ -1,4 +1,5 @@
 package com.openmate.core.ui.component
+import com.openmate.core.ui.theme.rememberScaledTextStyle
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
@@ -46,8 +47,10 @@ fun MessageBubble(
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 9.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onBackground,
+                style = rememberScaledTextStyle(
+                    MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onBackground,
+                    ),
                 ),
                 syntaxHighlightColor = CodeBlockBackground,
                 syntaxHighlightTextColor = CodeBlockText,
@@ -61,8 +64,10 @@ fun MessageBubble(
             modifier = modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.bodyLarge.copy(
-                color = MaterialTheme.colorScheme.onBackground,
+            style = rememberScaledTextStyle(
+                MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onBackground,
+                ),
             ),
             syntaxHighlightColor = CodeBlockBackground,
             syntaxHighlightTextColor = CodeBlockText,

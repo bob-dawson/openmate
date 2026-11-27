@@ -1,4 +1,5 @@
 package com.openmate.feature.session.component
+import com.openmate.core.ui.component.AppDropdownMenu
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -33,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -44,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
@@ -158,13 +161,26 @@ fun SessionMessageSearchPanel(
             }
         }
 
-        TabRow(selectedTabIndex = currentTabIndex) {
-            tabs.forEachIndexed { index, (label, _) ->
-                Tab(
-                    selected = currentTabIndex == index,
-                    onClick = { selectedTab.intValue = index },
-                    text = { Text(label) },
-                )
+        val largeText = LocalDensity.current.fontScale > 1.1f
+        if (largeText) {
+            ScrollableTabRow(selectedTabIndex = currentTabIndex, edgePadding = 0.dp) {
+                tabs.forEachIndexed { index, (label, _) ->
+                    Tab(
+                        selected = currentTabIndex == index,
+                        onClick = { selectedTab.intValue = index },
+                        text = { Text(label, maxLines = 1) },
+                    )
+                }
+            }
+        } else {
+            TabRow(selectedTabIndex = currentTabIndex) {
+                tabs.forEachIndexed { index, (label, _) ->
+                    Tab(
+                        selected = currentTabIndex == index,
+                        onClick = { selectedTab.intValue = index },
+                        text = { Text(label) },
+                    )
+                }
             }
         }
 
@@ -231,7 +247,7 @@ fun SessionMessageSearchPanel(
                                 )
                             }
                         }
-                        DropdownMenu(
+                        AppDropdownMenu(
                             expanded = contextMenuMessage == message,
                             onDismissRequest = { if (contextMenuMessage == message) contextMenuMessage = null },
                         ) {

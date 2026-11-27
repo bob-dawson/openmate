@@ -1,4 +1,5 @@
 package com.openmate.app.diff
+import com.openmate.core.ui.component.AppDropdownMenu
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -85,7 +86,7 @@ fun DiffViewerScreen(
                                 tint = MaterialTheme.colorScheme.onBackground,
                             )
                         }
-                        DropdownMenu(
+                        AppDropdownMenu(
                             expanded = menuExpanded.value,
                             onDismissRequest = { menuExpanded.value = false },
                         ) {

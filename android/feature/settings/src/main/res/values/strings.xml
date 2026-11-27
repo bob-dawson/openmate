@@ -49,4 +49,14 @@
     <string name="bridge_download_failed">Download failed. Please update manually from GitHub Releases</string>
     <string name="bridge_download_timeout">Download timed out. Please update manually from GitHub Releases</string>
     <string name="bridge_upgrade_failed">Upgrade failed. Please update manually from GitHub Releases</string>
+    <string name="font_size_title">Font size</string>
+    <string name="font_size_back">Back</string>
+    <string name="font_size_standard">Standard</string>
+    <string name="font_size_large">Large</string>
+    <string name="font_size_extra_large">Extra large</string>
+    <string name="font_size_applies_immediately">Applies to the whole app immediately</string>
+    <string name="font_size_preview_1">You can make the text larger if it is hard to read.</string>
+    <string name="font_size_preview_2">This preview updates as you drag the slider.</string>
+    <string name="font_size_preview_3">Try each level and pick what feels comfortable.</string>
+    <string name="font_size_preview_4">Your choice applies to the whole app immediately.</string>
 </resources>

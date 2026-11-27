@@ -1,4 +1,7 @@
 package com.openmate.feature.session.component
+import com.openmate.core.ui.theme.rememberScaledTextStyle
+import com.openmate.core.ui.component.AppPopup
+import com.openmate.core.ui.component.AppAlertDialog
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -475,7 +478,7 @@ fun WorkspaceBrowserScreen(
     }
 
     largeFileConfirm?.let { confirm ->
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { largeFileConfirm = null },
             title = { Text(stringResource(R.string.large_file)) },
             text = { Text(stringResource(R.string.large_file_confirm, formatSize(confirm.size))) },
@@ -495,7 +498,7 @@ fun WorkspaceBrowserScreen(
 
     showRenameDialog?.let { (path, name) ->
         var newName by remember { mutableStateOf(name) }
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showRenameDialog = null },
             title = { Text(stringResource(R.string.enter_new_name)) },
             text = {
@@ -521,7 +524,7 @@ fun WorkspaceBrowserScreen(
     }
 
     showDeleteConfirm?.let { (path, isDir) ->
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
             title = { Text(if (isDir) stringResource(R.string.delete_directory) else stringResource(R.string.delete_file)) },
             text = { Text(if (isDir) stringResource(R.string.confirm_delete_directory) else stringResource(R.string.confirm_delete_file)) },
@@ -540,7 +543,7 @@ fun WorkspaceBrowserScreen(
     }
 
     if (showCreateDirDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showCreateDirDialog = false },
             title = { Text(stringResource(R.string.create_directory)) },
             text = {
@@ -834,7 +837,7 @@ fun WorkspaceBrowserScreen(
         val pos = itemPositions[contextMenu.path]
         val menuEntry = contextMenu.entry!!
         val fullPath = contextMenu.path
-        Popup(
+        AppPopup(
             alignment = Alignment.TopStart,
             offset = if (pos != null) IntOffset(pos.x.roundToInt(), pos.y.roundToInt()) else IntOffset.Zero,
             onDismissRequest = { contextMenu = contextMenu.copy(expanded = false) },
@@ -1164,8 +1167,10 @@ internal fun FileViewer(
                         item {
                             MarkdownText(
                                 markdown = content.ifEmpty { stringResource(R.string.empty_file) },
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onBackground,
+                                style = rememberScaledTextStyle(
+                                    MaterialTheme.typography.bodySmall.copy(
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                    ),
                                 ),
                                 syntaxHighlightColor = CodeBlockBackground,
                                 syntaxHighlightTextColor = CodeBlockText,

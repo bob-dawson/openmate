@@ -1,4 +1,5 @@
 package com.openmate.feature.session.component
+import com.openmate.core.ui.component.AppModalBottomSheet
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +43,7 @@ fun AgentPickerSheet(
     val primaries = agents.filter { it.mode == "primary" && !it.hidden }
     val subagents = agents.filter { it.mode == "subagent" && !it.hidden }
 
-    ModalBottomSheet(
+    AppModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {

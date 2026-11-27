@@ -1,4 +1,6 @@
 package com.openmate.feature.session
+import com.openmate.core.ui.component.AppAlertDialog
+import com.openmate.core.ui.component.AppDialog
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -50,10 +54,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,10 +74,14 @@ import com.openmate.feature.session.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.common.toRelativeTime
@@ -84,7 +94,11 @@ import com.openmate.core.ui.component.EmptyStateView
 import com.openmate.core.ui.theme.Success
 import com.openmate.core.ui.util.asText
 import com.openmate.feature.session.component.DirectoryPickerSheet
+import com.openmate.core.ui.theme.AppFontScale
+import com.openmate.core.ui.theme.ProvideAppFontScale
+import com.openmate.feature.settings.FontSizeScreen
 import com.openmate.feature.settings.SettingsViewModel
+import com.openmate.feature.settings.R as SettingsR
 
 private data class TabItem(
     val labelResId: Int,
@@ -147,10 +161,30 @@ fun WorkspaceListScreen(
         topBar = {
             androidx.compose.material3.TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(instanceName)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        ConnectionDotWithLabel(status = connectionStatus)
+                    val largeText = LocalDensity.current.fontScale > 1.1f
+                    if (largeText) {
+                        Column {
+                            Text(
+                                text = instanceName,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            ConnectionDotWithLabel(status = connectionStatus)
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = instanceName,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            ConnectionDotWithLabel(status = connectionStatus)
+                        }
                     }
                 },
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
@@ -159,22 +193,40 @@ fun WorkspaceListScreen(
             )
         },
         bottomBar = {
-            NavigationBar {
-                TABS.forEachIndexed { index, tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = {
-                            viewModel.selectTab(index)
-                            searchQuery = ""
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = if (selectedTab == index) tab.selectedIcon else tab.unselectedIcon,
-                                contentDescription = stringResource(tab.labelResId),
-                            )
-                        },
-                        label = { Text(stringResource(tab.labelResId), style = MaterialTheme.typography.labelSmall) },
-                    )
+            // Keep the persistent bar usable at large text sizes: its labels have a fixed
+            // third-of-screen width, so cap their scale and let the bar grow a little.
+            val density = LocalDensity.current
+            val navFontScale = density.fontScale.coerceAtMost(1.5f)
+            CompositionLocalProvider(
+                LocalDensity provides Density(density = density.density, fontScale = navFontScale),
+            ) {
+                NavigationBar(
+                    modifier = Modifier.height(80.dp * navFontScale),
+                ) {
+                    TABS.forEachIndexed { index, tab ->
+                        NavigationBarItem(
+                            selected = selectedTab == index,
+                            onClick = {
+                                viewModel.selectTab(index)
+                                searchQuery = ""
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = if (selectedTab == index) tab.selectedIcon else tab.unselectedIcon,
+                                    contentDescription = stringResource(tab.labelResId),
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = stringResource(tab.labelResId),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         },
@@ -202,6 +254,7 @@ fun WorkspaceListScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(padding),
+                        contentPadding = PaddingValues(bottom = 96.dp),
                     ) {
                         itemsIndexed(workspaces, key = { _, w -> w.directory }) { index, workspace ->
                             if (index > 0) HorizontalDivider()
@@ -254,6 +307,7 @@ fun WorkspaceListScreen(
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 96.dp),
                         ) {
                             itemsIndexed(filteredSessions, key = { _, s -> s.id }) { index, session ->
                                 if (index > 0) HorizontalDivider()
@@ -282,7 +336,7 @@ fun WorkspaceListScreen(
     }
 
     if (showNewSessionDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showNewSessionDialog = false },
             title = { Text(stringResource(R.string.new_session)) },
             text = {
@@ -355,6 +409,7 @@ private fun WorkspaceCard(
     onClick: () -> Unit,
 ) {
     val dirName = workspace.directory.substringAfterLast("\\").substringAfterLast("/")
+    val titleMaxLines = if (LocalDensity.current.fontScale > 1.1f) 2 else 1
 
     Column(
         modifier = Modifier
@@ -366,7 +421,7 @@ private fun WorkspaceCard(
             text = dirName,
             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
             color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
+            maxLines = titleMaxLines,
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(modifier = Modifier.height(2.dp))
@@ -374,7 +429,7 @@ private fun WorkspaceCard(
             text = workspace.directory,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = titleMaxLines,
             overflow = TextOverflow.Ellipsis,
         )
     }
@@ -395,6 +450,7 @@ private fun AllSessionCard(
         SessionStatus.RUNNING, SessionStatus.BUSY -> stringResource(R.string.session_busy)
         else -> stringResource(R.string.session_idle)
     }
+    val titleMaxLines = if (LocalDensity.current.fontScale > 1.1f) 2 else 1
 
     Column(
         modifier = Modifier
@@ -407,7 +463,7 @@ private fun AllSessionCard(
                 text = session.title.ifBlank { stringResource(R.string.untitled) },
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                 color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
+                maxLines = titleMaxLines,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
@@ -492,6 +548,9 @@ private fun ConnectionDotWithLabel(status: ConnectionStatus) {
             style = MaterialTheme.typography.labelSmall,
             color = color,
             fontSize = 10.sp,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -514,9 +573,10 @@ private fun SettingsContent(
         }
     }
     var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showFontSizeScreen by remember { mutableStateOf(false) }
 
     if (showClearCacheDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showClearCacheDialog = false },
             title = { Text(stringResource(R.string.confirm)) },
             text = { Text(stringResource(R.string.clear_cache_confirm)) },
@@ -534,6 +594,22 @@ private fun SettingsContent(
                 }
             },
         )
+    }
+
+    if (showFontSizeScreen) {
+        val fontScale by viewModel.fontScale.collectAsState()
+        AppDialog(
+            onDismissRequest = { showFontSizeScreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Surface(modifier = Modifier.fillMaxSize()) {
+                FontSizeScreen(
+                    current = fontScale,
+                    onSelect = { viewModel.setFontScale(it) },
+                    onBack = { showFontSizeScreen = false },
+                )
+            }
+        }
     }
 
     LazyColumn(
@@ -620,6 +696,26 @@ private fun SettingsContent(
                         )
                     },
                 )
+                val fontScale by viewModel.fontScale.collectAsState()
+                SettingsRow(
+                    title = stringResource(SettingsR.string.font_size_title),
+                    subtitle = stringResource(
+                        when (fontScale) {
+                            AppFontScale.STANDARD -> SettingsR.string.font_size_standard
+                            AppFontScale.LARGE -> SettingsR.string.font_size_large
+                            AppFontScale.EXTRA_LARGE -> SettingsR.string.font_size_extra_large
+                        },
+                    ),
+                    modifier = Modifier.clickable { showFontSizeScreen = true },
+                    trailing = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                )
                 val compactMode by viewModel.compactMode.collectAsState()
                 SettingsRow(
                     title = stringResource(R.string.compact_mode),
@@ -646,7 +742,7 @@ private fun SettingsContent(
             var showRestartDialog by remember { mutableStateOf(false) }
 
             if (showUpgradeDialog) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showUpgradeDialog = false },
                     title = { Text(stringResource(R.string.confirm)) },
                     text = { Text(stringResource(R.string.upgrade_confirm)) },
@@ -667,7 +763,7 @@ private fun SettingsContent(
             }
 
             if (showRestartDialog) {
-                AlertDialog(
+                AppAlertDialog(
                     onDismissRequest = { showRestartDialog = false },
                     title = { Text(stringResource(R.string.confirm)) },
                     text = { Text(stringResource(R.string.restart_confirm)) },
@@ -1002,50 +1098,90 @@ private fun ProfileSection(
     address: String,
     onDisconnect: () -> Unit,
 ) {
+    val stack = LocalDensity.current.fontScale > 1.1f
     SettingsCard {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
+        if (stack) {
+            Column(
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape),
-                contentAlignment = Alignment.Center,
+                    .fillMaxWidth()
+                    .padding(14.dp),
             ) {
-                Text(
-                    text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                if (address.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = address,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ProfileAvatar(name = name)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        ProfileLabels(name = name, address = address)
+                    }
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.disconnect),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .clickable(onClick = onDisconnect),
+                )
             }
-            Text(
-                text = stringResource(R.string.disconnect),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.clickable(onClick = onDisconnect),
-            )
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ProfileAvatar(name = name)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    ProfileLabels(name = name, address = address)
+                }
+                Text(
+                    text = stringResource(R.string.disconnect),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.clickable(onClick = onDisconnect),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun ProfileAvatar(name: String) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = name.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun ProfileLabels(name: String, address: String) {
+    Text(
+        text = name,
+        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+    if (address.isNotBlank()) {
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = address,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1134,7 +1270,7 @@ private fun SettingsToggle(
 
 @Composable
 private fun LicenseDialog(onDismiss: () -> Unit) {
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Apache License 2.0") },
         text = {
@@ -1222,31 +1358,39 @@ private fun SettingsRow(
     subtitle: String?,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
-    trailing: @Composable () -> Unit = {},
+    trailing: (@Composable () -> Unit)? = null,
 ) {
+    val stackTrailing = LocalDensity.current.fontScale > 1.1f
     Column(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                if (subtitle != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        if (stackTrailing) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            ) {
+                SettingsRowLabels(title = title, subtitle = subtitle)
+                trailing?.let {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        it()
+                    }
                 }
             }
-            trailing()
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    SettingsRowLabels(title = title, subtitle = subtitle)
+                }
+                trailing?.invoke()
+            }
         }
         if (showDivider) {
             Box(
@@ -1257,5 +1401,22 @@ private fun SettingsRow(
                     .background(MaterialTheme.colorScheme.outlineVariant),
             )
         }
+    }
+}
+
+@Composable
+private fun SettingsRowLabels(title: String, subtitle: String?) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+    if (subtitle != null) {
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

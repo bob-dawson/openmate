@@ -1,4 +1,5 @@
 package com.openmate.feature.session
+import com.openmate.core.ui.component.AppAlertDialog
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -190,7 +191,7 @@ fun SessionListScreen(
     }
 
     if (showNewSessionDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showNewSessionDialog = false },
             title = { Text(stringResource(R.string.new_session)) },
             text = {

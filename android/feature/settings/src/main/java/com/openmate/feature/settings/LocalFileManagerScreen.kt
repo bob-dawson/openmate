@@ -1,4 +1,6 @@
 package com.openmate.feature.settings
+import com.openmate.core.ui.component.AppPopup
+import com.openmate.core.ui.component.AppAlertDialog
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -175,7 +177,7 @@ fun LocalFileManagerScreen(
 
     if (contextMenuEntry != null) {
         val entry = contextMenuEntry!!
-        Popup(
+        AppPopup(
             alignment = Alignment.TopStart,
             offset = IntOffset(contextMenuOffset.x.roundToInt(), contextMenuOffset.y.roundToInt()),
             onDismissRequest = { contextMenuEntry = null },
@@ -224,7 +226,7 @@ fun LocalFileManagerScreen(
 
     if (showDeleteConfirm != null) {
         val entry = showDeleteConfirm!!
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showDeleteConfirm = null },
             title = { Text(if (entry.isDirectory) stringResource(R.string.delete_directory) else stringResource(R.string.delete_file)) },
             text = { Text(stringResource(R.string.delete_dir_confirm, entry.name)) },
@@ -247,7 +249,7 @@ fun LocalFileManagerScreen(
     if (showRenameDialog != null) {
         val (entry, initialName) = showRenameDialog!!
         var newName by remember { mutableStateOf(initialName) }
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showRenameDialog = null },
             title = { Text(stringResource(R.string.rename)) },
             text = {
@@ -277,7 +279,7 @@ fun LocalFileManagerScreen(
 
     if (showCreateDirDialog) {
         var dirName by remember { mutableStateOf("") }
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showCreateDirDialog = false },
             title = { Text(stringResource(R.string.content_desc_create_dir)) },
             text = {

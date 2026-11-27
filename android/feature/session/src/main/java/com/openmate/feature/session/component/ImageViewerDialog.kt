@@ -1,4 +1,5 @@
 package com.openmate.feature.session.component
+import com.openmate.core.ui.component.AppDialog
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -34,7 +35,7 @@ import com.openmate.feature.session.R
 
 @Composable
 fun ImageViewerDialog(state: MessageImageViewer, onDismiss: () -> Unit) {
-    Dialog(
+    AppDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {

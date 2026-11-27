@@ -61,7 +61,7 @@ fun PendingPromptsBar(
                     text = prompt.text.ifBlank { stringResource(R.string.pending_attachment_only) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )

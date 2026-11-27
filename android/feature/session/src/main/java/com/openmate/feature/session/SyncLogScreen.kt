@@ -1,4 +1,5 @@
 package com.openmate.feature.session
+import com.openmate.core.ui.component.AppAlertDialog
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -82,7 +83,7 @@ fun SyncLogScreen(
     }
 
     if (showClearDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text(stringResource(R.string.sync_logs_clear_title)) },
             text = { Text(stringResource(R.string.sync_logs_clear_message)) },
@@ -103,7 +104,7 @@ fun SyncLogScreen(
     }
 
     if (showCopyMenu) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showCopyMenu = false },
             title = { Text(stringResource(R.string.sync_logs_copy_title)) },
             text = {

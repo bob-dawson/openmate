@@ -1,4 +1,5 @@
 package com.openmate.feature.instance
+import com.openmate.core.ui.component.AppAlertDialog
 
 import android.content.Intent
 import androidx.compose.foundation.background
@@ -161,7 +162,7 @@ fun CrashLogScreen(
     }
 
     if (showClearDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text(stringResource(R.string.clear_all)) },
             text = { Text(stringResource(R.string.delete_confirm)) },

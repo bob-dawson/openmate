@@ -1,10 +1,20 @@
 package com.openmate.feature.session
+import com.openmate.core.ui.component.AppDropdownMenu
+import com.openmate.core.ui.component.AppAlertDialog
+import com.openmate.core.ui.component.AppDialog
+import com.openmate.core.ui.component.AppModalBottomSheet
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -100,6 +110,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.openmate.core.ui.component.TopBar
+import com.openmate.core.ui.theme.CapAppFontScale
 import com.openmate.core.domain.model.ConnectionStatus
 import com.openmate.core.common.AutoFollowTracker
 import com.openmate.feature.session.component.ChatInputBar
@@ -122,6 +133,7 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.common.formatDurationMillis
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 internal const val PAGE_PREFETCH_SCREENS = 3
 
@@ -141,7 +153,10 @@ internal fun sessionDetailMenuItems(): List<String> = listOf(
     stringResource(R.string.sync_logs),
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+)
 @Composable
 fun SessionDetailScreen(
     sessionID: String,
@@ -446,7 +461,7 @@ fun SessionDetailScreen(
                                 tint = MaterialTheme.colorScheme.onSurface,
                             )
                         }
-                        DropdownMenu(
+                        AppDropdownMenu(
                             expanded = menuExpanded,
                             onDismissRequest = { menuExpanded = false },
                         ) {
@@ -652,18 +667,35 @@ fun SessionDetailScreen(
         val lastCost by viewModel.lastMessageCost.collectAsStateWithLifecycle()
         val sessionCost by viewModel.sessionCost.collectAsStateWithLifecycle()
         val contextLimit by viewModel.contextLimit.collectAsStateWithLifecycle()
-        val tokenDisplay = remember(lastTotal, contextLimit, lastCost, sessionCost) {
+        val compactTokens = LocalDensity.current.fontScale > 1.1f
+        val tokenDisplay = remember(lastTotal, contextLimit, lastCost, sessionCost, compactTokens) {
             val total = lastTotal
             if (total == null) ""
             else {
-                val formatted = when {
-                    total >= 1_000_000 -> "${total / 1_000_000}.${(total % 1_000_000) / 100_000}M"
-                    total >= 1_000 -> "${total / 1000}.${(total % 1000) / 100}k"
-                    else -> "$total"
+                val formatted = if (compactTokens) {
+                    when {
+                        total >= 1_000_000 -> "${total / 1_000_000}M"
+                        total >= 1_000 -> "${total / 1_000}k"
+                        else -> "$total"
+                    }
+                } else {
+                    when {
+                        total >= 1_000_000 -> "${total / 1_000_000}.${(total % 1_000_000) / 100_000}M"
+                        total >= 1_000 -> "${total / 1000}.${(total % 1000) / 100}k"
+                        else -> "$total"
+                    }
                 }
-                val pct = contextLimit?.let { if (it > 0) " (${total * 100 / it}%)" else "" } ?: ""
+                val pct = contextLimit?.let {
+                    if (it > 0) {
+                        if (compactTokens) " ${total * 100 / it}%" else " (${total * 100 / it}%)"
+                    } else ""
+                } ?: ""
                 val effectiveCost = if (lastCost > 0) lastCost else sessionCost
-                val costStr = if (effectiveCost > 0) " · $${String.format("%.2f", effectiveCost)}" else ""
+                val costStr = when {
+                    effectiveCost <= 0 -> ""
+                    compactTokens -> if (effectiveCost < 1) " <$1" else " $${effectiveCost.roundToInt()}"
+                    else -> " \u00b7 $${String.format("%.2f", effectiveCost)}"
+                }
                 "$formatted$pct$costStr"
             }
         }
@@ -781,131 +813,74 @@ fun SessionDetailScreen(
                 }
             }
 
-            Row(
+            val twoRowStatus = LocalDensity.current.fontScale > 1.1f
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.tertiaryContainer)
-                            .clickable { showAgentPicker = true }
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                if (twoRowStatus) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = selectedAgent.uppercase(),
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        AgentChip(agent = selectedAgent, onClick = { showAgentPicker = true })
+                        ModelChip(
+                            modelName = selectedModel?.modelName,
+                            onClick = {
+                                viewModel.loadProviders(forceRefresh = selectedModel == null)
+                                showModelPicker = true
+                            },
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                     }
-                    if (selectedModel != null) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.secondaryContainer)
-                                .clickable {
-                                    viewModel.loadProviders(forceRefresh = false)
-                                    showModelPicker = true
-                                }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = selectedModel!!.modelName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.secondaryContainer)
-                                .clickable {
-                                    viewModel.loadProviders(forceRefresh = true)
-                                    showModelPicker = true
-                                }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.select_model),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        VariantChip(
+                            variant = selectedVariant,
+                            hasVariants = availableVariants.isNotEmpty(),
+                            onClick = { showVariantPicker = true },
+                        )
+                        Box(modifier = Modifier.weight(1f)) {
+                            SessionDurationRow(
+                                retryStatus = sessionRetryStatus,
+                                sessionTotalDuration = sessionTotalDuration,
+                                currentBusyStart = currentBusyStart,
                             )
                         }
                     }
-                    if (availableVariants.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.tertiaryContainer)
-                                .clickable { showVariantPicker = true }
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = selectedVariant ?: stringResource(R.string.variant_default),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            )
-                        }
-                    }
-                    val hmsFmt = stringResource(R.string.duration_hms)
-                    val msFmt = stringResource(R.string.duration_ms)
-                    val sFmt = stringResource(R.string.duration_s)
-                    val retryStatus = sessionRetryStatus
-                    if (retryStatus != null) {
-                        SessionRetryCard(retryStatus)
-                    } else {
-                        val busyStart = currentBusyStart
-                        if (busyStart != null) {
-                            var elapsed by remember(busyStart) { mutableStateOf(System.currentTimeMillis() - busyStart) }
-                            LaunchedEffect(busyStart) {
-                                while (true) {
-                                    delay(1000)
-                                    elapsed = System.currentTimeMillis() - busyStart
-                                }
-                            }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(12.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                                Text(
-                                    text = formatDurationMillis(
-                                        SessionBusyTimerCalculator.displayDuration(
-                                            totalDuration = sessionTotalDuration,
-                                            currentBusyStart = busyStart,
-                                            now = busyStart + maxOf(0L, elapsed),
-                                        ) ?: 0L,
-                                        formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
-                                        formatMs = { m, s -> msFmt.format(m, s) },
-                                        formatS = { s -> sFmt.format(s) },
-                                    ),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        } else if (sessionTotalDuration != null) {
-                            Text(
-                                text = formatDurationMillis(sessionTotalDuration!!,
-                                    formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
-                                    formatMs = { m, s -> msFmt.format(m, s) },
-                                    formatS = { s -> sFmt.format(s) },
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AgentChip(agent = selectedAgent, onClick = { showAgentPicker = true })
+                        ModelChip(
+                            modelName = selectedModel?.modelName,
+                            onClick = {
+                                viewModel.loadProviders(forceRefresh = selectedModel == null)
+                                showModelPicker = true
+                            },
+                        )
+                        VariantChip(
+                            variant = selectedVariant,
+                            hasVariants = availableVariants.isNotEmpty(),
+                            onClick = { showVariantPicker = true },
+                        )
+                        SessionDurationRow(
+                            retryStatus = sessionRetryStatus,
+                            sessionTotalDuration = sessionTotalDuration,
+                            currentBusyStart = currentBusyStart,
+                        )
                     }
                 }
+            }
 
             if (attachedFiles.isNotEmpty()) {
                 Row(
@@ -1038,17 +1013,21 @@ fun SessionDetailScreen(
                 Spacer(modifier = Modifier.weight(1f))
 
                 if (tokenDisplay.isNotEmpty()) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    ) {
-                        Text(
-                            text = tokenDisplay,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        )
+                    CapAppFontScale(maxFontScale = 1.5f) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Text(
+                                text = tokenDisplay,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -1095,7 +1074,7 @@ fun SessionDetailScreen(
     }
 
     if (deliveryPickerVisible) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { viewModel.cancelDeliveryPicker() },
             title = { Text(stringResource(R.string.pending_send_title)) },
             text = { Text(stringResource(R.string.pending_send_message)) },
@@ -1114,7 +1093,7 @@ fun SessionDetailScreen(
 
     editingPendingPrompt?.let { prompt ->
         var editText by remember(prompt.id) { mutableStateOf(prompt.text) }
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { viewModel.cancelEditingPendingPrompt() },
             title = { Text(stringResource(R.string.pending_edit_title)) },
             text = {
@@ -1139,7 +1118,7 @@ fun SessionDetailScreen(
     }
 
     if (showRenameDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showRenameDialog = false },
             title = { Text(stringResource(R.string.rename_session)) },
             text = {
@@ -1166,7 +1145,7 @@ fun SessionDetailScreen(
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.delete_session)) },
             text = { Text(stringResource(R.string.delete_session_confirm)) },
@@ -1194,7 +1173,7 @@ fun SessionDetailScreen(
             currentSeq = viewModel.getCurrentSeq()
         }
         val effectiveCount = customCount.toIntOrNull() ?: selectedCount
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showResyncDialog = false },
             title = { Text(stringResource(R.string.resync)) },
             text = {
@@ -1214,24 +1193,24 @@ fun SessionDetailScreen(
                                 label = { Text("$count") },
                             )
                         }
-                        OutlinedTextField(
-                            value = customCount,
-                            onValueChange = { customCount = it },
-                            modifier = Modifier.width(80.dp),
-                            placeholder = { Text(stringResource(R.string.custom)) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number,
-                                imeAction = ImeAction.Go,
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onGo = {
-                                    viewModel.resync(effectiveCount)
-                                    showResyncDialog = false
-                                },
-                            ),
-                        )
                     }
+                    OutlinedTextField(
+                        value = customCount,
+                        onValueChange = { customCount = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.custom)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Go,
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onGo = {
+                                viewModel.resync(effectiveCount)
+                                showResyncDialog = false
+                            },
+                        ),
+                    )
                 }
             },
             confirmButton = {
@@ -1251,7 +1230,7 @@ fun SessionDetailScreen(
     }
 
     if (showRevertDialog) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { showRevertDialog = false },
             title = { Text(stringResource(R.string.revert_dialog_title)) },
             text = { Text(stringResource(R.string.revert_dialog_message)) },
@@ -1272,7 +1251,7 @@ fun SessionDetailScreen(
     }
 
     if (showSearch) {
-        Dialog(
+        AppDialog(
             onDismissRequest = { showSearch = false },
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
@@ -1435,7 +1414,7 @@ private fun VariantPickerSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    ModalBottomSheet(
+    AppModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
     ) {
@@ -1497,6 +1476,134 @@ private fun VariantRow(
                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
             ),
             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+
+@Composable
+private fun AgentChip(agent: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = agent.uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun ModelChip(
+    modelName: String?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = modelName ?: stringResource(R.string.select_model),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun VariantChip(
+    variant: String?,
+    hasVariants: Boolean,
+    onClick: () -> Unit,
+) {
+    if (!hasVariants) return
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = variant ?: stringResource(R.string.variant_default),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun SessionDurationRow(
+    retryStatus: SessionRetryStatus?,
+    sessionTotalDuration: Long?,
+    currentBusyStart: Long?,
+) {
+    val hmsFmt = stringResource(R.string.duration_hms)
+    val msFmt = stringResource(R.string.duration_ms)
+    val sFmt = stringResource(R.string.duration_s)
+    if (retryStatus != null) {
+        SessionRetryCard(retryStatus)
+        return
+    }
+    val busyStart = currentBusyStart
+    if (busyStart != null) {
+        var elapsed by remember(busyStart) { mutableStateOf(System.currentTimeMillis() - busyStart) }
+        LaunchedEffect(busyStart) {
+            while (true) {
+                delay(1000)
+                elapsed = System.currentTimeMillis() - busyStart
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(12.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = formatDurationMillis(
+                    SessionBusyTimerCalculator.displayDuration(
+                        totalDuration = sessionTotalDuration,
+                        currentBusyStart = busyStart,
+                        now = busyStart + maxOf(0L, elapsed),
+                    ) ?: 0L,
+                    formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
+                    formatMs = { m, s -> msFmt.format(m, s) },
+                    formatS = { s -> sFmt.format(s) },
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+            )
+        }
+    } else if (sessionTotalDuration != null) {
+        Text(
+            text = formatDurationMillis(
+                sessionTotalDuration,
+                formatHms = { h, m, s -> hmsFmt.format(h, m, s) },
+                formatMs = { m, s -> msFmt.format(m, s) },
+                formatS = { s -> sFmt.format(s) },
+            ),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
         )
     }
 }

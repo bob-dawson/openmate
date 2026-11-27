@@ -27,12 +27,16 @@ private val DarkColorScheme = darkColorScheme(
     onErrorContainer = OnErrorContainer,
 )
 
+/** The in-app size composes with the system setting; cap the product so neither can explode it. */
 @Composable
 fun OpenMateTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = DarkColorScheme,
-        typography = Typography,
-        shapes = Shapes,
-        content = content,
-    )
+    val appFontScale = rememberAppFontScale()
+    ProvideAppFontScale(factor = appFontScale.factor) {
+        MaterialTheme(
+            colorScheme = DarkColorScheme,
+            typography = Typography,
+            shapes = Shapes,
+            content = content,
+        )
+    }
 }

@@ -1,4 +1,6 @@
 package com.openmate.feature.session.component
+import com.openmate.core.ui.theme.rememberScaledTextStyle
+import com.openmate.core.ui.component.AppDropdownMenu
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
@@ -30,6 +32,7 @@ import com.openmate.core.domain.model.PermissionReply
 import com.openmate.core.domain.model.PermissionRequest
 import com.openmate.core.domain.model.QuestionRequest
 import com.openmate.core.ui.component.MessageBubble
+import com.openmate.core.ui.theme.CapAppFontScale
 import com.openmate.feature.session.R
 import com.openmate.feature.session.SessionMessageCompletion
 import com.openmate.core.common.formatDurationMillis
@@ -347,8 +350,10 @@ private fun CompactionMessageItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 10.dp),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
+                    style = rememberScaledTextStyle(
+                        MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurface,
+                        ),
                     ),
                     syntaxHighlightColor = CompactionCodeBlockBackground,
                     syntaxHighlightTextColor = CompactionCodeBlockText,
@@ -572,13 +577,15 @@ private fun MessageMetadata(
         else -> ""
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (isStepRunning) {
+    // Metadata is secondary: cap its scale so it stays on one line at extra-large sizes.
+    CapAppFontScale(maxFontScale = 1.5f) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, top = 2.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isStepRunning) {
             CircularProgressIndicator(
                 modifier = Modifier.size(10.dp),
                 strokeWidth = 1.5.dp,
@@ -590,10 +597,14 @@ private fun MessageMetadata(
             Spacer(modifier = Modifier.width(6.dp))
         }
         Text(
-            text = timeText + if (durationText.isNotBlank()) " · $durationText" else "" + toolText + finishText + modelText,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+            text = timeText +
+                (if (durationText.isNotBlank()) " · $durationText" else "") +
+                toolText + finishText + modelText,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -681,7 +692,7 @@ fun UserMessageItem(
                 }
             }
         }
-        DropdownMenu(
+        AppDropdownMenu(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
         ) {

@@ -56,7 +56,7 @@ fun DirectoryPickerDialog(
         currentDir.absolutePath.removePrefix(rootDir.absolutePath).removePrefix("/")
     }
 
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(stringResource(R.string.select_directory))
